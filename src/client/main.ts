@@ -5,6 +5,8 @@ import { possessionShare } from '../sim/match.ts';
 import { int, makeRng } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
+import type { CrestPattern } from '../meta/names.ts';
+import { competitionAction, competitionsScreen } from './competitions.ts';
 import { mountMatch } from './matchView.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
@@ -57,6 +59,7 @@ function render() {
     transfers: transfersScreen,
     training: trainingScreen,
     ladder: ladderScreen,
+    competitions: competitionsScreen,
   };
   root.innerHTML = shell(app, screens[app.screen](app));
 }
@@ -77,13 +80,47 @@ function avoidClash(home: TeamSetup, away: TeamSetup): TeamSetup {
   return { ...away, primary: near(home.primary, '#f5f5f5') ? '#1c1c1c' : '#f5f5f5', secondary: near(home.primary, '#f5f5f5') ? '#f5f5f5' : '#1c1c1c' };
 }
 
-function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (typeof PRACTICE)[number]) {
+/**
+ * Mount a live match against `opponent` and hand back the final state. Shared
+ * by ranked, practice and competition matches. Returns false (with a toast)
+ * when the lineup isn't complete.
+ */
+function playLive(
+  opponent: TeamSetup,
+  crest: CrestPattern,
+  label: string,
+  onDone: (m: MatchState, forfeited: boolean, away: TeamSetup) => void,
+  forfeitText?: string,
+): boolean {
   const s = app.save;
   if (s.lineup.filter(Boolean).length < 6) {
     toast('Pick six players first.', false);
-    return;
+    return false;
   }
   const home = toTeamSetup(s.club, s.squad, s.lineup, 0.6);
+  const away = avoidClash(home, opponent);
+  const seed = int(s.rng, 1, 2 ** 31 - 1);
+  inMatch = true;
+  app.toast = null;
+  const unmount = mountMatch(root, {
+    seed,
+    home,
+    away,
+    halfSeconds: app.prefs.halfSeconds,
+    humanTeam: 0,
+    crests: [s.club.crest, crest],
+    label,
+    forfeitText,
+    onEnd: (m, forfeited) => {
+      unmount();
+      inMatch = false;
+      onDone(m, forfeited, away);
+    },
+  });
+  return true;
+}
+
+function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (typeof PRACTICE)[number]) {
   let away: TeamSetup;
   let crest = opp?.crest ?? 'plain';
   if (opp) {
@@ -96,25 +133,7 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
     crest = 'hoops';
     away = toTeamSetup(id, squad, autoLineup(squad), lvl.aiSkill);
   }
-  away = avoidClash(home, away);
-  const seed = int(s.rng, 1, 2 ** 31 - 1);
-  inMatch = true;
-  app.toast = null;
-
-  const unmount = mountMatch(root, {
-    seed,
-    home,
-    away,
-    halfSeconds: app.prefs.halfSeconds,
-    humanTeam: 0,
-    crests: [s.club.crest, crest],
-    label: ranked ? 'Ranked' : 'Friendly',
-    onEnd: (m, forfeited) => {
-      unmount();
-      inMatch = false;
-      endMatch(m, forfeited, ranked, opp, away, crest);
-    },
-  });
+  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest));
 }
 
 function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest']) {
@@ -157,6 +176,10 @@ root.addEventListener('click', (e) => {
   const action = el.dataset.action;
   if (action !== 'sell-confirm' && action !== 'sell') app.confirmSell = null;
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
+  if (action?.startsWith('comp-')) {
+    if (competitionAction(action, el, { app, toast, persist, render, playLive })) render();
+    return;
+  }
 
   switch (action) {
     case 'nav':

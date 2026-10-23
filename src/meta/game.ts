@@ -16,6 +16,7 @@ import {
   type ClubRecord,
   type LadderClub,
 } from './club.ts';
+import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
@@ -33,6 +34,8 @@ export interface MatchRecord {
   eloBefore: number;
   eloAfter: number;
   scorers: string[];
+  /** Set for cup and league matches, e.g. "Cup semi-final". */
+  competition?: string;
 }
 
 export interface Save {
@@ -49,6 +52,13 @@ export interface Save {
   market: Player[];
   history: MatchRecord[];
   news: string[];
+  // Competitions (src/meta/competitions.ts). Optional so saves from before
+  // they existed still load; ensureCompetitionFields() fills the defaults.
+  cup?: Cup | null;
+  season?: Season | null;
+  trophies?: Trophy[];
+  cupEditions?: number;
+  seasonEditions?: number;
 }
 
 export function newGame(seed: number): Save {
@@ -182,6 +192,8 @@ export function applyResult(
   goalsAgainst: number,
   ranked: boolean,
   scorers: string[],
+  /** For a non-ranked competition match: what it was, e.g. "Cup final". Recorded in history and news. */
+  competition?: string,
 ): ResultSummary {
   const c = save.club;
   const eloBefore = c.elo;
@@ -219,9 +231,9 @@ export function applyResult(
     }
   }
 
-  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers });
+  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}) });
   const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
-  save.news.push(`${ranked ? 'Ranked' : 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${delta >= 0 ? '+' : ''}${delta})` : ''}.`);
+  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${delta >= 0 ? '+' : ''}${delta})` : ''}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { eloDelta: delta, money, trainingPoints: tp, developments };
 }
@@ -282,5 +294,8 @@ function pickRow(c: ClubIdentity & ClubRecord & { elo: number }): Omit<LadderRow
 
 export function isSave(x: unknown): x is Save {
   const s = x as Save;
-  return !!s && s.version === SAVE_VERSION && Array.isArray(s.squad) && Array.isArray(s.ladder) && !!s.club;
+  if (!(!!s && s.version === SAVE_VERSION && Array.isArray(s.squad) && Array.isArray(s.ladder) && !!s.club)) return false;
+  // Competition fields are optional (older saves lack them) but must be the right shape when present.
+  const objOrNull = (v: unknown) => v === undefined || v === null || typeof v === 'object';
+  return objOrNull(s.cup) && objOrNull(s.season) && (s.trophies === undefined || Array.isArray(s.trophies));
 }

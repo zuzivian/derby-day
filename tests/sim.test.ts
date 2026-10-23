@@ -304,3 +304,56 @@ describe('kick-off', () => {
     }
   });
 });
+
+describe('CPU', () => {
+  const id = (name: string) => ({ id: name, name, short: name, primary: '#000', secondary: '#fff', crest: 'plain' as const });
+
+  test('skill matters on its own: identical squads, sharp CPU beats sloppy CPU', () => {
+    let sharp = 0;
+    let sloppy = 0;
+    for (let i = 0; i < 10; i++) {
+      const squad = generateSquad(makeRng(700 + i), 62);
+      const lineup = autoLineup(squad);
+      const a = toTeamSetup(id('A'), squad, lineup, 0.9);
+      const b = toTeamSetup(id('B'), squad, lineup, 0.15);
+      const home = i % 2 === 0;
+      const s = simulate({ seed: 40 + i, home: home ? a : b, away: home ? b : a, halfSeconds: 60 });
+      const [ga, gb] = home ? s.score : [s.score[1], s.score[0]];
+      if (ga > gb) sharp++;
+      if (gb > ga) sloppy++;
+    }
+    expect(sharp).toBeGreaterThan(sloppy * 2);
+    expect(sharp).toBeGreaterThanOrEqual(5);
+  });
+
+  test('a cloned mid-match state replays identically (the AI keeps no hidden state)', () => {
+    const s = createMatch({ seed: 5, ...teams(9), halfSeconds: 30, humanTeam: -1 });
+    for (let t = 0; t < 900; t++) step(s);
+    const copy = structuredClone(s) as MatchState;
+    for (let t = 0; t < 900; t++) {
+      step(s);
+      step(copy);
+    }
+    expect(fingerprint(copy)).toBe(fingerprint(s));
+  });
+
+  test('keepers stand between the ball and the middle of their goal', () => {
+    const s = createMatch({ seed: 3, ...teams(4), halfSeconds: 30, humanTeam: -1 });
+    let checked = 0;
+    let onLine = 0;
+    for (let t = 0; t < 1800; t++) {
+      step(s);
+      if (s.phase !== 'play' || s.ball.owner < 0) continue;
+      const owner = s.players[s.ball.owner];
+      const gk = s.players.find((p) => p.role === 'GK' && p.team !== owner.team)!;
+      const goal = { x: gk.team === 0 ? 0 : PITCH_W, y: PITCH_H / 2 };
+      if (Math.abs(owner.pos.x - goal.x) > PITCH_W * 0.6) continue;
+      checked++;
+      const toBall = norm(sub(owner.pos, goal));
+      const toGk = sub(gk.pos, goal);
+      if (len(toGk) < 0.8 || dot(norm(toGk), toBall) > 0.7) onLine++;
+    }
+    expect(checked).toBeGreaterThan(50);
+    expect(onLine / checked).toBeGreaterThan(0.75);
+  });
+});

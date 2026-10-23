@@ -340,3 +340,91 @@ select {
   .banner { animation: none; }
   .btn { transition: none; }
 }
+
+/* ==========================================================================
+   Competitions (src/client/competitions.ts): cup bracket, league table,
+   fixtures, trophy cabinet. Same tokens as the rest of the tactics board.
+   ========================================================================== */
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.comp-grid { display: flex; flex-direction: column; gap: 16px; }
+.comp-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.comp-cabinet p { margin: 0; }
+.league-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.league-body > div { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.comp-title { font-size: 30px; text-transform: uppercase; letter-spacing: .02em; }
+.comp-panel p { margin: 0; }
+.comp-prizes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.comp-prizes dd { font-size: 20px; }
+.comp-next { display: flex; flex-direction: column; gap: 10px; align-items: stretch; padding: 12px; border: 1.5px dashed var(--line); border-radius: 8px; background: var(--surface-2); }
+.comp-next .btn { align-self: center; }
+.comp-versus { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.comp-side-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1.05; text-wrap: balance; }
+.comp-versus .vs { font-size: 22px; }
+.comp-status { padding: 10px 12px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface-2); }
+.comp-status.good { border-color: var(--good); }
+.comp-status.bad { border-color: var(--bad); }
+
+/* Bracket: three chalk columns on the felt. */
+.bracket {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 12px; border-radius: 8px; border: 3px solid var(--chalk);
+  background: repeating-linear-gradient(90deg, var(--felt) 0 10%, var(--felt-2) 10% 20%);
+}
+.round { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.round-title { font-family: var(--font-body); font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.bracket .round-title { color: var(--chalk); text-shadow: 0 1px 2px rgba(0, 0, 0, .45); }
+.ties { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; flex: 1; }
+.tie { position: relative; background: var(--surface); color: var(--ink); border-radius: 7px; padding: 4px 0; box-shadow: 0 3px 6px rgba(0, 0, 0, .3); }
+.tie.mine { outline: 2.5px solid var(--accent); outline-offset: 1px; }
+.tie-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; padding: 3px 8px; font-size: 13px; }
+.tie-row .kit { margin-right: 0; }
+.tie-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.tie-score { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 1.2em; text-align: right; }
+.tie-score small { font-weight: 600; color: var(--muted); }
+.tie-row.win .tie-name { font-weight: 800; }
+.tie-row.lose { color: var(--muted); }
+.tie-row.lose .kit { opacity: .5; }
+.tie-row.tbc .tie-name { color: var(--muted); font-style: italic; font-weight: 500; grid-column: 1 / -1; }
+.tie-note { font-size: 11px; color: var(--muted); text-align: right; padding: 0 8px; letter-spacing: .04em; }
+
+/* League table + fixtures */
+.league-table tbody th[scope="row"] {
+  font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); font-weight: 600; text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line);
+}
+.league-table tr.you th { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 700; }
+.league-table abbr { text-decoration: none; }
+.league-table tr.zone-up td:first-child { box-shadow: inset 4px 0 0 var(--good); }
+.league-table tr.zone-down td:first-child { box-shadow: inset 4px 0 0 var(--bad); }
+.league-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
+.key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.key-up { background: var(--good); }
+.key-down { background: var(--bad); margin-left: 10px; }
+.matchdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
+.matchday { border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.matchday.current { border-color: var(--accent); border-width: 2px; }
+.fixtures { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.fx { display: grid; grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr); gap: 4px; font-size: 13px; font-variant-numeric: tabular-nums; padding: 1px 4px; border-radius: 4px; }
+.fx.mine { background: color-mix(in srgb, var(--accent) 14%, transparent); font-weight: 700; }
+.fx-team { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: .04em; }
+.fx-team.away { text-align: right; }
+.fx-score { text-align: center; font-weight: 700; }
+
+/* Trophy cabinet */
+.trophies { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.trophy { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 8px; border-radius: 99px; border: 1.5px solid var(--line); font-weight: 700; }
+.trophy-icon { flex: none; color: var(--warn); }
+.trophy-season .trophy-icon { color: var(--good); }
+.result-note { margin: 0; text-align: center; font-weight: 700; }
+
+@media (max-width: 960px) {
+  .comp-top, .league-body { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 640px) {
+  .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
+  .ties { gap: 8px; }
+  .comp-prizes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .league-table .opt { display: none; }
+  .league-table th, .league-table td, .league-table tbody th[scope="row"] { padding: 6px 4px; }
+  .league-table .name { white-space: normal; }
+  .league-table .pill { display: none; }
+  .comp-title { font-size: 26px; }
+}
