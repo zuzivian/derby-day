@@ -13,6 +13,8 @@ import type { CrestPattern } from '../meta/names.ts';
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
   label: string;
+  /** Pause-menu text for leaving early. Defaults by label (ranked forfeits count as 0–3). */
+  forfeitText?: string;
   onEnd: (s: MatchState, forfeited: boolean) => void;
 }
 
@@ -39,7 +41,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           <h2>Paused</h2>
           <div class="pause-actions">
             <button class="btn primary" id="resume">Resume</button>
-            <button class="btn" id="forfeit">${o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'}</button>
+            <button class="btn" id="forfeit">${esc(o.forfeitText ?? (o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'))}</button>
           </div>
           <p class="hint">Esc or P pauses.</p>
         </div>

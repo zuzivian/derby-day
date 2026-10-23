@@ -56,6 +56,22 @@ export interface MatchPlayer {
   jitter: Vec;
   jitterTimer: number;
   holdTicks: number;
+  /** Scratch memory for the CPU brain in ai.ts. Created lazily there; nothing else reads it. */
+  ai?: AiMemory;
+}
+
+export interface AiMemory {
+  /** Tick of the last aiIntent call, to notice kickoffs and long gaps. */
+  lastTick: number;
+  /** Cached off-ball target and ticks until it is re-evaluated. */
+  target: Vec | null;
+  retarget: number;
+  /** Whether the team was attacking when the target was chosen. */
+  attacking: boolean;
+  /** Carrier behaviour that persists across ticks. */
+  mode: 'none' | 'takeon' | 'shield';
+  modeTicks: number;
+  modeTarget: Vec | null;
 }
 
 export interface Ball {
@@ -112,6 +128,32 @@ export interface MatchState {
   switchTimer: number;
   events: MatchEvent[];
   stats: [TeamStats, TeamStats];
+  /** CPU team plans, owned by ai.ts. Kept in the state (not a module cache) so a cloned state replays identically. */
+  aiPlans?: [AiTeamPlan | null, AiTeamPlan | null];
+}
+
+export interface AiInterception {
+  t: number;
+  pt: Vec;
+}
+
+export interface AiTeamPlan {
+  /** Tick the plan was built on. Weaker teams rebuild less often: that is their reaction delay. */
+  tick: number;
+  /** True when this team has the ball or is clearly about to. */
+  attacking: boolean;
+  /** AI player who goes to the ball or presses the carrier; -1 if none (e.g. the human is nearest). */
+  chaser: number;
+  /** Where the ball is, as this team perceives it. */
+  focus: Vec;
+  /** Per player index: interception of a loose ball, or null when someone holds it. */
+  icpt: (AiInterception | null)[];
+  bestUs: number;
+  bestThem: number;
+  /** Per player index: opponent index to mark, or -1. */
+  mark: number[];
+  /** Player who sweeps between ball and goal when defending, or -1. */
+  cover: number;
 }
 
 /**

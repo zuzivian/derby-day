@@ -10,7 +10,7 @@ import type { TeamStats } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { Prefs } from './store.ts';
 
-export type Screen = 'club' | 'squad' | 'transfers' | 'training' | 'ladder';
+export type Screen = 'club' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions';
 
 export interface ResultView {
   ranked: boolean;
@@ -25,6 +25,10 @@ export interface ResultView {
   possession: [number, number];
   scorersFor: string[];
   scorersAgainst: string[];
+  /** Overrides the Ranked/Friendly eyebrow, e.g. "Cup semi-final". */
+  label?: string;
+  /** One line under the score, e.g. "Through to the final. +ƒ160k." */
+  note?: string;
 }
 
 export interface App {
@@ -49,6 +53,7 @@ const TABS: { id: Screen; label: string }[] = [
   { id: 'transfers', label: 'Transfers' },
   { id: 'training', label: 'Training' },
   { id: 'ladder', label: 'Ladder' },
+  { id: 'competitions', label: 'Competitions' },
 ];
 
 export const PRACTICE = [
@@ -111,7 +116,7 @@ function formChips(save: Save): string {
     .map((m) => {
       const r = m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L';
       const d = m.eloAfter - m.eloBefore;
-      return `<li><span class="res res-${r}">${r}</span><span class="res-score">${m.goalsFor}–${m.goalsAgainst}</span><span class="res-opp">${esc(m.opponent)}</span><span class="res-elo">${m.ranked ? `${d >= 0 ? '+' : ''}${d}` : 'friendly'}</span></li>`;
+      return `<li><span class="res res-${r}">${r}</span><span class="res-score">${m.goalsFor}–${m.goalsAgainst}</span><span class="res-opp">${esc(m.opponent)}</span><span class="res-elo">${m.ranked ? `${d >= 0 ? '+' : ''}${d}` : esc(m.competition ?? 'friendly')}</span></li>`;
     })
     .join('')}</ul>`;
 }
@@ -331,13 +336,14 @@ function resultModal(app: App): string {
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
     <div class="modal-card">
-      <div class="eyebrow">${r.ranked ? 'Ranked' : 'Friendly'} · full-time${r.forfeited ? ' · forfeited' : ''}</div>
+      <div class="eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · full-time${r.forfeited ? ' · forfeited' : ''}</div>
       <h2 id="result-title" class="result-title">${outcome}</h2>
       <div class="result-score">
         <div class="side">${crestSvg(c, 44)}<span>${esc(c.short)}</span></div>
         <div class="big-score">${r.gf}<span>–</span>${r.ga}</div>
         <div class="side">${crestSvg(r.opp, 44)}<span>${esc(r.opp.short)}</span></div>
       </div>
+      ${r.note ? `<p class="result-note">${esc(r.note)}</p>` : ''}
       ${r.scorersFor.length || r.scorersAgainst.length ? `<div class="scorers"><div>${r.scorersFor.map(esc).join('<br>')}</div><div>${r.scorersAgainst.map(esc).join('<br>')}</div></div>` : ''}
       ${r.forfeited ? '' : `<div class="stats">
         ${stat('Possession', `${r.possession[0]}%`, `${r.possession[1]}%`)}
@@ -347,7 +353,8 @@ function resultModal(app: App): string {
         ${stat('Tackles won', r.stats[0].tackles, r.stats[1].tackles)}
       </div>`}
       ${r.summary ? `<ul class="rewards">
-        ${r.ranked ? `<li><b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d} Elo</b> → ${r.eloAfter}</li><li>+${formatMoney(r.summary.money)} prize money</li>` : ''}
+        ${r.ranked ? `<li><b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d} Elo</b> → ${r.eloAfter}</li>` : ''}
+        ${r.summary.money > 0 ? `<li>+${formatMoney(r.summary.money)} prize money</li>` : ''}
         <li>+${r.summary.trainingPoints} training session${r.summary.trainingPoints === 1 ? '' : 's'}</li>
         ${r.summary.developments.map((x) => `<li>${esc(x)}</li>`).join('')}
       </ul>` : '<p class="muted">Nothing recorded for an abandoned friendly.</p>'}

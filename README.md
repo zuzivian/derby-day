@@ -31,6 +31,17 @@ Install Bun with `curl -fsSL https://bun.sh/install | bash` (no sudo needed). Th
 
 The dotted line shows where a click would pass right now; hold Ctrl/Cmd and a yellow diamond shows where a through ball would land, and while charging a chip a blue ring and arc show where it will come down. The bar under your player is stamina: sprint empties it, and when it is red you are winded until it refills. A chipped ball can't be taken by outfield players while it is above 1.2 m; keepers can reach it in their box up to 2.1 m, and over the bar is not a goal. Phones get on-screen Pass and Shoot buttons.
 
+## Playing the CPU
+
+- **Ranked** (Club tab): one match against a ladder club near your Elo. Moves Elo.
+- **Practice** (Club tab): Easy, Normal or Hard CPU. Nothing recorded but a training session.
+- **Cup** (Competitions tab): 8-club knockout, you plus the seven ladder clubs nearest your Elo, seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw goes to penalties (a seeded roll weighted by the takers' shooting and the keepers' goalkeeping). Prize money for every round reached; a win goes in the trophy cabinet.
+- **League** (Competitions tab): the same 8 clubs, single round robin over 7 matchdays, 3/1/0 points, then goal difference, then goals scored. Prize money by finishing place; the top two are "promoted".
+
+You play your own cup ties and league fixtures live. The other matches in the round are played by the real headless sim at 60 s a half (about 80 ms each), so results follow the squads. Competition matches pay money, training and player development, but **do not change ladder Elo** or the ladder record. Forfeiting one counts as 0–3.
+
+CPU difficulty is `TeamSetup.aiSkill` (0..1). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
+
 ## Code layout
 
 ```
@@ -38,7 +49,8 @@ src/sim/      Deterministic match engine. Pure TS, no DOM, fixed 60 Hz, seeded R
               step(state, input) is the only way time moves.
 src/meta/     Club layer: name generators, players and attributes, Elo, market, training, ladder.
 src/client/   Browser: canvas renderer, input, match loop, management screens, local save.
-scripts/      build.ts (bundle and inline into one HTML file), balance.ts (headless CPU matches).
+scripts/      build.ts (bundle and inline into one HTML file), balance.ts (headless CPU matches),
+              ai-probe.ts (equal squads, different CPU skill).
 tests/        bun test: determinism, plausible matches, Elo maths, transfers and training rules.
 tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, transfers, matches.
 .github/      CI: typecheck, unit tests, build, balance guard, e2e.
@@ -50,6 +62,7 @@ tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, tran
 bun run check      # typecheck + tests + build
 bun run balance 50 # 50 CPU-vs-CPU matches at full speed, prints goal/shot/upset rates
 bun run balance 20 --assert  # same, but exits non-zero if goals/match is outside 1.5 to 6 or passes/match < 80
+bun run scripts/ai-probe.ts 40 0.85 0.25  # 40 matches, identical squads, CPU skill 0.85 vs 0.25: W/D/L
 bun run e2e        # build, then drive the real page in headless Chromium (see below)
 ```
 

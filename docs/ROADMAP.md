@@ -28,7 +28,9 @@ So the roadmap tests feel before building netcode, and plans for low concurrency
 - **A club loop.** Generated squad, attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach. Transfers, training sessions, a 16-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
 - **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at about 1,000× real time. Current numbers over 40 matches: ~3.1 goals, ~23 shots and ~150 completed passes a match; the higher-Elo club won 21, drew 8 and lost 11. A squad rated 70 beats one rated 55 about two times in three.
 
-Known gaps: local storage only, CPU opponents only, no fouls or set pieces, no aging or seasons, AI is a simple state machine, attributes are only lightly tuned.
+Known gaps: local storage only, CPU opponents only, no fouls or set pieces, no aging, attributes are only lightly tuned.
+
+Since then: a smarter CPU (team plans with interception prediction, goal-side marking, support runs, through balls, chips, sprinting, keeper angle play and sweeping; difficulty measured with `scripts/ai-probe.ts`, where identical squads at skill 0.85 beat 0.25 about 80% of the time), and two CPU competitions, an 8-club cup and an 8-club league season, that don't touch ladder Elo. With the new CPU, 40 balance matches average about 2.9 goals, 23 shots and 160 passes, and the favourite wins about four times as often as the underdog.
 
 ## Phase 1: Feel lab (2–4 weeks part-time)
 
