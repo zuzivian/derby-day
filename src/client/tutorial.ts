@@ -139,7 +139,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       announce('Resumed.');
     }
   };
-  const input = new InputController(canvas, renderer, () => s.controlled >= 0 && s.ball.owner === s.controlled, () => setPaused(!paused));
+  const input = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
   input.mode = o.controls;
   input.bindTouchButtons($('tr-pad-pass'), $('tr-pad-shoot'));
   const skip = () => finish(false);

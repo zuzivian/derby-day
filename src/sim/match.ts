@@ -1,6 +1,9 @@
 // Fixed-timestep, seeded match simulation. step() is a pure function of
-// (state, human input): no DOM, no clocks, no Math.random. That property is
-// what makes server authority, replays and rollback netcode possible later.
+// (state, human inputs): no DOM, no clocks, no Math.random. That property is
+// what makes server authority, replays and lockstep/rollback netcode possible.
+//
+// Either team, or both, can have a human. Each human steers one player of their
+// team (MatchState.controlled[team]); the rest of that team is CPU-driven.
 
 import { aiIntent, passSpeed } from './ai.ts';
 import {
@@ -34,7 +37,7 @@ import {
 import { attackDir, fromTeam, inGoalMouth, inOwnBox, oppGoal } from './field.ts';
 import { chipPlan, humanPass } from './kicks.ts';
 import { gauss, makeRng, next, range } from './rng.ts';
-import type { HumanInput, Intent, MatchPlayer, MatchState, TeamSetup, TeamStats } from './types.ts';
+import type { HumanInput, Intent, MatchPlayer, MatchState, TeamInputs, TeamSetup, TeamStats } from './types.ts';
 import { add, clamp, dist, len, norm, rotate, scale, sub, type Vec } from './vec.ts';
 
 export interface MatchOptions {
@@ -42,7 +45,17 @@ export interface MatchOptions {
   home: TeamSetup;
   away: TeamSetup;
   halfSeconds?: number;
+  /** Shorthand for one human: the team they play for, or -1 for CPU vs CPU. Default 0. */
   humanTeam?: 0 | 1 | -1;
+  /** Which teams have a human. Overrides `humanTeam` when given. */
+  humans?: [boolean, boolean];
+}
+
+/** The teams with a human, from either form of MatchOptions. */
+function humansOf(o: MatchOptions): [boolean, boolean] {
+  if (o.humans) return [o.humans[0], o.humans[1]];
+  const t = o.humanTeam ?? 0;
+  return [t === 0, t === 1];
 }
 
 const emptyStats = (): TeamStats => ({ shots: 0, onTarget: 0, passes: 0, tackles: 0, possessionTicks: 0 });
@@ -79,7 +92,7 @@ export function createMatch(o: MatchOptions): MatchState {
       });
     });
   });
-  const humanTeam = o.humanTeam ?? 0;
+  const humans = humansOf(o);
   const s: MatchState = {
     tick: 0,
     rng: makeRng(o.seed),
@@ -93,9 +106,9 @@ export function createMatch(o: MatchOptions): MatchState {
     clock: 0,
     halfTicks: Math.round((o.halfSeconds ?? HALF_SECONDS) * TICK_HZ),
     kickoffTeam: 0,
-    humanTeam,
-    controlled: humanTeam >= 0 ? humanTeam * TEAM_SIZE + 5 : -1,
-    switchTimer: 0,
+    humans,
+    controlled: [humans[0] ? 5 : -1, humans[1] ? TEAM_SIZE + 5 : -1],
+    switchTimer: [0, 0],
     events: [],
     stats: [emptyStats(), emptyStats()],
   };
@@ -139,7 +152,7 @@ function resetKickoff(s: MatchState, team: 0 | 1): void {
   s.kickoffTeam = team;
   s.phase = 'kickoff';
   s.phaseTicks = KICKOFF_PAUSE;
-  if (s.humanTeam === team) s.controlled = b.owner;
+  if (s.humans[team]) s.controlled[team] = b.owner;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,33 +192,32 @@ function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
   return { move, throttle, sprint };
 }
 
-function updateControl(s: MatchState, input: HumanInput): void {
-  if (s.humanTeam < 0) return;
-  const team = s.humanTeam;
+function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): void {
+  if (!s.humans[team]) return;
   const ball = s.ball;
   const outfield = s.players.filter((p) => p.team === team && p.role !== 'GK');
   const owner = ball.owner >= 0 ? s.players[ball.owner] : null;
 
   if (owner && owner.team === team) {
-    if (owner.role !== 'GK') s.controlled = owner.i;
+    if (owner.role !== 'GK') s.controlled[team] = owner.i;
     return;
   }
   if (ball.receiver >= 0 && s.players[ball.receiver].team === team && s.players[ball.receiver].role !== 'GK') {
-    s.controlled = ball.receiver;
+    s.controlled[team] = ball.receiver;
     return;
   }
   const spot = add(ball.pos, scale(ball.vel, 0.3));
   const byDist = [...outfield].sort((a, b) => dist(a.pos, spot) - dist(b.pos, spot));
   if (input.switchPlayer) {
-    const pick = byDist[0].i === s.controlled ? byDist[1] : byDist[0];
-    s.controlled = pick.i;
-    s.switchTimer = 30;
+    const pick = byDist[0].i === s.controlled[team] ? byDist[1] : byDist[0];
+    s.controlled[team] = pick.i;
+    s.switchTimer[team] = 30;
     return;
   }
-  if (--s.switchTimer > 0) return;
-  s.switchTimer = 12;
-  const cur = s.players[s.controlled];
-  if (dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) s.controlled = byDist[0].i;
+  if (--s.switchTimer[team] > 0) return;
+  s.switchTimer[team] = 12;
+  const cur = s.players[s.controlled[team]];
+  if (dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) s.controlled[team] = byDist[0].i;
 }
 
 // ---------------------------------------------------------------------------
@@ -304,7 +316,7 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const hasBall = s.ball.owner === p.i;
   // The human's player is more responsive than a CPU player: quicker to
   // accelerate and turn, so the ball swings round with the mouse.
-  const human = s.humanTeam >= 0 && p.i === s.controlled;
+  const human = isHumanControlled(s, p);
   if (p.winded && p.energy >= WINDED_RECOVER) p.winded = false;
   else if (!p.winded && p.energy <= WINDED_BELOW) p.winded = true;
   p.sprinting = !!intent.sprint && intent.throttle > 0.5 && p.stun === 0 && !p.winded;
@@ -512,7 +524,29 @@ function pickup(s: MatchState): void {
 
 // ---------------------------------------------------------------------------
 
-export function step(s: MatchState, input: HumanInput = {}): void {
+/** True for the player a human is steering right now. */
+export function isHumanControlled(s: MatchState, p: MatchPlayer): boolean {
+  return s.humans[p.team] && s.controlled[p.team] === p.i;
+}
+
+const NO_INPUT: HumanInput = {};
+
+/**
+ * Per-team inputs from either form step() accepts. A single HumanInput is the
+ * one-human shorthand: it goes to team 0, or to team 1 when only team 1 has a
+ * human. A pair is [home input, away input]; a CPU team's entry is ignored.
+ */
+export function teamInputs(s: MatchState, input: HumanInput | TeamInputs | undefined): TeamInputs {
+  if (Array.isArray(input)) return [input[0] ?? NO_INPUT, input[1] ?? NO_INPUT];
+  const one = input ?? NO_INPUT;
+  return !s.humans[0] && s.humans[1] ? [NO_INPUT, one] : [one, NO_INPUT];
+}
+
+/**
+ * Advance one tick. `input` is either one HumanInput (one human, see
+ * teamInputs) or a [home, away] pair when both teams have a human.
+ */
+export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   s.tick++;
   for (const p of s.players) {
     if (p.stun > 0) p.stun--;
@@ -538,8 +572,10 @@ export function step(s: MatchState, input: HumanInput = {}): void {
     return;
   }
 
-  updateControl(s, input);
-  const intents = s.players.map((p) => (p.i === s.controlled ? humanIntent(s, p, input) : aiIntent(s, p)));
+  const inputs = teamInputs(s, input);
+  updateControl(s, 0, inputs[0]);
+  updateControl(s, 1, inputs[1]);
+  const intents = s.players.map((p) => (isHumanControlled(s, p) ? humanIntent(s, p, inputs[p.team]) : aiIntent(s, p)));
   s.players.forEach((p, i) => applyAction(s, p, intents[i]));
   s.players.forEach((p, i) => movePlayer(s, p, intents[i]));
   separate(s);
@@ -556,8 +592,8 @@ export function step(s: MatchState, input: HumanInput = {}): void {
 }
 
 /** Run a whole match with no human, as fast as possible. Used for tests, balance and quick-sim. */
-export function simulate(o: Omit<MatchOptions, 'humanTeam'>): MatchState {
-  const s = createMatch({ ...o, humanTeam: -1 });
+export function simulate(o: Omit<MatchOptions, 'humanTeam' | 'humans'>): MatchState {
+  const s = createMatch({ ...o, humans: [false, false] });
   while (s.phase !== 'fulltime') step(s);
   return s;
 }

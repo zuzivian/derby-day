@@ -90,6 +90,39 @@ Goal: two people, two browsers, one fair match.
 
 **Exit criteria:** two players on different continents finish a match with no desync; P95 input-to-screen latency under 120 ms within a region; a disconnect pauses for 20 s and then forfeits cleanly.
 
+### Multiplayer spike (October 2026)
+
+Two humans can now play one match, in two ways, from the Club tab:
+
+- **Local 2P:** hot-seat on one keyboard against a ladder club you pick. Player 1 has W A S D, Space, F, E and Left Shift (or the mouse); player 2 has the arrows, Enter or `/`, `.`, `,` and Right Shift. No Elo, no rewards.
+- **Link two tabs:** two tabs of the same browser play each other over `BroadcastChannel`, with no server. One tab hosts and shows a 4-letter room code; the other joins with it. The host sends the seed and both team setups, both tabs build the same `MatchState`, and from then on only inputs cross between them.
+
+How it works: `MatchState` has per-team control (`humans`, `controlled`), and `step(s, [home, away])` takes an input per team (a single input still means "the one human", so replays and every old caller are unchanged and CPU-vs-CPU results are bit-identical to before). `src/net/lockstep.ts` is deterministic lockstep with input delay: each tab samples its input for tick t + D and sends it straight away; tick t is only simulated when both inputs for t are known, otherwise the tab stalls and shows "Waiting for opponent". Every input message re-sends whatever the peer hasn't acknowledged, so reordering and loss are harmless. Every 60 ticks, and at full-time, each side sends a 32-bit hash of the state (`fingerprint()` plus the RNG position); a mismatch stops both tabs with "Desync at tick N". The network sits behind a two-method `Transport` (`send`, `onMessage`), so a WebSocket or WebTransport relay can replace `BroadcastChannel` without touching the lockstep code.
+
+**What is now proven**
+
+- Lockstep determinism between two running instances of the same engine: unit tests drive two peers over a seeded in-memory link with 0–140 ms jitter, reordering and 10% packet loss, and both end bit-identical to each other and to an offline replay of the same input log (`tests/lockstep.test.ts`). Corrupting one side by half a metre is caught at the next 60-tick check on both sides.
+- The browser path end to end: two Chromium tabs host, join, play a full 2 × 5 s match with scripted mouse and keyboard input and finish on the same tick, score and state hash (`tests/e2e/lockstep.e2e.cjs`), with every one of the 14 hash checks matching.
+- Input-delay numbers. The default is **D = 4 ticks (67 ms of added input lag)**. Across tabs, `BroadcastChannel` round trips measured 2–6 ms during play (including main-thread scheduling), the tabs never drifted more than 3 ticks apart, and neither tab waited at all over the match. `bun run scripts/net-probe.ts` simulates other links (share of time the worse peer waits, 30 s of play):
+
+  | One-way latency | D=2 (33 ms) | D=3 (50 ms) | D=4 (67 ms) | D=5 (83 ms) | D=6 (100 ms) | D=8 (133 ms) |
+  |---|---|---|---|---|---|---|
+  | 0–4 ms (tabs) | 0% | 0% | 0% | 0% | 0% | 0% |
+  | 10–25 ms (same city) | 0% | 0% | 0% | 0% | 0% | 0% |
+  | 25–45 ms (same region) | 12% | 0% | 0% | 0% | 0% | 0% |
+  | 40–70 ms (cross-country) | 34% | 15% | 1% | 0% | 0% | 0% |
+  | 80–120 ms (intercontinental) | 58% | 45% | 32% | 20% | 9% | 0% |
+
+  Rule of thumb: lockstep is smooth when the worst one-way latency is under D ticks. D = 4 covers a region (the Phase 3 target), at the cost of 67 ms between your click and your player reacting. That lag applies to your own player too, which is the main reason to move to rollback (predict the opponent, show your own input immediately) once it's on a real network.
+
+**What is not proven yet**
+
+- **Cross-browser float determinism.** Both tabs are the same engine (Chromium V8 in the test). Chrome against Firefox or Safari, or x86 against ARM, has not been run. The desync detector is the tool for that test: same seed, same input log, two browsers, compare the hashes every 60 ticks. The sim already avoids `Math.hypot`; `Math.sin`/`Math.cos` (in `rotate`), `Math.atan2`, `Math.exp`, `Math.log` and `Math.pow` (CPU shot and trajectory maths) are the remaining suspects.
+- **A real network.** `BroadcastChannel` is same-browser, same-origin only; the latency table above is simulated. No NAT, no server relay, no WebSocket transport yet, and no reconnect: a tab that closes sends "bye", but a crashed or frozen tab just leaves the other waiting.
+- **Server authority.** Either peer could send any input it likes, and both trust the host's team setups. A server running `src/sim` with the same lockstep inputs (or as the rollback authority) is still Phase 3 work.
+- **Feel with humans.** Nobody has yet played two-tab or hot-seat matches and said whether 67 ms feels fine. Hot-seat keyboards may also ghost when both players press several keys at once.
+- **Embedded viewers.** A sandboxed frame (opaque origin) can't reach other tabs; the lobby detects that and says to open `dist/index.html` directly. Linked and hot-seat matches are not recorded as replays.
+
 ## Phase 4: The economy between players (4–6 weeks)
 
 Goal: a market that people trade on, not just a CPU shop.

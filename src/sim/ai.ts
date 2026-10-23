@@ -237,7 +237,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const lag = reactionLag(skill);
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
-  const human = s.humanTeam === team ? s.controlled : -1;
+  const human = s.humans[team] ? s.controlled[team] : -1;
   const icpt: (AiInterception | null)[] = s.players.map(() => null);
   const mark: number[] = s.players.map(() => -1);
   const mates = s.players.filter((m) => m.team === team && m.role !== 'GK' && m.stun === 0);

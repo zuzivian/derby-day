@@ -32,6 +32,21 @@ const SEL = {
   sellConfirmAny: '[data-action="sell-confirm"]',
   // Squad
   slot: (n) => `[data-change="slot"][data-slot="${n}"]`,
+  // Two humans (versus.ts)
+  playLocal2p: '[data-action="play-local2p"]',
+  playLink: '[data-action="play-link"]',
+  l2pOpp: '#l2p-opp',
+  l2pStart: '#l2p-start',
+  linkHost: '#link-host',
+  linkCode: '#link-code',
+  linkCodeInput: '#link-code-input',
+  linkJoin: '#link-join',
+  linkStatus: '#link-status',
+  linkUnsupported: '#link-unsupported',
+  netMatch: '#net-match',
+  netWait: '#net-wait',
+  netStop: '#net-stop',
+  resultNote: '.modal .result-note',
   // Match
   pitch: '#pitch',
   pause: '#pause',

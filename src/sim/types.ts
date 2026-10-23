@@ -122,10 +122,12 @@ export interface MatchState {
   clock: number;
   halfTicks: number;
   kickoffTeam: 0 | 1;
-  /** Team the local human controls, or -1 for CPU vs CPU. */
-  humanTeam: 0 | 1 | -1;
-  controlled: number;
-  switchTimer: number;
+  /** Per team: is a human steering one of its players? [false, false] is CPU vs CPU. */
+  humans: [boolean, boolean];
+  /** Per team: index of the player that team's human steers, or -1 for a CPU team. */
+  controlled: [number, number];
+  /** Per team: ticks until the auto-switch next re-checks who the human should steer. */
+  switchTimer: [number, number];
   events: MatchEvent[];
   stats: [TeamStats, TeamStats];
   /** CPU team plans, owned by ai.ts. Kept in the state (not a module cache) so a cloned state replays identically. */
@@ -158,7 +160,8 @@ export interface AiTeamPlan {
 
 /**
  * One tick of input from a human. Small and serialisable on purpose: this is
- * what a client would send to an authoritative server.
+ * what a client would send to an authoritative server (or to the other peer
+ * in lockstep, see src/net/lockstep.ts).
  */
 export interface HumanInput {
   /** Mouse mode: world-space point the controlled player runs toward and aims at. */
@@ -177,6 +180,9 @@ export interface HumanInput {
   chip?: boolean;
   switchPlayer?: boolean;
 }
+
+/** Input for both teams in one tick: index 0 is the home side, 1 the away side. */
+export type TeamInputs = [HumanInput, HumanInput];
 
 export type Action =
   /** `through`: `target` is already led ahead of the receiver; the ball is played a touch firmer. */
