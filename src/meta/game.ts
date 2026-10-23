@@ -1,0 +1,286 @@
+// The club-management loop: squad, transfers, training, ladder and Elo.
+// Everything here is plain data in, plain data out, so it can move behind an
+// API unchanged when the economy goes server-side.
+
+import { TEAM_SIZE } from '../sim/constants.ts';
+import { chance, makeRng, next, pick, type Rng } from '../sim/rng.ts';
+import {
+  assignNumbers,
+  autoLineup,
+  emptyRecord,
+  generateIdentity,
+  generateLadder,
+  generateSquad,
+  qualityForElo,
+  type ClubIdentity,
+  type ClubRecord,
+  type LadderClub,
+} from './club.ts';
+import { eloDelta, expectedScore, START_ELO } from './elo.ts';
+import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
+
+export const SAVE_VERSION = 1;
+export const MAX_SQUAD = 14;
+export const MIN_SQUAD = TEAM_SIZE + 1;
+export const LADDER_SIZE = 15;
+
+export interface MatchRecord {
+  opponent: string;
+  opponentShort: string;
+  goalsFor: number;
+  goalsAgainst: number;
+  ranked: boolean;
+  eloBefore: number;
+  eloAfter: number;
+  scorers: string[];
+}
+
+export interface Save {
+  version: number;
+  seed: number;
+  rng: Rng;
+  club: ClubIdentity & ClubRecord & { elo: number };
+  squad: Player[];
+  lineup: string[];
+  budget: number;
+  trainingPoints: number;
+  eloHistory: number[];
+  ladder: LadderClub[];
+  market: Player[];
+  history: MatchRecord[];
+  news: string[];
+}
+
+export function newGame(seed: number): Save {
+  const r = makeRng(seed);
+  const identity = generateIdentity(r);
+  const squad = generateSquad(r, 54);
+  const save: Save = {
+    version: SAVE_VERSION,
+    seed,
+    rng: r,
+    club: { ...identity, ...emptyRecord(), elo: START_ELO },
+    squad,
+    lineup: autoLineup(squad),
+    budget: 1_200_000,
+    trainingPoints: 6,
+    eloHistory: [START_ELO],
+    ladder: generateLadder(seed ^ 0x5eed, LADDER_SIZE),
+    market: [],
+    history: [],
+    news: [`${identity.name} founded. The board has given you ${formatMoney(1_200_000)} to build a squad.`],
+  };
+  refreshMarket(save);
+  return save;
+}
+
+/** New name and colours, same players. Only before the first match. */
+export function rerollIdentity(save: Save): void {
+  if (save.club.played > 0) return;
+  const identity = generateIdentity(save.rng);
+  save.club = { ...save.club, ...identity };
+  save.news[save.news.length - 1] = `${identity.name} founded. The board has given you ${formatMoney(save.budget)} to build a squad.`;
+}
+
+export function formatMoney(n: number): string {
+  if (n >= 1_000_000) return `ƒ${(n / 1_000_000).toFixed(2)}m`;
+  return `ƒ${Math.round(n / 1000)}k`;
+}
+
+const round5k = (n: number) => Math.round(n / 5_000) * 5_000;
+export const askingPrice = (p: Player): number => round5k(marketValue(p) * 1.1);
+export const salePrice = (p: Player): number => round5k(marketValue(p) * 0.8);
+
+export function refreshMarket(save: Save): void {
+  const r = save.rng;
+  const base = Math.max(48, Math.min(80, Math.round(averageOverall(save)) + 2));
+  save.market = Array.from({ length: 10 }, () => {
+    const p = generatePlayer(r, { quality: base + (next(r) - 0.45) * 22 });
+    return p;
+  }).sort((a, b) => overall(b) - overall(a));
+}
+
+export function averageOverall(save: Save): number {
+  const ps = save.lineup.map((id) => save.squad.find((p) => p.id === id)).filter((p): p is Player => !!p);
+  return ps.reduce((s, p) => s + overall(p), 0) / Math.max(1, ps.length);
+}
+
+export type Outcome = { ok: true; message: string } | { ok: false; message: string };
+
+export function buyPlayer(save: Save, id: string): Outcome {
+  const p = save.market.find((x) => x.id === id);
+  if (!p) return { ok: false, message: 'That player is no longer on the market.' };
+  if (save.squad.length >= MAX_SQUAD) return { ok: false, message: `Squad is full (${MAX_SQUAD}). Sell someone first.` };
+  const price = askingPrice(p);
+  if (price > save.budget) return { ok: false, message: `You need ${formatMoney(price - save.budget)} more to sign ${shortName(p)}.` };
+  save.budget -= price;
+  save.market = save.market.filter((x) => x.id !== id);
+  p.number = 0;
+  save.squad.push(p);
+  assignNumbers(save.squad);
+  save.news.push(`Signed ${shortName(p)} (${p.role}, ${overall(p)}) for ${formatMoney(price)}.`);
+  return { ok: true, message: `${shortName(p)} signed for ${formatMoney(price)}.` };
+}
+
+export function sellPlayer(save: Save, id: string): Outcome {
+  const p = save.squad.find((x) => x.id === id);
+  if (!p) return { ok: false, message: 'Player not found.' };
+  if (save.squad.length <= MIN_SQUAD) return { ok: false, message: `You need at least ${MIN_SQUAD} players.` };
+  const price = salePrice(p);
+  save.squad = save.squad.filter((x) => x.id !== id);
+  save.budget += price;
+  if (save.lineup.includes(id)) save.lineup = autoLineup(save.squad);
+  save.news.push(`Sold ${shortName(p)} for ${formatMoney(price)}.`);
+  return { ok: true, message: `${shortName(p)} sold for ${formatMoney(price)}.` };
+}
+
+export function train(save: Save, playerId: string, attr: AttrKey): Outcome {
+  const p = save.squad.find((x) => x.id === playerId);
+  if (!p) return { ok: false, message: 'Player not found.' };
+  if (save.trainingPoints <= 0) return { ok: false, message: 'No training sessions left. Play a match to earn more.' };
+  save.trainingPoints--;
+  const before = overall(p);
+  const gain = trainingGain(save.rng, p, attr);
+  p.attrs[attr] = Math.min(99, p.attrs[attr] + gain);
+  const after = overall(p);
+  const msg =
+    gain === 0
+      ? `${shortName(p)} trained ${ATTR_NAME[attr].toLowerCase()} but didn't improve.`
+      : `${shortName(p)} +${gain} ${ATTR_NAME[attr].toLowerCase()}${after > before ? ` (overall ${before} → ${after})` : ''}.`;
+  return { ok: true, message: msg };
+}
+
+/** Put a player in a lineup slot. If they're already in the lineup, the two swap. */
+export function setLineupSlot(save: Save, slot: number, playerId: string): void {
+  const current = save.lineup.indexOf(playerId);
+  const displaced = save.lineup[slot];
+  save.lineup[slot] = playerId;
+  if (current >= 0 && current !== slot) save.lineup[current] = displaced;
+}
+
+export function pickOpponent(save: Save): LadderClub {
+  const last = save.history.at(-1)?.opponent;
+  const pool = [...save.ladder]
+    .filter((c) => c.name !== last)
+    .sort((a, b) => Math.abs(a.elo - save.club.elo) - Math.abs(b.elo - save.club.elo))
+    .slice(0, 3);
+  return pick(save.rng, pool);
+}
+
+export interface ResultSummary {
+  eloDelta: number;
+  money: number;
+  trainingPoints: number;
+  developments: string[];
+}
+
+export function applyResult(
+  save: Save,
+  opponent: LadderClub | null,
+  opponentName: { name: string; short: string },
+  goalsFor: number,
+  goalsAgainst: number,
+  ranked: boolean,
+  scorers: string[],
+): ResultSummary {
+  const c = save.club;
+  const eloBefore = c.elo;
+  let delta = 0;
+  let money = 0;
+  let tp = 1;
+  if (ranked && opponent) {
+    delta = eloDelta(c.elo, opponent.elo, goalsFor, goalsAgainst, c.played);
+    const oppDelta = eloDelta(opponent.elo, c.elo, goalsAgainst, goalsFor, opponent.played);
+    c.elo += delta;
+    opponent.elo += oppDelta;
+    tallyRecord(c, goalsFor, goalsAgainst);
+    tallyRecord(opponent, goalsAgainst, goalsFor);
+    const win = goalsFor > goalsAgainst;
+    const draw = goalsFor === goalsAgainst;
+    money = (win ? 120_000 : draw ? 50_000 : 20_000) + goalsFor * 5_000;
+    tp = win ? 3 : 2;
+    save.budget += money;
+    save.eloHistory.push(c.elo);
+    simulateLadderRound(save, opponent.id);
+    refreshMarket(save);
+  }
+  save.trainingPoints += tp;
+
+  // Match minutes develop players a little; the young ones more.
+  const developments: string[] = [];
+  for (const id of save.lineup) {
+    const p = save.squad.find((x) => x.id === id);
+    if (!p) continue;
+    const pGrow = p.age < 21 ? 0.35 : p.age <= 25 ? 0.2 : 0.08;
+    if (overall(p) < p.potential && chance(save.rng, pGrow)) {
+      const attr = pick(save.rng, ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK'));
+      p.attrs[attr] = Math.min(99, p.attrs[attr] + 1);
+      developments.push(`${shortName(p)} +1 ${ATTR_NAME[attr].toLowerCase()}`);
+    }
+  }
+
+  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers });
+  const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
+  save.news.push(`${ranked ? 'Ranked' : 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${delta >= 0 ? '+' : ''}${delta})` : ''}.`);
+  if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
+  return { eloDelta: delta, money, trainingPoints: tp, developments };
+}
+
+function tallyRecord(r: ClubRecord, gf: number, ga: number): void {
+  r.played++;
+  r.gf += gf;
+  r.ga += ga;
+  if (gf > ga) r.won++;
+  else if (gf === ga) r.drawn++;
+  else r.lost++;
+}
+
+/** Other ladder clubs play each other too, so the table moves between your matches. */
+function simulateLadderRound(save: Save, skipId: string): void {
+  const pool = save.ladder.filter((c) => c.id !== skipId);
+  for (let i = 0; i < 3; i++) {
+    const a = pick(save.rng, pool);
+    const b = pick(save.rng, pool.filter((c) => c.id !== a.id));
+    const ea = expectedScore(a.elo, b.elo);
+    const roll = next(save.rng);
+    const [ga, gb] = roll < ea * 0.8 ? [2, 1] : roll > 1 - (1 - ea) * 0.8 ? [1, 2] : [1, 1];
+    const da = eloDelta(a.elo, b.elo, ga, gb, a.played);
+    const db = eloDelta(b.elo, a.elo, gb, ga, b.played);
+    a.elo += da;
+    b.elo += db;
+    tallyRecord(a, ga, gb);
+    tallyRecord(b, gb, ga);
+    a.quality = qualityForElo(a.elo);
+    b.quality = qualityForElo(b.elo);
+  }
+}
+
+export interface LadderRow {
+  name: string;
+  short: string;
+  elo: number;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  you: boolean;
+  primary: string;
+  secondary: string;
+}
+
+export function ladderTable(save: Save): LadderRow[] {
+  const rows: LadderRow[] = [
+    ...save.ladder.map((c) => ({ ...pickRow(c), you: false })),
+    { ...pickRow(save.club), you: true },
+  ];
+  return rows.sort((a, b) => b.elo - a.elo);
+}
+
+function pickRow(c: ClubIdentity & ClubRecord & { elo: number }): Omit<LadderRow, 'you'> {
+  return { name: c.name, short: c.short, elo: c.elo, played: c.played, won: c.won, drawn: c.drawn, lost: c.lost, primary: c.primary, secondary: c.secondary };
+}
+
+export function isSave(x: unknown): x is Save {
+  const s = x as Save;
+  return !!s && s.version === SAVE_VERSION && Array.isArray(s.squad) && Array.isArray(s.ladder) && !!s.club;
+}
