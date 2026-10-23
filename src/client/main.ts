@@ -52,6 +52,8 @@ let takeover = false;
 let pendingFocus: FocusKey | null = null;
 /** The control that started the last match, to return focus to after the result dialog. */
 let matchOrigin: FocusKey | null = null;
+/** When the last signing happened, to swallow the second click of a double-click. */
+let lastBuyAt = -Infinity;
 
 const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0 });
 
@@ -300,6 +302,10 @@ root.addEventListener('click', (e) => {
       app.marketRole = el.dataset.role as Role | 'ALL';
       break;
     case 'buy': {
+      // The table re-renders after a signing, so a double-click would land on the
+      // next row's Sign button and buy a second player by accident.
+      if (performance.now() - lastBuyAt < 500) return;
+      lastBuyAt = performance.now();
       const r = buyPlayer(s, id);
       toast(r.message, r.ok);
       if (r.ok) persist();
