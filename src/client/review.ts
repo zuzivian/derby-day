@@ -64,6 +64,9 @@ function section(title: string, body: string): string {
   return `<section class="rv-section"><h3 class="eyebrow">${title}</h3>${body}</section>`;
 }
 
+/** True while the season review dialog should be on screen. */
+export const reviewOpen = (s: Save): boolean => !!s.review && !s.review.seen;
+
 export function reviewModal(app: App): string {
   const s = app.save;
   const rv = s.review;
@@ -72,7 +75,7 @@ export function reviewModal(app: App): string {
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
     <div class="modal-card review-card">
       <div class="eyebrow">End of season</div>
-      <h2 id="review-title" class="review-title">Season ${rv.year} review</h2>
+      <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
       ${recordSection(rv)}
       ${section('Who changed', changesBody(rv))}
       ${rv.retired.length ? section('Retirements', `<ul class="rv-list">${rv.retired.map((e) => `<li class="rv-row"><span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age}</span></span><span class="rv-nums muted">OVR ${e.overall}</span></li>`).join('')}</ul>`) : ''}

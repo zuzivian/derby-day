@@ -167,7 +167,10 @@ export class PitchRenderer {
       ctx.beginPath();
       ctx.arc(p.pos.x, p.pos.y, PLAYER_R, 0, Math.PI * 2);
       ctx.fill();
+      // Away players get a dashed rim so the teams differ by shape, not only by colour.
+      if (p.team === 1) ctx.setLineDash([0.34, 0.2]);
       ctx.stroke();
+      ctx.setLineDash([]);
       // Facing notch
       ctx.fillStyle = ctx.strokeStyle;
       ctx.beginPath();

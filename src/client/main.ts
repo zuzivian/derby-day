@@ -7,10 +7,13 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
+import { captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { mountMatch } from './matchView.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
-import { reviewAction } from './review.ts';
+import { reviewAction, reviewOpen } from './review.ts';
+import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
+import { mountTutorial } from './tutorial.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
@@ -25,7 +28,6 @@ function boot(save: Save): App {
     save,
     screen: 'club',
     nextOpp: pickOpponent(save),
-    toast: null,
     trainee: null,
     marketRole: 'ALL',
     confirmSell: null,
@@ -35,18 +37,25 @@ function boot(save: Save): App {
   };
 }
 
-let app = boot(loadSave() ?? newGame(freshSeed()));
+initLiveRegions();
+const existing = loadSave();
+let app = boot(existing ?? newGame(freshSeed()));
+// First run (no save) gets setup; an older save that predates setup skips it.
+if (!existing) app.prefs.onboarded = false;
+else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
+writePrefs(app.prefs);
 let saved = writeSave(app.save);
-let toastTimer = 0;
-let inMatch = false;
+/** True while a match, setup or the training ground owns #app. */
+let takeover = false;
+/** Where focus goes after the next render, when it isn't simply "where it was". */
+let pendingFocus: FocusKey | null = null;
+/** The control that started the last match, to return focus to after the result dialog. */
+let matchOrigin: FocusKey | null = null;
+
+const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0 });
 
 function toast(text: string, ok = true) {
-  app.toast = { text, ok };
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    app.toast = null;
-    render();
-  }, 3200);
+  showToast(text, ok);
 }
 
 function persist() {
@@ -55,7 +64,7 @@ function persist() {
 }
 
 function render() {
-  if (inMatch) return;
+  if (takeover) return;
   const screens: Record<Screen, (a: App) => string> = {
     club: clubScreen,
     squad: squadScreen,
@@ -64,7 +73,62 @@ function render() {
     ladder: ladderScreen,
     competitions: competitionsScreen,
   };
+  const hadResult = !!root.querySelector('#result-title');
+  const hadReview = !!root.querySelector('#review-title');
+  const key = pendingFocus ?? captureFocus(root);
+  pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
+  if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
+  else if (!app.result && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
+  else restoreFocus(root, key, '#main');
+}
+
+function focusMain() {
+  root.querySelector<HTMLElement>('#main')?.focus();
+}
+
+function startOnboarding() {
+  takeover = true;
+  hideToast();
+  const stop = mountOnboarding(root, {
+    save: app.save,
+    prefs: app.prefs,
+    nextOpp: app.nextOpp,
+    persist,
+    savePrefs: () => writePrefs(app.prefs),
+    onDone: () => {
+      stop();
+      takeover = false;
+      app.prefs.onboarded = true;
+      writePrefs(app.prefs);
+      app.screen = 'club';
+      render();
+      focusMain();
+    },
+  });
+}
+
+function startTraining() {
+  const s = app.save;
+  if (s.lineup.filter(Boolean).length < 6) {
+    toast('Pick six players first.', false);
+    return;
+  }
+  takeover = true;
+  hideToast();
+  window.scrollTo({ top: 0 });
+  const stop = mountTutorial(root, {
+    home: toTeamSetup(s.club, s.squad, s.lineup, 0.6),
+    controls: app.prefs.controls,
+    headingLevel: 1,
+    onDone: (completed) => {
+      stop();
+      takeover = false;
+      pendingFocus = keyFor({ action: 'replay-tutorial' });
+      render();
+      if (completed) toast('Training done.');
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -103,8 +167,9 @@ function playLive(
   const home = toTeamSetup(s.club, s.squad, s.lineup, 0.6);
   const away = avoidClash(home, opponent);
   const seed = int(s.rng, 1, 2 ** 31 - 1);
-  inMatch = true;
-  app.toast = null;
+  matchOrigin = captureFocus(root) ?? keyFor({ action: 'play-ranked' });
+  takeover = true;
+  hideToast();
   const unmount = mountMatch(root, {
     seed,
     home,
@@ -114,9 +179,10 @@ function playLive(
     crests: [s.club.crest, crest],
     label,
     forfeitText,
+    controls: app.prefs.controls,
     onEnd: (m, forfeited) => {
       unmount();
-      inMatch = false;
+      takeover = false;
       onDone(m, forfeited, away);
     },
   });
@@ -174,7 +240,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
 
 root.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
-  if (!el) return;
+  if (!el || takeover) return;
   const s = app.save;
   const id = el.dataset.id ?? '';
   const action = el.dataset.action;
@@ -182,6 +248,7 @@ root.addEventListener('click', (e) => {
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
   if (action?.startsWith('review-')) {
     reviewAction(action, el, { app, toast, persist });
+    if (action === 'review-close') pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
     render();
     return;
   }
@@ -191,9 +258,17 @@ root.addEventListener('click', (e) => {
   }
 
   switch (action) {
+    case 'skip-to-main':
+      e.preventDefault();
+      focusMain();
+      return;
     case 'nav':
       app.screen = el.dataset.screen as Screen;
+      pendingFocus = focusKeyOf(el, root);
       break;
+    case 'replay-tutorial':
+      startTraining();
+      return;
     case 'play-ranked':
       startMatch(true, app.nextOpp);
       return;
@@ -243,13 +318,16 @@ root.addEventListener('click', (e) => {
     case 'reset-confirm':
       clearSave();
       app = boot(newGame(freshSeed()));
+      app.prefs.onboarded = true;
       persist();
+      pendingFocus = keyFor({ action: 'reset' });
       toast(`${app.save.club.name} founded.`);
       break;
     case 'reset-cancel':
       break;
     case 'close-result':
       app.result = null;
+      pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     default:
       return;
@@ -269,5 +347,39 @@ root.addEventListener('change', (e) => {
   }
 });
 
-render();
+// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result or season review dialog.
+root.addEventListener('keydown', (e) => {
+  if (takeover) return;
+  const t = e.target as HTMLElement;
+  if (t.getAttribute('role') === 'tab') {
+    const tabs = [...root.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const to = tabFromKey(e, tabs);
+    if (to && to !== t) {
+      app.screen = to.dataset.screen as Screen;
+      app.confirmSell = null;
+      app.confirmReset = false;
+      pendingFocus = focusKeyOf(to, root);
+      render();
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  const review = !app.result && reviewOpen(app.save);
+  if (takeover || (!app.result && !review)) return;
+  const modal = root.querySelector<HTMLElement>('.modal');
+  if (!modal) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (app.result) app.result = null;
+    else {
+      app.save.review!.seen = true;
+      persist();
+    }
+    pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
+    render();
+  } else trapTab(modal, e);
+});
+
+if (app.prefs.onboarded === false) startOnboarding();
+else render();
 if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

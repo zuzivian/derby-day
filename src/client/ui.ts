@@ -9,7 +9,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { crestSvg } from './crest.ts';
-import { academyPanel, reviewButton, reviewModal } from './review.ts';
+import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
 
 export type Screen = 'club' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions';
@@ -37,7 +37,6 @@ export interface App {
   save: Save;
   screen: Screen;
   nextOpp: LadderClub;
-  toast: { text: string; ok: boolean } | null;
   trainee: string | null;
   marketRole: Role | 'ALL';
   confirmSell: string | null;
@@ -71,9 +70,12 @@ function rankOf(save: Save): number {
 export function shell(app: App, body: string): string {
   const s = app.save;
   const c = s.club;
+  // While the result or season review dialog is open everything behind it is inert, so focus can't leave it.
+  const inert = app.result || reviewOpen(app.save) ? ' inert' : '';
   return `
-  <header class="topbar">
-    <div class="brand"><span class="wordmark">Overlap</span><span class="tagline">Run the club. Play the match.</span></div>
+  <a class="skip-link" href="#main" data-action="skip-to-main"${inert}>Skip to main content</a>
+  <header class="topbar"${inert}>
+    <div class="brand"><h1 class="wordmark">Overlap</h1><span class="tagline">Run the club. Play the match.</span></div>
     <div class="club-chip">
       ${crestSvg(c, 34)}
       <div class="club-chip-text">
@@ -82,11 +84,13 @@ export function shell(app: App, body: string): string {
       </div>
     </div>
   </header>
-  <nav class="tabs" aria-label="Sections">
-    ${TABS.map((t) => `<button class="tab${app.screen === t.id ? ' on' : ''}" data-action="nav" data-screen="${t.id}" ${app.screen === t.id ? 'aria-current="page"' : ''}>${t.label}</button>`).join('')}
-  </nav>
-  <main class="screen">${body}</main>
-  ${app.toast ? `<div class="toast ${app.toast.ok ? 'ok' : 'bad'}" role="status">${esc(app.toast.text)}</div>` : ''}
+  <div class="tabs" role="tablist" aria-label="Sections"${inert}>
+    ${TABS.map((t) => {
+      const on = app.screen === t.id;
+      return `<button class="tab${on ? ' on' : ''}" role="tab" id="tab-${t.id}" aria-controls="panel" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-action="nav" data-screen="${t.id}"${on ? ' aria-current="page"' : ''}>${t.label}</button>`;
+    }).join('')}
+  </div>
+  <main id="main" class="screen" tabindex="-1"${inert}><div id="panel" role="tabpanel" aria-labelledby="tab-${app.screen}">${body}</div></main>
   ${app.result ? resultModal(app) : reviewModal(app)}`;
 }
 
@@ -136,14 +140,14 @@ export function clubScreen(app: App): string {
   return `
   <div class="club-grid">
     <article class="panel fixture">
-      <div class="eyebrow">Next ranked match</div>
+      <h2 class="eyebrow">Next ranked match</h2>
       <div class="versus">
         <div class="side">${crestSvg(s.club, 64)}<div class="side-name">${esc(s.club.name)}</div><div class="side-elo">Elo ${s.club.elo}</div></div>
         <div class="vs">vs</div>
         <div class="side">${crestSvg(opp, 64)}<div class="side-name">${esc(opp.name)}</div><div class="side-elo">Elo ${opp.elo}</div></div>
       </div>
-      <div class="odds" aria-label="Win expectancy ${Math.round(p * 100)} percent">
-        <div class="odds-bar"><span style="width:${Math.round(p * 100)}%"></span></div>
+      <div class="odds">
+        <div class="odds-bar" aria-hidden="true"><span style="width:${Math.round(p * 100)}%"></span></div>
         <div class="odds-labels"><span>Expected score ${Math.round(p * 100)}%</span><span>Win +${winGain} · Lose −${lossCost}</span></div>
       </div>
       <dl class="facts">
@@ -167,19 +171,20 @@ export function clubScreen(app: App): string {
     </article>
 
     <article class="panel form">
-      <div class="eyebrow">Elo</div>
+      <h2 class="eyebrow">Elo</h2>
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
       ${sparkline(s.eloHistory)}
-      <div class="eyebrow">Recent</div>
+      <h3 class="eyebrow">Recent</h3>
       ${formChips(s)}
     </article>
 
     <article class="panel news">
-      <div class="eyebrow">Club news · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</div>
+      <h2 class="eyebrow">Club news · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
         ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
         ${reviewButton(app)}
+        <button class="btn small" data-action="replay-tutorial">Replay tutorial</button>
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
@@ -232,12 +237,12 @@ export function squadScreen(app: App): string {
   <div class="squad-grid">
     ${academyPanel(app)}
     <article class="panel board">
-      <div class="board-head"><div class="eyebrow">Lineup · 1-2-2-1 · attacking →</div><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Lineup · 1-2-2-1 · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best six</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
     <article class="panel">
-      <div class="eyebrow">Squad · ${s.squad.length}/${MAX_SQUAD}</div>
+      <h2 class="eyebrow">Squad · ${s.squad.length}/${MAX_SQUAD}</h2>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => FORMATION.findIndex((f) => f.role === a.role) - FORMATION.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
@@ -257,27 +262,27 @@ export function transfersScreen(app: App): string {
   <div class="stack">
     <article class="panel">
       <div class="board-head">
-        <div class="eyebrow">Transfer market · refreshes after every ranked match</div>
-        <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
+        <h2 class="eyebrow">Transfer market · refreshes after every ranked match</h2>
+        <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Price</th><th></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
-          return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
+          return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
         }).join('') : `<tr><td colspan="16" class="muted">Nobody at that position right now.</td></tr>`}</tbody>
       </table></div>
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${MAX_SQUAD}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
     <article class="panel">
-      <div class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</div>
+      <h2 class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</h2>
       <div class="table-scroll"><table class="tbl compact">
         <thead><tr><th class="num">#</th><th>Name</th><th>Pos</th><th class="num">Age</th><th class="num">OVR</th><th class="num">Offer</th><th></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num">${p.number}</td><td class="name">${esc(fullName(p))}</td><td><span class="pos pos-${p.role}">${p.role}</span></td><td class="num">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}">Confirm sale</button>`
-            : `<button class="btn small" data-action="sell" data-id="${p.id}">Sell</button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm sale</button>`
+            : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
         }</td></tr>`).join('')}</tbody>
       </table></div>
     </article>
@@ -293,8 +298,8 @@ export function trainingScreen(app: App): string {
   return `
   <div class="training-grid">
     <article class="panel roster">
-      <div class="eyebrow">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left · ranked win +3, other results +2, friendlies +1</div>
-      <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}">
+      <h2 class="eyebrow">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left · ranked win +3, other results +2, friendlies +1</h2>
+      <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
         <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
     </article>
@@ -306,9 +311,9 @@ export function trainingScreen(app: App): string {
       </div>
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>
-        <span class="bar"><span style="width:${p.attrs[k]}%"></span></span>
+        <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>
         <span class="attr-val">${p.attrs[k]}</span>
-        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}"${s.trainingPoints > 0 ? '' : ' aria-disabled="true"'}>Train</button>
+        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="Train ${ATTR_NAME[k].toLowerCase()}"${s.trainingPoints > 0 ? '' : ' aria-disabled="true"'}>Train</button>
       </li>`).join('')}</ul>
       <p class="muted small">Under-21s grow fastest. A player at their potential rarely improves, so spend sessions on the young ones.</p>
     </article>
@@ -321,7 +326,7 @@ export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
   return `
   <article class="panel">
-    <div class="eyebrow">Ladder · ranked by Elo · CPU clubs also play each other between your matches</div>
+    <h2 class="eyebrow">Ladder · ranked by Elo · CPU clubs also play each other between your matches</h2>
     <div class="table-scroll"><table class="tbl ladder">
       <thead><tr><th class="num">Pos</th><th>Club</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
@@ -341,7 +346,7 @@ function resultModal(app: App): string {
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
     <div class="modal-card">
       <div class="eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · full-time${r.forfeited ? ' · forfeited' : ''}</div>
-      <h2 id="result-title" class="result-title">${outcome}</h2>
+      <h2 id="result-title" class="result-title" tabindex="-1">${outcome}</h2>
       <div class="result-score">
         <div class="side">${crestSvg(c, 44)}<span>${esc(c.short)}</span></div>
         <div class="big-score">${r.gf}<span>–</span>${r.ga}</div>
