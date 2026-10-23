@@ -209,11 +209,12 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const s = app.save;
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
-  const scorersFor = m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-  const scorersAgainst = m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+  // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
+  const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
-  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor);
+  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,

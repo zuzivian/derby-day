@@ -211,6 +211,8 @@ export function applyResult(
   scorers: string[],
   /** For a non-ranked competition match: what it was, e.g. "Cup final". Recorded in history and news. */
   competition?: string,
+  /** Left the match early. The result and Elo stand, but it pays no money, sessions or development. */
+  forfeited = false,
 ): ResultSummary {
   const c = save.club;
   const eloBefore = c.elo;
@@ -226,13 +228,14 @@ export function applyResult(
     tallyRecord(opponent, goalsAgainst, goalsFor);
     const win = goalsFor > goalsAgainst;
     const draw = goalsFor === goalsAgainst;
-    money = (win ? 120_000 : draw ? 50_000 : 20_000) + goalsFor * 5_000;
+    money = forfeited ? 0 : (win ? 120_000 : draw ? 50_000 : 20_000) + goalsFor * 5_000;
     tp = win ? 3 : 2;
     save.budget += money;
     save.eloHistory.push(c.elo);
     simulateLadderRound(save, opponent.id);
     refreshMarket(save);
   }
+  if (forfeited) tp = 0;
   save.trainingPoints += tp;
 
   // One week passes per ranked or competition match; friendlies don't move the calendar.
@@ -245,6 +248,7 @@ export function applyResult(
     const p = save.squad.find((x) => x.id === id);
     if (!p) continue;
     if (p.scout) p.scout--; // scouting fog lifts as a prospect plays
+    if (forfeited) continue;
     const pGrow = p.age < 21 ? 0.35 : p.age <= 25 ? 0.2 : 0.08;
     if (overall(p) < p.potential && chance(save.rng, pGrow)) {
       const attr = pick(save.rng, ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK'));

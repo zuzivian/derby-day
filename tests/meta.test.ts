@@ -96,3 +96,19 @@ describe('club loop', () => {
     expect(overall(gk)).toBeGreaterThan(30);
   });
 });
+
+describe('forfeits', () => {
+  test('a ranked forfeit costs Elo but pays no money, sessions or development', () => {
+    const s = newGame(41);
+    const opp = s.ladder[0];
+    const budget = s.budget;
+    const sessions = s.trainingPoints;
+    const attrs = JSON.stringify(s.squad.map((p) => p.attrs));
+    const r = applyResult(s, opp, opp, 0, 3, true, [], undefined, true);
+    expect(r.eloDelta).toBeLessThan(0);
+    expect(s.budget).toBe(budget);
+    expect(s.trainingPoints).toBe(sessions);
+    expect(r.money).toBe(0);
+    expect(JSON.stringify(s.squad.map((p) => p.attrs))).toBe(attrs);
+  });
+});

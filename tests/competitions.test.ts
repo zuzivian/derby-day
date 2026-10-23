@@ -231,3 +231,27 @@ describe('saves', () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal)).toEqual(['1st', '2nd', '3rd', '4th', '11th', '12th', '13th', '21st', '22nd']);
   });
 });
+
+describe('competition forfeits', () => {
+  // Regression: forfeiting a cup quarter-final still paid its prize and two
+  // sessions, so start → forfeit → restart could be farmed with no Elo cost.
+  test('forfeiting a cup tie knocks you out and pays nothing', () => {
+    const s = newGame(8);
+    const budget = s.budget;
+    const sessions = s.trainingPoints;
+    startCup(s);
+    const out = recordCupMatch(s, 0, 3, [], fakeSim, true);
+    expect(isOut(s, s.cup!)).toBe(true);
+    expect(out.summary.money).toBe(0);
+    expect(s.budget).toBe(budget);
+    expect(s.trainingPoints).toBe(sessions);
+  });
+
+  test('a forfeited league match pays no session', () => {
+    const s = newGame(9);
+    const sessions = s.trainingPoints;
+    startSeason(s);
+    recordSeasonMatch(s, 0, 3, [], fakeSim, true);
+    expect(s.trainingPoints).toBe(sessions);
+  });
+});

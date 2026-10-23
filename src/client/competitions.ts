@@ -336,11 +336,12 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   return ctx.playLive(away, opp.crest, label, (m, forfeited, shown) => {
     let [gf, ga] = m.score;
     if (forfeited) [gf, ga] = [0, Math.max(3, ga)];
-    const scorersFor = m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-    const scorersAgainst = m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+    // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
+    const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+    const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
-    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor) : recordSeasonMatch(s, gf, ga, scorersFor);
+    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);
     maybeRollover(s); // after the whole round is recorded, so the CPU ties used this year's squads
     ctx.app.result = {
       ranked: false,
