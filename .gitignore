@@ -46,3 +46,6 @@ tags
 # Build output
 node_modules/
 dist/
+
+# Agent worktrees
+.claude/worktrees/
