@@ -1,8 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { generateLadder, generateSquad, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
+import { leadTarget } from '../src/sim/ai.ts';
+import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { chipPlan, throughTarget } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, simulate, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
-import type { HumanInput } from '../src/sim/types.ts';
+import type { HumanInput, MatchState } from '../src/sim/types.ts';
+import { dot, len, norm, sub } from '../src/sim/vec.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -54,5 +58,249 @@ describe('match sim', () => {
       if (s.score[1] > s.score[0]) weakWins++;
     }
     expect(strongWins).toBeGreaterThan(weakWins);
+  });
+});
+
+function livePlay(seed = 5): MatchState {
+  const s = createMatch({ seed, ...teams(7), halfSeconds: 60 });
+  while (s.phase !== 'play') step(s);
+  return s;
+}
+
+describe('sprint', () => {
+  test('sprinting is about 18% faster than running and costs energy', () => {
+    const peak = (sprint: boolean) => {
+      const s = livePlay();
+      const me = s.players[s.controlled];
+      let top = 0;
+      for (let t = 0; t < 100; t++) {
+        step(s, { cursor: { x: me.pos.x + 30 * (me.team === 0 ? 1 : -1), y: me.pos.y }, sprint });
+        top = Math.max(top, len(s.players[s.controlled].vel));
+      }
+      return { top, energy: s.players[s.controlled].energy };
+    };
+    const run = peak(false);
+    const sprint = peak(true);
+    expect(sprint.top / run.top).toBeGreaterThan(1.12);
+    expect(sprint.top / run.top).toBeLessThan(1.22);
+    expect(sprint.energy).toBeLessThan(run.energy);
+  });
+
+  test('a long sprint runs the legs flat, then locks until recovered', () => {
+    const s = livePlay();
+    const id = s.controlled;
+    let sawWinded = false;
+    for (let t = 0; t < 60 * 20; t++) {
+      const me = s.players[id];
+      for (const p of s.players) if (p.i !== id) p.stun = 1000; // keep control on this player
+      // Zig-zag across the pitch so the player never stops against a board.
+      const x = (Math.floor(t / 90) % 2 === 0 ? 50 : 14);
+      step(s, { cursor: { x, y: PITCH_H / 2 }, sprint: true });
+      if (s.players[id].winded) {
+        sawWinded = true;
+        expect(s.players[id].sprinting).toBe(false);
+      }
+      expect(me.energy).toBeGreaterThanOrEqual(0.4);
+    }
+    expect(sawWinded).toBe(true);
+  });
+});
+
+describe('through ball', () => {
+  test('leads the receiver further along their run than a normal pass', () => {
+    const s = livePlay();
+    const from = s.players[s.controlled];
+    const mate = s.players.find((p) => p.team === from.team && p.role === 'MID')!;
+    mate.pos = { x: 30, y: 12 };
+    mate.vel = { x: 6, y: 0 };
+    const feet = leadTarget(from.pos, mate, from.attrs.passing);
+    const through = throughTarget(from.pos, mate, from.attrs.passing);
+    const run = norm(mate.vel);
+    const ahead = (p: { x: number; y: number }) => dot(sub(p, mate.pos), run);
+    expect(ahead(through)).toBeGreaterThan(ahead(feet) + 2);
+    expect(ahead(through)).toBeGreaterThan(5);
+    expect(through.x).toBeLessThanOrEqual(PITCH_W);
+  });
+
+  test('a human through ball is aimed past the receiver, and still reaches a teammate', () => {
+    const s = livePlay();
+    const me = s.players[s.controlled];
+    const mate = s.players.find((p) => p.team === me.team && p.role === 'MID')!;
+    mate.pos = { x: me.pos.x + 8, y: me.pos.y + 4 };
+    mate.vel = { x: 6, y: 0 };
+    mate.stun = 0;
+    step(s, { cursor: mate.pos, pass: true, through: true });
+    expect(s.ball.receiver).toBe(mate.i);
+    const want = throughTarget(me.pos, mate, me.attrs.passing);
+    const aimed = norm(s.ball.vel);
+    const toTarget = norm(sub(want, s.ball.pos));
+    expect(dot(aimed, toTarget)).toBeGreaterThan(0.97);
+  });
+});
+
+describe('chip and ball height', () => {
+  test('a chip goes up, comes down, bounces with damping and z is never negative', () => {
+    const s = livePlay();
+    const me = s.players[s.controlled];
+    const target = { x: me.pos.x + 12 * (me.team === 0 ? 1 : -1), y: me.pos.y };
+    step(s, { cursor: target, shoot: 0.7, chip: true });
+    expect(s.ball.vz).toBeGreaterThan(3);
+    let peak = 0;
+    let lands = 0;
+    let wasAir = false;
+    for (let t = 0; t < 400; t++) {
+      s.players.forEach((p) => (p.stun = 1000)); // nobody interferes
+      step(s);
+      expect(s.ball.z).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(s.ball.z)).toBe(true);
+      peak = Math.max(peak, s.ball.z);
+      if (s.ball.z > 0) wasAir = true;
+      else if (wasAir) {
+        lands++;
+        wasAir = false;
+      }
+    }
+    expect(peak).toBeGreaterThan(1.5);
+    expect(lands).toBeGreaterThanOrEqual(2); // the bounce counts
+    expect(s.ball.z).toBe(0);
+    expect(s.ball.vz).toBe(0);
+  });
+
+  test('bounces lose height each time', () => {
+    const s = livePlay();
+    s.players.forEach((p) => (p.stun = 100000));
+    s.ball.owner = -1;
+    s.ball.pos = { x: 32, y: 20 };
+    s.ball.vel = { x: 0, y: 0 };
+    s.ball.z = 4;
+    const peaks: number[] = [];
+    let prev = s.ball.z;
+    let rising = false;
+    for (let t = 0; t < 300; t++) {
+      step(s);
+      expect(s.ball.z).toBeGreaterThanOrEqual(0);
+      if (s.ball.z > prev) rising = true;
+      else if (rising && s.ball.z < prev) {
+        peaks.push(prev);
+        rising = false;
+      }
+      prev = s.ball.z;
+    }
+    expect(peaks.length).toBeGreaterThanOrEqual(2);
+    for (let i = 1; i < peaks.length; i++) expect(peaks[i]).toBeLessThan(peaks[i - 1]);
+  });
+
+  test('chip lands near the target when it is in range, and short when power is low', () => {
+    const from = { x: 20, y: 20 };
+    const near = chipPlan(from, { x: 32, y: 20 }, 0.8);
+    expect(Math.abs(near.landing.x - 32)).toBeLessThan(0.01);
+    const short = chipPlan(from, { x: 60, y: 20 }, 0.1);
+    expect(short.landing.x).toBeLessThan(32);
+  });
+
+  test('a high ball cannot be taken, a low one can', () => {
+    const s = livePlay();
+    const opp = s.players.find((p) => p.team === 1 && p.role === 'MID')!;
+    s.players.forEach((p) => (p.stun = p === opp ? 0 : 100000));
+    const drop = (z: number) => {
+      s.ball.owner = -1;
+      s.ball.receiver = -1;
+      s.ball.noPickup.fill(0);
+      s.ball.pos = { ...opp.pos };
+      s.ball.vel = { x: 0, y: 0 };
+      s.ball.z = z;
+      s.ball.vz = 0;
+      step(s);
+      return s.ball.owner;
+    };
+    expect(drop(2.0)).toBe(-1);
+    expect(drop(0.6)).toBe(opp.i);
+  });
+
+  test('first touch settles the ball into the feet instead of snapping', () => {
+    const s = livePlay();
+    const me = s.players[s.controlled];
+    s.players.forEach((p) => {
+      if (p !== me) p.stun = 100000;
+    });
+    s.ball.owner = -1;
+    s.ball.noPickup.fill(0);
+    s.ball.pos = { x: me.pos.x + 1.0, y: me.pos.y };
+    s.ball.vel = { x: -9, y: 0 };
+    const jumps: number[] = [];
+    let last = { ...s.ball.pos };
+    for (let t = 0; t < 14; t++) {
+      step(s, { cursor: me.pos });
+      jumps.push(len(sub(s.ball.pos, last)));
+      last = { ...s.ball.pos };
+    }
+    expect(s.ball.owner).toBe(me.i);
+    expect(Math.max(...jumps)).toBeLessThan(0.45);
+  });
+});
+
+describe('determinism with the new inputs', () => {
+  test('sprint, through balls and chips replay identically', () => {
+    const run = () => {
+      const s = createMatch({ seed: 11, ...teams(4), halfSeconds: 20 });
+      for (let t = 0; t < 3600; t++) {
+        const i: HumanInput = { cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 50) }, sprint: t % 300 < 200 };
+        if (t % 80 === 0) Object.assign(i, { pass: true, through: t % 160 === 0 });
+        if (t % 130 === 0) Object.assign(i, { shoot: 0.3 + (t % 7) / 10, chip: t % 260 === 0 });
+        step(s, i);
+      }
+      return fingerprint(s);
+    };
+    expect(run()).toBe(run());
+  });
+});
+
+describe('chip landing and point-blank chips', () => {
+  test('the first bounce is where chipPlan said it would be', () => {
+    const s = livePlay();
+    const me = s.players[s.controlled];
+    const target = { x: me.pos.x + 14 * (me.team === 0 ? 1 : -1), y: me.pos.y + 3 };
+    const plan = chipPlan(s.ball.pos, target, 1);
+    step(s, { cursor: target, shoot: 1, chip: true });
+    let touchdown: { x: number; y: number } | null = null;
+    for (let t = 0; t < 200 && !touchdown; t++) {
+      s.players.forEach((p) => (p.stun = 1000));
+      step(s);
+      if (s.ball.z === 0) touchdown = { ...s.ball.pos };
+    }
+    expect(touchdown).not.toBeNull();
+    expect(len(sub(touchdown!, plan.landing))).toBeLessThan(2.5);
+  });
+
+  test('a defender touching the ball cannot take a chip', () => {
+    const s = livePlay();
+    const me = s.players[s.controlled];
+    const opp = s.players.find((p) => p.team !== me.team && p.role === 'MID')!;
+    s.players.forEach((p) => {
+      if (p !== me && p !== opp) p.stun = 100000;
+    });
+    opp.pos = { x: s.ball.pos.x + 0.9 * (me.team === 0 ? 1 : -1), y: s.ball.pos.y };
+    opp.vel = { x: 0, y: 0 };
+    step(s, { cursor: { x: opp.pos.x + 10 * (me.team === 0 ? 1 : -1), y: opp.pos.y }, shoot: 0.8, chip: true });
+    for (let t = 0; t < 8; t++) {
+      step(s, { cursor: opp.pos });
+      expect(s.ball.owner).not.toBe(opp.i);
+    }
+  });
+});
+
+describe('kick-off', () => {
+  test('the ball is not frozen: play moves it within two seconds', () => {
+    for (const seed of [1, 2, 3]) {
+      const s = createMatch({ seed, ...teams(7), humanTeam: -1, halfSeconds: 30 });
+      while (s.phase !== 'play') step(s);
+      const start = { ...s.ball.pos };
+      let moved = 0;
+      for (let t = 0; t < 120; t++) {
+        step(s);
+        moved = Math.max(moved, len(sub(s.ball.pos, start)));
+      }
+      expect(moved).toBeGreaterThan(3);
+    }
   });
 });

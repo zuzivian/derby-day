@@ -23,10 +23,13 @@ Install Bun with `curl -fsSL https://bun.sh/install | bash` (no sudo needed). Th
 | Pass (with the ball) | Left click toward a teammate or space | Space |
 | Tackle (without the ball) | Left click | Space |
 | Shoot | Hold right button, release | Hold F, release |
+| Sprint | Hold Shift or the middle button (+18% top speed, drains stamina) | Hold Shift |
+| Through ball | Ctrl/Cmd + left click: into space ahead of the receiver | R |
+| Chip (lofted) | Ctrl/Cmd + hold right button, release: lands at the pointer, charge sets the range | Hold C, release |
 | Switch player | Right click | E |
 | Pause | Esc or P | Esc or P |
 
-The dotted line shows where a click would pass right now. Phones get on-screen Pass and Shoot buttons.
+The dotted line shows where a click would pass right now; hold Ctrl/Cmd and a yellow diamond shows where a through ball would land, and while charging a chip a blue ring and arc show where it will come down. The bar under your player is stamina: sprint empties it, and when it is red you are winded until it refills. A chipped ball can't be taken by outfield players while it is above 1.2 m; keepers can reach it in their box up to 2.1 m, and over the bar is not a goal. Phones get on-screen Pass and Shoot buttons.
 
 ## Code layout
 

@@ -45,6 +45,10 @@ export interface MatchPlayer {
   vel: Vec;
   facing: Vec;
   energy: number;
+  /** True on ticks where the player is actually sprinting (asked to, and has the legs for it). */
+  sprinting: boolean;
+  /** Out of breath: sprint is locked until energy recovers. */
+  winded: boolean;
   stun: number;
   tackleCd: number;
   kickCd: number;
@@ -63,6 +67,12 @@ export interface Ball {
   receiver: number;
   passFrom: number;
   noPickup: number[];
+  /** Height above the floor in metres. 0 while rolling or held. Never negative. */
+  z: number;
+  /** Vertical velocity, m/s. */
+  vz: number;
+  /** Ticks left of the first-touch cushion after a player takes the ball. */
+  touch: number;
 }
 
 export type Phase = 'kickoff' | 'play' | 'goal' | 'halftime' | 'fulltime';
@@ -117,16 +127,27 @@ export interface HumanInput {
   pass?: boolean;
   /** With the ball: shoot with this power, 0..1. */
   shoot?: number;
+  /** Sprint while held: +18% top speed, drains energy. */
+  sprint?: boolean;
+  /** With `pass`: play the ball into space ahead of the receiver instead of to feet. */
+  through?: boolean;
+  /** With `shoot`: chip it (lofted, lands near the target, range set by power). */
+  chip?: boolean;
   switchPlayer?: boolean;
 }
 
 export type Action =
-  | { kind: 'pass'; target: Vec; receiver: number }
+  /** `through`: `target` is already led ahead of the receiver; the ball is played a touch firmer. */
+  | { kind: 'pass'; target: Vec; receiver: number; through?: boolean }
   | { kind: 'shoot'; target: Vec; power: number }
+  /** Lofted ball that lands near `target` (or as far as `power` allows). Pass `chipPlan()` to preview. */
+  | { kind: 'chip'; target: Vec; power: number }
   | { kind: 'tackle'; target: Vec };
 
 export interface Intent {
   move: Vec;
   throttle: number;
+  /** Ask to sprint this tick. Ignored when winded. */
+  sprint?: boolean;
   action?: Action;
 }
