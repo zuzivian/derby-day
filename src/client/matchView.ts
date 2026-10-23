@@ -4,6 +4,7 @@
 import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { MatchState } from '../sim/types.ts';
+import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { InputController } from './input.ts';
@@ -15,6 +16,8 @@ export interface MatchViewOptions extends MatchOptions {
   label: string;
   /** Pause-menu text for leaving early. Defaults by label (ranked forfeits count as 0–3). */
   forfeitText?: string;
+  /** Preferred control style; the input still follows whatever the player touches. */
+  controls?: 'mouse' | 'keys';
   onEnd: (s: MatchState, forfeited: boolean) => void;
 }
 
@@ -34,11 +37,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       <div class="sb-team sb-away"><span class="sb-name">${esc(away.name)}</span>${crestSvg({ ...away, crest: o.crests[1] }, 28)}</div>
     </header>
     <div class="pitch-wrap">
-      <canvas id="pitch" aria-label="Pitch. Move the mouse to run, left click to pass, hold right click to shoot."></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. Mouse: move to run, left click to pass or tackle, hold right button to shoot. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, E to switch, Esc to pause."></canvas>
+      <button class="pitch-pause" id="pause-btn" type="button" aria-keyshortcuts="Escape P">Pause</button>
       <div class="banner" id="banner" hidden></div>
       <div class="pause" id="pause" hidden>
-        <div class="pause-card">
-          <h2>Paused</h2>
+        <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+          <h2 id="pause-title">Paused</h2>
           <div class="pause-actions">
             <button class="btn primary" id="resume">Resume</button>
             <button class="btn" id="forfeit">${esc(o.forfeitText ?? (o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'))}</button>
@@ -59,17 +63,29 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   let paused = false;
   let done = false;
+  let focusBeforePause: HTMLElement | null = null;
   const setPaused = (v: boolean) => {
-    if (done) return;
+    if (done || v === paused) return;
     paused = v;
     $('pause').hidden = !v;
+    if (v) {
+      focusBeforePause = document.activeElement as HTMLElement | null;
+      $('resume').focus();
+      announce('Paused.');
+    } else {
+      (focusBeforePause && root.contains(focusBeforePause) ? focusBeforePause : canvas).focus();
+    }
   };
   const input = new InputController(canvas, renderer, () => s.controlled >= 0 && s.ball.owner === s.controlled, () => setPaused(!paused));
+  if (o.controls) input.mode = o.controls;
   input.bindTouchButtons($('pad-pass'), $('pad-shoot'));
+  $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
   $('forfeit').addEventListener('click', () => finish(true));
   const onVis = () => document.hidden && setPaused(true);
   document.addEventListener('visibilitychange', onVis);
+  const onKey = (e: KeyboardEvent) => paused && trapTab($('pause'), e);
+  document.addEventListener('keydown', onKey);
 
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
@@ -82,6 +98,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let lastGoals = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
+  const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
   function banner(text: string, ms: number) {
     const b = $('banner');
@@ -123,10 +140,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const ev = s.events[s.events.length - 1];
       lastGoals = s.events.length;
       banner(`Goal! ${ev.scorer} ${ev.minute}'`, 2000);
+      announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
       banner('Half-time', 1800);
+      announce(`Half-time. ${scoreLine()}`);
     }
     if (bannerUntil && now > bannerUntil) {
       $('banner').hidden = true;
@@ -134,17 +153,21 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (s.phase === 'fulltime') {
       banner('Full-time', 99999);
+      announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
       cancelAnimationFrame(raf);
     }
   }
   raf = requestAnimationFrame(frame);
+  canvas.focus({ preventScroll: true });
+  announce(`${o.label} match. ${home.name} against ${away.name}. Esc pauses.`);
 
   function dispose() {
     input.dispose();
     juice.dispose();
     ro.disconnect();
     document.removeEventListener('visibilitychange', onVis);
+    document.removeEventListener('keydown', onKey);
   }
   return () => {
     done = true;

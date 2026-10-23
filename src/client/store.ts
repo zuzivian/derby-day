@@ -6,8 +6,13 @@ import { isSave, type Save } from '../meta/game.ts';
 const SAVE_KEY = 'overlap.save.v1';
 const PREFS_KEY = 'overlap.prefs.v1';
 
+export type ControlStyle = 'mouse' | 'keys';
+
 export interface Prefs {
   halfSeconds: number;
+  controls: ControlStyle;
+  /** false while first-run setup is unfinished; missing means an older save that never saw it. */
+  onboarded?: boolean;
 }
 
 export function loadSave(): Save | null {
@@ -41,9 +46,13 @@ export function clearSave(): void {
 export function loadPrefs(): Prefs {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
-    return { halfSeconds: typeof p.halfSeconds === 'number' ? p.halfSeconds : 120 };
+    return {
+      halfSeconds: typeof p.halfSeconds === 'number' ? p.halfSeconds : 120,
+      controls: p.controls === 'keys' ? 'keys' : 'mouse',
+      ...(typeof p.onboarded === 'boolean' ? { onboarded: p.onboarded } : {}),
+    };
   } catch {
-    return { halfSeconds: 120 };
+    return { halfSeconds: 120, controls: 'mouse' };
   }
 }
 
