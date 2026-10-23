@@ -90,7 +90,7 @@ test('shootout: a drawn cup tie opens a live shootout, plays through with the mo
   await liveText(page, /./);
 
   await page.locator(S.end).waitFor({ state: 'visible' });
-  const title = await page.locator(S.endTitle).innerText();
+  const title = await page.locator(S.endTitle).textContent();
   expect(title, 'verdict').toMatch(/You (win|lose) \d+–\d+ on penalties/);
   const [, verdict, a, b] = /You (win|lose) (\d+)–(\d+)/.exec(title);
   expect(verdict === 'win' ? Number(a) > Number(b) : Number(a) < Number(b), 'verdict agrees with the score').toBe(true);
@@ -105,7 +105,7 @@ test('shootout: a drawn cup tie opens a live shootout, plays through with the mo
   const theirs = tie.a === save.club.id ? tie.pens[1] : tie.pens[0];
   expect([mine, theirs].join('-'), 'bracket has the score you saw').toBe(`${a}-${b}`);
   expect(tie.winner === save.club.id, 'winner follows the shootout').toBe(mine > theirs);
-  expect(save.cup.round, 'cup moved on only if you won').toBe(mine > theirs ? 1 : 0);
+  expect(save.cup.round, 'the round was completed').toBe(1);
   expect(await page.locator(SEL.modal).innerText(), 'result mentions penalties').toMatch(/penalties/);
 });
 

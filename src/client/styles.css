@@ -554,7 +554,7 @@ select {
 .shootout { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .so-board { width: min(100%, 820px); display: flex; flex-direction: column; gap: 4px; background: #0f1513; color: #f3f6f1; border-radius: 10px; padding: 8px 14px; position: relative; }
 .so-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 3px 6px; border-radius: 6px; border: 1.5px solid transparent; }
-.so-row.up { border-color: #ffd60a; }
+.so-row.kicking { border-color: #ffd60a; }
 .so-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .so-you { font-family: var(--font-body); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #ffd60a; color: #0f1513; border-radius: 99px; padding: 1px 6px; vertical-align: middle; }
 .so-marks { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }

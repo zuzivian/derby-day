@@ -201,7 +201,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
           return `<li class="so-mark ${m === null ? 'pending' : m ? 'scored' : 'missed'}"${k === nextIdx ? ' aria-current="step"' : ''}><span aria-hidden="true">${sym}</span><span class="visually-hidden">Kick ${k + 1}: ${word}</span></li>`;
         })
         .join('');
-      return `<div class="so-row${turn && turn.side === side ? ' up' : ''}">
+      return `<div class="so-row${turn && turn.side === side ? ' kicking' : ''}">
         ${crestSvg(clubs[i], 26)}
         <span class="so-name">${esc(clubs[i].name)}${i === 0 ? ' <span class="so-you">you</span>' : ''}</span>
         <ol class="so-marks" aria-label="${esc(sideLabel(i))} kicks">${list}</ol>
