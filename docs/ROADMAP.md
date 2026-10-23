@@ -22,15 +22,30 @@ So the roadmap tests feel before building netcode, and plans for low concurrency
 
 ## What the prototype already proves (Phase 0, done)
 
-- **Deterministic sim.** `src/sim` is pure TypeScript: fixed 60 Hz tick, seeded RNG, no DOM, no clock, no `Math.random`. The same seed plus the same input log reproduces a match exactly (tested). That one property unlocks server authority, replays, rollback netcode and bot-driven balance testing.
-- **Inputs are tiny.** A tick of human input is a cursor point plus three flags. That is what a client would send a server.
-- **Mouse-first control.** Your player runs to the pointer; left click passes toward it (auto-picks the teammate in that direction and leads the pass); hold right to charge a shot; right click switches player. Keyboard works too.
-- **A club loop.** Generated squad, attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach. Transfers, training sessions, a 16-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
-- **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at about 1,000× real time. Current numbers over 40 matches: ~3.1 goals, ~23 shots and ~150 completed passes a match; the higher-Elo club won 21, drew 8 and lost 11. A squad rated 70 beats one rated 55 about two times in three.
+As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependencies, and CI (typecheck, ~175 unit tests, a balance guard, ~26 browser tests) runs on every push.
 
-Known gaps: local storage only, CPU opponents only, no fouls or set pieces, no aging, attributes are only lightly tuned.
+**Engine**
+- **Deterministic sim.** `src/sim` is pure TypeScript: fixed 60 Hz tick, seeded RNG, no DOM, no clock, no `Math.random`, `sqrt` instead of `Math.hypot`. The same seed plus the same input log reproduces a match exactly (tested). That one property unlocks server authority, replays, rollback netcode and bot-driven balance testing.
+- **Inputs are tiny.** A tick of human input is a cursor point plus a few flags. A recorded 2×2-minute match with constant mouse movement is about 39 KB as a replay code; an idle one is 1–3 KB.
+- **Replays prove it.** Every match is recorded as its input log and re-simulated for goal highlights, with seeking (keyframes every 600 ticks, warm seeks ~3 ms) and a hash check that warns if the engine changed since recording.
+- **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at well over 1,000× real time. 40 matches average about 2.9 goals, 23 shots and 160 passes; the higher-Elo club wins about four times as often as it loses.
 
-Since then: a smarter CPU (team plans with interception prediction, goal-side marking, support runs, through balls, chips, sprinting, keeper angle play and sweeping; difficulty measured with `scripts/ai-probe.ts`, where identical squads at skill 0.85 beat 0.25 about 80% of the time), and two CPU competitions, an 8-club cup and an 8-club league season, that don't touch ladder Elo. With the new CPU, 40 balance matches average about 2.9 goals, 23 shots and 160 passes, and the favourite wins about four times as often as the underdog.
+**Playing**
+- **Mouse-first control.** Your player runs to the pointer; left click passes toward it (auto-picks the teammate and leads the pass); hold right to shoot; Ctrl/Cmd for through balls and chips; Shift or middle button to sprint on a stamina bar. The ball has height, bounces, and can clear the bar. Full keyboard play works too.
+- **A real CPU.** Team plans with interception prediction, goal-side marking, support runs, through balls, chips, sprinting and a keeper that narrows angles and sweeps. Difficulty is measured: identical squads at skill 0.85 beat 0.25 about 80% of the time.
+- **Sound and feel.** Synthesised kicks, whistles, net and crowd (no audio files), goal shake and confetti, all reduced-motion aware.
+
+**The club**
+- **Loop.** Generated squad with attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach; transfers, training sessions, a 16-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
+- **Competitions.** An 8-club cup (seeded bracket, live penalty shootout when your tie is drawn) and an 8-club league season, neither touching ladder Elo. Forfeits pay nothing, so they can't be farmed.
+- **Time passes.** A 10-match season calendar: ageing curves, retirements from 34, an academy intake with scouting fog on potential, CPU clubs that rise and fall, and a season review.
+- **Original world.** Ten fictional name styles and nations, blocklists against famous real players and clubs.
+
+**First run and access**
+- Five-step onboarding with a coached training-ground tutorial on the real engine, skippable at every step.
+- WCAG 2.1 AA pass: skip link, ARIA tabs, focus restored after every render, live announcements for goals and results, dialogs with focus traps, contrast fixed in both themes, team markers that don't rely on colour alone.
+
+Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; two tabs can overwrite each other); no fouls or set pieces; the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
 
 ## Phase 1: Feel lab (2–4 weeks part-time)
 
