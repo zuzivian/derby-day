@@ -35,7 +35,7 @@ The dotted line shows where a click would pass right now; hold Ctrl/Cmd and a ye
 
 - **Ranked** (Club tab): one match against a ladder club near your Elo. Moves Elo.
 - **Practice** (Club tab): Easy, Normal or Hard CPU. Nothing recorded but a training session.
-- **Cup** (Competitions tab): 8-club knockout, you plus the seven ladder clubs nearest your Elo, seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw goes to penalties (a seeded roll weighted by the takers' shooting and the keepers' goalkeeping). Prize money for every round reached; a win goes in the trophy cabinet.
+- **Cup** (Competitions tab): 8-club knockout, you plus the seven ladder clubs nearest your Elo, seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw you play goes to a live penalty shootout (best of five, then sudden death): as taker, aim with the mouse, hold the left button for power and release (too hard skies it, corners are riskier); as keeper, read the run-up and click left, middle or right to dive. Arrow keys and Space work too, and leaving counts as a loss. Ties between two CPU clubs use a seeded roll weighted by shooting and goalkeeping. Prize money for every round reached; a win goes in the trophy cabinet.
 - **League** (Competitions tab): the same 8 clubs, single round robin over 7 matchdays, 3/1/0 points, then goal difference, then goals scored. Prize money by finishing place; the top two are "promoted".
 
 You play your own cup ties and league fixtures live. The other matches in the round are played by the real headless sim at 60 s a half (about 80 ms each), so results follow the squads. Competition matches pay money, training and player development, but **do not change ladder Elo** or the ladder record. Forfeiting one counts as 0–3.

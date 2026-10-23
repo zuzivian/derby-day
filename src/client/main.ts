@@ -9,6 +9,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
 import { captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { mountMatch } from './matchView.ts';
+import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { mountOnboarding } from './onboarding.ts';
@@ -189,6 +190,20 @@ function playLive(
   return true;
 }
 
+/** Mount the live penalty shootout for a drawn cup tie and hand back its result. */
+function playShootout(opts: Omit<ShootoutViewOptions, 'onEnd'>, onDone: (r: ShootoutResult) => void) {
+  takeover = true;
+  hideToast();
+  const unmount = mountShootout(root, {
+    ...opts,
+    onEnd: (r) => {
+      unmount();
+      takeover = false;
+      onDone(r);
+    },
+  });
+}
+
 function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (typeof PRACTICE)[number]) {
   let away: TeamSetup;
   let crest = opp?.crest ?? 'plain';
@@ -254,7 +269,7 @@ root.addEventListener('click', (e) => {
     return;
   }
   if (action?.startsWith('comp-')) {
-    if (competitionAction(action, el, { app, toast, persist, render, playLive })) render();
+    if (competitionAction(action, el, { app, toast, persist, render, playLive, playShootout })) render();
     return;
   }
 
