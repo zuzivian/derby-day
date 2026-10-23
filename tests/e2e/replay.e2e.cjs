@@ -72,7 +72,12 @@ test('replay: a played match is recorded, listed under Recent, and the viewer dr
   await page.locator(VIEWER).waitFor();
   expect(await page.$eval('#app', (el) => el.inert), 'the app behind is inert').toBe(true);
 
-  const first = await canvasStats(page);
+  // The viewer paints on the next animation frame; give a slow CI runner up to 5 s.
+  let first = await canvasStats(page);
+  for (let i = 0; i < 50 && first.colours <= 6; i++) {
+    await page.waitForTimeout(100);
+    first = await canvasStats(page);
+  }
   expect(first.w, 'canvas sized').toBeGreaterThan(300);
   expect(first.colours, 'canvas has been drawn on (pitch, players, ball)').toBeGreaterThan(6);
 

@@ -77,6 +77,12 @@ async function main() {
         contexts.push(ctx);
         const page = await ctx.newPage();
         page.setDefaultTimeout(20_000);
+        // E2E_CPU_THROTTLE=6 slows the page's CPU like a busy CI runner, to shake out timing races.
+        const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
+        if (throttle > 1) {
+          const cdp = await ctx.newCDPSession(page);
+          await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+        }
         await page.route(FONT_HOST, (route) => route.abort());
         page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
         page.on('console', (m) => {
