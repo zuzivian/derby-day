@@ -11,8 +11,11 @@
 //  - Competition matches do not change ladder Elo or the ladder record. They
 //    pay prize money, training sessions and player development, and are kept
 //    in match history labelled with the competition.
-//  - A drawn cup tie goes to a penalty shootout settled by a seeded roll
-//    weighted by the takers' shooting and the keepers' goalkeeping.
+//  - A drawn cup tie goes to a penalty shootout. Between two CPU clubs it is
+//    settled by a seeded roll weighted by the takers' shooting and the
+//    keepers' goalkeeping; when you are in the tie it is played live
+//    (src/client/shootout.ts, rules in src/meta/shootout.ts) and its score is
+//    passed to recordCupMatch.
 
 import { autoLineup, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from './club.ts';
 import { applyResult, formatMoney, type ResultSummary, type Save } from './game.ts';
@@ -192,11 +195,22 @@ function penaltySideFor(save: Save, id: string): { takers: number[]; keeper: num
   return penaltySquad(squad, autoLineup(squad));
 }
 
-function settleTie(save: Save, cup: Cup, tie: Tie, round: number, index: number): void {
+/** The score of a live shootout you played, from your side. It always has a winner. */
+export interface HumanPens {
+  you: number;
+  opp: number;
+}
+
+function settleTie(save: Save, cup: Cup, tie: Tie, round: number, index: number, humanPens?: HumanPens): void {
   const ga = tie.ga!;
   const gb = tie.gb!;
   if (ga !== gb) {
     tie.winner = ga > gb ? tie.a : tie.b;
+    return;
+  }
+  if (humanPens && humanPens.you !== humanPens.opp && (tie.a === save.club.id || tie.b === save.club.id)) {
+    tie.pens = tie.a === save.club.id ? [humanPens.you, humanPens.opp] : [humanPens.opp, humanPens.you];
+    tie.winner = tie.pens[0] > tie.pens[1] ? tie.a : tie.b;
     return;
   }
   const r = makeRng(subSeed(cup.seed, 'pens', round, index));
@@ -281,9 +295,10 @@ function finishCupRound(save: Save, cup: Cup, sim: QuickSim): void {
 /**
  * Record your live cup match (goals for and against), settle a draw on
  * penalties, play the round's other ties, pay prize money and, if it was the
- * final and you won, add the trophy.
+ * final and you won, add the trophy. A drawn match is settled by `humanPens`
+ * (the live shootout you played) when given, else by the seeded roll.
  */
-export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim): CompOutcome {
+export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, humanPens?: HumanPens): CompOutcome {
   ensureCompetitionFields(save);
   const cup = save.cup;
   if (!cup) throw new Error('No cup in progress');
@@ -293,7 +308,7 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
   const home = tie.a === save.club.id;
   tie.ga = home ? gf : ga;
   tie.gb = home ? ga : gf;
-  settleTie(save, cup, tie, round, cup.rounds[round].indexOf(tie));
+  settleTie(save, cup, tie, round, cup.rounds[round].indexOf(tie), humanPens);
   const won = tie.winner === save.club.id;
   const oppId = home ? tie.b : tie.a;
   const opp = ladderClub(save, oppId);

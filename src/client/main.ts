@@ -8,6 +8,7 @@ import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
 import { mountMatch } from './matchView.ts';
+import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
@@ -120,6 +121,20 @@ function playLive(
   return true;
 }
 
+/** Mount the live penalty shootout for a drawn cup tie and hand back its result. */
+function playShootout(opts: Omit<ShootoutViewOptions, 'onEnd'>, onDone: (r: ShootoutResult) => void) {
+  inMatch = true;
+  app.toast = null;
+  const unmount = mountShootout(root, {
+    ...opts,
+    onEnd: (r) => {
+      unmount();
+      inMatch = false;
+      onDone(r);
+    },
+  });
+}
+
 function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (typeof PRACTICE)[number]) {
   let away: TeamSetup;
   let crest = opp?.crest ?? 'plain';
@@ -177,7 +192,7 @@ root.addEventListener('click', (e) => {
   if (action !== 'sell-confirm' && action !== 'sell') app.confirmSell = null;
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
   if (action?.startsWith('comp-')) {
-    if (competitionAction(action, el, { app, toast, persist, render, playLive })) render();
+    if (competitionAction(action, el, { app, toast, persist, render, playLive, playShootout })) render();
     return;
   }
 

@@ -29,14 +29,18 @@ import {
   yourTie,
   type CompOutcome,
   type Cup,
+  type HumanPens,
   type Season,
   type Tie,
 } from '../meta/competitions.ts';
 import { formatMoney, type Save } from '../meta/game.ts';
+import { penaltySide } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { possessionShare } from '../sim/match.ts';
+import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
+import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
 import { esc, type App } from './ui.ts';
 
 export interface CompContext {
@@ -45,6 +49,8 @@ export interface CompContext {
   persist: () => void;
   render: () => void;
   playLive: (opponent: TeamSetup, crest: CrestPattern, label: string, onDone: (m: MatchState, forfeited: boolean, away: TeamSetup) => void, forfeitText?: string) => boolean;
+  /** Mount the live penalty shootout (blocking re-renders while it runs) and hand back its result. */
+  playShootout: (opts: Omit<ShootoutViewOptions, 'onEnd'>, onDone: (r: ShootoutResult) => void) => void;
 }
 
 const ROUND_PLURAL = ['Quarter-finals', 'Semi-finals', 'Final'];
@@ -332,20 +338,40 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   const label = kind === 'cup' ? `Cup ${CUP_ROUNDS[s.cup!.round].toLowerCase()}` : `League matchday ${s.season!.matchday + 1}`;
   const squad = ladderSquad(opp);
   const away = toTeamSetup(opp, squad, autoLineup(squad));
+  const oppCrest = opp.crest;
   return ctx.playLive(away, opp.crest, label, (m, forfeited, shown) => {
     let [gf, ga] = m.score;
     if (forfeited) [gf, ga] = [0, Math.max(3, ga)];
+    // A drawn cup tie you played goes to a live shootout; the result feeds the bracket.
+    if (kind === 'cup' && !forfeited && gf === ga) {
+      ctx.playShootout(
+        {
+          seed: hashString(`${s.cup!.seed}:live-pens:${s.cup!.round}`) >>> 1,
+          you: penaltySide(s.club.name, s.squad, s.lineup),
+          opp: penaltySide(opp.name, squad, autoLineup(squad)),
+          youClub: s.club,
+          oppClub: opp,
+          label,
+        },
+        (r) => finishMatch(m, forfeited, shown, gf, ga, { you: r.you, opp: r.opp }),
+      );
+      return;
+    }
+    finishMatch(m, forfeited, shown, gf, ga);
+  }, 'Forfeit (counts as 0–3)');
+
+  function finishMatch(m: MatchState, forfeited: boolean, shown: TeamSetup, gf: number, ga: number, pens?: HumanPens) {
     const scorersFor = m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
     const scorersAgainst = m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
-    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor) : recordSeasonMatch(s, gf, ga, scorersFor);
+    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, pens) : recordSeasonMatch(s, gf, ga, scorersFor);
     ctx.app.result = {
       ranked: false,
       forfeited,
       gf,
       ga,
-      opp: { name: shown.name, short: shown.short, primary: shown.primary, secondary: shown.secondary, crest: opp.crest },
+      opp: { name: shown.name, short: shown.short, primary: shown.primary, secondary: shown.secondary, crest: oppCrest },
       summary: outcome.summary,
       eloBefore,
       eloAfter: s.club.elo,
@@ -359,5 +385,5 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
     ctx.persist();
     ctx.app.screen = 'competitions';
     ctx.render();
-  }, 'Forfeit (counts as 0–3)');
+  }
 }
