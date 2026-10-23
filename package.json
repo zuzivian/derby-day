@@ -10,6 +10,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
     "check": "bun run typecheck && bun test && bun run build",
-    "balance": "bun run scripts/balance.ts"
+    "balance": "bun run scripts/balance.ts",
+    "e2e": "bun run build && node tests/e2e/run.cjs"
   }
 }
