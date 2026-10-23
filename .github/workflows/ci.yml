@@ -1,0 +1,87 @@
+name: CI
+
+# Run on every push and on every pull request.
+on:
+  push:
+  pull_request:
+
+# Cancel superseded runs of the same ref so a fast follow-up push does not queue behind an old one.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, unit tests, build, balance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Get the code.
+      - uses: actions/checkout@v4
+
+      # Bun runs the tests, the build script and the headless balance script.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      # The repo has no npm dependencies (and no typescript devDependency), so install the compiler
+      # globally. `bun run typecheck` then runs the same `tsc --noEmit -p .` as it does locally.
+      - name: Install TypeScript
+        run: npm install -g typescript@5
+
+      # Static type check of src/.
+      - name: Typecheck
+        run: bun run typecheck
+
+      # Deterministic sim and meta-layer unit tests.
+      - name: Unit tests
+        run: bun test
+
+      # Bundle everything into dist/index.html.
+      - name: Build
+        run: bun run build
+
+      # Headless CPU-vs-CPU matches. --assert fails the job if goals/match leaves 1.5 to 6
+      # or passes/match drops below 80, which catches broken sim tuning.
+      - name: Balance smoke test
+        run: bun run balance 20 --assert
+
+      # Keep the playable single-file build so reviewers can download and open it.
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: overlap-dist
+          path: dist/index.html
+          if-no-files-found: error
+
+  e2e:
+    name: Browser end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Get the code.
+      - uses: actions/checkout@v4
+
+      # Bun builds the game (`bun run e2e` builds first).
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      # Playwright is deliberately not a repo dependency; install it globally instead.
+      - name: Install Playwright
+        run: npm install -g playwright@1
+
+      # Download Chromium plus the system libraries it needs on a fresh runner. Using the global
+      # `playwright` binary guarantees the browser matches the library the runner loads.
+      - name: Install Chromium
+        run: playwright install --with-deps chromium
+
+      # The runner does require('playwright'); point Node at the global npm root so it resolves.
+      # PLAYWRIGHT_CHROMIUM is unset here, so Playwright uses the browser installed above.
+      - name: Run e2e tests
+        run: |
+          export NODE_PATH="$(npm root -g)"
+          bun run e2e
