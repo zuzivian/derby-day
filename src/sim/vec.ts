@@ -8,12 +8,18 @@ export const add = (a: Vec, b: Vec): Vec => ({ x: a.x + b.x, y: a.y + b.y });
 export const sub = (a: Vec, b: Vec): Vec => ({ x: a.x - b.x, y: a.y - b.y });
 export const scale = (a: Vec, k: number): Vec => ({ x: a.x * k, y: a.y * k });
 export const dot = (a: Vec, b: Vec): number => a.x * b.x + a.y * b.y;
-export const len = (a: Vec): number => Math.hypot(a.x, a.y);
-export const dist = (a: Vec, b: Vec): number => Math.hypot(a.x - b.x, a.y - b.y);
+// sqrt rather than Math.hypot: several times faster, and sqrt is exactly specified by
+// IEEE-754, so results match across browser engines (needed for rollback netcode later).
+export const len = (a: Vec): number => Math.sqrt(a.x * a.x + a.y * a.y);
+export const dist = (a: Vec, b: Vec): number => {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+};
 export const clamp = (n: number, lo: number, hi: number): number => (n < lo ? lo : n > hi ? hi : n);
 
 export function norm(a: Vec): Vec {
-  const l = Math.hypot(a.x, a.y);
+  const l = Math.sqrt(a.x * a.x + a.y * a.y);
   return l > 1e-9 ? { x: a.x / l, y: a.y / l } : { x: 0, y: 0 };
 }
 
