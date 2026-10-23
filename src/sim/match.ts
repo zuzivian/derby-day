@@ -370,10 +370,14 @@ function scoreGoal(s: MatchState, team: 0 | 1): void {
   s.kickoffTeam = team === 0 ? 1 : 0;
 }
 
-function bounceWalls(s: MatchState): void {
+function bounceWalls(s: MatchState, prevX: number): void {
   const b = s.ball;
   const p = b.pos;
-  const inNet = p.x < 0 || p.x > PITCH_W;
+  // A fast ball can travel past the end wall in one tick, so only treat it as in
+  // the net if it crossed the line inside the mouth and under the bar (or was
+  // already in the net). Anything else falls through to the wall bounce below.
+  const wasInNet = prevX < 0 || prevX > PITCH_W;
+  const inNet = (p.x < 0 || p.x > PITCH_W) && inGoalMouth(p.y) && (wasInNet || b.z <= GOAL_BAR_H);
   if (inNet) {
     // Inside the goal frame: net on three sides.
     const backX = p.x < 0 ? -GOAL_DEPTH : PITCH_W + GOAL_DEPTH;
@@ -448,8 +452,9 @@ function updateBall(s: MatchState, live: boolean): void {
       const ns = Math.max(0, speed - (1.6 + 0.35 * speed) * DT);
       b.vel = scale(b.vel, ns / speed);
     }
+    const prevX = b.pos.x;
     b.pos = add(b.pos, scale(b.vel, DT));
-    bounceWalls(s);
+    bounceWalls(s, prevX);
     if (live) pickup(s);
   }
 

@@ -249,7 +249,7 @@ describe('cup integration', () => {
       const cup = startCup(s);
       const tie = yourTie(s, cup)!;
       const home = tie.a === s.club.id;
-      const out = recordCupMatch(s, 1, 1, [], sim, { you, opp: 3 });
+      const out = recordCupMatch(s, 1, 1, [], sim, false, { you, opp: 3 });
       const done = cup.rounds[0].find((t) => t.a === s.club.id || t.b === s.club.id)!;
       expect(done.pens).toEqual(home ? [you, 3] : [3, you]);
       expect(done.winner === s.club.id).toBe(you > 3);
@@ -269,7 +269,7 @@ describe('cup integration', () => {
   test('a live shootout score is ignored when the match was not drawn', () => {
     const s = newGame(31);
     const cup = startCup(s);
-    recordCupMatch(s, 2, 0, [], sim, { you: 0, opp: 5 });
+    recordCupMatch(s, 2, 0, [], sim, false, { you: 0, opp: 5 });
     const t = cup.rounds[0].find((x) => x.a === s.club.id || x.b === s.club.id)!;
     expect(t.pens).toBeUndefined();
     expect(t.winner).toBe(s.club.id);

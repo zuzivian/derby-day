@@ -10,6 +10,8 @@ import { competitionAction, competitionsScreen } from './competitions.ts';
 import { captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
+import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
+import { reviewAction, reviewOpen } from './review.ts';
 import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
@@ -22,6 +24,7 @@ function freshSeed(): number {
 }
 
 function boot(save: Save): App {
+  ensureProgressionFields(save);
   return {
     save,
     screen: 'club',
@@ -71,11 +74,13 @@ function render() {
     ladder: ladderScreen,
     competitions: competitionsScreen,
   };
-  const hadModal = !!root.querySelector('.modal');
+  const hadResult = !!root.querySelector('#result-title');
+  const hadReview = !!root.querySelector('#review-title');
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
-  if (app.result && !hadModal) root.querySelector<HTMLElement>('#result-title')?.focus();
+  if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
+  else if (!app.result && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
 }
 
@@ -219,11 +224,13 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const s = app.save;
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
-  const scorersFor = m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-  const scorersAgainst = m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+  // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
+  const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
-  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor);
+  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited);
+  maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
     forfeited,
@@ -255,6 +262,12 @@ root.addEventListener('click', (e) => {
   const action = el.dataset.action;
   if (action !== 'sell-confirm' && action !== 'sell') app.confirmSell = null;
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
+  if (action?.startsWith('review-')) {
+    reviewAction(action, el, { app, toast, persist });
+    if (action === 'review-close') pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
+    render();
+    return;
+  }
   if (action?.startsWith('comp-')) {
     if (competitionAction(action, el, { app, toast, persist, render, playLive, playShootout })) render();
     return;
@@ -350,7 +363,7 @@ root.addEventListener('change', (e) => {
   }
 });
 
-// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result dialog.
+// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result or season review dialog.
 root.addEventListener('keydown', (e) => {
   if (takeover) return;
   const t = e.target as HTMLElement;
@@ -367,12 +380,17 @@ root.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
-  if (takeover || !app.result) return;
+  const review = !app.result && reviewOpen(app.save);
+  if (takeover || (!app.result && !review)) return;
   const modal = root.querySelector<HTMLElement>('.modal');
   if (!modal) return;
   if (e.key === 'Escape') {
     e.preventDefault();
-    app.result = null;
+    if (app.result) app.result = null;
+    else {
+      app.save.review!.seen = true;
+      persist();
+    }
     pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
     render();
   } else trapTab(modal, e);

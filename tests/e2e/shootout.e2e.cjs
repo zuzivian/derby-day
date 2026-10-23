@@ -122,6 +122,7 @@ test('shootout: playable by keyboard alone (arrows aim, Space strikes or dives)'
 
 test('shootout: leaving counts as a loss and knocks you out', async (t) => {
   const page = await reachShootout(t);
+  const before = await readSave(page);
   await page.locator(S.start).click();
   await waitPhase(page, ['aim', 'telegraph']);
   await page.locator(S.leave).click();
@@ -133,5 +134,6 @@ test('shootout: leaving counts as a loss and knocks you out', async (t) => {
   const tie = save.cup.rounds[0].find((x) => x.a === save.club.id || x.b === save.club.id);
   expect(tie.winner === save.club.id, 'forfeit loses the tie').toBe(false);
   expect(save.cup.round, 'cup moved on without you').toBe(1);
+  expect(save.budget, 'a forfeit pays nothing').toBe(before.budget);
   expect(await page.locator(SEL.modal).innerText(), 'result says you are out').toMatch(/Out in the quarter-final/);
 });

@@ -1,0 +1,23 @@
+/* Season review modal and academy offers (src/client/review.ts) ------------ */
+.review-card { width: min(680px, 100%); gap: 12px; }
+.review-title { font-size: 40px; text-transform: uppercase; }
+.rv-record { display: flex; flex-wrap: wrap; gap: 4px 20px; font-variant-numeric: tabular-nums; }
+.rv-trophy { flex-basis: 100%; }
+.rv-section { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.rv-section p { margin: 0; }
+.rv-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rv-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px 14px; min-width: 0; }
+.rv-main { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; min-width: 0; }
+.rv-nums { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rv-status { font-weight: 700; font-size: 14px; }
+.rv-sign { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.rv-release { max-width: 100%; min-width: 0; font-size: 13px; }
+.stars { color: var(--accent); letter-spacing: 2px; white-space: nowrap; font-size: 15px; }
+.rv-panel { gap: 10px; }
+.rv-panel p { margin: 0; }
+
+@media (max-width: 640px) {
+  .review-title { font-size: 32px; }
+  .rv-sign { width: 100%; }
+  .rv-release { flex: 1 1 100%; }
+}

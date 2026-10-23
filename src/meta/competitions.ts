@@ -298,7 +298,7 @@ function finishCupRound(save: Save, cup: Cup, sim: QuickSim): void {
  * final and you won, add the trophy. A drawn match is settled by `humanPens`
  * (the live shootout you played) when given, else by the seeded roll.
  */
-export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, humanPens?: HumanPens): CompOutcome {
+export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, forfeited = false, humanPens?: HumanPens): CompOutcome {
   ensureCompetitionFields(save);
   const cup = save.cup;
   if (!cup) throw new Error('No cup in progress');
@@ -315,11 +315,14 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
   const stage = CUP_ROUNDS[round];
   const pens = tie.pens ? ` (${home ? tie.pens[0] : tie.pens[1]}–${home ? tie.pens[1] : tie.pens[0]} on penalties)` : '';
 
-  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `Cup ${stage.toLowerCase()}`);
-  save.trainingPoints += 1;
-  summary.trainingPoints += 1;
+  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `Cup ${stage.toLowerCase()}`, forfeited);
+  // A forfeit knocks you out but pays nothing, so walking off can't be farmed.
+  if (!forfeited) {
+    save.trainingPoints += 1;
+    summary.trainingPoints += 1;
+  }
 
-  let money = round === 0 ? CUP_PRIZES[0] : 0;
+  let money = round === 0 && !forfeited ? CUP_PRIZES[0] : 0;
   if (won) money += CUP_PRIZES[round + 1];
   cup.earned += money;
   save.budget += money;
@@ -485,7 +488,7 @@ export function seasonVerdict(position: number): string {
  * Record your live league match, quick-simulate the rest of the matchday and,
  * after the last matchday, settle the table, prize money and any trophy.
  */
-export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim): CompOutcome {
+export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, forfeited = false): CompOutcome {
   ensureCompetitionFields(save);
   const season = save.season;
   if (!season) throw new Error('No season in progress');
@@ -496,9 +499,11 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   f.ag = home ? ga : gf;
   const opp = ladderClub(save, home ? f.away : f.home);
   const md = season.matchday;
-  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `League matchday ${md + 1}`);
-  save.trainingPoints += 1;
-  summary.trainingPoints += 1;
+  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `League matchday ${md + 1}`, forfeited);
+  if (!forfeited) {
+    save.trainingPoints += 1;
+    summary.trainingPoints += 1;
+  }
 
   season.matchdays[md].forEach((x, k) => {
     if (x.hg !== undefined) return;

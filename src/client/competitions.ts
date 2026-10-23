@@ -34,6 +34,7 @@ import {
   type Tie,
 } from '../meta/competitions.ts';
 import { formatMoney, type Save } from '../meta/game.ts';
+import { maybeRollover } from '../meta/progression.ts';
 import { penaltySide } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { possessionShare } from '../sim/match.ts';
@@ -353,7 +354,11 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
           oppClub: opp,
           label,
         },
-        (r) => finishMatch(m, forfeited, shown, gf, ga, { you: r.you, opp: r.opp }),
+        (r) => {
+          // Walking out of a shootout is a forfeit: recorded 0–3, nothing paid.
+          if (r.forfeited) finishMatch(m, true, shown, 0, Math.max(3, ga), undefined);
+          else finishMatch(m, false, shown, gf, ga, { you: r.you, opp: r.opp });
+        },
       );
       return;
     }
@@ -361,11 +366,13 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   }, 'Forfeit (counts as 0–3)');
 
   function finishMatch(m: MatchState, forfeited: boolean, shown: TeamSetup, gf: number, ga: number, pens?: HumanPens) {
-    const scorersFor = m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-    const scorersAgainst = m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+    // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
+    const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+    const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
-    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, pens) : recordSeasonMatch(s, gf, ga, scorersFor);
+    const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited, pens) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);
+    maybeRollover(s); // after the whole round is recorded, so the CPU ties used this year's squads
     ctx.app.result = {
       ranked: false,
       forfeited,

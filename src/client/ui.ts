@@ -7,7 +7,9 @@ import { askingPrice, formatMoney, ladderTable, MAX_SQUAD, MIN_SQUAD, salePrice,
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
+import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { crestSvg } from './crest.ts';
+import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
 
 export type Screen = 'club' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions';
@@ -68,8 +70,8 @@ function rankOf(save: Save): number {
 export function shell(app: App, body: string): string {
   const s = app.save;
   const c = s.club;
-  // While the result dialog is open everything behind it is inert, so focus can't leave it.
-  const inert = app.result ? ' inert' : '';
+  // While the result or season review dialog is open everything behind it is inert, so focus can't leave it.
+  const inert = app.result || reviewOpen(app.save) ? ' inert' : '';
   return `
   <a class="skip-link" href="#main" data-action="skip-to-main"${inert}>Skip to main content</a>
   <header class="topbar"${inert}>
@@ -89,7 +91,7 @@ export function shell(app: App, body: string): string {
     }).join('')}
   </div>
   <main id="main" class="screen" tabindex="-1"${inert}><div id="panel" role="tabpanel" aria-labelledby="tab-${app.screen}">${body}</div></main>
-  ${app.result ? resultModal(app) : ''}`;
+  ${app.result ? resultModal(app) : reviewModal(app)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -177,10 +179,11 @@ export function clubScreen(app: App): string {
     </article>
 
     <article class="panel news">
-      <h2 class="eyebrow">Club news</h2>
+      <h2 class="eyebrow">Club news · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
         ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
+        ${reviewButton(app)}
         <button class="btn small" data-action="replay-tutorial">Replay tutorial</button>
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
@@ -206,7 +209,7 @@ function playerRow(p: Player, extra: string, starter = false, showNumber = true)
     <td class="num">${p.age}</td>
     <td><span class="pos pos-${p.role}">${p.role}</span></td>
     <td class="num ovr">${overall(p)}</td>
-    <td class="num muted">${p.potential}</td>
+    <td class="num muted">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
     ${extra}
   </tr>`;
@@ -232,6 +235,7 @@ export function squadScreen(app: App): string {
   }).join('');
   return `
   <div class="squad-grid">
+    ${academyPanel(app)}
     <article class="panel board">
       <div class="board-head"><h2 class="eyebrow">Lineup · 1-2-2-1 · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
@@ -296,14 +300,14 @@ export function trainingScreen(app: App): string {
     <article class="panel roster">
       <h2 class="eyebrow">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left · ranked win +3, other results +2, friendlies +1</h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
-        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${x.potential}</small></span>
+        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
     </article>
     <article class="panel trainee">
       <div class="trainee-head">
         <span class="magnet big">${p.number}</span>
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
-        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${p.potential}</span></div>
+        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span></div>
       </div>
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>
