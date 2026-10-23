@@ -18,6 +18,7 @@ import {
 } from './club.ts';
 import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
+import type { SeasonReview } from './progression.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
 export const SAVE_VERSION = 1;
@@ -36,6 +37,8 @@ export interface MatchRecord {
   scorers: string[];
   /** Set for cup and league matches, e.g. "Cup semi-final". */
   competition?: string;
+  /** Club-calendar week this match was played in (ranked and competition matches only). */
+  week?: number;
 }
 
 export interface Save {
@@ -59,6 +62,16 @@ export interface Save {
   trophies?: Trophy[];
   cupEditions?: number;
   seasonEditions?: number;
+  // Club calendar (src/meta/progression.ts). Optional so older saves still load;
+  // ensureProgressionFields() fills the defaults.
+  /** Ranked and competition matches played; one week passes per match. */
+  week?: number;
+  /** Calendar year (1-based). Year N ends when week reaches N * SEASON_WEEKS. */
+  year?: number;
+  /** The latest end-of-season review (shown once, can be reopened). */
+  review?: SeasonReview | null;
+  /** Academy prospects who couldn't join because the squad was full. They expire at the next rollover. */
+  offers?: Player[];
 }
 
 export function newGame(seed: number): Save {
@@ -78,6 +91,10 @@ export function newGame(seed: number): Save {
     ladder: generateLadder(seed ^ 0x5eed, LADDER_SIZE),
     market: [],
     history: [],
+    week: 0,
+    year: 1,
+    review: null,
+    offers: [],
     news: [`${identity.name} founded. The board has given you ${formatMoney(1_200_000)} to build a squad.`],
   };
   refreshMarket(save);
@@ -218,11 +235,16 @@ export function applyResult(
   }
   save.trainingPoints += tp;
 
+  // One week passes per ranked or competition match; friendlies don't move the calendar.
+  const counted = ranked || !!competition;
+  if (counted) save.week = (save.week ?? 0) + 1;
+
   // Match minutes develop players a little; the young ones more.
   const developments: string[] = [];
   for (const id of save.lineup) {
     const p = save.squad.find((x) => x.id === id);
     if (!p) continue;
+    if (p.scout) p.scout--; // scouting fog lifts as a prospect plays
     const pGrow = p.age < 21 ? 0.35 : p.age <= 25 ? 0.2 : 0.08;
     if (overall(p) < p.potential && chance(save.rng, pGrow)) {
       const attr = pick(save.rng, ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK'));
@@ -231,7 +253,7 @@ export function applyResult(
     }
   }
 
-  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}) });
+  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}) });
   const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
   save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${delta >= 0 ? '+' : ''}${delta})` : ''}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
@@ -297,5 +319,10 @@ export function isSave(x: unknown): x is Save {
   if (!(!!s && s.version === SAVE_VERSION && Array.isArray(s.squad) && Array.isArray(s.ladder) && !!s.club)) return false;
   // Competition fields are optional (older saves lack them) but must be the right shape when present.
   const objOrNull = (v: unknown) => v === undefined || v === null || typeof v === 'object';
-  return objOrNull(s.cup) && objOrNull(s.season) && (s.trophies === undefined || Array.isArray(s.trophies));
+  const numOrUndef = (v: unknown) => v === undefined || typeof v === 'number';
+  return (
+    objOrNull(s.cup) && objOrNull(s.season) && (s.trophies === undefined || Array.isArray(s.trophies)) &&
+    // Club calendar fields (also optional).
+    numOrUndef(s.week) && numOrUndef(s.year) && objOrNull(s.review) && (s.offers === undefined || Array.isArray(s.offers))
+  );
 }

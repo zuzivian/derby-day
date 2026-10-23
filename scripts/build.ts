@@ -16,7 +16,8 @@ async function build(): Promise<void> {
     throw new Error('Bundle failed');
   }
   const js = (await out.outputs[0].text()).replace(/<\/script/gi, '<\\/script');
-  const css = await readFile(`${root}src/client/styles.css`, 'utf8');
+  // styles.css plus per-feature sheets that sit beside it.
+  const css = (await Promise.all(['styles.css', 'review.css'].map((f) => readFile(`${root}src/client/${f}`, 'utf8')))).join('\n');
   const fragment = (await readFile(`${root}src/client/page.html`, 'utf8'))
     .replace('/*__CSS__*/', () => css)
     .replace('/*__JS__*/', () => js);

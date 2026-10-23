@@ -8,6 +8,8 @@ import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
 import { mountMatch } from './matchView.ts';
+import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
+import { reviewAction } from './review.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
@@ -18,6 +20,7 @@ function freshSeed(): number {
 }
 
 function boot(save: Save): App {
+  ensureProgressionFields(save);
   return {
     save,
     screen: 'club',
@@ -145,6 +148,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor);
+  maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
     forfeited,
@@ -176,6 +180,11 @@ root.addEventListener('click', (e) => {
   const action = el.dataset.action;
   if (action !== 'sell-confirm' && action !== 'sell') app.confirmSell = null;
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
+  if (action?.startsWith('review-')) {
+    reviewAction(action, el, { app, toast, persist });
+    render();
+    return;
+  }
   if (action?.startsWith('comp-')) {
     if (competitionAction(action, el, { app, toast, persist, render, playLive })) render();
     return;
