@@ -174,6 +174,7 @@ export class SoundEngine {
   private crowdGain: GainNode | null = null;
   private crowdFilter: BiquadFilterNode | null = null;
   private crowdSrc: AudioBufferSourceNode | null = null;
+  private crowdLfo: OscillatorNode | null = null;
   private roarUntil = 0;
   private crowdLevelNow = 0;
   private lastCrowdPush = 0;
@@ -279,6 +280,7 @@ export class SoundEngine {
     src.connect(band).connect(low).connect(gain).connect(this.master);
     src.start();
     this.crowdSrc = src;
+    this.crowdLfo = lfo;
     this.crowdGain = gain;
     this.crowdFilter = band;
     // If the caller stops feeding levels (paused, tab hidden), fade out.
@@ -314,11 +316,13 @@ export class SoundEngine {
       this.crowdGain.gain.setTargetAtTime(0, ctx.currentTime, 0.15);
       try {
         src.stop(ctx.currentTime + 1);
+        this.crowdLfo?.stop(ctx.currentTime + 1);
       } catch {
         /* already stopped */
       }
     }
     this.crowdSrc = null;
+    this.crowdLfo = null;
     this.crowdGain = null;
     this.crowdFilter = null;
     this.crowdLevelNow = 0;
