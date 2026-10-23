@@ -5,8 +5,11 @@ import { possessionShare } from '../sim/match.ts';
 import { int, makeRng } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
+import { captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { mountMatch } from './matchView.ts';
+import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
+import { mountTutorial } from './tutorial.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
@@ -20,7 +23,6 @@ function boot(save: Save): App {
     save,
     screen: 'club',
     nextOpp: pickOpponent(save),
-    toast: null,
     trainee: null,
     marketRole: 'ALL',
     confirmSell: null,
@@ -30,18 +32,25 @@ function boot(save: Save): App {
   };
 }
 
-let app = boot(loadSave() ?? newGame(freshSeed()));
+initLiveRegions();
+const existing = loadSave();
+let app = boot(existing ?? newGame(freshSeed()));
+// First run (no save) gets setup; an older save that predates setup skips it.
+if (!existing) app.prefs.onboarded = false;
+else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
+writePrefs(app.prefs);
 let saved = writeSave(app.save);
-let toastTimer = 0;
-let inMatch = false;
+/** True while a match, setup or the training ground owns #app. */
+let takeover = false;
+/** Where focus goes after the next render, when it isn't simply "where it was". */
+let pendingFocus: FocusKey | null = null;
+/** The control that started the last match, to return focus to after the result dialog. */
+let matchOrigin: FocusKey | null = null;
+
+const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0 });
 
 function toast(text: string, ok = true) {
-  app.toast = { text, ok };
-  clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => {
-    app.toast = null;
-    render();
-  }, 3200);
+  showToast(text, ok);
 }
 
 function persist() {
@@ -50,7 +59,7 @@ function persist() {
 }
 
 function render() {
-  if (inMatch) return;
+  if (takeover) return;
   const screens: Record<Screen, (a: App) => string> = {
     club: clubScreen,
     squad: squadScreen,
@@ -58,7 +67,60 @@ function render() {
     training: trainingScreen,
     ladder: ladderScreen,
   };
+  const hadModal = !!root.querySelector('.modal');
+  const key = pendingFocus ?? captureFocus(root);
+  pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
+  if (app.result && !hadModal) root.querySelector<HTMLElement>('#result-title')?.focus();
+  else restoreFocus(root, key, '#main');
+}
+
+function focusMain() {
+  root.querySelector<HTMLElement>('#main')?.focus();
+}
+
+function startOnboarding() {
+  takeover = true;
+  hideToast();
+  const stop = mountOnboarding(root, {
+    save: app.save,
+    prefs: app.prefs,
+    nextOpp: app.nextOpp,
+    persist,
+    savePrefs: () => writePrefs(app.prefs),
+    onDone: () => {
+      stop();
+      takeover = false;
+      app.prefs.onboarded = true;
+      writePrefs(app.prefs);
+      app.screen = 'club';
+      render();
+      focusMain();
+    },
+  });
+}
+
+function startTraining() {
+  const s = app.save;
+  if (s.lineup.filter(Boolean).length < 6) {
+    toast('Pick six players first.', false);
+    return;
+  }
+  takeover = true;
+  hideToast();
+  window.scrollTo({ top: 0 });
+  const stop = mountTutorial(root, {
+    home: toTeamSetup(s.club, s.squad, s.lineup, 0.6),
+    controls: app.prefs.controls,
+    headingLevel: 1,
+    onDone: (completed) => {
+      stop();
+      takeover = false;
+      pendingFocus = keyFor({ action: 'replay-tutorial' });
+      render();
+      if (completed) toast('Training done.');
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -98,8 +160,9 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
   }
   away = avoidClash(home, away);
   const seed = int(s.rng, 1, 2 ** 31 - 1);
-  inMatch = true;
-  app.toast = null;
+  matchOrigin = captureFocus(root) ?? keyFor(ranked || !practiceLevel ? { action: 'play-ranked' } : { action: 'play-practice', level: practiceLevel.id });
+  takeover = true;
+  hideToast();
 
   const unmount = mountMatch(root, {
     seed,
@@ -109,9 +172,10 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
     humanTeam: 0,
     crests: [s.club.crest, crest],
     label: ranked ? 'Ranked' : 'Friendly',
+    controls: app.prefs.controls,
     onEnd: (m, forfeited) => {
       unmount();
-      inMatch = false;
+      takeover = false;
       endMatch(m, forfeited, ranked, opp, away, crest);
     },
   });
@@ -151,7 +215,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
 
 root.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
-  if (!el) return;
+  if (!el || takeover) return;
   const s = app.save;
   const id = el.dataset.id ?? '';
   const action = el.dataset.action;
@@ -159,9 +223,17 @@ root.addEventListener('click', (e) => {
   if (action !== 'reset-confirm' && action !== 'reset') app.confirmReset = false;
 
   switch (action) {
+    case 'skip-to-main':
+      e.preventDefault();
+      focusMain();
+      return;
     case 'nav':
       app.screen = el.dataset.screen as Screen;
+      pendingFocus = focusKeyOf(el, root);
       break;
+    case 'replay-tutorial':
+      startTraining();
+      return;
     case 'play-ranked':
       startMatch(true, app.nextOpp);
       return;
@@ -211,13 +283,16 @@ root.addEventListener('click', (e) => {
     case 'reset-confirm':
       clearSave();
       app = boot(newGame(freshSeed()));
+      app.prefs.onboarded = true;
       persist();
+      pendingFocus = keyFor({ action: 'reset' });
       toast(`${app.save.club.name} founded.`);
       break;
     case 'reset-cancel':
       break;
     case 'close-result':
       app.result = null;
+      pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     default:
       return;
@@ -237,5 +312,34 @@ root.addEventListener('change', (e) => {
   }
 });
 
-render();
+// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result dialog.
+root.addEventListener('keydown', (e) => {
+  if (takeover) return;
+  const t = e.target as HTMLElement;
+  if (t.getAttribute('role') === 'tab') {
+    const tabs = [...root.querySelectorAll<HTMLElement>('[role="tab"]')];
+    const to = tabFromKey(e, tabs);
+    if (to && to !== t) {
+      app.screen = to.dataset.screen as Screen;
+      app.confirmSell = null;
+      app.confirmReset = false;
+      pendingFocus = focusKeyOf(to, root);
+      render();
+    }
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (takeover || !app.result) return;
+  const modal = root.querySelector<HTMLElement>('.modal');
+  if (!modal) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    app.result = null;
+    pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
+    render();
+  } else trapTab(modal, e);
+});
+
+if (app.prefs.onboarded === false) startOnboarding();
+else render();
 if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

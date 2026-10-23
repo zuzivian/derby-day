@@ -28,6 +28,8 @@ Install Bun with `curl -fsSL https://bun.sh/install | bash` (no sudo needed). Th
 
 The dotted line shows where a click would pass right now. Phones get on-screen Pass and Shoot buttons.
 
+A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news runs the drills again.
+
 ## Code layout
 
 ```
