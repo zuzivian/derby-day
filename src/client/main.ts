@@ -12,6 +12,7 @@ import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { reviewAction, reviewOpen } from './review.ts';
+import { initReplayUi } from './replayView.ts';
 import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
@@ -39,6 +40,7 @@ function boot(save: Save): App {
 }
 
 initLiveRegions();
+initReplayUi(root);
 const existing = loadSave();
 let app = boot(existing ?? newGame(freshSeed()));
 // First run (no save) gets setup; an older save that predates setup skips it.

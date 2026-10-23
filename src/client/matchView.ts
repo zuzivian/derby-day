@@ -9,6 +9,8 @@ import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { InputController } from './input.ts';
 import { PitchRenderer } from './render.ts';
+import { ReplayRecorder } from '../meta/replay.ts';
+import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 
 export interface MatchViewOptions extends MatchOptions {
@@ -25,6 +27,7 @@ const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const s = createMatch(o);
+  const rec = new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
   root.innerHTML = `
   <section class="match" aria-label="Match">
@@ -112,6 +115,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     done = true;
     cancelAnimationFrame(raf);
     dispose();
+    if (forfeited) clearLastReplay();
+    else storeReplay(rec.finish(s, Date.now() / 1000));
     o.onEnd(s, forfeited);
   }
 
@@ -123,7 +128,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       acc += elapsed;
       let steps = 0;
       while (acc >= DT && steps < 6) {
-        step(s, input.take());
+        step(s, rec.push(input.take()));
         juice.tick(s);
         acc -= DT;
         steps++;

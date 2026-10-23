@@ -9,6 +9,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { crestSvg } from './crest.ts';
+import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
 
@@ -176,6 +177,7 @@ export function clubScreen(app: App): string {
       ${sparkline(s.eloHistory)}
       <h3 class="eyebrow">Recent</h3>
       ${formChips(s)}
+      ${recentReplaysHtml()}
     </article>
 
     <article class="panel news">
@@ -367,6 +369,7 @@ function resultModal(app: App): string {
         <li>+${r.summary.trainingPoints} training session${r.summary.trainingPoints === 1 ? '' : 's'}</li>
         ${r.summary.developments.map((x) => `<li>${esc(x)}</li>`).join('')}
       </ul>` : '<p class="muted">Nothing recorded for an abandoned friendly.</p>'}
+      ${resultReplayHtml()}
       <button class="btn primary big" data-action="close-result">Back to the club</button>
     </div>
   </div>`;

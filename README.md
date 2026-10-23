@@ -42,6 +42,8 @@ You play your own cup ties and league fixtures live. The other matches in the ro
 
 CPU difficulty is `TeamSetup.aiSkill` (0..1). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
 
+Every finished match leaves a replay: the match options plus the per-tick input log (run-length encoded, cursor to 1 cm), which the deterministic sim re-runs exactly. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club screen, and **Copy replay code** / **Paste replay code** share one as a short `OVR1.…` string. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
+
 A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news runs the drills again.
 
 ## Code layout
