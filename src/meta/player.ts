@@ -25,6 +25,12 @@ export interface Player {
   attrs: Attributes;
   potential: number;
   number: number;
+  /**
+   * Scouting fog: matches this player must still play before their potential is
+   * shown exactly. Set on academy prospects only (src/meta/progression.ts);
+   * undefined or 0 means fully known. Display only: it never changes the sim.
+   */
+  scout?: number;
 }
 
 const WEIGHTS: Record<Role, Partial<Attributes>> = {

@@ -33,6 +33,7 @@ import {
   type Tie,
 } from '../meta/competitions.ts';
 import { formatMoney, type Save } from '../meta/game.ts';
+import { maybeRollover } from '../meta/progression.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { possessionShare } from '../sim/match.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
@@ -340,6 +341,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
     const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor) : recordSeasonMatch(s, gf, ga, scorersFor);
+    maybeRollover(s); // after the whole round is recorded, so the CPU ties used this year's squads
     ctx.app.result = {
       ranked: false,
       forfeited,

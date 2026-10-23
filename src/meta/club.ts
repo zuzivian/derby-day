@@ -28,6 +28,8 @@ export interface LadderClub extends ClubIdentity, ClubRecord {
   elo: number;
   seed: number;
   quality: number;
+  /** Seasons rolled over so far (src/meta/progression.ts). Mixed into the squad seed; undefined or 0 is the original squad. */
+  era?: number;
 }
 
 export const emptyRecord = (): ClubRecord => ({ played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0 });
@@ -118,8 +120,11 @@ export function generateLadder(seed: number, count: number): LadderClub[] {
   return clubs;
 }
 
+/** The seed a ladder club's squad is generated from: its own seed, offset by how many seasons have passed. */
+export const ladderSquadSeed = (c: Pick<LadderClub, 'seed' | 'era'>): number => (c.era ? (c.seed ^ Math.imul(c.era, 0x9e3779b1)) | 0 : c.seed);
+
 export function ladderSquad(c: LadderClub): Player[] {
-  const r = makeRng(c.seed);
+  const r = makeRng(ladderSquadSeed(c));
   return generateSquad(r, c.quality, pick(r, STYLE_KEYS));
 }
 
