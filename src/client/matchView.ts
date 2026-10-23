@@ -5,6 +5,7 @@ import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { MatchState } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
+import { mountJuice } from './fx.ts';
 import { InputController } from './input.ts';
 import { PitchRenderer } from './render.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -71,6 +72,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
   renderer.resize();
+  const juice = mountJuice(root, s);
 
   let raf = 0;
   let last = performance.now();
@@ -103,6 +105,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       let steps = 0;
       while (acc >= DT && steps < 6) {
         step(s, input.take());
+        juice.tick(s);
         acc -= DT;
         steps++;
       }
@@ -137,6 +140,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   function dispose() {
     input.dispose();
+    juice.dispose();
     ro.disconnect();
     document.removeEventListener('visibilitychange', onVis);
   }
