@@ -357,3 +357,35 @@ describe('CPU', () => {
     expect(onLine / checked).toBeGreaterThan(0.75);
   });
 });
+
+describe('goal line', () => {
+  // Regression: a fast ball skipped the end-wall bounce band in one tick and was
+  // clamped into the goal mouth, scoring shots that went well wide.
+  function shotAtWall(y: number, vx: number, z: number, phase: number, fromX = 50): number {
+    const s = livePlay();
+    s.players.forEach((p) => (p.stun = 100000));
+    s.ball.owner = -1;
+    s.ball.receiver = -1;
+    s.ball.pos = { x: fromX + phase, y };
+    s.ball.vel = { x: vx, y: 0 };
+    s.ball.z = z;
+    s.ball.vz = 0;
+    const before = s.score[0] + s.score[1];
+    for (let t = 0; t < 120 && s.phase === 'play'; t++) step(s);
+    return s.score[0] + s.score[1] - before;
+  }
+
+  test('hard shots that hit the end wall outside the mouth never score', () => {
+    let goals = 0;
+    for (const y of [3, 8, 12, 14.5, 26, 34])
+      for (let i = 0; i < 25; i++) goals += shotAtWall(y, 30, 0, i / 25);
+    expect(goals).toBe(0);
+  });
+
+  test('a ball over the bar does not score, one under it does', () => {
+    let over = 0;
+    for (let i = 0; i < 25; i++) over += shotAtWall(PITCH_H / 2, 20, 3.6, i / 25, 61); // crosses the line still ~3.5 m up
+    expect(over).toBe(0);
+    expect(shotAtWall(PITCH_H / 2, 20, 0, 0)).toBe(1);
+  });
+});

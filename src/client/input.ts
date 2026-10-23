@@ -83,7 +83,8 @@ export class InputController {
       const k = e.key.toLowerCase();
       this.mod = e.ctrlKey || e.metaKey;
       if (k === 'escape' || k === 'p') {
-        this.onPause();
+        // Ignore auto-repeat, or holding the key flickers pause on and off.
+        if (!e.repeat) this.onPause();
         return;
       }
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
