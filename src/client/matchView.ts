@@ -3,12 +3,12 @@
 
 import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
-import type { MatchState } from '../sim/types.ts';
+import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { InputController } from './input.ts';
-import { PitchRenderer } from './render.ts';
+import { PitchRenderer, type RenderExtras } from './render.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -21,13 +21,25 @@ export interface MatchViewOptions extends MatchOptions {
   /** Preferred control style; the input still follows whatever the player touches. */
   controls?: 'mouse' | 'keys';
   onEnd: (s: MatchState, forfeited: boolean) => void;
+  /** Replaces the default mouse/keyboard controller, e.g. two keyboard pads for hot-seat (versus.ts). */
+  inputSource?: (canvas: HTMLCanvasElement, renderer: PitchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
+  /** Replaces the controls line under the pitch (HTML). */
+  controlsHint?: string;
+}
+
+/** Where a live match gets its per-tick input and the renderer's cursor and previews. */
+export interface MatchInputSource {
+  take(): HumanInput | TeamInputs;
+  extras(): RenderExtras;
+  dispose(): void;
 }
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const s = createMatch(o);
-  const rec = new ReplayRecorder(o, o.label);
+  // Replays record one human's input; two-human matches (hot-seat) aren't recorded.
+  const rec = o.humans?.[0] && o.humans?.[1] ? null : new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
   root.innerHTML = `
   <section class="match" aria-label="Match">
@@ -58,7 +70,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint"><b>Mouse:</b> your player runs to the pointer · <b>left click</b> pass / tackle · <b>hold right</b> to shoot · <b>right click</b> switch · <b>Shift</b> or <b>middle button</b> sprint · <b>Ctrl+click</b> through ball · <b>Ctrl + hold right</b> chip. <b>Keys:</b> WASD · Space · R through · hold F shoot · hold C chip · Shift · E.</p>
+    <p class="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer · <b>left click</b> pass / tackle · <b>hold right</b> to shoot · <b>right click</b> switch · <b>Shift</b> or <b>middle button</b> sprint · <b>Ctrl+click</b> through ball · <b>Ctrl + hold right</b> chip. <b>Keys:</b> WASD · Space · R through · hold F shoot · hold C chip · Shift · E.`}</p>
   </section>`;
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
@@ -79,9 +91,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       (focusBeforePause && root.contains(focusBeforePause) ? focusBeforePause : canvas).focus();
     }
   };
-  const input = new InputController(canvas, renderer, () => s.controlled >= 0 && s.ball.owner === s.controlled, () => setPaused(!paused));
-  if (o.controls) input.mode = o.controls;
-  input.bindTouchButtons($('pad-pass'), $('pad-shoot'));
+  const input: MatchInputSource = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
+  function defaultInput(): MatchInputSource {
+    const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
+    if (o.controls) c.mode = o.controls;
+    c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
+    return { take: () => c.take(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed() }), dispose: () => c.dispose() };
+  }
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
   $('forfeit').addEventListener('click', () => finish(true));
@@ -116,7 +132,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     cancelAnimationFrame(raf);
     dispose();
     if (forfeited) clearLastReplay();
-    else storeReplay(rec.finish(s, Date.now() / 1000));
+    else if (rec) storeReplay(rec.finish(s, Date.now() / 1000));
+    else clearLastReplay(); // so the result dialog doesn't offer the previous match's replay
     o.onEnd(s, forfeited);
   }
 
@@ -128,13 +145,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       acc += elapsed;
       let steps = 0;
       while (acc >= DT && steps < 6) {
-        step(s, rec.push(input.take()));
+        const raw = input.take();
+        step(s, rec && !Array.isArray(raw) ? rec.push(raw) : raw);
         juice.tick(s);
         acc -= DT;
         steps++;
       }
     }
-    renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse', armed: input.armed() });
+    renderer.draw(s, input.extras());
 
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);

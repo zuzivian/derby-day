@@ -18,7 +18,15 @@ export interface RenderExtras {
   showCursor: boolean;
   /** What the next kick would be: through ball (modifier held) or a chip being charged. */
   armed?: { through: boolean; chip: boolean };
+  /** Whose cursor, previews and charge these are. Defaults to the first team with a human. */
+  team?: 0 | 1;
+  /** Shot charge per team when both humans charge on one screen (hot-seat). Overrides `charge` for the bars. */
+  charges?: [number, number];
 }
+
+/** Controlled-player marker colours when both teams have a human: home yellow, away cyan. */
+export const HUMAN_COLORS: [string, string] = ['#ffd60a', '#22d3ee'];
+const HUMAN_GLOW: [string, string] = ['rgba(255,214,10,.28)', 'rgba(34,211,238,.3)'];
 
 export class PitchRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -50,7 +58,12 @@ export class PitchRenderer {
     this.drawPitch();
 
     // Pass preview: who a click would pass to right now, or where a through ball lands.
-    const ctrl = s.controlled >= 0 ? s.players[s.controlled] : null;
+    const me: 0 | 1 = x.team ?? (s.humans[0] || !s.humans[1] ? 0 : 1);
+    const ctrl = s.controlled[me] >= 0 ? s.players[s.controlled[me]] : null;
+    // Each human's player gets a marker; with two humans the colours tell them apart.
+    const both = s.humans[0] && s.humans[1];
+    const mark = (team: 0 | 1) => (both ? team : 0);
+    const ctrls = ([0, 1] as const).filter((t) => s.humans[t] && s.controlled[t] >= 0).map((t) => s.players[s.controlled[t]]);
     const hasBall = !!ctrl && s.ball.owner === ctrl.i && s.phase === 'play';
     const through = !!x.armed?.through;
     if (ctrl && hasBall && x.cursor) {
@@ -153,10 +166,10 @@ export class PitchRenderer {
     }
     for (const p of s.players) {
       const team = s.teams[p.team];
-      const isCtrl = p.i === s.controlled;
+      const isCtrl = s.humans[p.team] && p.i === s.controlled[p.team];
       ctx.globalAlpha = p.stun > 0 ? 0.55 : 1;
       if (isCtrl) {
-        ctx.fillStyle = 'rgba(255,214,10,.28)';
+        ctx.fillStyle = HUMAN_GLOW[mark(p.team)];
         ctx.beginPath();
         ctx.arc(p.pos.x, p.pos.y, PLAYER_R + 0.55, 0, Math.PI * 2);
         ctx.fill();
@@ -183,7 +196,7 @@ export class PitchRenderer {
       ctx.fillText(String(p.number), p.pos.x, p.pos.y + 0.04);
       ctx.globalAlpha = 1;
       if (isCtrl) {
-        ctx.fillStyle = '#ffd60a';
+        ctx.fillStyle = HUMAN_COLORS[mark(p.team)];
         ctx.beginPath();
         ctx.moveTo(p.pos.x, p.pos.y - PLAYER_R - 0.35);
         ctx.lineTo(p.pos.x - 0.38, p.pos.y - PLAYER_R - 0.95);
@@ -240,8 +253,8 @@ export class PitchRenderer {
     ctx.arc(bx + Math.cos(this.ballSpin) * 0.09 * (br / BALL_R), by + Math.sin(this.ballSpin) * 0.09 * (br / BALL_R), 0.075 * (br / BALL_R), 0, Math.PI * 2);
     ctx.fill();
 
-    // Stamina under the controlled player: fills as they recover, red when winded.
-    if (ctrl) {
+    // Stamina under each controlled player: fills as they recover, red when winded.
+    for (const ctrl of ctrls) {
       const w = 2.2;
       const sx = ctrl.pos.x - w / 2;
       const sy = ctrl.pos.y + PLAYER_R + 1.5;
@@ -254,14 +267,16 @@ export class PitchRenderer {
       ctx.globalAlpha = 1;
     }
 
-    // Shot charge bar above the controlled player
-    if (ctrl && x.charge > 0) {
+    // Shot charge bar above the controlled player (each one, in hot-seat)
+    for (const c of ctrls) {
+      const charge = x.charges ? x.charges[c.team] : c === ctrl ? x.charge : 0;
+      if (charge <= 0) continue;
       const w = 2.4;
-      const y = ctrl.pos.y - PLAYER_R - 1.7;
+      const y = c.pos.y - PLAYER_R - 1.7;
       ctx.fillStyle = 'rgba(0,0,0,.45)';
-      ctx.fillRect(ctrl.pos.x - w / 2, y, w, 0.34);
-      ctx.fillStyle = x.charge > 0.85 ? '#ff5a3c' : '#ffd60a';
-      ctx.fillRect(ctrl.pos.x - w / 2, y, w * x.charge, 0.34);
+      ctx.fillRect(c.pos.x - w / 2, y, w, 0.34);
+      ctx.fillStyle = charge > 0.85 ? '#ff5a3c' : HUMAN_COLORS[mark(c.team)];
+      ctx.fillRect(c.pos.x - w / 2, y, w * charge, 0.34);
     }
 
     // Mouse target

@@ -46,15 +46,35 @@ Every finished match leaves a replay: the match options plus the per-tick input 
 
 A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news runs the drills again.
 
+## Two players
+
+Both are on the Club tab under **Two humans, no Elo**. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
+
+- **Local 2P:** hot-seat on one keyboard, your club against a ladder club you pick.
+
+  | | Player 1 (home, yellow) | Player 2 (away, cyan) |
+  |---|---|---|
+  | Move | W A S D, or the mouse once you move it over the pitch | Arrow keys |
+  | Pass / tackle | Space, or left click | Enter or `/` |
+  | Shoot | Hold F, release (or hold right button) | Hold `.` (period), release |
+  | Switch player | E, or right click | `,` (comma) |
+  | Sprint | Left Shift | Right Shift |
+  | Pause | Esc or P | Esc or P |
+
+- **Link two tabs:** open `dist/index.html` in two tabs or windows of the same browser. In one, **Host a match** and read out the 4-letter code; in the other, type it and **Join**. Each tab plays its own side with the normal controls. The tabs run the same match in deterministic lockstep over `BroadcastChannel` (no server) with a 4-tick (67 ms) input delay, exchange only inputs, and compare a state hash every second; a mismatch stops both with "Desync at tick N". Sandboxed viewers (such as some artifact hosts) block tabs from talking; the lobby says so. See "Multiplayer spike" in the roadmap for what this proves.
+
 ## Code layout
 
 ```
 src/sim/      Deterministic match engine. Pure TS, no DOM, fixed 60 Hz, seeded RNG.
               step(state, input) is the only way time moves.
 src/meta/     Club layer: name generators, players and attributes, Elo, market, training, ladder.
+src/net/      Netcode, pure TS: lockstep with input delay and desync detection, a two-method
+              Transport, BroadcastChannel and seeded in-memory (latency, jitter, loss) transports.
 src/client/   Browser: canvas renderer, input, match loop, management screens, local save.
 scripts/      build.ts (bundle and inline into one HTML file), balance.ts (headless CPU matches),
-              ai-probe.ts (equal squads, different CPU skill).
+              ai-probe.ts (equal squads, different CPU skill), net-probe.ts (lockstep stalls by
+              input delay and simulated latency).
 tests/        bun test: determinism, plausible matches, Elo maths, transfers and training rules.
 tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, transfers, matches.
 .github/      CI: typecheck, unit tests, build, balance guard, e2e.

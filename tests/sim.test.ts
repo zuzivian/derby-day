@@ -71,13 +71,13 @@ describe('sprint', () => {
   test('sprinting is about 18% faster than running and costs energy', () => {
     const peak = (sprint: boolean) => {
       const s = livePlay();
-      const me = s.players[s.controlled];
+      const me = s.players[s.controlled[0]];
       let top = 0;
       for (let t = 0; t < 100; t++) {
         step(s, { cursor: { x: me.pos.x + 30 * (me.team === 0 ? 1 : -1), y: me.pos.y }, sprint });
-        top = Math.max(top, len(s.players[s.controlled].vel));
+        top = Math.max(top, len(s.players[s.controlled[0]].vel));
       }
-      return { top, energy: s.players[s.controlled].energy };
+      return { top, energy: s.players[s.controlled[0]].energy };
     };
     const run = peak(false);
     const sprint = peak(true);
@@ -88,7 +88,7 @@ describe('sprint', () => {
 
   test('a long sprint runs the legs flat, then locks until recovered', () => {
     const s = livePlay();
-    const id = s.controlled;
+    const id = s.controlled[0];
     let sawWinded = false;
     for (let t = 0; t < 60 * 20; t++) {
       const me = s.players[id];
@@ -109,7 +109,7 @@ describe('sprint', () => {
 describe('through ball', () => {
   test('leads the receiver further along their run than a normal pass', () => {
     const s = livePlay();
-    const from = s.players[s.controlled];
+    const from = s.players[s.controlled[0]];
     const mate = s.players.find((p) => p.team === from.team && p.role === 'MID')!;
     mate.pos = { x: 30, y: 12 };
     mate.vel = { x: 6, y: 0 };
@@ -124,7 +124,7 @@ describe('through ball', () => {
 
   test('a human through ball is aimed past the receiver, and still reaches a teammate', () => {
     const s = livePlay();
-    const me = s.players[s.controlled];
+    const me = s.players[s.controlled[0]];
     const mate = s.players.find((p) => p.team === me.team && p.role === 'MID')!;
     mate.pos = { x: me.pos.x + 8, y: me.pos.y + 4 };
     mate.vel = { x: 6, y: 0 };
@@ -141,7 +141,7 @@ describe('through ball', () => {
 describe('chip and ball height', () => {
   test('a chip goes up, comes down, bounces with damping and z is never negative', () => {
     const s = livePlay();
-    const me = s.players[s.controlled];
+    const me = s.players[s.controlled[0]];
     const target = { x: me.pos.x + 12 * (me.team === 0 ? 1 : -1), y: me.pos.y };
     step(s, { cursor: target, shoot: 0.7, chip: true });
     expect(s.ball.vz).toBeGreaterThan(3);
@@ -219,7 +219,7 @@ describe('chip and ball height', () => {
 
   test('first touch settles the ball into the feet instead of snapping', () => {
     const s = livePlay();
-    const me = s.players[s.controlled];
+    const me = s.players[s.controlled[0]];
     s.players.forEach((p) => {
       if (p !== me) p.stun = 100000;
     });
@@ -258,7 +258,7 @@ describe('determinism with the new inputs', () => {
 describe('chip landing and point-blank chips', () => {
   test('the first bounce is where chipPlan said it would be', () => {
     const s = livePlay();
-    const me = s.players[s.controlled];
+    const me = s.players[s.controlled[0]];
     const target = { x: me.pos.x + 14 * (me.team === 0 ? 1 : -1), y: me.pos.y + 3 };
     const plan = chipPlan(s.ball.pos, target, 1);
     step(s, { cursor: target, shoot: 1, chip: true });
@@ -274,7 +274,7 @@ describe('chip landing and point-blank chips', () => {
 
   test('a defender touching the ball cannot take a chip', () => {
     const s = livePlay();
-    const me = s.players[s.controlled];
+    const me = s.players[s.controlled[0]];
     const opp = s.players.find((p) => p.team !== me.team && p.role === 'MID')!;
     s.players.forEach((p) => {
       if (p !== me && p !== opp) p.stun = 100000;

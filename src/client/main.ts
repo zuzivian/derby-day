@@ -16,6 +16,7 @@ import { initReplayUi } from './replayView.ts';
 import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
+import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
 import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
@@ -224,6 +225,27 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
   playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest));
 }
 
+/** Local 2P or Link two tabs (versus.ts): two humans, nothing recorded. */
+function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void) {
+  matchOrigin = captureFocus(root);
+  takeover = true;
+  hideToast();
+  window.scrollTo({ top: 0 });
+  const stop = mount(root, {
+    save: app.save,
+    prefs: app.prefs,
+    avoidClash,
+    onDone: (result) => {
+      stop();
+      takeover = false;
+      app.result = result;
+      app.screen = 'club';
+      if (!result) pendingFocus = matchOrigin;
+      render();
+    },
+  });
+}
+
 function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest']) {
   const s = app.save;
   let [gf, ga] = m.score;
@@ -294,6 +316,12 @@ root.addEventListener('click', (e) => {
       return;
     case 'play-practice':
       startMatch(false, null, PRACTICE.find((p) => p.id === el.dataset.level));
+      return;
+    case 'play-local2p':
+      startVersus(mountLocal2P);
+      return;
+    case 'play-link':
+      startVersus(mountLink);
       return;
     case 'auto-lineup':
       s.lineup = autoLineup(s.squad);

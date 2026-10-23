@@ -32,6 +32,8 @@ export interface ResultView {
   label?: string;
   /** One line under the score, e.g. "Through to the final. +ƒ160k." */
   note?: string;
+  /** Replaces "Nothing recorded for an abandoned friendly." when there is no summary. */
+  unrecorded?: string;
 }
 
 export interface App {
@@ -167,6 +169,11 @@ export function clubScreen(app: App): string {
       <div class="practice">
         <span class="practice-label">Practice vs CPU, no Elo:</span>
         ${PRACTICE.map((x) => `<button class="btn small" data-action="play-practice" data-level="${x.id}">${x.label}</button>`).join('')}
+      </div>
+      <div class="practice">
+        <span class="practice-label">Two humans, no Elo:</span>
+        <button class="btn small" data-action="play-local2p">Local 2P</button>
+        <button class="btn small" data-action="play-link">Link two tabs</button>
       </div>
       <p class="scribble" aria-hidden="true">your man chases the mouse → click where the ball goes</p>
     </article>
@@ -368,7 +375,7 @@ function resultModal(app: App): string {
         ${r.summary.money > 0 ? `<li>+${formatMoney(r.summary.money)} prize money</li>` : ''}
         <li>+${r.summary.trainingPoints} training session${r.summary.trainingPoints === 1 ? '' : 's'}</li>
         ${r.summary.developments.map((x) => `<li>${esc(x)}</li>`).join('')}
-      </ul>` : '<p class="muted">Nothing recorded for an abandoned friendly.</p>'}
+      </ul>` : `<p class="muted">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
       ${resultReplayHtml()}
       <button class="btn primary big" data-action="close-result">Back to the club</button>
     </div>

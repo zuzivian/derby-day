@@ -133,8 +133,8 @@ export function stageDrill(s: MatchState, id: DrillId, fresh = true): Drill {
     }
     s.phase = 'play';
     s.phaseTicks = 0;
-    s.controlled = HUMAN;
-    s.switchTimer = 30;
+    s.controlled[0] = HUMAN;
+    s.switchTimer[0] = 30;
   }
   const d: Drill = { id, frozen, marker: id === 'move' ? { ...MARKER } : null, base: baseline(s), looseTicks: 0, lastTackleCd: s.players[HUMAN].tackleCd };
   holdFrozen(s, d);
@@ -150,7 +150,7 @@ export function holdFrozen(s: MatchState, d: Drill): void {
     p.vel = { x: 0, y: 0 };
   }
   // In the tackle drill the human stays on the striker even if a watcher is nearer the ball.
-  if (d.id === 'tackle' && s.ball.owner !== HUMAN) s.controlled = HUMAN;
+  if (d.id === 'tackle' && s.ball.owner !== HUMAN) s.controlled[0] = HUMAN;
 }
 
 /** Only the actions the current drill teaches (and the ones before it) reach the sim. */
