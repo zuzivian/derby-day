@@ -48,7 +48,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint"><b>Mouse:</b> your player runs to the pointer · <b>left click</b> pass / tackle · <b>hold right</b> to shoot · <b>right click</b> switch. <b>Keys:</b> WASD · Space · hold F · E.</p>
+    <p class="controls-hint"><b>Mouse:</b> your player runs to the pointer · <b>left click</b> pass / tackle · <b>hold right</b> to shoot · <b>right click</b> switch · <b>Shift</b> or <b>middle button</b> sprint · <b>Ctrl+click</b> through ball · <b>Ctrl + hold right</b> chip. <b>Keys:</b> WASD · Space · R through · hold F shoot · hold C chip · Shift · E.</p>
   </section>`;
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
@@ -107,7 +107,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         steps++;
       }
     }
-    renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse' });
+    renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse', armed: input.armed() });
 
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
