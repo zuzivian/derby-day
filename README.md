@@ -1,4 +1,4 @@
-# Through Ball
+# Derby Day
 
 A browser football club manager where you also play the matches yourself, mouse-first. You run a generated club (squad, transfers, training, an Elo ladder) and play 6-a-side matches in real time against the CPU.
 

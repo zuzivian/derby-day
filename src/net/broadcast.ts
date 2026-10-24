@@ -30,7 +30,7 @@ export function broadcastSupport(): Support {
     };
   }
   try {
-    new BroadcastChannel('throughball.probe').close();
+    new BroadcastChannel('derbyday.probe').close();
   } catch {
     return { ok: false, reason: 'This page is not allowed to open a BroadcastChannel (sandboxed or storage blocked). Open dist/index.html directly in two tabs.' };
   }
@@ -54,7 +54,7 @@ export class BroadcastTransport<M> implements Transport<M> {
     room: string,
     readonly id: string,
   ) {
-    this.ch = new BroadcastChannel(`throughball.room.${room}`);
+    this.ch = new BroadcastChannel(`derbyday.room.${room}`);
     this.ch.onmessage = (e: MessageEvent<Envelope<M>>) => {
       const env = e.data;
       if (!env || typeof env !== 'object' || env.from === this.id) return;

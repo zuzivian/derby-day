@@ -3,16 +3,21 @@
 
 import { isSave, type Save } from '../meta/game.ts';
 
-const SAVE_KEY = 'throughball.save.v1';
-const PREFS_KEY = 'throughball.prefs.v1';
+const SAVE_KEY = 'derbyday.save.v1';
+const PREFS_KEY = 'derbyday.prefs.v1';
 
-// The game was called Overlap until 2026-10-24. Copy anything saved under the old
-// keys so existing clubs, settings and replays carry over. Runs once, on import.
+// The game was called Overlap, then briefly Through Ball, before Derby Day (2026-10-24).
+// Copy anything saved under the old keys so existing clubs, settings and replays
+// carry over. Runs once, on import; the first old key found wins.
 const LEGACY_KEYS: [string, string][] = [
+  ['throughball.save.v1', SAVE_KEY],
+  ['throughball.prefs.v1', PREFS_KEY],
+  ['throughball.replays.v1', 'derbyday.replays.v1'],
+  ['throughball.audio.muted.v1', 'derbyday.audio.muted.v1'],
   ['overlap.save.v1', SAVE_KEY],
   ['overlap.prefs.v1', PREFS_KEY],
-  ['overlap.replays.v1', 'throughball.replays.v1'],
-  ['overlap.audio.muted.v1', 'throughball.audio.muted.v1'],
+  ['overlap.replays.v1', 'derbyday.replays.v1'],
+  ['overlap.audio.muted.v1', 'derbyday.audio.muted.v1'],
 ];
 try {
   for (const [from, to] of LEGACY_KEYS) {

@@ -1,10 +1,10 @@
-// The last few replays, in localStorage under throughball.replays.v1 (see
+// The last few replays, in localStorage under derbyday.replays.v1 (see
 // addRecent for the count and size caps). Every access is wrapped: storage can
 // be missing, full or blocked, in which case replays live for this tab only.
 
 import { addRecent, decodeReplay, encodeReplay, replayId, type Replay, type StoredReplay } from '../meta/replay.ts';
 
-const KEY = 'throughball.replays.v1';
+const KEY = 'derbyday.replays.v1';
 
 /** Used when storage throws, so the result screen can still offer the replay it just recorded. */
 let memory: StoredReplay[] = [];

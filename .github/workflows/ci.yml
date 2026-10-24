@@ -53,7 +53,7 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: through-ball-dist
+          name: derby-day-dist
           path: dist/index.html
           if-no-files-found: error
 
