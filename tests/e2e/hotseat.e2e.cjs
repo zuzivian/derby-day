@@ -14,7 +14,7 @@ const pos = async (page, which) => {
 test('Local 2P: pick an opponent, both players steer their own team, nothing is recorded', async (t) => {
   const page = await openApp(t, { prefs: { halfSeconds: 4, controls: 'keys' } });
   const before = await readSave(page);
-  await goTab(page, 'club');
+  await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playLocal2p).click();
   await page.waitForSelector(SEL.l2pStart);
   const options = await page.locator(`${SEL.l2pOpp} option`).count();

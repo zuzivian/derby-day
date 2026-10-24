@@ -13,7 +13,8 @@
 // keeps them whatever its level), or when it was unlocked once before
 // (`unlocksSeen`): once unlocked, always unlocked, even if the XP table is
 // rebalanced later. Match controls (sprint, through ball, chip) are never
-// gated.
+// gated. Both ways to play another human (Local 2P, Link two tabs) are open
+// from level 1: "vs Player" is one of the home screen's play modes.
 //
 // XP. See XP below and docs/ROADMAP.md ("Club levels") for the table and the
 // pacing. Forfeits and abandoned matches earn nothing, and two-human matches
@@ -90,20 +91,20 @@ export interface Unlock {
 }
 
 export const UNLOCKS: readonly Unlock[] = [
-  { id: 'club', level: 1, kind: 'feature', name: 'Club screen', text: 'Your next fixture, Elo, form and club news.' },
+  { id: 'club', level: 1, kind: 'feature', name: 'Home and Club', text: 'Kick off your next match from Home; club news and this list live under Club.' },
   { id: 'squad', level: 1, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting six.' },
   { id: 'ranked', level: 1, kind: 'feature', name: 'Ranked matches', text: 'Play ladder clubs near your Elo, live.' },
   { id: 'practice', level: 1, kind: 'feature', name: 'Practice (Easy, Normal)', text: 'Friendlies against the CPU. No Elo.' },
+  { id: 'local2p', level: 1, kind: 'feature', name: 'Local 2P', text: 'vs Player on one screen: two humans, one keyboard. Nothing recorded.' },
+  { id: 'link', level: 1, kind: 'feature', name: 'Link two tabs', text: 'vs Player in two tabs of this browser, in lockstep. Nothing recorded.' },
   { id: 'training', level: 2, kind: 'feature', name: 'Training', text: 'Spend the sessions you earn on player attributes.', go: { screen: 'training', label: 'Go to Training' } },
   { id: 'transfers', level: 3, kind: 'feature', name: 'Transfers', text: 'Sign players from the market and sell to CPU clubs.', go: { screen: 'transfers', label: 'Go to Transfers' } },
   { id: 'ladder', level: 4, kind: 'feature', name: 'Ladder', text: 'The full Elo table of all 16 clubs.', go: { screen: 'ladder', label: 'Go to the Ladder' } },
   { id: 'cup', level: 5, kind: 'feature', name: 'The Cup', text: 'The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy.', go: { screen: 'competitions', label: 'Go to Competitions' } },
-  { id: 'practice-hard', level: 5, kind: 'feature', name: 'Practice Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'club', label: 'Show me', focusId: 'practice-hard' } },
+  { id: 'practice-hard', level: 5, kind: 'feature', name: 'Practice Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-hard' } },
   { id: 'replays', level: 6, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
-  { id: 'local2p', level: 7, kind: 'feature', name: 'Local 2P', text: 'Two humans on one keyboard. Nothing recorded.', go: { screen: 'club', label: 'Show me', focusId: 'play-local2p' } },
   { id: 'league', level: 8, kind: 'feature', name: 'League season', text: 'An 8-club round robin over 7 matchdays, with prize money for every place.', go: { screen: 'competitions', label: 'Go to Competitions', focusId: 'comp-start-season' } },
   { id: 'calendar', level: 10, kind: 'feature', name: 'Season calendar and academy', text: 'Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive.', go: { screen: 'club', label: 'Show me', focusId: 'news-title' } },
-  { id: 'link', level: 12, kind: 'feature', name: 'Link two tabs', text: 'Play another tab of this browser in lockstep. Nothing recorded.', go: { screen: 'club', label: 'Show me', focusId: 'play-link' } },
   { id: 'squad-15', level: 15, kind: 'perk', name: 'Squad of 15', text: 'Room for one more player (14 to 15).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'crest', level: 18, kind: 'perk', name: 'Crest pattern', text: 'Change your crest pattern any time from Club news.', go: { screen: 'club', label: 'Show me', focusId: 'crest-select' } },
   { id: 'market-20', level: 20, kind: 'perk', name: 'Deeper market', text: 'Two extra players on the transfer market (10 to 12).', go: { screen: 'transfers', label: 'Go to Transfers' } },
@@ -170,7 +171,9 @@ export function nextUnlockText(save: Save): string | null {
 export function pendingUnlocks(save: Save): Unlock[] {
   const seen = new Set(save.unlocksSeen ?? []);
   const level = clubLevel(save);
-  return UNLOCKS.filter((u) => u.level <= level && !seen.has(u.id));
+  // Level-1 features are the starting kit, never news: a save whose unlocksSeen
+  // predates one (vs Player moved to level 1) gets no level-up dialog for it.
+  return UNLOCKS.filter((u) => u.level > 1 && u.level <= level && !seen.has(u.id));
 }
 
 /** The level-up dialog was closed: everything reached so far counts as seen (and stays unlocked). */
