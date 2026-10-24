@@ -40,10 +40,10 @@ test('levels: a fresh club shows only Home and Kick off, with a level 1 XP bar',
   expect(await page.locator(SEL.playLink).count(), 'no Link two tabs yet').toBe(0);
   expect(await page.locator(SEL.playRanked).count(), 'ranked is not open yet: Kick off is a warm-up').toBe(0);
   expect(await page.locator(SEL.kickOff).getAttribute('data-action'), 'warm-up friendly').toBe('play-warmup');
-  // The club level details live on the Club tab (level 3), which is not there yet; the badge does nothing.
+  // The club level details live on the Club tab (level 3), which is not there yet; the badge is not a button.
   expect(await page.locator(SEL.nextUnlock).count(), 'no teaser on Home').toBe(0);
-  await page.locator(SEL.levelBadge).click();
-  expect(await page.locator(`${SEL.tabFor('home')}[aria-current]`).count(), 'still on Home').toBe(1);
+  expect(await page.locator(SEL.levelBadge).count(), 'the badge is not a button yet').toBe(0);
+  expect(await page.locator(`${SEL.tabFor('home')}[aria-current]`).count(), 'on Home').toBe(1);
   expect(await page.locator(SEL.levelUp).count(), 'no level-up dialog').toBe(0);
 });
 
