@@ -5,7 +5,7 @@ const { SEL, openApp, goTab, tabScreens, pageWidths } = require('./lib/helpers.c
 
 test('boots with no page errors and renders the club screen', async (t) => {
   const page = await openApp(t);
-  expect(await page.title(), 'title').toMatch(/through ball/i);
+  expect(await page.title(), 'title').toMatch(/derby day/i);
   expect((await page.locator(SEL.app).innerText()).length, 'app text length').toBeGreaterThan(50);
   expect(await page.locator(SEL.tab).count(), 'tab count').toBeGreaterThanOrEqual(5);
   await page.waitForTimeout(500); // let any late async errors surface (the runner fails the test on them)
