@@ -95,7 +95,7 @@ export function shell(app: App, body: string): string {
   return `
   <a class="skip-link" href="#main" data-action="skip-to-main"${inert}>Skip to main content</a>
   <header class="topbar"${inert}>
-    <div class="brand"><h1 class="wordmark">Through Ball</h1><span class="tagline">Run the club. Play the match.</span></div>
+    <div class="brand"><h1 class="wordmark">Derby Day</h1><span class="tagline">Run the club. Play the match.</span></div>
     <div class="club-chip">
       ${crestSvg(c, 34)}
       <div class="club-chip-text">

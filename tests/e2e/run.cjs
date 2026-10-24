@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Tiny e2e runner for Through Ball. No test framework: see lib/harness.cjs.
+// Tiny e2e runner for Derby Day. No test framework: see lib/harness.cjs.
 //
 //   bun run e2e                       build, then run everything
 //   node tests/e2e/run.cjs [filter]   run tests whose name contains `filter` (case-insensitive)
@@ -62,7 +62,7 @@ async function main() {
   }
 
   const browser = await chromium.launch({ executablePath: executablePath(), headless: !process.env.E2E_HEADED });
-  console.log(`Through Ball e2e: ${tests.length} tests against ${APP_URL}\n`);
+  console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}\n`);
 
   const results = [];
   for (const t of tests) {

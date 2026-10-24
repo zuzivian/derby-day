@@ -278,11 +278,11 @@ export class ReplaySeeker {
 }
 
 // ---------------------------------------------------------------------------
-// Compact code: binary body, base64url, "TB1." prefix, FNV checksum. Codes made
-// before the rename start "OVR1." and decode the same way.
+// Compact code: binary body, base64url, "DD1." prefix, FNV checksum. Codes made
+// under the game's earlier names start "OVR1." or "TB1." and decode the same way.
 
-const PREFIX = 'TB1.';
-const LEGACY_PREFIXES = ['OVR1.'];
+const PREFIX = 'DD1.';
+const LEGACY_PREFIXES = ['OVR1.', 'TB1.'];
 const MAX_TICKS = 600_000;
 const ROLES: Role[] = ['GK', 'DEF', 'MID', 'FWD'];
 const ATTRS: (keyof SimAttrs)[] = ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'stamina', 'goalkeeping'];
@@ -611,7 +611,7 @@ export function decodeReplay(code: string): Replay {
 function decodeBody(code: string): Replay {
   const text = code.replace(/\s+/g, '');
   const prefix = [PREFIX, ...LEGACY_PREFIXES].find((p) => text.startsWith(p));
-  if (!prefix) throw new Error('That is not a Through Ball replay code.');
+  if (!prefix) throw new Error('That is not a Derby Day replay code.');
   let bytes: Uint8Array;
   try {
     bytes = fromBase64Url(text.slice(prefix.length));

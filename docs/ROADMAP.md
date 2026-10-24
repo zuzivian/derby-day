@@ -1,6 +1,6 @@
-# Through Ball roadmap: from prototype to live service
+# Derby Day roadmap: from prototype to live service
 
-Working title **Through Ball** (the pass into space behind the defence, which is also this game's signature move: Ctrl/Cmd-click). The old game that inspired this is not named anywhere in the product. Clubs, players, nations and the currency (club florins, ƒ) are all generated.
+Working title **Derby Day**: the match against your local rival that everyone circles on the calendar, which is the feeling a ranked match between two people's clubs should have. The old game that inspired this is not named anywhere in the product. Clubs, players, nations and the currency (club florins, ƒ) are all generated.
 
 ## The bet
 

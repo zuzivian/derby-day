@@ -5,8 +5,8 @@
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
-const SAVE_KEY = 'throughball.save.v1';
-const PREFS_KEY = 'throughball.prefs.v1';
+const SAVE_KEY = 'derbyday.save.v1';
+const PREFS_KEY = 'derbyday.prefs.v1';
 const DIST = path.resolve(__dirname, '..', '..', '..', 'dist', 'index.html');
 const APP_URL = pathToFileURL(DIST).href;
 
@@ -118,7 +118,7 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  * Open the app in a fresh context.
  *   colorScheme  'light' | 'dark'
  *   width/height viewport
- *   prefs        object stored under throughball.prefs.v1 (e.g. { halfSeconds: 3 })
+ *   prefs        object stored under derbyday.prefs.v1 (e.g. { halfSeconds: 3 })
  *   mutateSave   (save) => void, applied to the stored save before the real test starts.
  *                Must be self-contained: it is serialised and run in the page.
  *   level        club level to start at (default 99, so every tab and button is unlocked).
