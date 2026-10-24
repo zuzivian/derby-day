@@ -12,7 +12,15 @@ import { botInput } from '../src/net/memory.ts';
 import { ABANDON_MS, PeerWatch } from '../src/net/presence.ts';
 import { netVersion, WebSocketTransport, type LinkEvent, type SocketLike, type Timers } from '../src/net/websocket.ts';
 import { createMatch, fingerprint } from '../src/sim/match.ts';
+import { makeRng, next } from '../src/sim/rng.ts';
 import type { HumanInput } from '../src/sim/types.ts';
+
+/** Seeded 0..1 randoms, so backoff jitter and room codes are the same on every run. */
+let seedCounter = 0;
+function seeded(): () => number {
+  const r = makeRng(1000 + seedCounter++);
+  return () => next(r);
+}
 
 /** Fake clock and timer queue. */
 class Sched implements Timers {
@@ -47,7 +55,7 @@ class Sched implements Timers {
 /** A relay core reached through fake sockets with a fixed one-way latency. `down` makes new connections fail. */
 function fakeRelay(sched: Sched, latency = 20, limits: Partial<RelayLimits> = {}) {
   let tokens = 0;
-  const core = new RelayCore({ now: sched.now, random: Math.random, token: () => `t${++tokens}`, limits });
+  const core = new RelayCore({ now: sched.now, random: seeded(), token: () => `t${++tokens}`, limits });
   const net = { down: false, sockets: [] as SocketLike[] };
   const connect = (_url: string): SocketLike => {
     let serverOpen = true;
@@ -111,12 +119,12 @@ function setup(seed = 11) {
 
 function linkPair(sched: Sched, relay: ReturnType<typeof fakeRelay>) {
   const events: LinkEvent[][] = [[], []];
-  const host = new WebSocketTransport<LockstepMsg>({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched });
+  const host = new WebSocketTransport<LockstepMsg>({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched, random: seeded() });
   host.onEvent((e) => events[0].push(e));
   sched.advance(100);
   expect(host.status).toBe('open');
   expect(host.code).toMatch(/^[A-Z0-9]{6}$/);
-  const guest = new WebSocketTransport<LockstepMsg>({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched });
+  const guest = new WebSocketTransport<LockstepMsg>({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched, random: seeded() });
   guest.onEvent((e) => events[1].push(e));
   sched.advance(100);
   return { host, guest, events };
@@ -202,8 +210,10 @@ describe('websocket transport over the relay core', () => {
       if (p.state === 'lost') minRemaining = Math.min(minRemaining, p.remainingMs);
     });
     expect(seen).toEqual(['ok', 'lost', 'ok']);
-    expect(minRemaining).toBeGreaterThan(ABANDON_MS - 9000);
-    expect(minRemaining).toBeLessThan(ABANDON_MS - 4000);
+    // Lost for at least the 6 s outage, and at most the outage plus one full backoff step
+    // (4 s, +25% jitter) plus a little latency: the reconnect that lands after the relay is back.
+    expect(minRemaining).toBeLessThan(ABANDON_MS - 6000);
+    expect(minRemaining).toBeGreaterThan(ABANDON_MS - 6000 - 5000 - 1000);
     expect(peers[0].s.tick).toBe(1200);
   });
 
@@ -236,11 +246,11 @@ describe('websocket transport over the relay core', () => {
     const sched = new Sched();
     const relay = fakeRelay(sched);
     const { host } = linkPair(sched, relay);
-    const lonely = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched });
+    const lonely = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched, random: seeded() });
     sched.advance(100);
-    const old = new WebSocketTransport({ url: 'ws://relay', version: netVersion(1, 3), role: { join: lonely.code! }, connect: relay.connect, timers: sched });
-    const third = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched });
-    const nobody = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: 'QQQQQQ' }, connect: relay.connect, timers: sched });
+    const old = new WebSocketTransport({ url: 'ws://relay', version: netVersion(1, 3), role: { join: lonely.code! }, connect: relay.connect, timers: sched, random: seeded() });
+    const third = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched, random: seeded() });
+    const nobody = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: 'QQQQQQ' }, connect: relay.connect, timers: sched, random: seeded() });
     const before = relay.net.sockets.length;
     sched.advance(10_000);
     expect([old.status, third.status, nobody.status]).toEqual(['closed', 'closed', 'closed']);
@@ -254,7 +264,7 @@ describe('websocket transport over the relay core', () => {
     const sched = new Sched();
     const relay = fakeRelay(sched);
     relay.net.down = true;
-    const tr = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched });
+    const tr = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched, random: seeded() });
     const seen: string[] = [];
     tr.onEvent((e) => e.type === 'status' && seen.push(e.status));
     sched.advance(7000);
@@ -285,7 +295,7 @@ describe('websocket transport over the relay core', () => {
   test('heartbeats keep an idle lobby open past the relay heartbeat timeout', () => {
     const sched = new Sched();
     const relay = fakeRelay(sched, 20, { heartbeatMs: 12_000 });
-    const tr = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched });
+    const tr = new WebSocketTransport({ url: 'ws://relay', version: V, role: { host: true }, connect: relay.connect, timers: sched, random: seeded() });
     for (let i = 0; i < 60; i++) {
       sched.advance(1000);
       relay.core.sweep();
