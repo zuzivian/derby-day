@@ -32,7 +32,7 @@ export interface CameraFocus {
    * Elevated long view (goal kicks, own-half free kicks, the keeper's ball): these scene points must
    * all be in shot, the ball among them (fitLong).
    */
-  long?: { points: { x: number; z: number }[] } | null;
+  long?: { points: { x: number; z: number }[]; corner?: boolean } | null;
   /** An instant-replay shot: 'low' from the side near pitch level, 'goal' from behind the goal at scene x = goalX. */
   replay?: { kind: 'low' | 'goal'; goalX: number } | null;
 }
@@ -57,6 +57,9 @@ export const LONG_ELEV = 46;
 
 /** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
 const VFOV = 40;
+
+/** On upright screens the long view only needs this far either side of the ball across the pitch, m. */
+export const NARROW_BAND = 20;
 
 /** The long view keeps every point it must show at least this far inside the frame (NDC, 0.88 = 12% in). */
 export const LONG_MARGIN = 0.88;
@@ -255,7 +258,7 @@ export class MatchCamera {
       // are all in shot (fitLong), whatever the spot. The end camera keeps its own framing, wider.
       if (this.mode === 'broadcast') {
         elev = LONG_ELEV;
-        const fit = this.longFit(lv.points, aspect);
+        const fit = this.longFit(lv.points, aspect, !lv.corner);
         width = fit.width;
         tx = fit.x;
         tz = fit.z;
@@ -369,7 +372,14 @@ export class MatchCamera {
   private fit = { x: 0, z: 0, width: 60 };
 
   /** fitLong, cached while the points and the aspect stay the same (a set piece being lined up). */
-  private longFit(points: { x: number; z: number }[], aspect: number): { x: number; z: number; width: number } {
+  private longFit(points: { x: number; z: number }[], aspect: number, band: boolean): { x: number; z: number; width: number } {
+    // Upright phones: fitting touchline to touchline as well left the frame mostly stand. Keep the
+    // depth to a band round the ball there; the width still runs past halfway. (Not for corners,
+    // which frame the whole box.)
+    if (band && aspect < 1 && points.length) {
+      const b = points[0];
+      points = points.map((p) => ({ x: p.x, z: Math.max(b.z - NARROW_BAND, Math.min(b.z + NARROW_BAND, p.z)) }));
+    }
     const key = `${aspect.toFixed(3)}|${points.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
     if (key !== this.fitKey) {
       this.fitKey = key;

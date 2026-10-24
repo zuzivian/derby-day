@@ -1,6 +1,7 @@
 // three.js match renderer. Reads sim state only, like the 2D PitchRenderer,
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
+import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
@@ -85,11 +86,23 @@ export interface ReplayShot {
  * the frame must show (the ball, a little behind it, and touchline to touchline out to LONG_PAST
  * beyond halfway), or null. Pure, for tests.
  */
-export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[] } | null {
+export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
   const dir = attackDir(me);
   const r = s.restart;
   const b = s.ball;
+  // Corners, either side's: the taker, the goal and the whole box (review of #15: the broadcast view
+  // showed stands and sky, with the goal off the edge of the frame).
+  if (r && r.kind === 'corner' && r.stage !== 'whistle') {
+    const gx = r.spot.x < HALF_W ? 0 : HALF_W * 2;
+    const inX = gx === 0 ? BOX_DEPTH : HALF_W * 2 - BOX_DEPTH;
+    const pen = gx === 0 ? PEN_SPOT : HALF_W * 2 - PEN_SPOT;
+    return {
+      kind: 'corner',
+      ball: { x: r.spot.x, y: r.spot.y },
+      points: [{ x: r.spot.x, y: r.spot.y }, { x: gx, y: HALF_H - BOX_W / 2 }, { x: gx, y: HALF_H + BOX_W / 2 }, { x: inX, y: HALF_H - BOX_W / 2 }, { x: inX, y: HALF_H + BOX_W / 2 }, { x: pen + (gx === 0 ? 4 : -4), y: HALF_H }],
+    };
+  }
   let ball: Vec | null = null;
   if (r && r.team === me && r.stage !== 'whistle') {
     const own = dir > 0 ? r.spot.x < HALF_W : r.spot.x > HALF_W;
@@ -103,6 +116,7 @@ export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[] }
   const past = HALF_W + dir * LONG_PAST;
   const near = HALF_H * 2 - LONG_TOUCH;
   return {
+    kind: 'long',
     ball: { x: ball.x, y: ball.y },
     points: [{ x: ball.x, y: ball.y }, { x: back, y: LONG_TOUCH }, { x: back, y: near }, { x: past, y: LONG_TOUCH }, { x: past, y: near }],
   };
@@ -291,7 +305,17 @@ export class Renderer3D implements MatchRenderer {
     return this.prefMode;
   }
 
+  private cutCount = 0;
+  /** While performance.now() is before this, the view is being re-framed on its own (a zoom, the long view coming or going). */
+  private reframeUntil = 0;
+
+  /** WorldPicker.cuts: bumped on a cut and on every frame of an automatic re-framing (see input.ts). */
+  cuts(): number {
+    return this.cutCount;
+  }
+
   setCameraMode(m: CameraMode): void {
+    this.cutCount++;
     this.prefMode = m;
     this.cam.mode = m;
     this.cam.snap();
@@ -310,6 +334,7 @@ export class Renderer3D implements MatchRenderer {
   /** Set the zoom (clamped to ZOOM_MIN..ZOOM_MAX) and remember it in this browser. Returns the new value. */
   setZoom(z: number): number {
     this.cam.zoom = clampZoom(z);
+    this.reframeUntil = performance.now() + 1200;
     try {
       localStorage.setItem(ZOOM_KEY, this.cam.zoom.toFixed(3));
     } catch {
@@ -326,7 +351,7 @@ export class Renderer3D implements MatchRenderer {
   /** Instant replays: the replay camera to use, or null for the normal match cameras. */
   replayShot: ReplayShot | null = null;
 
-  private longHold: { ball: Vec; points: Vec[]; until: number } | null = null;
+  private longHold: { ball: Vec; points: Vec[]; kind: 'long' | 'corner'; until: number } | null = null;
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
@@ -456,7 +481,10 @@ export class Renderer3D implements MatchRenderer {
     if (jumped || this.clock === null) {
       this.clock = tickTime;
       this.rate = 1;
-      if (jumped) this.cam.snap();
+      if (jumped) {
+        this.cam.snap();
+        this.cutCount++;
+      }
     } else {
       const adv = (s.tick - this.lastTick) / 60;
       const inst = dt > 0 ? adv / dt : 1;
@@ -643,8 +671,10 @@ export class Renderer3D implements MatchRenderer {
     if (lv) this.longHold = { ...lv, until: clock + 0.9 };
     else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
     else this.longHold = null;
+    if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
+    if (t0 < this.reframeUntil) this.cutCount++;
     this.longViewOn = !!lv;
-    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? 'long' : this.cam.mode;
+    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
     const rs = this.replayShot;
     this.cam.update(
       dt,
@@ -658,7 +688,7 @@ export class Renderer3D implements MatchRenderer {
         phase: s.phase,
         close: cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
         humanDir: attackDir(this.me) as 1 | -1,
-        long: lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })) } : null,
+        long: lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null,
         replay: rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null,
       },
       this.cssW / this.cssH,

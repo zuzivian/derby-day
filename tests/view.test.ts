@@ -270,13 +270,44 @@ describe('camera', () => {
         for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
         // The ball, the corners of the strip (touchline to touchline, from behind the ball to 20 m past
         // halfway), and a full-back on each touchline level with the ball.
-        const must = [{ x, y }, ...lv.points, { x: x + 8, y: 64 }, { x: x + 8, y: 4 }];
+        // On upright screens only a band 20 m either side of the ball across the pitch (NARROW_BAND).
+        const band = (q: { x: number; y: number }) => (aspect < 1 ? { x: q.x, y: Math.max(y - 20, Math.min(y + 20, q.y)) } : q);
+        const must = [{ x, y }, ...[...lv.points, { x: x + 8, y: 64 }, { x: x + 8, y: 4 }].map(band)];
         for (const p of must) {
           const v = new Vector3(p.x - PITCH_W / 2, 0, p.y - PITCH_H / 2).project(c.camera);
           const ok = Math.abs(v.x) <= 0.9 && Math.abs(v.y) <= 0.9;
           if (!ok) throw new Error(`${kind} at ${x},${y}, aspect ${aspect.toFixed(2)}: (${p.x},${p.y}) at ndc ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
         }
         expect(lv.points.some((p) => p.x >= PITCH_W / 2 + 20)).toBe(true);
+      }
+    }
+  });
+
+  test('a corner frames the taker, the goal and the whole box, for either side and at either end', () => {
+    for (const [aspect, w] of [
+      [1041 / 697, 1041],
+      [358 / 597, 358],
+      [828 / 374, 828],
+    ]) {
+      for (const [team, cx, cy] of [
+        [0, PITCH_W, 0],
+        [0, PITCH_W, PITCH_H],
+        [1, 0, 0],
+        [1, 0, PITCH_H],
+      ] as const) {
+        const s = match(15);
+        s.restart = { kind: 'corner', team, spot: { x: cx, y: cy }, stage: 'ready' } as MatchState['restart'];
+        const lv = longView(s, 0)!;
+        expect(lv.kind).toBe('corner');
+        const c = new MatchCamera();
+        const f = { ...focus, x: cx - PITCH_W / 2, z: cy - PITCH_H / 2, long: { points: lv.points.map((p) => ({ x: p.x - PITCH_W / 2, z: p.y - PITCH_H / 2 })), corner: true } };
+        for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
+        const gx = cx === 0 ? 0 : PITCH_W;
+        const box = cx === 0 ? 16.5 : PITCH_W - 16.5;
+        for (const p of [{ x: cx, y: cy }, { x: gx, y: PITCH_H / 2 - 3.66 }, { x: gx, y: PITCH_H / 2 + 3.66 }, { x: box, y: PITCH_H / 2 - 20.16 }, { x: box, y: PITCH_H / 2 + 20.16 }]) {
+          const v = new Vector3(p.x - PITCH_W / 2, 0, p.y - PITCH_H / 2).project(c.camera);
+          if (Math.abs(v.x) > 0.9 || Math.abs(v.y) > 0.9) throw new Error(`corner ${cx},${cy} aspect ${aspect.toFixed(2)}: (${p.x},${p.y}) at ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
+        }
       }
     }
   });

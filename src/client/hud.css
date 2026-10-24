@@ -1,5 +1,6 @@
 /* In-match HUD over the pitch (src/client/hud.ts) and the 3D view's controls. */
-.match .pitch-wrap { width: min(100%, calc((100vh - 120px) * 1.531)); }
+/* 140 px: the page's top padding, the pitch and the one-line controls hint fit a 1280x800 window without scrolling. */
+.match .pitch-wrap { width: min(100%, calc((100vh - 140px) * 1.531)); }
 .hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--font-display, 'Arial Narrow', sans-serif); border-radius: 10px; overflow: hidden; }
 .hud button { pointer-events: auto; }
 
@@ -124,7 +125,7 @@
    above, so it wins the cascade. */
 @media (pointer: coarse) {
   .hud-power { bottom: 86px; right: 10px; }
-  .hud-radar { left: 52px; transform: none; }
+  .hud-radar { left: 60px; transform: none; }
 }
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
@@ -140,6 +141,16 @@
 #pitch[data-camera="end"] ~ .hud .hud-radar { left: 52px; transform: none; }
 /* The 2D view already shows the whole pitch: no radar over it. */
 #pitch[data-renderer="2d"] ~ .hud .hud-radar { display: none; }
+/* Touch: every HUD button is at least 44 px high with 8 px between them (WCAG target size), and the
+   Esc key cap, meaningless without a keyboard, is hidden. */
+@media (pointer: coarse) {
+  .hud-tr { gap: 8px; }
+  .hud-menu, .pitch-cam { min-height: 44px; min-width: 44px; justify-content: center; padding: 0 12px; }
+  .hud-menu kbd { display: none; }
+  .pitch-zoom { gap: 8px; }
+  .pitch-zoom button { width: 44px; height: 44px; }
+  .pitch-wrap .juice-mute { width: 44px; height: 44px; }
+}
 /* Phones held sideways: the pitch fills the screen and the HUD keeps to its edges. */
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
   #app:has(> .match) { padding-top: 8px; padding-bottom: 8px; gap: 0; min-height: 0; }

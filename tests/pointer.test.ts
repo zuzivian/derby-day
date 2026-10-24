@@ -31,7 +31,9 @@ function rig(s: MatchState) {
   const ground = new Plane(new Vector3(0, 1, 0), 0);
   const hit = new Vector3();
   const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0, width: W, height: H }) }) as unknown as HTMLCanvasElement;
+  const cut = { n: 0 };
   const picker = {
+    cuts: () => cut.n,
     toWorld(cx: number, cy: number) {
       rc.setFromCamera(new Vector2((cx / W) * 2 - 1, -(cy / H) * 2 + 1), cam.camera);
       rc.ray.intersectPlane(ground, hit);
@@ -52,7 +54,7 @@ function rig(s: MatchState) {
     const v = new Vector3(sx(x), 0, sz(y)).project(cam.camera);
     return { x: ((v.x + 1) / 2) * W, y: ((1 - v.y) / 2) * H };
   };
-  return { cam, canvas, input, frame, screenOf };
+  return { cam, canvas, input, frame, screenOf, cut };
 }
 
 function setup(seed: number) {
@@ -119,12 +121,86 @@ describe('a still mouse and the moving camera', () => {
   });
 });
 
+describe('a click with a still mouse goes where the ring and wedge show', () => {
+  // Review of #15: pointerdown re-projected through the panned camera, so the click target was 3 to 12 m
+  // away from the latched point the ring and wedge showed.
+  for (const [ax, ay] of [
+    [10, 0],
+    [14, 0],
+    [0, 9],
+    [-8, -6],
+  ]) {
+    test(`aim ${ax}, ${ay}: after the camera pans, a click keeps the latched point`, () => {
+      const { s, me } = setup(31);
+      const r = rig(s);
+      for (let i = 0; i < 120; i++) r.frame();
+      const at = r.screenOf(me.pos.x + ax, me.pos.y + ay);
+      r.canvas.dispatchEvent(pointerEvent('pointermove', at.x, at.y));
+      const latched = { ...r.input.cursor! };
+      // He runs at it and the camera follows; the mouse doesn't move.
+      for (let t = 0; t < 90; t++) {
+        step(s, r.input.take());
+        r.frame();
+      }
+      expect(r.input.cursor).toEqual(latched);
+      r.canvas.dispatchEvent(pointerEvent('pointerdown', at.x, at.y, { button: 0 }));
+      expect(r.input.cursor).toEqual(latched);
+      (globalThis as unknown as { window: EventTarget }).window.dispatchEvent(pointerEvent('pointerup', at.x, at.y, { button: 0 }));
+      const sent = r.input.take();
+      if (sent.aim) expect(Math.hypot(sent.aim.x - latched.x, sent.aim.y - latched.y)).toBeLessThan(0.01);
+      expect(Math.hypot(sent.cursor!.x - latched.x, sent.cursor!.y - latched.y)).toBeLessThan(0.3);
+    });
+  }
+
+  test('a press after the pointer moved takes the new point', () => {
+    const { s, me } = setup(32);
+    const r = rig(s);
+    for (let i = 0; i < 120; i++) r.frame();
+    const a = r.screenOf(me.pos.x + 10, me.pos.y);
+    r.canvas.dispatchEvent(pointerEvent('pointermove', a.x, a.y));
+    const b = r.screenOf(me.pos.x + 4, me.pos.y + 5);
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', b.x, b.y, { button: 0 }));
+    expect(Math.hypot(r.input.cursor!.x - (me.pos.x + 4), r.input.cursor!.y - (me.pos.y + 5))).toBeLessThan(0.2);
+  });
+
+  test('after a camera cut, the still pointer takes the grass now under it', () => {
+    const { s, me } = setup(33);
+    const r = rig(s);
+    for (let i = 0; i < 120; i++) r.frame();
+    const a = r.screenOf(me.pos.x + 10, me.pos.y);
+    r.canvas.dispatchEvent(pointerEvent('pointermove', a.x, a.y));
+    r.input.take();
+    const before = { ...r.input.cursor! };
+    // The camera jumps (a cut), and the renderer reports it.
+    r.cam.zoom = 1.4;
+    r.cam.snap();
+    r.frame();
+    r.cut.n++;
+    r.input.take();
+    expect(Math.hypot(r.input.cursor!.x - before.x, r.input.cursor!.y - before.y)).toBeGreaterThan(1);
+  });
+});
+
+describe('touch: a lost pointerup does not kill steering', () => {
+  test('a fresh primary touch steers even if an old id was never released', () => {
+    const { s } = setup(34);
+    const r = rig(s);
+    for (let i = 0; i < 60; i++) r.frame();
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 500, 400, { pointerType: 'touch', pointerId: 3, isPrimary: true }));
+    // Its pointerup is lost. Next gesture:
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 300, 300, { pointerType: 'touch', pointerId: 4, isPrimary: true }));
+    const at = { ...r.input.cursor! };
+    r.canvas.dispatchEvent(pointerEvent('pointermove', 200, 250, { pointerType: 'touch', pointerId: 4, isPrimary: true }));
+    expect(r.input.cursor).not.toEqual(at);
+  });
+});
+
 describe('touch: a pinch does not steer', () => {
   test('a second finger, and both fingers moving, leave the cursor where the first finger put it', () => {
     const { s } = setup(23);
     const r = rig(s);
     for (let i = 0; i < 60; i++) r.frame();
-    const t1 = { pointerType: 'touch', pointerId: 7 };
+    const t1 = { pointerType: 'touch', pointerId: 7, isPrimary: true };
     const t2 = { pointerType: 'touch', pointerId: 8 };
     r.canvas.dispatchEvent(pointerEvent('pointerdown', 500, 400, t1));
     const before = { ...r.input.cursor! };

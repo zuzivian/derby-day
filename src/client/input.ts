@@ -42,6 +42,22 @@ export interface WorldPicker {
   toWorld(cssX: number, cssY: number): Vec;
   /** Keyboard direction in screen terms (x right, y down) to world terms; identity when absent (top-down view). */
   screenDir?(d: Vec): Vec;
+  /**
+   * A counter the renderer bumps when the view jumps or is being re-framed on its own (a cut, a
+   * replay ending, a zoom, the long view coming or going). While it changes, a still pointer's world
+   * point is taken again from under it; otherwise it stays on its grass (see InputController.client).
+   */
+  cuts?(): number;
+}
+
+/**
+ * The world point for a pointer event, keeping the latched point when the pointer hasn't moved on
+ * screen since it was taken (a click with a still mouse goes where the ring and wedge show, even if
+ * the camera has panned since). Shared by InputController and the hot-seat HotseatInput.
+ */
+export function latchedPoint(prev: Vec | null, client: { x: number; y: number } | null, e: { clientX: number; clientY: number }, project: () => Vec): Vec {
+  if (prev && client && Math.abs(client.x - e.clientX) < 0.5 && Math.abs(client.y - e.clientY) < 0.5) return prev;
+  return project();
 }
 
 /**
@@ -155,6 +171,8 @@ export class InputController {
   /** Touch pointers down on the pitch. Only the first one steers; two at once is a pinch (renderer.ts), which doesn't. */
   private touches = new Set<number>();
   private steerTouch: number | null = null;
+  private rect: () => { left: number; top: number } = () => ({ left: 0, top: 0 });
+  private cutSeen = -1;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -167,10 +185,13 @@ export class InputController {
       this.cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts));
     };
     const toWorld = (e: PointerEvent) => {
-      this.client = { x: e.clientX, y: e.clientY };
       const r = canvas.getBoundingClientRect();
-      return picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      // A mouse press where the pointer already is keeps the latched point; anything else projects anew.
+      const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, () => picker.toWorld(e.clientX - r.left, e.clientY - r.top)) : picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      this.client = { x: e.clientX, y: e.clientY };
+      return w;
     };
+    this.rect = () => canvas.getBoundingClientRect();
 
     on(canvas, 'mousedown', (e) => {
       if (e.button === 1) e.preventDefault(); // no autoscroll
@@ -185,6 +206,11 @@ export class InputController {
     });
     on(canvas, 'pointerdown', (e) => {
       if (e.pointerType !== 'mouse') {
+        // A primary touch is a fresh gesture: any id left over from a lost pointerup is stale.
+        if (e.isPrimary) {
+          this.touches.clear();
+          this.steerTouch = null;
+        }
         this.touches.add(e.pointerId);
         if (this.touches.size === 1) this.steerTouch = e.pointerId;
         if (!steers(e)) {
@@ -255,7 +281,16 @@ export class InputController {
         this.aim = this.cursor;
       }
     });
+    const forgetTouches = () => {
+      this.touches.clear();
+      this.steerTouch = null;
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', forgetTouches);
+      this.cleanup.push(() => document.removeEventListener('visibilitychange', forgetTouches));
+    }
     on(window, 'blur', () => {
+      forgetTouches();
       this.keys.clear();
       this.leftStart = this.shotStart = this.loftKeyStart = null;
     });
@@ -363,6 +398,15 @@ export class InputController {
   /** Called once per sim tick. One-shot actions are consumed here. */
   take(): HumanInput {
     const input: HumanInput = {};
+    // The view was cut or re-framed: take the still pointer's point again, from where it now lies.
+    const cuts = this.picker.cuts?.() ?? 0;
+    if (cuts !== this.cutSeen) {
+      this.cutSeen = cuts;
+      if (this.client && this.mode === 'mouse') {
+        const r = this.rect();
+        this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
+      }
+    }
     const pointer = this.mode === 'mouse' && this.cursor;
     if (pointer) {
       input.cursor = this.smooth.filter(this.cursor!, 1 / 60);
