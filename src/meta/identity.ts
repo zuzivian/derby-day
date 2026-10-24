@@ -3,7 +3,8 @@
 
 import { pick } from '../sim/rng.ts';
 import { formatMoney, type Save } from './game.ts';
-import { asciiFold, clubName, CREST_PATTERNS, isBlockedClub, KIT_COLORS } from './names.ts';
+import { isUnlocked } from './levels.ts';
+import { asciiFold, clubName, CREST_PATTERNS, isBlockedClub, KIT_COLORS, type CrestPattern } from './names.ts';
 
 export const NAME_MIN = 3;
 export const NAME_MAX = 28;
@@ -81,4 +82,32 @@ export function rerollColours(save: Save): void {
   const options = KIT_COLORS.filter(([p, s]) => p !== c.primary || s !== c.secondary);
   const [primary, secondary] = pick(save.rng, options);
   save.club = { ...c, primary, secondary, crest: pick(save.rng, CREST_PATTERNS) };
+}
+
+// ---------------------------------------------------------------------------
+// Club-level perks: crest pattern (level 18) and kit colours (level 22). Unlike
+// the setup rerolls above these work after the first match too.
+
+/** Every colour used by the generated kits, with a name for the picker. */
+export const KIT_PALETTE: { hex: string; name: string }[] = [
+  { hex: '#c8102e', name: 'Red' }, { hex: '#9f1239', name: 'Claret' }, { hex: '#ea580c', name: 'Orange' }, { hex: '#f2a900', name: 'Amber' },
+  { hex: '#f4d03f', name: 'Yellow' }, { hex: '#fde68a', name: 'Cream' }, { hex: '#0b7a3e', name: 'Green' }, { hex: '#166534', name: 'Forest' },
+  { hex: '#0e7490', name: 'Teal' }, { hex: '#38bdf8', name: 'Sky' }, { hex: '#93c5fd', name: 'Ice blue' }, { hex: '#1d3f8f', name: 'Royal blue' },
+  { hex: '#1e3a8a', name: 'Navy' }, { hex: '#5b2a86', name: 'Purple' }, { hex: '#7c2d12', name: 'Brown' }, { hex: '#0f172a', name: 'Midnight' },
+  { hex: '#111827', name: 'Charcoal' }, { hex: '#1a1a1a', name: 'Black' }, { hex: '#e5e7eb', name: 'Silver' }, { hex: '#ffffff', name: 'White' },
+];
+
+/** Change the crest pattern. Needs the Crest pattern perk. Returns false if refused. */
+export function setCrest(save: Save, crest: CrestPattern): boolean {
+  if (!isUnlocked(save, 'crest') || !CREST_PATTERNS.includes(crest)) return false;
+  save.club = { ...save.club, crest };
+  return true;
+}
+
+/** Change the kit colours (two different palette colours). Needs the Custom kit perk. Returns false if refused. */
+export function setKit(save: Save, primary: string, secondary: string): boolean {
+  const ok = (h: string) => KIT_PALETTE.some((c) => c.hex === h);
+  if (!isUnlocked(save, 'kit') || !ok(primary) || !ok(secondary) || primary === secondary) return false;
+  save.club = { ...save.club, primary, secondary };
+  return true;
 }

@@ -70,7 +70,8 @@ test('the 10th counted match rolls the season over and shows the review after th
 });
 
 test('a full squad is only offered prospects; you can release someone to sign one', async (t) => {
-  const page = await openApp(t, { mutateSave: nearSeasonEndFullSquad });
+  // Level 14: the calendar is on and the squad cap is still 14 (level 15 adds a place).
+  const page = await openApp(t, { level: 14, mutateSave: nearSeasonEndFullSquad });
   await forfeitRanked(page);
   await page.locator(SEL.modalClose).click();
   await page.locator(R.review).waitFor();

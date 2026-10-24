@@ -219,7 +219,14 @@ test('replay: when the clipboard is refused, the code is offered in a selected t
   await page.goto(require('./lib/helpers.cjs').APP_URL);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
-  await page.evaluate(() => localStorage.setItem('derbyday.prefs.v1', JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true })));
+  await page.evaluate(() => {
+    localStorage.setItem('derbyday.prefs.v1', JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true }));
+    // Replays unlock at club level 6: start this club at 99 like openApp does.
+    const save = JSON.parse(localStorage.getItem('derbyday.save.v1'));
+    save.xp = 485_100;
+    delete save.unlocksSeen;
+    localStorage.setItem('derbyday.save.v1', JSON.stringify(save));
+  });
   await page.reload();
   await skipOnboarding(page);
   await startRanked(page);

@@ -46,9 +46,13 @@ Every finished match leaves a replay: the match options plus the per-tick input 
 
 A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news runs the drills again.
 
+## Club levels
+
+The club earns experience and opens up as it levels (1 to 99; clearing level L takes 100 × L XP). A new club has the Club screen, the Squad, ranked matches and Easy and Normal practice; Training arrives at level 2, Transfers at 3, the Ladder at 4, the Cup (and Practice Hard) at 5, replays at 6, Local 2P at 7, the League at 8, the season calendar and academy at 10 and Link two tabs at 12, then small perks up to 99. Matches pay XP (win 120, draw 80, loss 50, +10 a goal, +20 a clean sheet; practice 30 to 60), so do training sessions (+5), cup and league finishes and first-time milestones. Forfeits pay nothing. The header shows the level and XP bar; the Club level panel on the Club screen lists every unlock. Older saves get XP back from their match history and keep anything they already use. The full tables and pacing are under "Club levels" in the roadmap; the rules are in `src/meta/levels.ts`.
+
 ## Two players
 
-Both are on the Club tab under **Two humans, no Elo**. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
+Both are on the Club tab under **Two humans, no Elo** (Local 2P from club level 7, Link two tabs from level 12). Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
 
 - **Local 2P:** hot-seat on one keyboard, your club against a ladder club you pick.
 

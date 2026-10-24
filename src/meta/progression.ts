@@ -1,7 +1,9 @@
 // Long-term progression: the club calendar and the end-of-season rollover.
 //
 // Calendar. `save.week` counts ranked and competition matches (applyResult in
-// game.ts adds one per match; practice friendlies don't count). A "year" is
+// game.ts adds one per match; practice friendlies don't count), but only once
+// the calendar is unlocked at club level 10 (src/meta/levels.ts): before that
+// no week passes and nothing rolls over. A "year" is
 // SEASON_WEEKS = 10 weeks, so it is the same length whichever mode you play,
 // even if you never touch the league. Year N ends when week reaches
 // N * SEASON_WEEKS. We chose a fixed calendar over "end of each league" because
@@ -21,7 +23,8 @@
 // Wages are not modelled (kept simple on purpose).
 
 import { assignNumbers, autoLineup, qualityForElo } from './club.ts';
-import { MAX_SQUAD, MIN_SQUAD, type Outcome, type Save } from './game.ts';
+import { MIN_SQUAD, type Outcome, type Save } from './game.ts';
+import { scoutMatchesFor, squadCap } from './levels.ts';
 import { ATTR_KEYS, generatePlayer, overall, shortName, type AttrKey, type Player } from './player.ts';
 import { gauss, hashString, int, next, pick, type Rng } from '../sim/rng.ts';
 import type { Role } from '../sim/constants.ts';
@@ -269,9 +272,10 @@ export function signProspect(save: Save, id: string, releaseId?: string): Outcom
   const offers = save.offers!;
   const p = offers.find((x) => x.id === id);
   if (!p) return { ok: false, message: 'That prospect is no longer on offer.' };
-  if (save.squad.length >= MAX_SQUAD) {
+  const cap = squadCap(save);
+  if (save.squad.length >= cap) {
     const out = releaseId ? save.squad.find((x) => x.id === releaseId) : undefined;
-    if (!out) return { ok: false, message: `Squad is full (${MAX_SQUAD}). Choose a player to release.` };
+    if (!out) return { ok: false, message: `Squad is full (${cap}). Choose a player to release.` };
     save.squad = save.squad.filter((x) => x.id !== out.id);
     save.news.push(`Released ${shortName(out)} to make room for the academy.`);
     dropFromLineup(save);
@@ -379,7 +383,8 @@ export function runRollover(save: Save): SeasonReview {
   const count = int(r, 2, 3);
   for (let k = 0; k < count; k++) {
     const p = generateProspect(r, year);
-    const joined = save.squad.length < MAX_SQUAD;
+    p.scout = scoutMatchesFor(save, SCOUT_MATCHES); // one match fewer with the Sharper scouts perk
+    const joined = save.squad.length < squadCap(save);
     const view = scoutedPotential(p);
     intake.push({ id: p.id, name: shortName(p), role: p.role, age: p.age, overall: overall(p), stars: view.stars, range: `${view.lo}–${view.hi}`, joined });
     if (joined) {

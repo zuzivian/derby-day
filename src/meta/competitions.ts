@@ -19,6 +19,7 @@
 
 import { autoLineup, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from './club.ts';
 import { applyResult, formatMoney, type ResultSummary, type Save } from './game.ts';
+import { award, claimMilestone, cupFinishXp, leagueFinishXp } from './levels.ts';
 import { overall, type Player } from './player.ts';
 import { simulate } from '../sim/match.ts';
 import { chance, hashString, int, makeRng, type Rng } from '../sim/rng.ts';
@@ -329,6 +330,8 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
   summary.money = money;
 
   finishCupRound(save, cup, sim);
+  // XP for how far you went (going out in the semis, the final, winning it). A forfeit earns nothing.
+  if (!forfeited) award(save, [cupFinishXp(round, won), won && round === CUP_ROUNDS.length - 1 ? claimMilestone(save, 'first-trophy') : null], summary.xp);
   let trophy: Trophy | null = null;
   let note: string;
   if (won && round === CUP_ROUNDS.length - 1) {
@@ -529,6 +532,7 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
     trophy = { kind: 'season', title: `League ${season.edition}`, edition: season.edition, atMatch: save.history.length };
     save.trophies!.push(trophy);
   }
+  if (!forfeited) award(save, [leagueFinishXp(pos), pos === 1 ? claimMilestone(save, 'first-trophy') : null], summary.xp);
   save.news.push(`Season ${season.edition} over: finished ${ordinal(pos)}. ${seasonVerdict(pos)} +${formatMoney(money)}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { note: `Final table: ${ordinal(pos)}. ${seasonVerdict(pos)} +${formatMoney(money)}.`, money, trophy, summary };

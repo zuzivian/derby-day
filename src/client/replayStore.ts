@@ -2,7 +2,7 @@
 // addRecent for the count and size caps). Every access is wrapped: storage can
 // be missing, full or blocked, in which case replays live for this tab only.
 
-import { addRecent, decodeReplay, encodeReplay, replayId, type Replay, type StoredReplay } from '../meta/replay.ts';
+import { addRecent, decodeReplay, encodeReplay, KEEP_CHARS, KEEP_REPLAYS, replayId, type Replay, type StoredReplay } from '../meta/replay.ts';
 
 const KEY = 'derbyday.replays.v1';
 
@@ -10,6 +10,14 @@ const KEY = 'derbyday.replays.v1';
 let memory: StoredReplay[] = [];
 let lastId: string | null = null;
 const decoded = new Map<string, Replay>();
+/** How many replays to keep: 5, more with the club-level replay-shelf perks (main.ts sets it from the save). */
+let keep = KEEP_REPLAYS;
+
+export function setReplaySlots(n: number): void {
+  keep = Math.max(1, Math.floor(n));
+}
+
+export const replaySlots = (): number => keep;
 
 const isStored = (e: unknown): e is StoredReplay => !!e && typeof e === 'object' && typeof (e as StoredReplay).id === 'string' && typeof (e as StoredReplay).code === 'string' && typeof (e as StoredReplay).at === 'number';
 
@@ -30,7 +38,8 @@ export function storeReplay(r: Replay): StoredReplay | null {
   try {
     const entry: StoredReplay = { id: replayId(r), at: r.at, code: encodeReplay(r) };
     decoded.set(entry.id, r);
-    const next = addRecent(load(), entry);
+    // The size cap grows with the shelf: KEEP_CHARS is sized for KEEP_REPLAYS.
+    const next = addRecent(load(), entry, keep, Math.round((KEEP_CHARS * keep) / KEEP_REPLAYS));
     memory = next;
     lastId = entry.id;
     try {

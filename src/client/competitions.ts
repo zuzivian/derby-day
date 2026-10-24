@@ -34,6 +34,7 @@ import {
   type Tie,
 } from '../meta/competitions.ts';
 import { formatMoney, type Save } from '../meta/game.ts';
+import { isUnlocked, unlockOf } from '../meta/levels.ts';
 import { maybeRollover } from '../meta/progression.ts';
 import { penaltySide } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -65,13 +66,18 @@ const SHIELD_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" hei
 export function competitionsScreen(app: App): string {
   const s = app.save;
   ensureCompetitionFields(s);
+  // Each competition shows once its club-level unlock is reached (or it is already in use).
+  const cupOn = isUnlocked(s, 'cup');
+  const leagueOn = isUnlocked(s, 'league');
   // Idle competitions are small cards side by side; a running one takes the full width.
-  const idle = [!s.cup ? cupPanel(s) : '', !s.season ? seasonPanel(s) : ''].filter(Boolean);
+  const idle = [cupOn && !s.cup ? cupPanel(s) : '', leagueOn && !s.season ? seasonPanel(s) : ''].filter(Boolean);
+  const locked = [cupOn ? null : unlockOf('cup'), leagueOn ? null : unlockOf('league')].filter((u) => !!u);
   return `
   <div class="comp-grid">
     ${s.cup ? cupPanel(s) : ''}
     ${s.season ? seasonPanel(s) : ''}
     ${idle.length ? `<div class="comp-top">${idle.join('')}</div>` : ''}
+    ${locked.length ? `<p class="muted small comp-locked">${locked.map((u) => `${u!.name} opens at club level ${u!.level}.`).join(' ')}</p>` : ''}
     ${cabinet(s)}
   </div>`;
 }
@@ -203,7 +209,7 @@ function seasonPanel(s: Save): string {
         <div><dt>3rd</dt><dd>${formatMoney(SEASON_PRIZES[2])}</dd></div>
         <div><dt>8th</dt><dd>${formatMoney(SEASON_PRIZES[7])}</dd></div>
       </dl>
-      <div class="actions"><button class="btn primary big" data-action="comp-start-season">Start a season</button></div>
+      <div class="actions"><button class="btn primary big" id="comp-start-season" data-action="comp-start-season">Start a season</button></div>
     </article>`;
   }
   const f = yourFixture(s, season);
@@ -297,6 +303,7 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
   ensureCompetitionFields(s);
   switch (action) {
     case 'comp-start-cup': {
+      if (!isUnlocked(s, 'cup')) return false;
       const ok = canStart(s);
       if (!ok.ok) return ctx.toast(ok.message, false), true;
       const cup = startCup(s);
@@ -305,6 +312,7 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
       return true;
     }
     case 'comp-start-season': {
+      if (!isUnlocked(s, 'league')) return false;
       const ok = canStart(s);
       if (!ok.ok) return ctx.toast(ok.message, false), true;
       const season = startSeason(s);

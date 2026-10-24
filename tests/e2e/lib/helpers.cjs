@@ -19,6 +19,17 @@ const SEL = {
   modal: '.modal',
   modalClose: '.modal [data-action="close-result"]',
   header: '.topbar',
+  // Club level (src/client/levels.ts)
+  levelBadge: '[data-action="level-open"]',
+  xpText: '#xp-text',
+  xpBar: '.topbar [role="progressbar"]',
+  levelPanel: '.level-panel',
+  nextUnlock: '#next-unlock',
+  levelUp: '[aria-labelledby="levelup-title"]',
+  levelUpTitle: '#levelup-title',
+  levelUpGo: '[data-action="levelup-go"]',
+  levelUpClose: '[data-action="levelup-close"]',
+  xpGain: '.modal .xp-gain',
   // Club screen
   playRanked: '[data-action="play-ranked"]',
   playPractice: '[data-action="play-practice"]',
@@ -100,6 +111,9 @@ const readSave = (page) =>
     return raw ? JSON.parse(raw) : null;
   }, SAVE_KEY);
 
+/** Total XP to reach `level` (the curve in src/meta/levels.ts: 100 * L to clear level L). */
+const totalXpForLevel = (level) => 50 * level * (level - 1);
+
 /**
  * Open the app in a fresh context.
  *   colorScheme  'light' | 'dark'
@@ -107,9 +121,19 @@ const readSave = (page) =>
  *   prefs        object stored under derbyday.prefs.v1 (e.g. { halfSeconds: 3 })
  *   mutateSave   (save) => void, applied to the stored save before the real test starts.
  *                Must be self-contained: it is serialised and run in the page.
+ *   level        club level to start at (default 99, so every tab and button is unlocked).
+ *                null leaves the fresh level-1 save alone. Everything up to the level counts
+ *                as already seen, so no level-up dialog is waiting.
+ *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp } = opts;
+  const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
+  // Runs in the page, so it can only use its arguments.
+  const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
+  const userSrc = userMutate ? `(${userMutate.toString()})(save);` : '';
+  const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
+  const mutateSave = mutateSrc ? true : null;
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
   await page.goto(APP_URL);
   await page.waitForSelector(SEL.app + ' *');
@@ -124,7 +148,7 @@ async function openApp(t, opts = {}) {
           localStorage.setItem(saveKey, JSON.stringify(save));
         }
       },
-      [SAVE_KEY, PREFS_KEY, prefs || null, mutateSave ? `(${mutateSave.toString()})(save)` : null],
+      [SAVE_KEY, PREFS_KEY, prefs || null, mutateSrc],
     );
     await page.reload();
     await page.waitForSelector(SEL.app + ' *');
@@ -155,4 +179,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths };
+module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

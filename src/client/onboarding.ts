@@ -4,6 +4,7 @@
 import { toTeamSetup, type LadderClub } from '../meta/club.ts';
 import type { Save } from '../meta/game.ts';
 import { NAME_MAX, NAME_MIN, renameClub, rerollColours, rerollName, validateClubName } from '../meta/identity.ts';
+import { award, claimMilestone, clubLevel, nextUnlockText, unlockOf } from '../meta/levels.ts';
 import { announce, captureFocus, restoreFocus } from './a11y.ts';
 import { controlsCard } from './controls.ts';
 import { crestSvg } from './crest.ts';
@@ -35,6 +36,8 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
   let nameDraft = '';
   let nameError = '';
   let trained = false;
+  /** XP the training ground earned ("+100 XP: training ground done"), shown on the last step. */
+  let trainedXp = 0;
   let stopTutorial: (() => void) | null = null;
   let done = false;
 
@@ -119,9 +122,14 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
             <div class="vs" aria-hidden="true">vs</div>
             <div class="side">${crestSvg(opp, 56)}<div class="side-name">${esc(opp.name)}</div><div class="side-elo">Elo ${opp.elo}</div></div>
           </div>
+          <div class="ob-level" aria-labelledby="ob-level-title">
+            <h3 id="ob-level-title" class="eyebrow">Club level ${clubLevel(o.save)}</h3>
+            <p>${trainedXp ? `<b>+${trainedXp} XP</b> for the training ground. ` : ''}Matches, training and first-time milestones earn XP, and the club opens up as it levels: ${esc(unlockOf('training').name)} at level ${unlockOf('training').level}, ${esc(unlockOf('transfers').name)} at ${unlockOf('transfers').level}, ${esc(unlockOf('cup').name)} at ${unlockOf('cup').level}.</p>
+            ${nextUnlockText(o.save) ? `<p class="muted small">Next: ${esc(nextUnlockText(o.save)!)}.</p>` : ''}
+          </div>
           <ul class="ob-tips">
             <li>Win ranked matches to climb the ladder and earn prize money.</li>
-            <li>Every match earns training sessions. Spend them on the Training tab.</li>
+            <li>Every match earns XP and training sessions.</li>
             <li>Replay the training ground any time from Club news.</li>
           </ul>
           <div class="ob-nav"><button class="btn ghost" data-ob="back" type="button">Back</button><button class="btn primary big" data-ob="done" type="button">Go to the club</button></div>
@@ -149,6 +157,10 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
         onDone: (completed) => {
           stopTutorial = null;
           trained = completed;
+          if (completed) {
+            trainedXp += award(o.save, [claimMilestone(o.save, 'tutorial')]).total;
+            o.persist();
+          }
           go('finish');
         },
       });

@@ -12,7 +12,7 @@ import { clipsFor, codeSize, decodeReplay, formatSize, ReplaySeeker, type Clip, 
 import { DT } from '../sim/constants.ts';
 import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
 import { PitchRenderer } from './render.ts';
-import { lastReplay, recentReplays } from './replayStore.ts';
+import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
 
 const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -63,7 +63,7 @@ export function recentReplaysHtml(): string {
     .join('');
   return `<div class="replays">
     <h3 class="eyebrow">Recent replays</h3>
-    ${rows ? `<ul class="replay-list">${rows}</ul>` : '<p class="muted small">Your last five matches are kept here to watch again.</p>'}
+    ${rows ? `<ul class="replay-list">${rows}</ul>` : `<p class="muted small">Your last ${replaySlots()} matches are kept here to watch again.</p>`}
     <div class="replay-paste">
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">

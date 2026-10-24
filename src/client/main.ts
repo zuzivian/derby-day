@@ -7,7 +7,11 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
-import { captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
+import { announce, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
+import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
+import { setCrest, setKit } from '../meta/identity.ts';
+import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
+import { setReplaySlots } from './replayStore.ts';
 import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
@@ -17,7 +21,7 @@ import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
-import { clubScreen, ladderScreen, PRACTICE, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -27,6 +31,7 @@ function freshSeed(): number {
 
 function boot(save: Save): App {
   ensureProgressionFields(save);
+  ensureLevelFields(save); // older saves get retro XP and keep what they already use
   return {
     save,
     screen: 'club',
@@ -55,6 +60,8 @@ let takeover = false;
 let pendingFocus: FocusKey | null = null;
 /** The control that started the last match, to return focus to after the result dialog. */
 let matchOrigin: FocusKey | null = null;
+/** Where focus goes back to when the level-up dialog closes. */
+let levelOrigin: FocusKey | null = null;
 /** When the last signing happened, to swallow the second click of a double-click. */
 let lastBuyAt = -Infinity;
 
@@ -79,13 +86,22 @@ function render() {
     ladder: ladderScreen,
     competitions: competitionsScreen,
   };
+  // A tab can only be open once it is unlocked (club level).
+  if (!screenUnlocked(app.save, app.screen)) app.screen = 'club';
+  setReplaySlots(replaySlots(app.save));
   const hadResult = !!root.querySelector('#result-title');
   const hadReview = !!root.querySelector('#review-title');
+  const hadLevelUp = !!root.querySelector('#levelup-title');
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
+  const levelUp = !app.result && levelUpOpen(app.save);
   if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
-  else if (!app.result && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
+  else if (levelUp && !hadLevelUp) {
+    levelOrigin = key;
+    root.querySelector<HTMLElement>('#levelup-title')?.focus();
+    announce(levelUpAnnouncement(app.save));
+  } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
 }
 
@@ -109,9 +125,17 @@ function startOnboarding() {
       writePrefs(app.prefs);
       app.screen = 'club';
       render();
-      focusMain();
+      if (!root.querySelector('.modal')) focusMain();
     },
   });
+}
+
+/** First completion of the training ground (setup or Replay tutorial) earns its milestone XP. */
+function tutorialXp(): string {
+  const gain = award(app.save, [claimMilestone(app.save, 'tutorial')]);
+  if (!gain.total) return '';
+  persist();
+  return xpSummary(gain);
 }
 
 function startTraining() {
@@ -131,8 +155,9 @@ function startTraining() {
       stop();
       takeover = false;
       pendingFocus = keyFor({ action: 'replay-tutorial' });
+      const xp = completed ? tutorialXp() : '';
       render();
-      if (completed) toast('Training done.');
+      if (completed) toast(xp ? `Training done. ${xp}.` : 'Training done.');
     },
   });
 }
@@ -222,7 +247,8 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
     crest = 'hoops';
     away = toTeamSetup(id, squad, autoLineup(squad), lvl.aiSkill);
   }
-  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest));
+  const practice = (practiceLevel?.id ?? 'normal') as PracticeLevel;
+  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest, practice));
 }
 
 /** Local 2P or Link two tabs (versus.ts): two humans, nothing recorded. */
@@ -246,7 +272,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
   });
 }
 
-function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest']) {
+function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest'], practice: PracticeLevel = 'normal') {
   const s = app.save;
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
@@ -255,7 +281,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
-  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited);
+  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited, practice);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
@@ -305,23 +331,41 @@ root.addEventListener('click', (e) => {
       focusMain();
       return;
     case 'nav':
+      if (!screenUnlocked(s, el.dataset.screen as Screen)) return;
       app.screen = el.dataset.screen as Screen;
       pendingFocus = focusKeyOf(el, root);
       break;
+    case 'level-open':
+      app.screen = 'club';
+      pendingFocus = { elId: 'level-title', data: {}, index: 0 };
+      break;
+    case 'levelup-go':
+    case 'levelup-close': {
+      const target = action === 'levelup-go' ? pendingUnlocks(s).find((u) => u.id === (id as UnlockId))?.go : undefined;
+      markUnlocksSeen(s);
+      persist();
+      if (target) {
+        app.screen = target.screen as Screen;
+        pendingFocus = { elId: target.focusId ?? `tab-${target.screen}`, data: {}, index: 0 };
+      } else pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
+      break;
+    }
     case 'replay-tutorial':
       startTraining();
       return;
     case 'play-ranked':
       startMatch(true, app.nextOpp);
       return;
-    case 'play-practice':
-      startMatch(false, null, PRACTICE.find((p) => p.id === el.dataset.level));
+    case 'play-practice': {
+      const level = PRACTICE.find((p) => p.id === el.dataset.level);
+      if (level && practiceUnlocked(s, level.id)) startMatch(false, null, level);
       return;
+    }
     case 'play-local2p':
-      startVersus(mountLocal2P);
+      if (isUnlocked(s, 'local2p')) startVersus(mountLocal2P);
       return;
     case 'play-link':
-      startVersus(mountLink);
+      if (isUnlocked(s, 'link')) startVersus(mountLink);
       return;
     case 'auto-lineup':
       s.lineup = autoLineup(s.squad);
@@ -396,10 +440,19 @@ root.addEventListener('change', (e) => {
   } else if (el.dataset.change === 'half') {
     app.prefs.halfSeconds = Number(el.value);
     writePrefs(app.prefs);
+  } else if (el.dataset.change === 'crest') {
+    if (setCrest(app.save, el.value as CrestPattern)) persist();
+    render();
+  } else if (el.dataset.change === 'kit-primary' || el.dataset.change === 'kit-secondary') {
+    const c = app.save.club;
+    const [primary, secondary] = el.dataset.change === 'kit-primary' ? [el.value, c.secondary] : [c.primary, el.value];
+    if (setKit(app.save, primary, secondary)) persist();
+    else toast('Pick two different colours.', false);
+    render();
   }
 });
 
-// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result or season review dialog.
+// Keyboard: arrow keys between tabs; Esc closes and Tab stays inside the result, level-up or season review dialog.
 root.addEventListener('keydown', (e) => {
   if (takeover) return;
   const t = e.target as HTMLElement;
@@ -416,18 +469,25 @@ root.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('keydown', (e) => {
-  const review = !app.result && reviewOpen(app.save);
-  if (takeover || (!app.result && !review)) return;
+  const levelUp = !app.result && levelUpOpen(app.save);
+  const review = !app.result && !levelUp && reviewOpen(app.save);
+  if (takeover || (!app.result && !levelUp && !review)) return;
   const modal = root.querySelector<HTMLElement>('.modal');
   if (!modal) return;
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (app.result) app.result = null;
-    else {
+    if (app.result) {
+      app.result = null;
+      pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
+    } else if (levelUp) {
+      markUnlocksSeen(app.save);
+      persist();
+      pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
+    } else {
       app.save.review!.seen = true;
       persist();
+      pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
     }
-    pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
     render();
   } else trapTab(modal, e);
 });
