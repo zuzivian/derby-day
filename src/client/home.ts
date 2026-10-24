@@ -67,6 +67,7 @@ function formChips(s: Save): string {
   const last = s.history.slice(-5).map((m): Res => (m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L'));
   const label = last.length ? `Recent form, oldest first: ${last.map((r) => RES_WORD[r]).join(', ')}` : 'No matches played yet';
   const slots = [...last, ...Array<Res | null>(5 - last.length).fill(null)];
+  if (!last.length) return `<div class="form-strip is-empty" role="img" aria-label="${label}"><span class="form-empty" aria-hidden="true">First match awaits</span></div>`;
   return `<div class="form-strip" role="img" aria-label="${label}">${slots
     .map((r) => (r ? `<span class="form-chip res-${r}" aria-hidden="true">${r}</span>` : `<span class="form-chip empty" aria-hidden="true"></span>`))
     .join('')}</div>`;

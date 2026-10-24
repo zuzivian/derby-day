@@ -155,7 +155,8 @@ test('Online: two browsers pair by invite link, stay in sync through a dropped s
     const c2 = await net(host);
     expect(c1.lost, 'countdown starts near 20 s').toBeGreaterThanOrEqual(15);
     expect(c2.lost, 'countdown runs down').toBeLessThan(c1.lost);
-    expect(c2.tick, 'match paused while the opponent is gone').toBe(c1.tick);
+    // Paused: the host can only play out the few inputs it already had from the guest (at most the input delay, 4 ticks).
+    expect(c2.tick - c1.tick, 'match paused while the opponent is gone').toBeLessThanOrEqual(4);
     console.log(`      online: ${common.length} shared hashes equal, host checks ${h1.checks}, countdown ${c1.wait} -> ${c2.wait}`);
 
     step('countdown checked');
