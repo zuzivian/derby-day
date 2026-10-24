@@ -42,3 +42,7 @@ declare namespace Bun {
   }
   function serve<T>(o: ServeOptions<T>): Server;
 }
+
+declare namespace Bun {
+  const stdin: { stream(): ReadableStream<Uint8Array> };
+}

@@ -21,7 +21,8 @@
 // determinism bug, or floating point that differs between browsers); both
 // sides stop and report the tick.
 //
-// Pure TypeScript: no DOM, no clock unless one is passed in for ping stats.
+// Pure TypeScript: no DOM, no clock unless one is passed in (for ping stats and
+// for noticing a silent peer; the clock never affects the sim).
 
 import { fingerprint, step } from '../sim/match.ts';
 import { hashString } from '../sim/rng.ts';
@@ -77,6 +78,8 @@ export class Lockstep {
   rttMs = 0;
   /** Number of state hashes that matched. */
   checksPassed = 0;
+  /** now() when anything last arrived from the peer (for disconnect detection, see presence.ts). */
+  lastHeardAt: number;
   onDesync?: (d: Desync) => void;
   onPeerLeft?: () => void;
 
@@ -103,6 +106,7 @@ export class Lockstep {
     this.transport = o.transport;
     this.checkEvery = o.checkEvery ?? 60;
     this.now = o.now ?? (() => 0);
+    this.lastHeardAt = this.now();
     const t0 = this.s.tick;
     for (let t = t0 + 1; t <= t0 + this.delay; t++) {
       this.local.set(t, {});
@@ -171,7 +175,13 @@ export class Lockstep {
     this.transport.send({ t: 'in', from, inputs, ack: this.remoteTo });
   }
 
+  /** True when the next tick is waiting on the peer's input. */
+  get stalled(): boolean {
+    return this.running && !this.remote.has(this.s.tick + 1);
+  }
+
   private receive(m: LockstepMsg): void {
+    this.lastHeardAt = this.now();
     switch (m.t) {
       case 'in': {
         for (let i = 0; i < m.inputs.length; i++) {
