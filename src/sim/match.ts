@@ -52,7 +52,7 @@ import {
   TICK_HZ,
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
-import { humanIntent, updateControl } from './human.ts';
+import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
 import { chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
 import {
   awardRestart,
@@ -553,9 +553,9 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const k = maxSpeed * intent.throttle;
   const dx = intent.move.x * k;
   const dy = intent.move.y * k;
-  // Research: pros average about 7 m/s^2 over 10 m from a standing start; a game wants more bite,
-  // and the human's player a little more than the CPU's (24, 18 with the ball).
-  const accel = (hasBall ? (human ? 21 : 18) : human ? 26 : 24) * (p.sprinting ? 1.15 : 1) * DT;
+  // Research: pros average about 7 m/s^2 over 10 m from a standing start; a game wants far
+  // more bite than that, so the human's player stays at 32 (26 with the ball), the CPU's at 24 (18).
+  const accel = (hasBall ? (human ? 26 : 18) : human ? 32 : 24) * (p.sprinting ? 1.15 : 1) * DT;
   const ex = dx - p.vel.x;
   const ey = dy - p.vel.y;
   const dl = Math.sqrt(ex * ex + ey * ey);
@@ -789,7 +789,7 @@ export const diveArm = (gk: MatchPlayer): number => 0.7 + 0.3 * gk.attrs.goalkee
 /** Standing, his hands cover this radius up to 1.9 m (and a little less above, up to KEEPER_REACH_Z). */
 export const standReach = (gk: MatchPlayer, z: number): number => (z <= 1.9 ? 0.75 + 0.3 * gk.attrs.goalkeeping : 0.55 + 0.25 * gk.attrs.goalkeeping);
 /** Law 12: a keeper may hold the ball for about six seconds. Then the CPU plays it for a human. */
-export const KEEPER_HOLD_TICKS = 6 * TICK_HZ;
+export { KEEPER_HOLD_TICKS };
 
 /** Law 12 (handling): a keeper may not pick up a ball a teammate deliberately kicked or threw to him. */
 function keeperHands(s: MatchState, p: MatchPlayer): boolean {

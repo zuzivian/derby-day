@@ -143,8 +143,9 @@ function keepInBox(p: MatchPlayer, move: Vec, throttle: number): { move: Vec; th
 }
 
 /**
- * Step up to meet a pass on its way: to the line of the ball, a couple of metres toward it,
- * at a jog. Taking it earlier is what beats the defender coming round the back.
+ * Step up to meet a pass on its way: across to the line of the ball, a step toward it, as
+ * fast as he needs to be there before it is. Taking it earlier is what beats the defender
+ * coming round the back.
  */
 export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const b = s.ball;
@@ -160,10 +161,14 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
     return { move: norm(to), throttle: 1 };
   }
   const onLine = add(b.pos, scale(dir, along));
-  const target = sub(onLine, scale(dir, Math.min(2, along * 0.25)));
+  const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
   const to = sub(target, p.pos);
   const d = len(to);
-  return d < 0.15 ? { move: { x: 0, y: 0 }, throttle: 0 } : { move: scale(to, 1 / d), throttle: clamp(d / 2.5, 0.25, 0.75) };
+  if (d < 0.15) return { move: { x: 0, y: 0 }, throttle: 0 };
+  // Speed he needs to get there with a little time to spare, as a share of a normal run (about 7 m/s).
+  const need = d / Math.max(0.15, along / v - 0.1);
+  const effort = clamp(need / 6.5, 0.3, SPRINT_MULT);
+  return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
 }
 
 export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
@@ -261,6 +266,18 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
 
 // ---------------------------------------------------------------------------
 // Who the human steers
+
+/** Law 12: ticks a keeper may hold the ball in his hands before the CPU plays it for a human (six seconds). */
+export const KEEPER_HOLD_TICKS = 360;
+
+/** Seconds left before the human's keeper must let the ball go (a whole number, for a countdown), or null when he isn't holding it. */
+export function keeperHoldLeft(s: MatchState, team: 0 | 1): number | null {
+  const b = s.ball;
+  if (!s.humans[team] || b.owner < 0 || !b.inHands || s.phase !== 'play') return null;
+  const gk = s.players[b.owner];
+  if (gk.team !== team || gk.role !== 'GK') return null;
+  return Math.max(0, Math.ceil((KEEPER_HOLD_TICKS - (b.handTicks ?? 0)) / 60));
+}
 
 /** May the human steer this keeper now? Only while he has the ball, or it is on its way to him, or he takes a restart. */
 export function keeperControllable(s: MatchState, p: MatchPlayer): boolean {
