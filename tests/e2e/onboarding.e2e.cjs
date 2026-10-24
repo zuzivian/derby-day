@@ -244,8 +244,15 @@ test('onboarding: reloading on the celebration does not replay the welcome', asy
   const page = await freshVisit(t, { halfSeconds: 3 });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
+  // What is stored before the reload: the recorded match and the prefs the first match set.
+  const before = await page.evaluate(() => ({ save: !!localStorage.getItem('derbyday.save.v1'), prefs: localStorage.getItem('derbyday.prefs.v1') }));
+  expect(before.save, 'the first match is saved by the time the celebration shows').toBe(true);
+  expect(JSON.parse(before.prefs).coachSeen, 'and the coach prefs').toBeTruthy();
   await page.reload();
-  await page.waitForSelector(SEL.kickOff).catch(async (e) => { throw new Error(`${e.message}\nPAGE: ${(await page.evaluate(() => document.getElementById('app').innerText)).slice(0, 300)}\nPREFS: ${JSON.stringify(await prefsOf(page))}`); });
+  await page.waitForSelector(SEL.kickOff).catch(async (e) => {
+    const after = await page.evaluate(() => ({ save: !!localStorage.getItem('derbyday.save.v1'), prefs: localStorage.getItem('derbyday.prefs.v1'), text: document.getElementById('app').innerText.slice(0, 160) }));
+    throw new Error(`${e.message}\nBEFORE RELOAD: ${JSON.stringify(before)}\nAFTER RELOAD: ${JSON.stringify(after)}`);
+  });
   expect(await page.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
 });
 
@@ -303,6 +310,9 @@ test('onboarding: a tab mark is announced once, is dismissed with Esc, and never
   const prefs = { controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home'] };
   const page = await openApp(t, { xp: 120, prefs, width: 390, height: 420, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
   await page.locator('.tab-mark[data-mark="squad"]').waitFor();
+  // The first announcement is delayed a moment by the live region; let it land before counting repeats.
+  await page.waitForFunction(() => (document.getElementById('sr-announcer')?.textContent || '').includes('New: Squad'), null, { timeout: 5000 });
+  await page.waitForTimeout(300);
   // Count how many times the live region is set to the mark's words across several renders.
   await page.evaluate(() => {
     window.__spoken = 0;
