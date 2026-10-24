@@ -12,7 +12,7 @@
 // already uses it (an old save with a cup running, trophies or academy offers
 // keeps them whatever its level), or when it was unlocked once before
 // (`unlocksSeen`): once unlocked, always unlocked, even if the XP table is
-// rebalanced later. Match controls (sprint, through ball, chip) are never
+// rebalanced later. Match controls (sprint, lofted balls, slides) are never
 // gated. Both ways to play another human (Local 2P, Link two tabs) are open
 // from level 1: "vs Player" is one of the home screen's play modes.
 //

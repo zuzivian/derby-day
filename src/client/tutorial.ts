@@ -26,7 +26,7 @@ const COPY: Record<DrillId, { title: string; text: Record<Mode, string>; done: s
   move: {
     title: 'Run to the marker',
     text: {
-      mouse: 'Your player, under the yellow arrow, runs to the pointer. Move the pointer onto the marker.',
+      mouse: 'Your player, under the yellow arrow, runs to the pointer, and the further away the pointer, the faster. Move the pointer onto the marker.',
       keys: 'Use WASD or the arrow keys to run your player, under the yellow arrow, onto the marker.',
       touch: 'Touch and drag on the pitch. Your player, under the yellow arrow, runs to your finger. Run onto the marker.',
     },
@@ -35,16 +35,16 @@ const COPY: Record<DrillId, { title: string; text: Record<Mode, string>; done: s
   pass: {
     title: 'Pass to a teammate',
     text: {
-      mouse: 'Point at a teammate and left click. The dotted line shows who gets the ball.',
+      mouse: 'Move the pointer onto a teammate and left click. The ball rolls to the pointer; the dotted line shows where it will go. (Hold the left button instead to loft it.)',
       keys: 'Run toward a teammate so you face them, then press Space to pass.',
-      touch: 'Point toward a teammate, then tap Pass. The dotted line shows who gets the ball.',
+      touch: 'Drag your finger onto a teammate, then tap Pass. The ball goes to your finger; the dotted line shows where. (Hold Pass to loft it.)',
     },
     done: 'Good pass.',
   },
   shoot: {
     title: 'Shoot and score',
     text: {
-      mouse: 'Point at the goal. Hold the right button to power up, release to shoot. Their keeper is having a rest.',
+      mouse: 'Point at the goal and right click to shoot at the pointer. Hold the right button first for a harder shot. Their keeper is having a rest.',
       keys: 'Hold F to power up, release to shoot at goal. Hold W or S as you release to aim high or low.',
       touch: 'Point at the goal. Hold Shoot to power up, release to strike.',
     },
@@ -53,9 +53,9 @@ const COPY: Record<DrillId, { title: string; text: Record<Mode, string>; done: s
   tackle: {
     title: 'Win the ball back',
     text: {
-      mouse: 'Their striker has the ball. Put the pointer just in front of them to cut them off, then left click when you touch.',
+      mouse: 'Their striker has the ball. Run at them, then right click to tackle toward the pointer. Right click with the pointer further out to slide.',
       keys: 'Their striker has the ball. Run into their path, then press Space when you touch.',
-      touch: 'Their striker has the ball. Run into their path, then tap Pass when you touch.',
+      touch: 'Their striker has the ball. Run into their path, then tap Shoot to tackle (without the ball, Shoot is your tackle).',
     },
     done: 'Ball won. That is the whole game.',
   },
@@ -78,6 +78,8 @@ const HINT: Record<Hint, string> = {
 
 export function mountTutorial(container: HTMLElement, o: TutorialOptions): () => void {
   const s = createTraining(4242, o.home);
+  // End-to-end tests set window.__e2e before the page loads to read the live state.
+  if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: unknown }).__derbyMatch = s;
   const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   const h = `h${o.headingLevel ?? 2}`;
   container.innerHTML = `
@@ -303,7 +305,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
         }
       }
     }
-    renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse' && !touch });
+    renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse' && !touch, armed: input.armed() });
     drawExtras(now);
   }
 

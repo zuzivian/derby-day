@@ -3,15 +3,16 @@
 import type { ControlStyle } from './store.ts';
 
 const ROWS: { action: string; mouse: string; keys: string }[] = [
-  { action: 'Run', mouse: 'Move the pointer. Your player runs to it.', keys: 'WASD or arrow keys' },
-  { action: 'Pass', mouse: 'Left click toward a teammate', keys: 'Space' },
-  { action: 'Tackle', mouse: 'Left click near the ball carrier', keys: 'Space near the ball carrier' },
-  { action: 'Shoot', mouse: 'Hold the right button, then release', keys: 'Hold F, then release' },
-  { action: 'Switch player', mouse: 'Right click without the ball', keys: 'E' },
+  { action: 'Run', mouse: 'Move the pointer. Your player runs to it: slow when it is close, a sprint when it is far.', keys: 'WASD or arrow keys, hold Shift to sprint' },
+  { action: 'Pass', mouse: 'Left click: the ball rolls to the pointer', keys: 'Space' },
+  { action: 'Lofted pass', mouse: 'Hold the left button, release: lands at the pointer, a longer hold goes higher and further', keys: 'Hold C, release' },
+  { action: 'Shoot', mouse: 'Right click, or hold the right button for power and release', keys: 'Hold F, release' },
+  { action: 'Switch player', mouse: 'Left click a teammate (or toward one) without the ball', keys: 'E' },
+  { action: 'Tackle', mouse: 'Right click without the ball: a slide if the pointer is far', keys: 'Space without the ball' },
   { action: 'Pause', mouse: 'Esc or P', keys: 'Esc or P' },
 ];
 
-const kbd = (t: string) => t.replace(/\b(WASD|Space|F|E|P|Esc)\b/g, '<kbd>$1</kbd>');
+const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|F|C|E|P|Esc)\b/g, '<kbd>$1</kbd>');
 
 export function controlsCard(mode: ControlStyle, headingLevel: 2 | 3 = 3): string {
   const h = `h${headingLevel}`;

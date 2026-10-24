@@ -127,11 +127,11 @@ describe('training-ground drills', () => {
   });
 
   test('filterInput only lets through what the drill teaches', () => {
-    const all: HumanInput = { cursor: { x: 1, y: 1 }, pass: true, shoot: 0.5, switchPlayer: true };
+    const all: HumanInput = { cursor: { x: 1, y: 1 }, pass: true, loft: 0.5, shoot: 0.5, tackle: true, select: true, sprint: true, switchPlayer: true };
     expect(filterInput('move', all)).toEqual({ cursor: { x: 1, y: 1 } });
-    expect(filterInput('pass', all)).toEqual({ cursor: { x: 1, y: 1 }, pass: true });
+    expect(filterInput('pass', all)).toEqual({ cursor: { x: 1, y: 1 }, pass: true, loft: 0.5 });
     expect(filterInput('shoot', all)).toEqual({ cursor: { x: 1, y: 1 }, shoot: 0.5 });
-    expect(filterInput('tackle', all)).toEqual({ cursor: { x: 1, y: 1 }, pass: true });
+    expect(filterInput('tackle', all)).toEqual({ cursor: { x: 1, y: 1 }, tackle: true });
   });
 
   test('move: running to the marker passes the drill, mouse and keys', () => {
@@ -196,7 +196,7 @@ describe('training-ground drills', () => {
     const r = runDrill(s, 'tackle', stageDrill(s, 'tackle'), (st, t) => {
       const c = st.players[CARRIER].pos;
       const close = dist(st.players[HUMAN].pos, c) < 1.5;
-      return { cursor: c, pass: close && t % 8 === 0 };
+      return { cursor: c, tackle: close && t % 8 === 0 };
     });
     expect(r.retries).toBeLessThan(5);
   });
@@ -242,7 +242,7 @@ describe('training-ground drills, keyboard and edge cases', () => {
       const c = st.players[CARRIER].pos;
       const aim = { x: c.x - 1.5 - h.x, y: c.y - h.y };
       const dir = { x: Math.abs(aim.x) > 0.4 ? Math.sign(aim.x) : 0, y: Math.abs(aim.y) > 0.4 ? Math.sign(aim.y) : 0 };
-      return { dir, pass: dist(h, c) < 1.5 && t % 20 === 0 };
+      return { dir, tackle: dist(h, c) < 1.5 && t % 20 === 0 };
     });
     expect(r.retries).toBeLessThan(5);
   });
@@ -251,7 +251,7 @@ describe('training-ground drills, keyboard and edge cases', () => {
     const s = training();
     const d = stageDrill(s, 'tackle');
     holdFrozen(s, d);
-    step(s, filterInput('tackle', { cursor: s.players[HUMAN].pos, pass: true }));
+    step(s, filterInput('tackle', { cursor: s.players[HUMAN].pos, tackle: true }));
     holdFrozen(s, d);
     const r = checkDrill(s, d);
     expect(r.done).toBe(false);

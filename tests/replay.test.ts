@@ -6,9 +6,12 @@ import {
   decodeReplay,
   encodeReplay,
   expandInputs,
+  finalHash,
   formatSize,
+  inputsEqual,
   KEYFRAME_EVERY,
   quantiseInput,
+  REPLAY_VERSION,
   replayId,
   replayTo,
   ReplayRecorder,
@@ -34,10 +37,12 @@ function scripted(seed: number, t: number): HumanInput {
   else input.dir = { x: k % 2 ? 1 : -1, y: (t % 3) - 1 };
   if (t % 75 === 0) input.pass = true;
   if (t % 210 === 0) input.shoot = 0.4 + (t % 5) / 10 + 0.00123;
-  if (t % 320 === 0) input.shoot = 0.9, (input.chip = true);
+  if (t % 320 === 0) input.loft = 0.37 + 0.00456;
   if (t % 140 < 50) input.sprint = true;
   if (t % 500 === 0) input.switchPlayer = true;
-  if (t % 900 === 0) (input.pass = true), (input.through = true);
+  if (t % 110 === 13) input.tackle = true;
+  if (t % 95 === 41) input.select = true;
+  if (t % 900 === 0) input.shoot = 0.55;
   return input;
 }
 
@@ -53,6 +58,22 @@ function playLive(seed: number, halfSeconds: number, input: (t: number) => Human
 }
 
 describe('replay recording', () => {
+  test('quantiseInput keeps loft and shot power to 1% and keeps tackle and select', () => {
+    const q = quantiseInput({ cursor: { x: 1, y: 2 }, loft: 0.3849, shoot: 0.5551, tackle: true, select: true, pass: false });
+    expect(q).toEqual({ cursor: { x: 1, y: 2 }, loft: 0.38, shoot: 0.56, tackle: true, select: true });
+    expect(quantiseInput({ loft: 7 }).loft).toBe(1);
+    expect(quantiseInput({ loft: -1 }).loft).toBe(0);
+  });
+
+  test('inputsEqual tells every new field apart', () => {
+    const base = { cursor: { x: 1, y: 2 } };
+    for (const extra of [{ loft: 0.3 }, { tackle: true }, { select: true }, { shoot: 0.6 }, { pass: true }] as const) {
+      expect(inputsEqual(base, { ...base, ...extra })).toBe(false);
+      expect(inputsEqual({ ...base, ...extra }, { ...base, ...extra })).toBe(true);
+    }
+    expect(inputsEqual({ ...base, loft: 0.3 }, { ...base, loft: 0.31 })).toBe(false);
+  });
+
   test('quantiseInput keeps cursors to 1 cm and drops false fields', () => {
     const q = quantiseInput({ cursor: { x: 12.3456, y: -0.004 }, pass: false, sprint: true, shoot: 1.7, dir: { x: -0.0001, y: 1 } });
     expect(q).toEqual({ cursor: { x: 12.35, y: 0 }, sprint: true, shoot: 1, dir: { x: 0, y: 1 } });
@@ -82,6 +103,58 @@ describe('replay codes', () => {
       const legacy = old + encodeReplay(replay).slice('DD1.'.length);
       expect(encodeReplay(decodeReplay(legacy))).toBe(encodeReplay(replay));
     }
+  });
+
+  test('every input field survives the run encoder, alone and together', () => {
+    const inputs: HumanInput[] = [
+      { cursor: { x: 10.5, y: 3.25 }, loft: 0.01 },
+      { cursor: { x: 10.5, y: 3.25 }, loft: 1 },
+      { cursor: { x: 11, y: 4 }, shoot: 0.55, tackle: true },
+      { cursor: { x: 11, y: 4 }, select: true },
+      { dir: { x: -1, y: 1 }, pass: true, sprint: true, switchPlayer: true },
+      { dir: { x: 0, y: 0 }, loft: 0, shoot: 1, tackle: true, select: true, pass: true },
+      {},
+    ];
+    const opts = { seed: 9, ...teams(3), halfSeconds: 5, humanTeam: 0 as const };
+    const s = createMatch(opts);
+    const rec = new ReplayRecorder(opts, 'Fields');
+    let n = 0;
+    while (s.phase !== 'fulltime') {
+      step(s, rec.push(inputs[Math.floor(n / 3) % inputs.length]));
+      n++;
+    }
+    const replay = rec.finish(s, 1_700_000_000);
+    const back = decodeReplay(encodeReplay(replay));
+    expect(back.runs).toEqual(replay.runs);
+    for (const want of inputs) expect(back.runs.some((r) => inputsEqual(r.input, quantiseInput(want)))).toBe(true);
+    expect(finalHash(replayTo(back, back.ticks))).toBe(back.fp);
+  });
+
+  test('a code from the old controls (format 1) is refused politely, a newer one too', () => {
+    const { replay } = playLive(11, 3);
+    const code = encodeReplay(replay);
+    // Rewrite the version byte (the first byte of the body) and fix the checksum the way the encoder does.
+    const withVersion = (v: number) => {
+      const std = code.slice('DD1.'.length).replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(std + '='.repeat((4 - (std.length % 4)) % 4));
+      const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      const body = bytes.slice(0, bytes.length - 4);
+      body[0] = v;
+      let h = 0x811c9dc5;
+      for (const b of body) {
+        h ^= b;
+        h = Math.imul(h, 0x01000193);
+      }
+      const out = new Uint8Array(body.length + 4);
+      out.set(body);
+      new DataView(out.buffer).setUint32(body.length, h >>> 0, true);
+      let s = '';
+      for (const b of out) s += String.fromCharCode(b);
+      return 'DD1.' + btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    };
+    expect(() => decodeReplay(withVersion(1))).toThrow(/older version/);
+    expect(() => decodeReplay(withVersion(3))).toThrow(/newer version/);
+    expect(decodeReplay(withVersion(REPLAY_VERSION))).toEqual(replay);
   });
 
   test('encode then decode round-trips everything, byte for byte', () => {
