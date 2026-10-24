@@ -380,7 +380,7 @@ test('a guest tab cannot restore a backup over the owner, and a damaged backup i
   await a.locator('[data-action="open-backup"]').click();
   const bad = await a.evaluate((k) => {
     const s = JSON.parse(localStorage.getItem(k));
-    s.squad[0] = { foo: 1 };
+    s.squad = s.squad.map(() => ({ foo: 1 })); // every entry, so the crash does not depend on which players the random club uses
     return JSON.stringify(s);
   }, SAVE_KEY);
   await a.locator('#bk-paste').fill(bad);
