@@ -21,9 +21,11 @@ import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { InputController } from './input.ts';
-import { mountMatch, refereeCall } from './matchView.ts';
+import { mountMatch } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
-import { HUMAN_COLORS, PitchRenderer } from './render.ts';
+import { HUMAN_COLORS } from './render.ts';
+import { createMatchRenderer, mountCameraToggle } from './renderer.ts';
+import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
 import { esc, type ResultView } from './ui.ts';
@@ -371,18 +373,9 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const delayMs = Math.round(o.start.delay * FRAME_MS);
   root.innerHTML = `
   <section class="match" aria-label="Linked match" id="net-match" data-side="${me}">
-    <header class="scoreboard">
-      <div class="sb-team">${crestSvg({ ...home, crest: o.start.crests[0] }, 28)}<span class="sb-name">${esc(home.name)}</span></div>
-      <div class="sb-center">
-        <div class="sb-score"><span id="sb-h">0</span><span class="sb-dash">–</span><span id="sb-a">0</span></div>
-        <div class="sb-clock"><span id="sb-min">1'</span> · <span id="sb-phase">Linked</span></div>
-      </div>
-      <div class="sb-team sb-away"><span class="sb-name">${esc(away.name)}</span>${crestSvg({ ...away, crest: o.start.crests[1] }, 28)}</div>
-    </header>
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. Mouse or keys as usual; Esc opens the leave menu."></canvas>
-      <button class="pitch-pause" id="net-menu-btn" type="button" aria-keyshortcuts="Escape">Menu</button>
-      <div class="banner" id="banner" hidden></div>
+      ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label: 'Linked', menuId: 'net-menu-btn', menuText: 'Menu' })}
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
@@ -402,7 +395,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
-  const renderer = new PitchRenderer(canvas);
+  const renderer = createMatchRenderer(canvas);
   const ls = new Lockstep({ state: s, side: me, transport: narrow(o.transport, isLockstepMsg), delay: o.start.delay, now: () => performance.now() });
 
   let menuOpen = false;
@@ -430,7 +423,10 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
   renderer.resize();
+  renderer.prepare(s);
   const juice = mountJuice(root, s);
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  const offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
 
   const stop = (text: string) => {
     if (ended) return;
@@ -497,10 +493,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let shownHalftime = false;
   let fullAt = 0;
   let statsAt = 0;
-  function banner(text: string, ms: number) {
-    const b = $('banner');
-    b.textContent = text;
-    b.hidden = false;
+  function banner(text: string, ms: number, sub?: string) {
+    hud.word(text, ms, sub);
     bannerUntil = performance.now() + ms;
   }
 
@@ -508,6 +502,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     raf = requestAnimationFrame(frame);
     pump();
     renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse', armed: input.armed(), team: me });
+    hud.update(s, input.charge());
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
     $('sb-min').textContent = `${matchMinute(s)}'`;
@@ -529,27 +524,24 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     }
 
     while (lastEvent < s.events.length) {
-      const call = refereeCall(s, s.events[lastEvent++]);
-      if (call) banner(call, 1400);
+      const w = refereeWord(s, s.events[lastEvent++]);
+      if (w) banner(w.word, 1500, w.sub);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
-      banner(`Goal! ${ev.scorer} ${ev.minute}'`, 2000);
+      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}.`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
-      banner('Half-time', 1800);
+      banner('Half time', 1800);
     }
-    if (bannerUntil && now > bannerUntil) {
-      $('banner').hidden = true;
-      bannerUntil = 0;
-    }
+    if (bannerUntil && now > bannerUntil) bannerUntil = 0;
     if (s.phase === 'fulltime' && !ls.desync && !ended) {
       if (!fullAt) {
         fullAt = now;
-        banner('Full-time', 99999);
+        banner('Full time', 99999);
         announce(`Full-time. ${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`);
       }
       // Give the final state hash a moment to arrive from the other tab and be compared.
@@ -567,7 +559,10 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     ls.dispose();
     input.dispose();
     juice.dispose();
+    hud.dispose();
+    offCam();
     ro.disconnect();
+    renderer.dispose();
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
   }

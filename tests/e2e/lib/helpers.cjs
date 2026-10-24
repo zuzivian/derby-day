@@ -8,7 +8,8 @@ const { pathToFileURL } = require('node:url');
 const SAVE_KEY = 'derbyday.save.v1';
 const PREFS_KEY = 'derbyday.prefs.v1';
 const DIST = path.resolve(__dirname, '..', '..', '..', 'dist', 'index.html');
-const APP_URL = pathToFileURL(DIST).href;
+// E2E_RENDERER=2d or 3d pins the match renderer (default: whatever the browser supports).
+const APP_URL = pathToFileURL(DIST).href + (process.env.E2E_RENDERER ? `?renderer=${process.env.E2E_RENDERER}` : '');
 
 const SEL = {
   app: '#app',
@@ -136,9 +137,11 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *                null leaves the fresh level-1 save alone. Everything up to the level counts
  *                as already seen, so no level-up dialog is waiting.
  *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
+ *   renderer     '2d' or '3d': pin the match renderer (?renderer=). Tests that map world metres to
+ *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -148,7 +151,7 @@ async function openApp(t, opts = {}) {
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
   // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
   if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
-  await page.goto(APP_URL);
+  await page.goto(renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   if (prefs || mutateSave) {

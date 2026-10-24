@@ -31,6 +31,8 @@ import type { Vec } from '../sim/vec.ts';
 export interface WorldPicker {
   /** Position in CSS pixels inside the canvas (the canvas's top-left is 0,0) to world metres. */
   toWorld(cssX: number, cssY: number): Vec;
+  /** Keyboard direction in screen terms (x right, y down) to world terms; identity when absent (top-down view). */
+  screenDir?(d: Vec): Vec;
 }
 
 /** A left press shorter than this is a click (pass); longer is a loft being charged. */
@@ -75,10 +77,12 @@ export class InputController {
   private loftKeyStart: number | null = null;
   private touchTap: { t: number; x: number; y: number; id: number } | null = null;
   private cleanup: (() => void)[] = [];
+  /** Last pointer position, client pixels. Re-projected every tick: a moving 3D camera slides the pitch under a still mouse. */
+  private client: { x: number; y: number } | null = null;
 
   constructor(
-    canvas: HTMLCanvasElement,
-    picker: WorldPicker,
+    private canvas: HTMLCanvasElement,
+    private picker: WorldPicker,
     private hasBall: () => boolean,
     private onPause: () => void,
   ) {
@@ -87,6 +91,7 @@ export class InputController {
       this.cleanup.push(() => el.removeEventListener(type, fn as EventListener, opts));
     };
     const toWorld = (e: PointerEvent) => {
+      this.client = { x: e.clientX, y: e.clientY };
       const r = canvas.getBoundingClientRect();
       return picker.toWorld(e.clientX - r.left, e.clientY - r.top);
     };
@@ -230,14 +235,19 @@ export class InputController {
   /** Called once per sim tick. One-shot actions are consumed here. */
   take(): HumanInput {
     const input: HumanInput = {};
+    if (this.client && this.mode === 'mouse') {
+      const r = this.canvas.getBoundingClientRect();
+      this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
+    }
     const pointer = this.mode === 'mouse' && this.cursor;
     if (pointer) input.cursor = this.cursor!;
     else {
       const k = this.keys;
-      input.dir = {
+      const d = {
         x: (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0),
         y: (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0),
       };
+      input.dir = this.picker.screenDir ? this.picker.screenDir(d) : d;
     }
     if (this.pass) input.pass = true;
     if (this.loft !== null) input.loft = this.loft;

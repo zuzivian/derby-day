@@ -13,7 +13,8 @@ const VIEW_W = 105 + 2 * MARGIN;
 const VIEW_H = 68 + 2 * MARGIN;
 
 async function openMatch(t) {
-  const page = await openApp(t, { prefs: PREFS, e2eHook: true });
+  // The 2D view: these tests place the pointer by world metres, and the 3D camera follows play.
+  const page = await openApp(t, { prefs: PREFS, e2eHook: true, renderer: '2d' });
   await startRanked(page);
   await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 15_000 });
   return page;
@@ -28,12 +29,15 @@ async function moveTo(page, w) {
   const p = await screen(page, w);
   await page.mouse.move(p.x, p.y);
 }
+/** Two animation frames: the match loop has taken the input and stepped the sim with it. */
+const frames = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 async function click(page, w, button = 'left') {
   const p = await screen(page, w);
   await page.mouse.move(p.x, p.y);
   await page.mouse.down({ button });
   await page.waitForTimeout(40);
   await page.mouse.up({ button });
+  await frames(page);
 }
 async function hold(page, w, ms, button = 'left') {
   const p = await screen(page, w);
@@ -41,6 +45,7 @@ async function hold(page, w, ms, button = 'left') {
   await page.mouse.down({ button });
   await page.waitForTimeout(ms);
   await page.mouse.up({ button });
+  await frames(page);
 }
 
 /** The human's player has the ball at `at`; everybody else is on the floor, and control stays put. Returns his index. */
@@ -66,21 +71,29 @@ async function afterKick(page, me) {
 const ball = (page) => page.evaluate(() => ({ ...window.__derbyMatch.ball.pos, z: window.__derbyMatch.ball.z, vx: window.__derbyMatch.ball.vel.x, vy: window.__derbyMatch.ball.vel.y, receiver: window.__derbyMatch.ball.receiver }));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-/** Track the ball's peak height and first touchdown from now on, once per animation frame. */
+/**
+ * Track the ball's peak height and first touchdown from now on, on every sim tick: a setter on
+ * ball.z sees each value the sim writes, so a slow frame rate (several ticks per frame, as under a
+ * software WebGL renderer) cannot skip the one tick the ball touches down before it bounces.
+ */
 const startTracking = (page) =>
   page.evaluate(() => {
-    const s = window.__derbyMatch;
+    const b = window.__derbyMatch.ball;
     window.__track = { peak: 0, air: false, td: null };
-    const f = () => {
-      const k = window.__track;
-      if (s.ball.owner < 0) {
-        k.peak = Math.max(k.peak, s.ball.z);
-        if (s.ball.z > 0) k.air = true;
-        else if (k.air && !k.td) k.td = { x: s.ball.pos.x, y: s.ball.pos.y };
-      }
-      requestAnimationFrame(f);
-    };
-    f();
+    let z = b.z;
+    Object.defineProperty(b, 'z', {
+      configurable: true,
+      enumerable: true,
+      get: () => z,
+      set: (v) => {
+        z = v;
+        const k = window.__track;
+        if (b.owner >= 0) return;
+        k.peak = Math.max(k.peak, v);
+        if (v > 0) k.air = true;
+        else if (k.air && !k.td) k.td = { x: b.pos.x, y: b.pos.y };
+      },
+    });
   });
 const tracked = (page) => page.evaluate(() => window.__track);
 
@@ -244,11 +257,20 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
       s.switchTimer[0] = 1e9;
       window.__cd = 0;
-      const f = () => {
-        window.__cd = Math.max(window.__cd, me.tackleCd);
-        requestAnimationFrame(f);
-      };
-      f();
+      // Every value the sim writes, not one sample a frame (a slow frame steps several ticks).
+      if (!me.__cdHooked) {
+        let cd = me.tackleCd;
+        Object.defineProperty(me, 'tackleCd', {
+          configurable: true,
+          enumerable: true,
+          get: () => cd,
+          set: (v) => {
+            cd = v;
+            window.__cd = Math.max(window.__cd, v);
+          },
+        });
+        Object.defineProperty(me, '__cdHooked', { value: true });
+      }
       return opp.i;
     }, gap);
   await setup(1.3);
@@ -299,7 +321,8 @@ test('keys still work as the secondary scheme: WASD runs, Shift sprints, Space p
 });
 
 test('training ground: the move and pass drills are done with the pointer', async (t) => {
-  const page = await openApp(t, { prefs: PREFS, e2eHook: true });
+  // The 2D view: these tests place the pointer by world metres, and the 3D camera follows play.
+  const page = await openApp(t, { prefs: PREFS, e2eHook: true, renderer: '2d' });
   await goTab(page, SEL.clubScreen);
   await page.locator('[data-action="replay-tutorial"]').click();
   await page.waitForSelector('#tr-pitch');

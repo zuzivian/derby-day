@@ -28,7 +28,10 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
 
   // Kick-off pause; player 1 holds the ball at the centre spot. Player 2 runs down on the arrows,
   // then player 1 runs up on W, each while the other is idle; then both at once, sideways.
-  await page.waitForTimeout(1100);
+  // Wait for play to start (the HUD clock moves) rather than a fixed time: a software-rendered 3D
+  // view can take a couple of seconds to get its first frames up.
+  await page.waitForFunction(() => (document.getElementById('sb-clock')?.textContent ?? '00:00') !== '00:00', null, { timeout: 15_000 });
+  await page.waitForTimeout(250);
   const hold = async (keys, ms) => {
     for (const k of keys) await page.keyboard.down(k);
     await page.waitForTimeout(ms);

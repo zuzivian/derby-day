@@ -31,7 +31,10 @@ export interface RenderExtras {
 export const HUMAN_COLORS: [string, string] = ['#ffd60a', '#22d3ee'];
 const HUMAN_GLOW: [string, string] = ['rgba(255,214,10,.28)', 'rgba(34,211,238,.3)'];
 
+/** The 2D canvas renderer: the fallback when WebGL is unavailable, and the tutorial's pitch. */
 export class PitchRenderer {
+  readonly kind = '2d' as const;
+  readonly continuous = false;
   private ctx: CanvasRenderingContext2D;
   private k = 10;
   private ballSpin = 0;
@@ -53,6 +56,18 @@ export class PitchRenderer {
   toWorld(cssX: number, cssY: number): Vec {
     const rect = this.canvas.getBoundingClientRect();
     return { x: (cssX / rect.width) * VIEW_W - MARGIN, y: (cssY / rect.height) * VIEW_H - MARGIN };
+  }
+
+  /** Nothing to warm up for a 2D canvas. */
+  prepare(_s: MatchState): void {}
+
+  /** Top-down view: screen axes are world axes. */
+  screenDir(d: Vec): Vec {
+    return d;
+  }
+
+  dispose(): void {
+    this.trail = [];
   }
 
   draw(s: MatchState, x: RenderExtras): void {

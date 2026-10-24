@@ -61,7 +61,13 @@ async function main() {
     process.exit(2);
   }
 
-  const browser = await chromium.launch({ executablePath: executablePath(), headless: !process.env.E2E_HEADED });
+  // WebGL for the 3D match view: headless Chromium falls back to SwiftShader (software), which the
+  // game detects and renders at low quality. E2E_RENDERER=2d forces the 2D canvas fallback instead.
+  const browser = await chromium.launch({
+    executablePath: executablePath(),
+    headless: !process.env.E2E_HEADED,
+    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+  });
   console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}\n`);
 
   const results = [];

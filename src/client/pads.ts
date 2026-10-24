@@ -114,10 +114,12 @@ export class HotseatInput {
   mouse = false;
   private pads: [Pad, Pad] = [new Pad(P1_KEYS), new Pad(P2_KEYS)];
   private cleanup: (() => void)[] = [];
+  /** Last pointer position, client pixels: re-projected each tick, since a 3D camera moves under a still mouse. */
+  private client: { x: number; y: number } | null = null;
 
   constructor(
-    canvas: HTMLCanvasElement,
-    picker: WorldPicker,
+    private canvas: HTMLCanvasElement,
+    private picker: WorldPicker,
     private hasBall: (team: 0 | 1) => boolean,
     onPause: () => void,
   ) {
@@ -169,6 +171,7 @@ export class HotseatInput {
 
     // Player 1's mouse: the same scheme as a normal match.
     const toWorld = (e: PointerEvent) => {
+      this.client = { x: e.clientX, y: e.clientY };
       const r = canvas.getBoundingClientRect();
       return picker.toWorld(e.clientX - r.left, e.clientY - r.top);
     };
@@ -214,6 +217,10 @@ export class HotseatInput {
     const p = this.pads[team];
     const k = p.keys;
     const input: HumanInput = {};
+    if (team === 0 && this.mouse && this.client) {
+      const r = this.canvas.getBoundingClientRect();
+      this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
+    }
     const pointer = team === 0 && this.mouse && this.cursor;
     if (pointer) input.cursor = this.cursor!;
     else input.dir = { x: (p.has(k.right) ? 1 : 0) - (p.has(k.left) ? 1 : 0), y: (p.has(k.down) ? 1 : 0) - (p.has(k.up) ? 1 : 0) };
