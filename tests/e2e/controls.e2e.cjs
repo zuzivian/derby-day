@@ -255,8 +255,10 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
   await click(page, { x: 31.5, y: 20 }, 'right');
   await page.waitForTimeout(250);
   const stand = await page.evaluate(() => window.__cd);
+  // A standing tackle sets a 36-tick cooldown, or 50 if it fails (it wins at most 88% of the
+  // time), so accept either outcome; a slide is 70 or 90, which is what tells the two apart.
   expect(stand, 'a close pointer is a standing tackle').toBeGreaterThan(30);
-  expect(stand, 'standing tackle cooldown').toBeLessThan(40);
+  expect(stand, 'standing tackle cooldown (won or lost), shorter than any slide').toBeLessThan(55);
   const opp = await setup(2.6);
   await click(page, { x: 36, y: 20 }, 'right');
   await page.waitForTimeout(250);
