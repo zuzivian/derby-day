@@ -38,7 +38,8 @@ test('levels: a fresh club shows only Home and Kick off, with a level 1 XP bar',
   expect(await page.locator(SEL.playPractice).count(), 'no Practice yet').toBe(0);
   expect(await page.locator(SEL.playLocal2p).count(), 'no Local 2P yet').toBe(0);
   expect(await page.locator(SEL.playLink).count(), 'no Link two tabs yet').toBe(0);
-  expect(await page.locator(SEL.playRanked).count(), 'ranked is open').toBe(1);
+  expect(await page.locator(SEL.playRanked).count(), 'ranked is not open yet: Kick off is a warm-up').toBe(0);
+  expect(await page.locator(SEL.kickOff).getAttribute('data-action'), 'warm-up friendly').toBe('play-warmup');
   // The club level details live on the Club tab (level 3), which is not there yet; the badge does nothing.
   expect(await page.locator(SEL.nextUnlock).count(), 'no teaser on Home').toBe(0);
   await page.locator(SEL.levelBadge).click();
@@ -51,7 +52,7 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe('Level 4 · 60 / 400 XP');
   expect(await tabScreens(page), 'tabs at level 4').toEqual(['home', 'squad', 'training', 'club']);
   await goTab(page, SEL.clubScreen);
-  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('Transfers, Local 2P and Link two tabs at level 5 — 340 XP to go');
+  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice Hard at level 5 — 340 XP to go');
   await page.locator(`${SEL.levelPanel} summary`).click();
   const text = await page.locator(SEL.levelPanel).innerText();
   expect(text, 'unlocked row').toMatch(/Training[\s\S]*Unlocked/);
@@ -63,9 +64,11 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
   expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'focus on panel heading').toBe('level-title');
 });
 
-test('levels: a ranked match awards XP, shown in the result dialog and the header', async (t) => {
+test('levels: a warm-up match awards XP, shown in the result dialog and the header', async (t) => {
   const page = await openApp(t, { level: null, prefs: SHORT });
-  await playShortRanked(page);
+  await page.locator(SEL.kickOff).click();
+  await page.waitForSelector(SEL.pitch);
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
   const save = await readSave(page);
   const rec = save.history.at(-1);
   expect(save.xp, 'some XP').toBeGreaterThanOrEqual(50);
@@ -87,7 +90,7 @@ test('levels: a ranked match awards XP, shown in the result dialog and the heade
 });
 
 test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc closes it and the tab appears', async (t) => {
-  const start = totalXpForLevel(6) - 10;
+  const start = totalXpForLevel(7) - 10;
   const page = await openApp(t, { xp: start, prefs: SHORT, width: 390, height: 844 });
   expect(await tabScreens(page), 'no Ladder yet').notToContain('ladder');
   await playShortRanked(page);
@@ -97,10 +100,10 @@ test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc 
   await dialog.waitFor();
   expect(await dialog.getAttribute('role'), 'role').toBe('dialog');
   expect(await dialog.getAttribute('aria-modal'), 'modal').toBe('true');
-  expect(await page.locator(SEL.levelUpTitle).innerText(), 'title').toMatch(/level 6/i);
+  expect(await page.locator(SEL.levelUpTitle).innerText(), 'title').toMatch(/level 7/i);
   expect(await dialog.innerText(), 'names the unlock').toContain('Ladder');
   expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'focus on title').toBe('levelup-title');
-  await page.waitForFunction(() => /Level 6\. Unlocked: Ladder/.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
+  await page.waitForFunction(() => /Level 7\. Unlocked: Ladder/.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
   const w = await pageWidths(page);
   expect(w.scrollWidth, 'no horizontal overflow at 390px with the dialog open').toBeLessThanOrEqual(w.innerWidth);
   // Tab cycles between the dialog's two buttons and never leaves it.
@@ -126,7 +129,7 @@ test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc 
 });
 
 test('levels: a training session can level up; the dialog button goes straight to the new feature', async (t) => {
-  const page = await openApp(t, { xp: totalXpForLevel(7) - 3 });
+  const page = await openApp(t, { xp: totalXpForLevel(5) - 3 });
   expect(await tabScreens(page), 'no Competitions yet').notToContain('competitions');
   await goTab(page, 'training');
   await page.locator(SEL.train).first().click();
@@ -134,7 +137,7 @@ test('levels: a training session can level up; the dialog button goes straight t
   const text = await page.locator(SEL.levelUp).innerText();
   expect(text, 'the Cup').toContain('The Cup');
   expect(text, 'Practice Hard').toContain('Practice Hard');
-  expect((await readSave(page)).xp, 'session XP').toBe(totalXpForLevel(7) + 2);
+  expect((await readSave(page)).xp, 'session XP').toBe(totalXpForLevel(5) + 2);
   await page.locator(SEL.levelUpGo).click();
   await page.locator(SEL.levelUp).waitFor({ state: 'detached' });
   expect(await page.locator(`${SEL.tabFor('competitions')}[aria-current]`).count(), 'on Competitions').toBe(1);
@@ -147,11 +150,11 @@ test('levels: a training session can level up; the dialog button goes straight t
 });
 
 test('levels: a forfeited match earns no XP', async (t) => {
-  const page = await openApp(t, { xp: 150 });
+  const page = await openApp(t, { xp: 350 });
   await startRanked(page);
   await page.keyboard.press('Escape');
   await page.locator(SEL.forfeit).click();
   await page.locator(SEL.modalClose).waitFor();
   expect(await page.locator(SEL.xpGain).innerText(), 'result line').toMatch(/No XP/);
-  expect((await readSave(page)).xp, 'unchanged').toBe(150);
+  expect((await readSave(page)).xp, 'unchanged').toBe(350);
 });

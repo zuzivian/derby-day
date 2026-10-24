@@ -17,9 +17,11 @@ test('home: a level-1 club sees exactly the hero Kick off, and the mode cards ar
   expect(await page.locator(SEL.hero).count(), 'one hero').toBe(1);
   expect((await page.locator(SEL.kickOff).innerText()).trim(), 'button text').toMatch(/^kick off$/i);
   expect(await page.locator(`${SEL.hero} .crest`).count(), 'two crests').toBe(2);
-  expect(await page.locator(`${SEL.hero} .gauge[role="img"]`).getAttribute('aria-label'), 'gauge has a text equivalent').toMatch(/^Win chance \d+%$/);
+  expect((await page.locator(`${SEL.hero} .hero-tag`).innerText()).trim(), 'a warm-up, not ranked').toMatch(/^warm-up friendly$/i);
+  expect(await page.locator(`${SEL.hero} .gauge`).count(), 'no win-chance gauge for a warm-up').toBe(0);
+  expect(await page.locator(SEL.kickOff).getAttribute('data-action'), 'Kick off plays a warm-up').toBe('play-warmup');
   expect(await page.locator(`${SEL.hero} .form-strip`).getAttribute('aria-label'), 'form has a text equivalent').toBe('No matches played yet');
-  expect(await page.locator(`${SEL.hero} .hero-elo`).allInnerTexts().then((x) => x.join(' ')), 'Elo as numbers').toMatch(/Elo\s*\d+[\s\S]*Elo\s*\d+/);
+  expect(await page.locator(`${SEL.hero} .hero-elo`).allInnerTexts().then((x) => x.join(' ')), 'your Elo as a number, theirs a friendly').toMatch(/Elo\s*\d+[\s\S]*Friendly/);
   expect(await page.locator(`${SEL.hero} .mini-spark`).count(), 'no sparkline without history').toBe(0);
 
   // No mode cards at level 1.
@@ -36,8 +38,18 @@ test('home: a level-1 club sees exactly the hero Kick off, and the mode cards ar
   expect(await page.locator(`${SEL.statusStrip} [role="progressbar"]`).count(), 'XP bar').toBe(1);
 });
 
+test('home: from level 3 Kick off is ranked, and the win-chance gauge waits for the fourth ranked match', async (t) => {
+  const page = await openApp(t, { level: 3 });
+  expect((await page.locator(`${SEL.hero} .hero-tag`).innerText()).trim(), 'ranked').toMatch(/^ranked$/i);
+  expect(await page.locator(SEL.kickOff).getAttribute('data-action'), 'Kick off plays ranked').toBe('play-ranked');
+  expect(await page.locator(`${SEL.hero} .gauge`).count(), 'no gauge for the first three ranked matches').toBe(0);
+  expect(await page.locator(`${SEL.hero} .hero-elo`).allInnerTexts().then((x) => x.join(' ')), 'both Elo numbers').toMatch(/Elo\s*\d+[\s\S]*Elo\s*\d+/);
+  const ranked = await openApp(t, { level: 3, mutateSave: (save) => { for (let i = 0; i < 3; i++) save.history.push({ opponent: 'A', opponentShort: 'A', goalsFor: 1, goalsAgainst: 0, ranked: true, eloBefore: 1000, eloAfter: 1000, scorers: [] }); } });
+  expect(await ranked.locator(`${SEL.hero} .gauge[role="img"]`).getAttribute('aria-label'), 'gauge has a text equivalent once shown').toMatch(/^Win chance \d+%$/);
+});
+
 test('home: Kick off starts a ranked match against the opponent shown', async (t) => {
-  const page = await openApp(t, { level: null, prefs: SHORT });
+  const page = await openApp(t, { level: 3, prefs: SHORT });
   const opp = (await page.locator(`${SEL.hero} .hero-name`).nth(1).innerText()).trim();
   await page.locator(SEL.kickOff).click();
   await page.waitForSelector(SEL.pitch);
@@ -53,15 +65,15 @@ test('home: Kick off starts a ranked match against the opponent shown', async (t
   expect(await page.locator(`${SEL.hero} .form-strip`).getAttribute('aria-label'), 'form updated').toMatch(/^Recent form, oldest first: (win|draw|defeat)$/);
 });
 
-test('home: the mode cards appear with Practice; locked ones are teasers, not controls', async (t) => {
+test('home: the mode cards arrive with level 2; locked ones are teasers, not controls', async (t) => {
   const page = await openApp(t, { level: 4 });
   const modes = await page.$$eval(SEL.modeCard, (els) => els.map((e) => e.getAttribute('data-mode')));
   expect(modes, 'mode cards at level 4, in order').toEqual(['player', 'practice', 'cup', 'league']);
   const locked = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => [e.getAttribute('data-mode'), e.getAttribute('data-locked-level')]));
-  expect(locked, 'locked vs Player, Cup and League with their levels').toEqual([['player', '5'], ['cup', '7'], ['league', '8']]);
-  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badges').toBe(3);
+  expect(locked, 'locked Cup and League with their levels').toEqual([['cup', '5'], ['league', '8']]);
+  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badges').toBe(2);
   const inside = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => e.querySelectorAll('button, a, input, select, [tabindex], [data-action]').length));
-  expect(inside, 'nothing focusable or actionable inside').toEqual([0, 0, 0]);
+  expect(inside, 'nothing focusable or actionable inside').toEqual([0, 0]);
   for (const mode of ['cup', 'league']) {
     await page.locator(SEL.modeCardFor(mode)).click();
     await page.waitForTimeout(150);
@@ -76,7 +88,7 @@ test('home: the mode cards appear with Practice; locked ones are teasers, not co
     await page.keyboard.press('Tab');
     stops.push(await page.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.className)) || ''));
   }
-  expect(stops.slice(0, 2), 'Tab order through the mode cards (vs Player is still locked)').toEqual(['practice-easy', 'practice-normal']);
+  expect(stops.slice(0, 4), 'Tab order through the mode cards').toEqual(['play-local2p', 'play-link', 'practice-easy', 'practice-normal']);
   expect(stops.some((s) => /mode-card/.test(s)), 'no stop on a locked card').toBe(false);
 });
 
@@ -138,19 +150,20 @@ test('home: the dashboard gains one element per unlock', async (t) => {
   };
   expect((await stats(3)).stats, 'level 3: nothing yet').toEqual([]);
   expect((await stats(4)).stats, 'level 4: sessions').toEqual(['sessions']);
-  expect((await stats(5)).stats, 'level 5: money').toEqual(['sessions', 'money']);
-  expect((await stats(6)).stats, 'level 6: ladder position').toEqual(['sessions', 'money', 'rank']);
-  const seven = await stats(7);
-  expect(seven.locked, 'level 7: the Cup opens').toEqual(['league']);
-  expect(seven.hard, 'and Practice Hard').toBe(1);
-  expect(seven.cards, 'still four mode cards').toBe(4);
+  const five = await stats(5);
+  expect(five.locked, 'level 5: the Cup opens').toEqual(['league']);
+  expect(five.hard, 'and Practice Hard').toBe(1);
+  expect(five.cards, 'still four mode cards').toBe(4);
+  expect(five.stats, 'level 5: still just sessions').toEqual(['sessions']);
+  expect((await stats(6)).stats, 'level 6: money').toEqual(['sessions', 'money']);
+  expect((await stats(7)).stats, 'level 7: ladder position').toEqual(['sessions', 'money', 'rank']);
   const eight = await stats(8);
   expect(eight.locked, 'level 8: the League opens').toEqual([]);
   expect((await stats(10)).stats, 'level 10: the season week').toEqual(['sessions', 'money', 'rank', 'week']);
 });
 
 test('home: an unlocked Cup card opens Competitions', async (t) => {
-  const page = await openApp(t, { level: 7 });
+  const page = await openApp(t, { level: 5 });
   await page.locator(`${SEL.modeCardFor('cup')} [data-action="go"]`).click();
   await page.waitForSelector(`${SEL.tabFor('competitions')}[aria-current]`);
   expect(await page.evaluate(() => document.activeElement.id), 'focus on the Competitions tab').toBe('tab-competitions');

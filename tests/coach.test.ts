@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { acknowledge, CoachTracker, openTabs, pendingMark, TIPS } from '../src/client/coach.ts';
+import { acknowledge, CoachTracker, minTipMs, openTabs, pendingMark, SEEN_AFTER_MS, TIPS, tipText } from '../src/client/coach.ts';
 import { celebrationWords } from '../src/client/onboarding.ts';
 import { toTeamSetup, generateSquad, autoLineup, generateIdentity } from '../src/meta/club.ts';
 import { newGame } from '../src/meta/game.ts';
@@ -122,6 +122,76 @@ describe('coach tracker', () => {
   });
 });
 
+describe('coach timing and relevance', () => {
+  test('a tip stays up long enough to read: about four words a second, never under five seconds', () => {
+    for (const t of Object.values(TIPS)) {
+      for (const text of [t.mouse, t.keys, t.touch]) {
+        const words = text.split(/\s+/).length;
+        expect(minTipMs(text)).toBeGreaterThanOrEqual(5000);
+        expect(minTipMs(text)).toBeGreaterThanOrEqual(words * 250);
+      }
+    }
+    // The cascade the review found: run was cut at 2.5 s with 20+ words on screen. It now holds well past that.
+    expect(minTipMs(TIPS.run.mouse)).toBeGreaterThanOrEqual(5000);
+    expect(minTipMs(TIPS.run.mouse)).toBeGreaterThan(SEEN_AFTER_MS);
+  });
+
+  test('a queued tip that is no longer true when its turn comes is dropped, and can be offered again later', () => {
+    const s = match();
+    toPlay(s);
+    const me = s.controlled[0];
+    const c = new CoachTracker(['run']);
+    s.players[me].pos = { x: 30, y: 34 };
+    s.ball.owner = me;
+    expect(c.observe(s)).toEqual(['pass']);
+    s.ball.owner = s.players.find((p) => p.team === 1)!.i; // lost it before the tip got its turn
+    expect(c.take(s)).toBeUndefined();
+    s.ball.owner = me; // the next possession offers it again
+    expect(c.observe(s)).toEqual(['pass']);
+    expect(c.take(s)).toBe('pass');
+  });
+
+  test('a tip cut short is forgotten, so it comes back', () => {
+    const s = match();
+    for (let i = 0; i < 60; i++) step(s, {});
+    const c = new CoachTracker();
+    c.observe(s);
+    expect(c.take(s)).toBe('run');
+    expect(c.observe(s)).toEqual([]);
+    c.forget('run');
+    expect(c.observe(s)).toEqual(['run']);
+  });
+
+  test('restart is only relevant while the restart is live and yours', () => {
+    const s = match();
+    toPlay(s);
+    const c = new CoachTracker(['run']);
+    expect(c.relevant('restart', s)).toBe(false);
+    s.restart = { kind: 'corner', team: 0, spot: { x: 0, y: 0 }, taker: s.controlled[0], stage: 'ready', ticks: 0, direct: true, reason: 'out', wait: 0 };
+    expect(c.relevant('restart', s)).toBe(true);
+    s.restart = null;
+    expect(c.relevant('restart', s)).toBe(false);
+  });
+
+  test('the shoot tip is offered on the first possession in the attacking half, not only in the box', () => {
+    const s = match();
+    toPlay(s);
+    const me = s.controlled[0];
+    const c = new CoachTracker(['run']);
+    s.players[me].pos = { x: 60, y: 10 };
+    s.ball.owner = me;
+    expect(c.observe(s)).toEqual(['pass', 'shoot']);
+  });
+
+  test('the words follow the live input: touch first, then keys or mouse; the run tip mentions both', () => {
+    expect(tipText('pass', 'mouse', false)).toBe(TIPS.pass.mouse);
+    expect(tipText('pass', 'keys', false)).toBe(TIPS.pass.keys);
+    expect(tipText('pass', 'keys', true)).toBe(TIPS.pass.touch);
+    expect(TIPS.run.mouse).toMatch(/WASD/);
+    expect(TIPS.run.keys).toMatch(/mouse/);
+  });
+});
+
 describe('tab marks', () => {
   test('a returning player (no marks) never gets one', () => {
     const s = newGame(1);
@@ -148,7 +218,7 @@ describe('tab marks', () => {
     const s = newGame(3);
     expect(openTabs(s)).toEqual(['home']);
     s.xp = totalXpForLevel(5);
-    expect(openTabs(s)).toEqual(['home', 'squad', 'club', 'training', 'transfers']);
+    expect(openTabs(s)).toEqual(['home', 'squad', 'club', 'training', 'competitions']);
   });
 });
 

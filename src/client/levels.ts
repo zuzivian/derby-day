@@ -17,6 +17,7 @@ import {
   pendingUnlocks,
   totalXpForLevel,
   UNLOCKS,
+  unlockLevel,
   XP,
   xpSummary,
   type Unlock,
@@ -39,7 +40,9 @@ export function levelChip(s: Save): string {
   const now = Math.min(p.intoLevel, p.needed);
   const valueText = p.maxed ? 'Max level' : `${fmt(p.intoLevel)} of ${fmt(p.needed)} XP`;
   return `<div class="level-chip">
-    <button class="level-badge tier-${badgeTier(p.level)}" type="button" data-action="level-open" aria-label="Club level ${p.level}: show unlocks">${p.level}</button>
+    ${isUnlocked(s, 'club')
+      ? `<button class="level-badge tier-${badgeTier(p.level)}" type="button" data-action="level-open" aria-label="Club level ${p.level}: show unlocks">${p.level}</button>`
+      : `<span class="level-badge tier-${badgeTier(p.level)}" role="img" aria-label="Club level ${p.level}">${p.level}</span>`}
     <div class="xp">
       <span class="xp-text" id="xp-text">${esc(levelText(p))}</span>
       <span class="xp-bar" role="progressbar" aria-labelledby="xp-text" aria-valuemin="0" aria-valuemax="${p.needed}" aria-valuenow="${now}" aria-valuetext="${esc(`Level ${p.level}, ${valueText}`)}"><span style="width:${pct}%"></span></span>
@@ -49,16 +52,16 @@ export function levelChip(s: Save): string {
 
 function statusOf(s: Save, u: Unlock, nextLevel: number | null): 'done' | 'next' | 'later' {
   if (isUnlocked(s, u.id)) return 'done';
-  return u.level === nextLevel ? 'next' : 'later';
+  return unlockLevel(s, u.id) === nextLevel ? 'next' : 'later';
 }
 
 function unlockRow(s: Save, u: Unlock, nextLevel: number | null): string {
   const st = statusOf(s, u, nextLevel);
-  const status = st === 'done' ? 'Unlocked' : st === 'next' ? 'Next' : `Level ${u.level}`;
+  const status = st === 'done' ? 'Unlocked' : st === 'next' ? 'Next' : `Level ${unlockLevel(s, u.id)}`;
   return `<li class="unlock unlock-${st}">
-    <span class="unlock-level" aria-hidden="true">${u.level}</span>
+    <span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span>
     <span class="unlock-body"><b>${esc(u.name)}</b>${u.kind === 'perk' ? ' <span class="pill perk-pill">perk</span>' : ''}<span class="muted small">${esc(u.text)}</span></span>
-    <span class="unlock-status">${st === 'done' ? '<span aria-hidden="true">✓ </span>' : ''}${status}<span class="visually-hidden">, level ${u.level}</span></span>
+    <span class="unlock-status">${st === 'done' ? '<span aria-hidden="true">✓ </span>' : ''}${status}<span class="visually-hidden">, level ${unlockLevel(s, u.id)}</span></span>
   </li>`;
 }
 
@@ -66,7 +69,7 @@ function unlockRow(s: Save, u: Unlock, nextLevel: number | null): string {
 export function levelPanel(s: Save): string {
   const p = levelForXp(s.xp ?? 0);
   const next = nextUnlocks(s);
-  const nextLevel = next[0]?.level ?? null;
+  const nextLevel = next[0] ? unlockLevel(s, next[0].id) : null;
   const teaser = nextUnlockText(s);
   const done = UNLOCKS.filter((u) => isUnlocked(s, u.id)).length;
   const toNext = p.level < 99 ? totalXpForLevel(p.level + 1) - (s.xp ?? 0) : 0;
@@ -112,7 +115,7 @@ export function levelUpModal(s: Save): string {
         <h2 id="levelup-title" class="levelup-title" tabindex="-1">Level ${level}</h2>
       </div>
       <p id="levelup-lede" class="levelup-lede">Unlocked: ${esc(fresh.map((u) => u.name).join(', '))}.</p>
-      <ul class="unlock-list">${fresh.map((u) => `<li class="unlock unlock-done"><span class="unlock-level" aria-hidden="true">${u.level}</span><span class="unlock-body"><b>${esc(u.name)}</b><span class="muted small">${esc(u.text)}</span></span></li>`).join('')}</ul>
+      <ul class="unlock-list">${fresh.map((u) => `<li class="unlock unlock-done"><span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span><span class="unlock-body"><b>${esc(u.name)}</b><span class="muted small">${esc(u.text)}</span></span></li>`).join('')}</ul>
       ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
       <div class="actions">
         ${target ? `<button class="btn primary big" data-action="levelup-go" data-id="${esc(target.id)}">${esc(target.go!.label)}</button>` : ''}

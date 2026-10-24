@@ -34,7 +34,7 @@ import {
   type Tie,
 } from '../meta/competitions.ts';
 import { formatMoney, type Save } from '../meta/game.ts';
-import { isUnlocked, unlockOf } from '../meta/levels.ts';
+import { isUnlocked, unlockLevel, unlockOf } from '../meta/levels.ts';
 import { maybeRollover } from '../meta/progression.ts';
 import { penaltySide } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -77,7 +77,7 @@ export function competitionsScreen(app: App): string {
     ${s.cup ? cupPanel(s) : ''}
     ${s.season ? seasonPanel(s) : ''}
     ${idle.length ? `<div class="comp-top">${idle.join('')}</div>` : ''}
-    ${locked.length ? `<p class="muted small comp-locked">${locked.map((u) => `${u!.name} opens at club level ${u!.level}.`).join(' ')}</p>` : ''}
+    ${locked.length ? `<p class="muted small comp-locked">${locked.map((u) => `${u!.name} opens at club level ${unlockLevel(s, u!.id)}.`).join(' ')}</p>` : ''}
     ${cabinet(s)}
   </div>`;
 }

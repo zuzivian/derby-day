@@ -11,7 +11,7 @@
 // Which tips and marks were shown is kept in prefs (coachSeen, marks), so a
 // returning player, whose prefs hold neither, never sees any. Styles: coach.css.
 
-import { PITCH_W, PITCH_H } from '../sim/constants.ts';
+import { PITCH_W } from '../sim/constants.ts';
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
 import { announce } from './a11y.ts';
@@ -33,8 +33,8 @@ export const TIPS: Record<TipId, Tip> = {
   run: {
     id: 'run',
     title: 'Run',
-    mouse: 'Move the mouse and your player runs to the pointer. The further away it is, the faster he runs.',
-    keys: 'Use WASD or the arrow keys to run. Hold Shift to sprint.',
+    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrow keys.',
+    keys: 'Use WASD or the arrow keys to run, and hold Shift to sprint. With a mouse, your player runs to the pointer instead.',
     touch: 'Drag on the pitch and your player runs toward your finger. The further away it is, the faster he runs.',
   },
   pass: {
@@ -67,15 +67,15 @@ export const TIPS: Record<TipId, Tip> = {
   },
 };
 
-/** Within this distance of the goal a shot is worth a tip. */
-const SHOOT_RANGE = 26;
 /** The run tip is the first thing a new player sees, a moment after the whistle. */
 const RUN_AT_TICK = 45;
 
 /**
  * Watches a match and says which tips have just become relevant, in the order
  * they happened. A tip is offered once, ever: ids in `seen` (restored from
- * prefs) and ids already offered are skipped.
+ * prefs) and ids already offered are skipped. A tip that was queued but is no
+ * longer true when its turn comes (the ball has gone) is dropped, and one that
+ * was cut short can be forgotten so it is offered again.
  */
 export class CoachTracker {
   private offered = new Set<TipId>();
@@ -106,21 +106,52 @@ export class CoachTracker {
 
     if (ready && live && me >= 0 && owner === me) {
       this.offer('pass');
-      const goalX = attackDir(human) > 0 ? PITCH_W : 0;
-      const p = s.players[me].pos;
-      if (Math.hypot(p.x - goalX, p.y - PITCH_H / 2) <= SHOOT_RANGE) this.offer('shoot');
+      // The first time with the ball in the attacking half is the time to say how to shoot.
+      const x = s.players[me].pos.x;
+      if (attackDir(human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
     }
     // Lost it: the human's team had the ball and the other side has it now.
     if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
     if (owner >= 0 || live) this.prevOwnerTeam = ownerTeam ?? this.prevOwnerTeam;
-    const r = s.restart;
-    if (ready && r && r.team === human && r.kind !== 'kickoff' && r.taker >= 0 && r.taker === me && r.stage !== 'whistle') this.offer('restart');
+    if (ready && this.restartIsMine(s, human)) this.offer('restart');
     return this.queue.slice(before);
   }
 
-  /** The next tip waiting to be shown, if any. */
-  take(): TipId | undefined {
-    return this.queue.shift();
+  private restartIsMine(s: MatchState, human: 0 | 1): boolean {
+    const r = s.restart;
+    return !!r && r.team === human && r.kind !== 'kickoff' && r.taker >= 0 && r.taker === s.controlled[human] && r.stage !== 'whistle';
+  }
+
+  /** Is the situation a tip is about still true? A queued tip waits for its turn, so this is asked when it is taken. */
+  relevant(id: TipId, s: MatchState, human: 0 | 1 = 0): boolean {
+    const me = s.controlled[human];
+    const owner = s.ball.owner;
+    switch (id) {
+      case 'run':
+        return s.phase !== 'fulltime';
+      case 'pass':
+      case 'shoot':
+        return me >= 0 && owner === me;
+      case 'tackle':
+        return s.phase === 'play' && (owner < 0 || s.players[owner].team !== human);
+      case 'restart':
+        return this.restartIsMine(s, human);
+    }
+  }
+
+  /** The next tip waiting to be shown that is still relevant. Stale ones are dropped and forgotten, so a later chance can offer them again. */
+  take(s?: MatchState, human: 0 | 1 = 0): TipId | undefined {
+    while (this.queue.length) {
+      const id = this.queue.shift()!;
+      if (!s || this.relevant(id, s, human)) return id;
+      this.offered.delete(id);
+    }
+    return undefined;
+  }
+
+  /** A tip was cut short before it could be read: let it be offered again. */
+  forget(id: TipId): void {
+    this.offered.delete(id);
   }
 }
 
@@ -128,10 +159,11 @@ export class CoachTracker {
 // The card over the pitch
 
 export interface CoachOptions {
-  controls: 'mouse' | 'keys';
+  /** The live input mode (the controller follows whatever the player touches). Phones always get the touch wording. */
+  mode: () => 'mouse' | 'keys';
   /** Tip ids already shown on this browser. */
   seen: string[];
-  /** A tip appeared: remember it so it never comes back. */
+  /** A tip has really been shown (read for a few seconds, or dismissed): remember it so it never comes back. */
   onSeen: (id: TipId) => void;
   /** 0 or 1: which side the human plays. */
   human?: 0 | 1;
@@ -140,63 +172,94 @@ export interface CoachOptions {
 export interface CoachHandle {
   /** Per frame. `dtMs` is 0 while the match is paused, so a tip does not run out behind the pause menu. */
   update(s: MatchState, dtMs: number): void;
+  /** Hide the card while the pause menu is up. */
+  setPaused(paused: boolean): void;
   dismiss(): void;
   dispose(): void;
 }
 
-/** How long a tip stays up when nobody dismisses it, and the least before another may replace it. */
-const TIP_MS = 9000;
-const MIN_MS = 2500;
+/** A tip counts as shown once it has been up this long, or dismissed with "Got it". */
+export const SEEN_AFTER_MS = 4000;
+/** The least a tip stays up before another may replace it: about four words a second, and never under five seconds. */
+export const minTipMs = (text: string): number => Math.max(5000, text.trim().split(/\s+/).length * 250);
+/** Nobody dismisses it: it goes by itself after this. */
+const autoHideMs = (text: string): number => Math.max(10_000, minTipMs(text) + 4000);
+
+/** The words of a tip for the way the player is playing right now: touch first, then whichever input was used last. */
+export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean): string {
+  const t = TIPS[id];
+  return touch ? t.touch : mode === 'keys' ? t.keys : t.mouse;
+}
 
 export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
+  const human = o.human ?? 0;
   const tracker = new CoachTracker(o.seen);
   const el = document.createElement('div');
   el.className = 'coach-tip';
   el.hidden = true;
   el.setAttribute('data-coach-tip', '');
   host.appendChild(el);
+  const touch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let shown: TipId | null = null;
+  let text = '';
   let age = 0;
+  let counted = false;
 
+  const countSeen = () => {
+    if (shown && !counted) {
+      counted = true;
+      o.onSeen(shown);
+    }
+  };
   const hide = () => {
+    // Cut short before it could be read: not counted, and it may be offered again.
+    if (shown && !counted) tracker.forget(shown);
     shown = null;
     el.hidden = true;
     el.classList.remove('on');
   };
-  const show = (id: TipId) => {
+  const draw = (id: TipId) => {
     const tip = TIPS[id];
-    const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    const text = touch ? tip.touch : o.controls === 'keys' ? tip.keys : tip.mouse;
-    shown = id;
-    age = 0;
+    text = tipText(id, o.mode(), touch());
     el.dataset.coachTip = id;
     el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${text}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
+  };
+  const show = (id: TipId) => {
+    shown = id;
+    age = 0;
+    counted = false;
+    draw(id);
     el.hidden = false;
     // Next frame, so the fade-in runs.
     requestAnimationFrame(() => el.classList.add('on'));
-    o.onSeen(id);
-    announce(`Tip. ${tip.title}. ${text}`);
+    announce(`Tip. ${TIPS[id].title}. ${text}`);
   };
   const onClick = (e: Event) => {
-    if ((e.target as HTMLElement).closest('.coach-x')) hide();
+    if ((e.target as HTMLElement).closest('.coach-x')) {
+      countSeen(); // "Got it" means it was read
+      hide();
+    }
   };
   el.addEventListener('click', onClick);
-  // The pointer is the controller: a click on the card must never also be a pass.
-  const stop = (e: Event) => e.stopPropagation();
-  el.addEventListener('pointerdown', stop);
-  el.addEventListener('mousedown', stop);
-  el.addEventListener('contextmenu', stop);
 
   return {
     update(s, dtMs) {
-      tracker.observe(s, o.human ?? 0);
+      tracker.observe(s, human);
       if (shown) {
         age += dtMs;
-        if (age >= TIP_MS) hide();
-        // A fresher situation replaces a tip that has had its moment.
-        else if (tracker.queue.length && age >= MIN_MS) hide();
+        if (!counted && age >= SEEN_AFTER_MS) countSeen();
+        if (dtMs > 0 && text !== tipText(shown, o.mode(), touch())) draw(shown); // the player switched input: say it their way
+        if (age >= autoHideMs(text)) hide();
+        // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
+        else if (tracker.queue.length && age >= minTipMs(text)) hide();
       }
-      if (!shown && tracker.queue.length && s.phase !== 'fulltime') show(tracker.take()!);
+      if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
+        const id = tracker.take(s, human);
+        if (id) show(id);
+      }
+    },
+    setPaused(paused) {
+      el.classList.toggle('paused', paused);
     },
     dismiss: hide,
     dispose() {
@@ -221,9 +284,9 @@ const MARKS: { screen: string; unlock: UnlockId; title: string; text: string }[]
   { screen: 'squad', unlock: 'squad', title: 'New: Squad', text: 'See your players and pick the starting eleven.' },
   { screen: 'club', unlock: 'club', title: 'New: Club', text: 'News, replays, Practice skills and your club level live here.' },
   { screen: 'training', unlock: 'training', title: 'New: Training', text: 'Spend the sessions you earn on player attributes.' },
+  { screen: 'competitions', unlock: 'cup', title: 'New: Competitions', text: 'The Cup is open: eight clubs, three rounds, a trophy.' },
   { screen: 'transfers', unlock: 'transfers', title: 'New: Transfers', text: 'Sign players from the market and sell to CPU clubs.' },
   { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 16.' },
-  { screen: 'competitions', unlock: 'cup', title: 'New: Competitions', text: 'The Cup is open: eight clubs, three rounds, a trophy.' },
 ];
 
 /** The first revealed tab that has not been pointed out yet, or null. `marks` undefined means the player predates marks: none. */
@@ -257,13 +320,14 @@ export function markHtml(m: TabMark): string {
 }
 
 /** Point the mark at its tab: spotlight ring on the tab, card (position: fixed) under it kept inside the viewport. */
-export function placeMark(root: HTMLElement): void {
+export function placeMark(root: HTMLElement, reveal = false): void {
   const card = root.querySelector<HTMLElement>('.tab-mark');
   if (!card) return;
   const tab = root.querySelector<HTMLElement>(`[data-action="nav"][data-screen="${card.dataset.mark}"]`);
   if (!tab) return;
   tab.classList.add('coach-spot');
-  tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  // Only when the mark first appears: doing it on every scroll event would fight the player's own scrolling.
+  if (reveal) tab.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   const r = tab.getBoundingClientRect();
   const w = card.offsetWidth;
   const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));

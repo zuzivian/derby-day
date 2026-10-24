@@ -65,6 +65,18 @@ export function renameClub(save: Save, name: string, short = deriveShort(name)):
   return true;
 }
 
+/**
+ * Rename the club at any time (the welcome promises "you can rename your club"). Unlike renameClub this works after
+ * matches have been played; the founding news line keeps the name it was written with once there is a record.
+ */
+export function setClubName(save: Save, name: string): boolean {
+  const check = validateClubName(name);
+  if (!check.ok) return false;
+  save.club = { ...save.club, name: check.name, short: deriveShort(check.name) };
+  if (save.club.played === 0) refreshFoundedNews(save);
+  return true;
+}
+
 /** New generated name and short code, same colours and crest. */
 export function rerollName(save: Save): void {
   if (save.club.played > 0) return;

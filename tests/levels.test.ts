@@ -26,6 +26,7 @@ import {
   totalXpForLevel,
   unlockOf,
   UNLOCKS,
+  unlockLevel,
   XP,
   xpSummary,
   xpToClear,
@@ -98,8 +99,8 @@ describe('the XP curve', () => {
 describe('unlock table', () => {
   test('the schedule the owner asked for', () => {
     const at = Object.fromEntries(UNLOCKS.map((u) => [u.id, u.level]));
-    // Gradual onboarding: level 1 is Home and Kick off only; one more feature or two per level after that.
-    expect(at).toMatchObject({ home: 1, ranked: 1, squad: 2, club: 3, replays: 3, drills: 3, training: 4, practice: 4, transfers: 5, local2p: 5, link: 5, ladder: 6, cup: 7, 'practice-hard': 7, league: 8, calendar: 10 });
+    // Gradual onboarding: level 1 is Home and Kick off only; one card or tab per level after that.
+    expect(at).toMatchObject({ home: 1, squad: 2, local2p: 2, link: 2, practice: 2, ranked: 3, club: 3, replays: 3, drills: 3, training: 4, 'practice-normal': 4, cup: 5, 'practice-hard': 5, transfers: 6, ladder: 7, league: 8, calendar: 10 });
     expect(at).toMatchObject({ 'squad-15': 15, crest: 18, 'market-20': 20, kit: 22, scouting: 25, 'squad-30': 30, 'win-bonus': 35, 'replays-40': 40, 'squad-50': 50 });
   });
   test('sorted by level, unique ids, all within 1..99, perks after the features', () => {
@@ -114,9 +115,8 @@ describe('unlock table', () => {
     const s = newGame(1);
     expect(clubLevel(s)).toBe(1);
     expect(isUnlocked(s, 'home')).toBe(true);
-    expect(isUnlocked(s, 'ranked')).toBe(true);
-    for (const id of ['squad', 'club', 'training', 'practice', 'local2p', 'link', 'cup'] as const) expect(isUnlocked(s, id)).toBe(false);
-    s.xp = totalXpForLevel(7) - 1;
+    for (const id of ['squad', 'club', 'ranked', 'training', 'practice', 'local2p', 'link', 'cup'] as const) expect(isUnlocked(s, id)).toBe(false);
+    s.xp = totalXpForLevel(5) - 1;
     expect(isUnlocked(s, 'cup')).toBe(false);
     s.xp += 1;
     expect(isUnlocked(s, 'cup')).toBe(true);
@@ -127,21 +127,23 @@ describe('unlock table', () => {
     expect(nextUnlocks(top)).toEqual([]);
     expect(nextUnlockText(top)).toBeNull();
   });
-  test('a new club sees one thing at a time: each of the first levels opens a tab', () => {
+  test('a new club sees one thing at a time: each of the first levels opens a tab or a card', () => {
     const s = newGame(2);
     const opened: string[] = [];
     for (let l = 2; l <= 8; l++) {
       s.xp = totalXpForLevel(l);
       opened.push(`${l}:${pendingUnlocks(s).filter((u) => u.level === l).map((u) => u.id).join('+')}`);
     }
-    expect(opened[0]).toBe('2:squad');
-    expect(opened[1]).toBe('3:club+replays+drills');
+    expect(opened[0]).toBe('2:squad+local2p+link+practice');
+    expect(opened[1]).toBe('3:ranked+club+replays+drills');
+    expect(opened[2]).toBe('4:training+practice-normal');
+    expect(opened[3]).toBe('5:cup+practice-hard');
   });
   test('next unlock teaser', () => {
     const s = newGame(3);
     s.xp = 1_300; // level 5, 200 short of level 6
-    expect(nextUnlocks(s).map((u) => u.id)).toEqual(['ladder']);
-    expect(nextUnlockText(s)).toBe('Ladder at level 6 — 200 XP to go');
+    expect(nextUnlocks(s).map((u) => u.id)).toEqual(['transfers']);
+    expect(nextUnlockText(s)).toBe('Transfers at level 6 — 200 XP to go');
     s.xp = totalXpForLevel(10);
     expect(nextUnlockText(s)).toBe('Squad of 25 at level 15 — 6,000 XP to go');
   });
@@ -149,13 +151,13 @@ describe('unlock table', () => {
     const s = newGame(4);
     expect(pendingUnlocks(s)).toEqual([]);
     s.xp = totalXpForLevel(5);
-    expect(pendingUnlocks(s).map((u) => u.id)).toEqual(['squad', 'club', 'replays', 'drills', 'training', 'practice', 'transfers', 'local2p', 'link']);
+    expect(pendingUnlocks(s).map((u) => u.id)).toEqual(['squad', 'local2p', 'link', 'practice', 'ranked', 'club', 'replays', 'drills', 'training', 'practice-normal', 'cup', 'practice-hard']);
     markUnlocksSeen(s);
     expect(pendingUnlocks(s)).toEqual([]);
     // Once unlocked, always unlocked: losing XP (a rebalance) doesn't take a feature away.
     s.xp = 0;
-    expect(isUnlocked(s, 'transfers')).toBe(true);
-    expect(isUnlocked(s, 'cup')).toBe(false);
+    expect(isUnlocked(s, 'cup')).toBe(true);
+    expect(isUnlocked(s, 'transfers')).toBe(false);
   });
   test('a save that already has features keeps them, and level-1 features never open the level-up dialog', () => {
     const s = newGame(6);
@@ -163,7 +165,7 @@ describe('unlock table', () => {
     expect(pendingUnlocks(s).map((u) => u.id)).toEqual([]);
     expect(isUnlocked(s, 'squad')).toBe(true);
     s.xp = totalXpForLevel(2);
-    expect(pendingUnlocks(s).map((u) => u.id)).toEqual([]);
+    expect(pendingUnlocks(s).map((u) => u.id)).toEqual(['local2p', 'link']); // squad and practice were already seen
   });
   test('perks: squad cap, market size, replay shelf', () => {
     expect(squadCap(atLevel(1, 14))).toBe(24);
@@ -314,7 +316,7 @@ describe('saves from before levels', () => {
     expect(old.xp).toBe(0);
     expect(clubLevel(old)).toBe(1);
     // The old table's level-1 features stay open for a save that already had them.
-    expect(old.unlocksSeen).toEqual(['home', 'ranked', 'squad', 'club', 'drills', 'practice', 'local2p', 'link']);
+    expect(old.unlocksSeen).toEqual(['home', 'squad', 'local2p', 'link', 'practice', 'ranked', 'club', 'drills', 'practice-normal']);
     expect(pendingUnlocks(old)).toEqual([]);
   });
   test('retro XP from the match history uses the same table', () => {
@@ -404,15 +406,32 @@ describe('saves from before the gradual unlock table', () => {
     expect(s.unlocksV).toBe(2);
     expect(pendingUnlocks(s)).toEqual([]);
   });
-  test('an old save at level 5 keeps the cup, practice hard and the ladder, and is only told about Replays', () => {
+  test('an old save at level 5 keeps the cup, practice hard and the ladder, and is told about nothing', () => {
     const s = newGame(51);
     delete s.unlocksV;
     s.xp = totalXpForLevel(5);
     s.unlocksSeen = ['club', 'squad', 'ranked', 'practice', 'local2p', 'link', 'training', 'transfers', 'ladder', 'cup', 'practice-hard'];
     ensureLevelFields(s);
-    for (const id of ['cup', 'practice-hard', 'ladder', 'transfers', 'squad', 'club'] as const) expect(isUnlocked(s, id)).toBe(true);
-    // Only what the new table opens by level 5 that the old one had not yet (Replays moved from level 6 to 3) is news.
-    expect(pendingUnlocks(s).map((u) => u.id)).toEqual(['replays']);
+    for (const id of ['cup', 'practice-hard', 'ladder', 'transfers', 'squad', 'club', 'replays'] as const) expect(isUnlocked(s, id)).toBe(true);
+    // Everything its level opens, old table or new, is marked seen silently: no false level-up dialog.
+    expect(pendingUnlocks(s).map((u) => u.id)).toEqual([]);
+  });
+  test('nothing an old save was working toward moves further away: each feature opens at the earlier level', () => {
+    const s = preLevels(newGame(53));
+    s.xp = totalXpForLevel(4);
+    ensureLevelFields(s);
+    expect(s.legacyUnlocks).toBe(true);
+    // Old table: Cup 5, Transfers 3, Ladder 4, Replays 6. New: Cup 5, Transfers 6, Ladder 7, Replays 3.
+    expect(unlockLevel(s, 'cup')).toBe(5);
+    expect(unlockLevel(s, 'transfers')).toBe(3);
+    expect(unlockLevel(s, 'ladder')).toBe(4);
+    expect(unlockLevel(s, 'replays')).toBe(3);
+    expect(isUnlocked(s, 'ladder')).toBe(true);
+    expect(nextUnlockText(s)).toBe('The Cup and Practice Hard at level 5 — 400 XP to go');
+    // A new game is never legacy: it uses the table as written.
+    const fresh = newGame(54);
+    expect(fresh.legacyUnlocks).toBeUndefined();
+    expect(unlockLevel(fresh, 'transfers')).toBe(6);
   });
   test('a brand new game is already on the new table and is not migrated', () => {
     const s = newGame(52);

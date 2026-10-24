@@ -92,6 +92,8 @@ export interface Save {
   milestones?: MilestoneId[];
   /** Version of the unlock table this save has been migrated to (UNLOCKS_VERSION in levels.ts). */
   unlocksV?: number;
+  /** Set when the save was migrated from the old unlock table: features open at the earlier of the old and new levels. */
+  legacyUnlocks?: boolean;
   /** The club's formation (FORMATIONS in sim/constants.ts). Default 4-4-2. The lineup is in its slot order. */
   formation?: FormationId;
 }

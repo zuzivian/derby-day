@@ -73,12 +73,22 @@ export function celebrationWords(gf: number, ga: number): { title: string; sub: 
   return { title: 'Good effort', sub: 'Everyone loses a first game. Now you know the controls.' };
 }
 
+const listNames = (names: string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? ''));
+
+/** What a screen reader hears when the celebration opens: the result and the XP, once ("Full time" was already announced by the match). */
+export function celebrationSpoken(gf: number, ga: number, xp: number): string {
+  const result = gf > ga ? `You won ${gf} to ${ga}.` : gf === ga ? (gf === 0 ? 'A goalless draw.' : `A draw, ${gf} each.`) : `You lost ${ga} to ${gf}.`;
+  return `${result} ${xp} XP earned.`;
+}
+
 export interface AfterMatchOptions {
   save: Save;
   opp: ClubIdentity;
   gf: number;
   ga: number;
   xp: XpGain;
+  /** Names of what the new level opens, said here once so no dialog or mark repeats them. */
+  opened: string[];
   persist: () => void;
   /** Naming is over (done or skipped): go to the club. */
   onDone: () => void;
@@ -106,15 +116,15 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <h2 id="ob-title" class="ob-title" tabindex="-1">${w.title}</h2>
         <div class="versus ob-versus">
           <div class="side">${crestSvg(c, 56)}<div class="side-name">${esc(c.name)}</div></div>
-          <div class="ob-score" aria-label="Final score ${o.gf} to ${o.ga}"><span aria-hidden="true">${o.gf} – ${o.ga}</span></div>
+          <div class="ob-score" role="img" aria-label="Final score: ${o.gf} to ${o.ga}"><span aria-hidden="true">${o.gf} – ${o.ga}</span></div>
           <div class="side">${crestSvg(o.opp, 56)}<div class="side-name">${esc(o.opp.name)}</div></div>
         </div>
         <p class="ob-lede">${w.sub}</p>
         <div class="ob-xp" aria-labelledby="ob-xp-title">
           <h3 id="ob-xp-title" class="eyebrow">Club level ${p.level}</h3>
-          <p class="xp-gain"><b>+${o.xp.total} XP</b> <span class="muted">${o.xp.parts.map((x) => `${esc(x.label)} ${x.xp}`).join(' · ')}</span></p>
+          <p class="xp-gain"><b>+${o.xp.total} XP</b> <span class="muted">${o.xp.parts.map((x) => `${esc(x.label.startsWith('practice') ? 'the match' : x.label)} ${x.xp}`).join(' · ')}</span></p>
           <div class="ob-xp-bar" role="progressbar" aria-label="XP to the next level" aria-valuemin="0" aria-valuemax="${p.needed}" aria-valuenow="${Math.min(p.intoLevel, p.needed)}"><i style="width:${pct}%"></i></div>
-          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> The club opens up as it levels.</p>` : ''}
+          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.` : 'The club opens up as it levels.'}</p>` : ''}
           ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
         </div>
         <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Skip, go to the club</button><button class="btn primary big" data-ob="next" type="button">Name your club</button></div>
@@ -219,6 +229,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
   });
 
   render(true);
+  announce(celebrationSpoken(o.gf, o.ga, o.xp.total));
   return () => {
     done = true;
   };
