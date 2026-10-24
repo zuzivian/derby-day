@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { RelayCore, type RelayLimits, type RelaySocket } from '../server/relay-core.ts';
+import { guessKey, RelayCore, type RelayLimits, type RelaySocket } from '../server/relay-core.ts';
 import { CODE_RE, type ServerMsg } from '../src/net/relay.ts';
 
 class FakeSock implements RelaySocket {
@@ -361,8 +361,9 @@ describe('relay core', () => {
     expect(answers[0]).toMatchObject({ t: 'error', code: 'bad-token' });
     const s = r.connect('5.5.5.5');
     r.say(s, { t: 'resume', code, seat: 1, token: 'x' });
+    // The address is now over its budget: more wrong codes are refused (a right one still gets in, see below).
     const t = r.connect('5.5.5.5');
-    r.say(t, { t: 'join', code, v: 'v1' });
+    r.say(t, { t: 'join', code: 'YYYYYY', v: 'v1' });
     expect(t.last()).toMatchObject({ code: 'rate' });
   });
 
@@ -375,5 +376,43 @@ describe('relay core', () => {
       r.say(a, { t: 'relay', m: big });
     }
     expect(a.last()).toMatchObject({ code: 'rate' });
+  });
+
+  test('a locked-out address can still join and resume with the right code (shared NAT)', () => {
+    const r = relay({ maxBadJoins: 1000, maxBadJoinsPerIp: 5, badJoinWindowMs: 60_000 });
+    const host = r.connect('1.1.1.1');
+    r.say(host, { t: 'host', v: 'v1' });
+    const code = (host.last() as { code: string }).code;
+    const guesser = r.connect('9.9.9.9');
+    for (let i = 0; i < 10; i++) r.say(guesser, { t: 'join', code: 'QQQQQ' + 'ABCDEFGHJK'[i], v: 'v1' });
+    expect(guesser.last()).toMatchObject({ code: 'rate', msg: expect.stringMatching(/address/) });
+    // A friend behind the same address, with the real code: in.
+    const friend = r.connect('9.9.9.9');
+    r.say(friend, { t: 'join', code, v: 'v1' });
+    const joined = friend.last() as { t: string; token: string };
+    expect(joined.t).toBe('joined');
+    // ...and their resume after a drop works too.
+    r.core.close(friend);
+    const back = r.connect('9.9.9.9');
+    r.say(back, { t: 'resume', code, seat: 1, token: joined.token });
+    expect(back.last()).toMatchObject({ t: 'resumed' });
+    // A wrong code from the address is still refused.
+    const more = r.connect('9.9.9.9');
+    r.say(more, { t: 'join', code: 'ZZZZZZ', v: 'v1' });
+    expect(more.last()).toMatchObject({ code: 'rate' });
+  });
+
+  test('guess limits count IPv6 per /64 and IPv4-mapped addresses as IPv4', () => {
+    expect(guessKey('2001:db8:1:2:aaaa::1')).toBe('2001:db8:1:2::/64');
+    expect(guessKey('2001:0db8:0001:0002:ffff:ffff:ffff:ffff')).toBe('2001:db8:1:2::/64');
+    expect(guessKey('2001:db8::5')).toBe('2001:db8:0:0::/64');
+    expect(guessKey('::ffff:10.0.0.7')).toBe('10.0.0.7');
+    expect(guessKey('10.0.0.7')).toBe('10.0.0.7');
+    const r = relay({ maxBadJoins: 1000, maxBadJoinsPerIp: 3, badJoinWindowMs: 60_000 });
+    for (let i = 1; i <= 4; i++) {
+      const s = r.connect(`2001:db8:1:2::${i}`);
+      r.say(s, { t: 'join', code: 'QQQQQQ', v: 'v1' });
+      if (i === 4) expect(s.last()).toMatchObject({ code: 'rate' });
+    }
   });
 });

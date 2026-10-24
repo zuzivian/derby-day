@@ -4,7 +4,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { newGame, clubTeam } from '../src/meta/game.ts';
 import { Lockstep, type LockstepMsg } from '../src/net/lockstep.ts';
 import { botInput, drivePair, MemoryNetwork } from '../src/net/memory.ts';
-import { cleanInput, cleanLockstepMsg, cleanStart, cleanTeam } from '../src/net/validate.ts';
+import { cleanInput, cleanLockstepMsg, cleanStart, cleanTeam, cleanText, isOwnTeam } from '../src/net/validate.ts';
 import { Listeners, type Transport } from '../src/net/transport.ts';
 import { makeRng, next } from '../src/sim/rng.ts';
 import { createMatch, fingerprint } from '../src/sim/match.ts';
@@ -128,5 +128,55 @@ describe('lockstep message validation', () => {
     expect(peers[0].desync).toBeNull();
     expect(fingerprint(peers[0].s)).toBe(fingerprint(peers[1].s));
     expect(Number.isFinite(peers[0].s.ball.pos.x)).toBe(true);
+  });
+});
+
+describe('names and the guest checking its own team', () => {
+  test("names keep & and ', collapse spaces, and are cut by code point", () => {
+    expect(cleanText("Brighton & Hove's  Albion", 40)).toBe("Brighton & Hove's Albion");
+    expect(cleanText("D'Arcy", 40)).toBe("D'Arcy");
+    expect(cleanText('a\u0000<b>"c"`d\\e', 40)).toBe('abcde');
+    const cut = cleanText('⚽'.repeat(50), 5)!;
+    expect(Array.from(cut).length).toBe(5);
+    expect(cut).toBe('⚽⚽⚽⚽⚽'); // no lone surrogate
+    expect(cleanText('   ', 10)).toBeNull();
+  });
+
+  test('the away team in a start must be the guest\'s own squad; only the kit and " II" may change', () => {
+    const { home, away } = teams();
+    const mine = cleanTeam(away)!;
+    expect(isOwnTeam(mine, mine)).toBe(true);
+    expect(isOwnTeam({ ...mine, primary: mine.secondary, secondary: mine.primary }, mine)).toBe(true);
+    expect(isOwnTeam({ ...mine, primary: '#f5f5f5', secondary: '#1c1c1c' }, mine)).toBe(true);
+    expect(isOwnTeam({ ...mine, name: `${mine.name} II` }, mine)).toBe(true);
+    // What a malicious host might try:
+    const zeroed = { ...mine, players: mine.players.map((p) => ({ ...p, attrs: { ...p.attrs, pace: 0, shooting: 0 } })) };
+    expect(isOwnTeam(zeroed, mine)).toBe(false);
+    expect(isOwnTeam({ ...mine, primary: home.primary, secondary: home.primary }, mine)).toBe(false); // an unreadable clashing kit
+    expect(isOwnTeam(cleanTeam(home)!, mine)).toBe(false); // someone else's squad
+    expect(isOwnTeam({ ...mine, aiSkill: 0 }, mine)).toBe(false);
+    expect(isOwnTeam({ ...mine, formation: mine.formation === '4-4-2' ? '4-3-3' : '4-4-2' }, mine)).toBe(false);
+    expect(isOwnTeam({ ...mine, players: [...mine.players].reverse() }, mine)).toBe(false);
+    expect(isOwnTeam({ ...mine, name: 'Somebody Else' }, mine)).toBe(false);
+  });
+
+  test('a forged pong cannot skew the round-trip stats', () => {
+    const { home, away } = teams();
+    const ls = new Listeners<unknown>();
+    const sent: LockstepMsg[] = [];
+    const tr: Transport<LockstepMsg> = { send: (m) => sent.push(m), onMessage: (fn) => ls.add(fn as (m: unknown) => void), close: () => {} };
+    let now = 1000;
+    const peer = new Lockstep({ state: createMatch({ seed: 1, home, away, humans: [true, true] }), side: 0, transport: tr, delay: 4, now: () => now });
+    ls.emit({ t: 'pong', n: 1, at: -1e300 }); // never sent
+    expect(peer.rttMs).toBe(0);
+    ls.emit({ t: 'in', from: 5, ack: 0, inputs: new Array(60).fill({}) }); // the other side's inputs, so it can run
+    for (let i = 0; i < 40; i++) peer.tick(() => ({})); // pings when it schedules tick 30
+    const ping = sent.find((m) => m.t === 'ping') as { n: number; at: number } | undefined;
+    expect(ping).toBeDefined();
+    ls.emit({ t: 'pong', n: ping!.n, at: -1e300 }); // real n, absurd time
+    expect(peer.rttMs).toBe(0);
+    now += 40;
+    ls.emit({ t: 'pong', n: ping!.n, at: ping!.at });
+    expect(peer.rttMs).toBe(40);
   });
 });

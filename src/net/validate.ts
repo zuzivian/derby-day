@@ -25,11 +25,17 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : null);
 
-/** Display text: no markup or control characters, bounded length. Null when nothing is left. */
+/**
+ * Display text: no markup characters (< > " ` \\) or control characters, spaces collapsed, at most
+ * `max` characters (counted by code point, so an emoji is never cut in half). & and ' are kept for
+ * names like "Brighton & Hove" or "D'Arcy": every place that puts a name in HTML escapes it, and
+ * attributes are double-quoted. Null when nothing is left.
+ */
 export function cleanText(v: unknown, max: number): string | null {
   if (typeof v !== 'string') return null;
   // eslint-disable-next-line no-control-regex
-  const s = v.replace(/[\u0000-\u001f\u007f<>&"'`\\]/g, '').trim().slice(0, max);
+  const flat = v.replace(/[\u0000-\u001f\u007f<>"`\\]/g, '').replace(/\s+/g, ' ').trim();
+  const s = Array.from(flat).slice(0, max).join('').trim();
   return s || null;
 }
 
@@ -68,6 +74,33 @@ export function cleanTeam(v: unknown): TeamSetup | null {
   if (new Set(players.map((p) => p!.id)).size !== TEAM_SIZE) return null;
   const formation: FormationId = FORMATION_IDS.includes(v.formation as FormationId) ? (v.formation as FormationId) : '4-4-2';
   return { name, short, primary, secondary, players: players as PlayerSetup[], aiSkill, formation };
+}
+
+/** The colour pairs avoidClash() can give the away side: its own, swapped, or the neutral fallback. */
+function kitOk(t: TeamSetup, mine: TeamSetup): boolean {
+  const pairs = [
+    [mine.primary, mine.secondary],
+    [mine.secondary, mine.primary],
+    ['#1c1c1c', '#f5f5f5'],
+    ['#f5f5f5', '#1c1c1c'],
+  ];
+  return pairs.some(([p, q]) => t.primary.toLowerCase() === p.toLowerCase() && t.secondary.toLowerCase() === q.toLowerCase());
+}
+
+/**
+ * Is `theirs` (the away team in the host's start) the guest's own team, `mine`? The host may only
+ * change what the room handshake changes: the kit (to avoid a clash) and " II" on a name that
+ * matches the host's. Everything that plays (players, attributes, formation, skill) must be ours,
+ * so a host can't hand the guest eleven zero-rated players.
+ */
+export function isOwnTeam(theirs: TeamSetup, mine: TeamSetup): boolean {
+  const names = [mine.name, cleanText(`${mine.name} II`, 40)];
+  if (!names.includes(theirs.name) || theirs.short !== mine.short || !kitOk(theirs, mine)) return false;
+  if (theirs.aiSkill !== mine.aiSkill || (theirs.formation ?? '4-4-2') !== (mine.formation ?? '4-4-2')) return false;
+  return theirs.players.length === mine.players.length && theirs.players.every((p, i) => {
+    const q = mine.players[i];
+    return p.id === q.id && p.name === q.name && p.number === q.number && p.role === q.role && ATTRS.every((k) => p.attrs[k] === q.attrs[k]);
+  });
 }
 
 export function cleanCrest(v: unknown): CrestPattern {

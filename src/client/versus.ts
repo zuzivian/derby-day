@@ -19,7 +19,7 @@ import { BroadcastTransport, broadcastSupport } from '../net/broadcast.ts';
 import { inviteLink, relayConfig, type RelayConfig } from '../net/config.ts';
 import { Lockstep, syncHash } from '../net/lockstep.ts';
 import { PeerWatch } from '../net/presence.ts';
-import { cleanCrest, cleanStart, cleanTeam } from '../net/validate.ts';
+import { cleanCrest, cleanStart, cleanTeam, isOwnTeam } from '../net/validate.ts';
 import { isLockstepMsg, matchFromStart, roomCode, cleanCode, type RoomMsg, type StartInfo, type WireMsg } from '../net/room.ts';
 import { narrow, type Transport } from '../net/transport.ts';
 import { netVersion, WebSocketTransport } from '../net/websocket.ts';
@@ -297,7 +297,9 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     const off = tr.onMessage((m) => {
       if (m.t !== 'start' || m.to !== id || started) return;
       const st = cleanStart(m.start);
-      if (!st || typeof m.host !== 'string') return;
+      const mine = cleanTeam(home);
+      // The host builds both teams: ours must still be ours (only the kit and a " II" may change).
+      if (!st || !mine || !isOwnTeam(st.away, mine) || typeof m.host !== 'string') return;
       started = true;
       off();
       cleanupLobby();
@@ -506,6 +508,8 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     status('Connecting to the match server…', false, 'connecting');
     const seed = clientSeed();
     let start: StartInfo | null = null;
+    /** The guest we answered: only its ready starts the match. */
+    let guestId: string | null = null;
     offLink.push(
       tr.onEvent((e) => {
         if (e.type === 'room' && !start) {
@@ -519,14 +523,15 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         } else if (e.type === 'peer' && e.s === 'joined') status('Friend connected. Setting up the match…', false, 'pairing');
       }),
       tr.onMessage((m) => {
-        if (m.t === 'join') {
+        if (m.t === 'join' && typeof m.id === 'string' && (guestId === null || guestId === m.id)) {
           start ??= hostStart(o, home, m, seed, delay);
           if (!start) {
             status("Your friend's team couldn't be read. Ask them to reload the page and try again.", true, 'bad-team');
             return;
           }
+          guestId = m.id;
           tr.send({ t: 'start', to: m.id, host: 'host', start });
-        } else if (m.t === 'ready' && start) launch(tr, start, 0);
+        } else if (m.t === 'ready' && start && m.id === guestId) launch(tr, start, 0);
       }),
     );
   });
@@ -554,8 +559,14 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       tr.onMessage((m) => {
         if (m.t !== 'start' || m.to !== id || started) return;
         const st = cleanStart(m.start);
-        if (!st) {
+        const mine = cleanTeam(home);
+        if (!st || !mine) {
           status("The host's match couldn't be read. Both of you reload the page, then try again.", true, 'bad-start');
+          return;
+        }
+        // The host builds both teams: ours must still be ours (only the kit and a " II" may change).
+        if (!isOwnTeam(st.away, mine)) {
+          status("The host's match didn't have your squad in it, so it wasn't started. Both of you reload the page, then try again.", true, 'bad-squad');
           return;
         }
         started = true;
@@ -668,6 +679,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   $('net-stop-back').addEventListener('click', () => finish('left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
+  // Back from the back-forward cache (or a phone app switch): reconnect now rather than after the backoff.
+  const onShow = (e: PageTransitionEvent) => {
+    if (e.persisted) o.link?.reconnectNow();
+  };
+  window.addEventListener('pageshow', onShow);
   const onHide = (e: PageTransitionEvent) => {
     // persisted: the page may come back (the back-forward cache; mobile browsers switching apps).
     // Don't end the match for the opponent then: the disconnect countdown covers it if we don't return.
@@ -856,6 +872,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     renderer.dispose();
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
+    window.removeEventListener('pageshow', onShow);
   }
   function finish(end: NetEnd) {
     if (ended) return;

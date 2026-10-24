@@ -292,6 +292,30 @@ describe('websocket transport over the relay core', () => {
     expect(relay.core.stats()).toMatchObject({ rooms: 0, sockets: 0 });
   });
 
+  test('reconnectNow skips the backoff, or replaces a socket that still looks open, and keeps the seat', () => {
+    const sched = new Sched();
+    const relay = fakeRelay(sched, 20);
+    const { host, guest, events } = linkPair(sched, relay);
+    const before = relay.net.sockets.length;
+    guest.reconnectNow(); // socket open: replaced at once
+    sched.advance(200);
+    expect(guest.status).toBe('open');
+    expect(guest.resumes).toBe(1);
+    expect(relay.net.sockets.length).toBe(before + 1);
+    relay.net.down = true;
+    guest.drop();
+    sched.advance(1500); // a few failed dials, now waiting on a backoff timer
+    relay.net.down = false;
+    const dials = relay.net.sockets.length;
+    guest.reconnectNow();
+    sched.advance(100); // well inside any backoff step
+    expect(relay.net.sockets.length).toBe(dials + 1);
+    expect(guest.status).toBe('open');
+    expect(guest.resumes).toBe(2);
+    expect(host.peer).toBe('here');
+    expect(events[0].filter((e) => e.type === 'peer' && e.s === 'left')).toEqual([]);
+  });
+
   test('heartbeats keep an idle lobby open past the relay heartbeat timeout', () => {
     const sched = new Sched();
     const relay = fakeRelay(sched, 20, { heartbeatMs: 12_000 });

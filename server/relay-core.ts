@@ -130,6 +130,21 @@ export interface RelayStats {
 
 const MAX_VERSION_CHARS = 64;
 
+/**
+ * Who the guess limit counts against: the address, or for IPv6 its /64 (one household or phone gets a
+ * whole /64, so counting single IPv6 addresses would let one machine rotate through billions of them).
+ */
+export function guessKey(ip: string): string {
+  const v4 = /^(?:::ffff:)?(\d+\.\d+\.\d+\.\d+)$/i.exec(ip);
+  if (v4) return v4[1];
+  if (!ip.includes(':')) return ip;
+  const [head, tail = ''] = ip.toLowerCase().split('::');
+  const left = head ? head.split(':') : [];
+  const right = tail ? tail.split(':') : [];
+  const groups = ip.includes('::') ? [...left, ...new Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
 export class RelayCore {
   readonly limits: RelayLimits;
   private conns = new Map<RelaySocket, Conn>();
@@ -264,10 +279,12 @@ export class RelayCore {
   private join(c: Conn, rawCode: unknown, v: unknown): void {
     if (c.room) return this.fail(c, 'bad-msg', 'Already in a room.');
     const now = this.o.now();
-    if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many wrong codes from this connection. Wait a few minutes, then try again.');
     const code = typeof rawCode === 'string' ? rawCode.toUpperCase() : '';
     const room = CODE_RE.test(code) ? this.rooms.get(code) : undefined;
     if (!room || room.seats[0].left) {
+      // Only wrong codes are refused for an address that has guessed too much: a right code still gets in,
+      // so one guesser behind a shared address (campus or carrier NAT) can't lock everyone else out.
+      if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many wrong codes from this address. Wait a few minutes, then try again.');
       const shown = CODE_RE.test(code) ? code : '?';
       const msg: ServerMsg = { t: 'error', code: 'no-room', msg: `No match with code ${shown}. Check the code, or ask your friend for a new link.` };
       this.sendTo(c.sock, msg);
@@ -290,11 +307,12 @@ export class RelayCore {
   private resume(c: Conn, rawCode: unknown, seatNo: unknown, token: unknown): void {
     if (c.room) return this.fail(c, 'bad-msg', 'Already in a room.');
     const now = this.o.now();
-    if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many failed attempts from this connection. Wait a few minutes, then try again.');
     const room = typeof rawCode === 'string' ? this.rooms.get(rawCode.toUpperCase()) : undefined;
     const seat = room && (seatNo === 0 || seatNo === 1) ? room.seats[seatNo] : null;
     // Unknown room and wrong token get the same answer, so resume can't be used to probe which codes exist.
+    // A valid resume always gets through, even from an address that has guessed too much.
     if (!room || !seat || seat.left || typeof token !== 'string' || token !== seat.token) {
+      if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many failed attempts from this address. Wait a few minutes, then try again.');
       this.sendTo(c.sock, { t: 'error', code: 'bad-token', msg: 'Could not rejoin that match.' });
       if (!this.badGuess(c, now)) this.kick(c, CLOSE.normal, 'bad-token');
       return;
@@ -360,7 +378,7 @@ export class RelayCore {
   private guessing(c: Conn, now: number): boolean {
     const L = this.limits;
     if (!c.ip || !L.maxBadJoinsPerIp) return false;
-    const b = this.badByIp.get(c.ip);
+    const b = this.badByIp.get(guessKey(c.ip));
     return !!b && now - b.since < L.badJoinWindowMs && b.n >= L.maxBadJoinsPerIp;
   }
 
@@ -368,8 +386,9 @@ export class RelayCore {
   private badGuess(c: Conn, now: number): boolean {
     c.badJoins++;
     if (c.ip) {
-      const b = this.badByIp.get(c.ip);
-      if (!b || now - b.since >= this.limits.badJoinWindowMs) this.badByIp.set(c.ip, { n: 1, since: now });
+      const key = guessKey(c.ip);
+      const b = this.badByIp.get(key);
+      if (!b || now - b.since >= this.limits.badJoinWindowMs) this.badByIp.set(key, { n: 1, since: now });
       else b.n++;
     }
     if (c.badJoins >= this.limits.maxBadJoins) {

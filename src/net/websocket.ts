@@ -138,6 +138,34 @@ export class WebSocketTransport<M> implements Transport<M> {
     this.listeners.clear();
   }
 
+  /**
+   * Try to get back now instead of waiting out the backoff (the page just came back from the
+   * back-forward cache, say). A socket that still looks open is assumed dead and replaced: the
+   * relay hands the seat to the newest socket that resumes it.
+   */
+  reconnectNow(): void {
+    if (this.status === 'closed' || !this.token) return;
+    if (this.retryTimer !== null) {
+      this.timers.clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+      this.dial();
+      return;
+    }
+    if (this.status === 'open') {
+      const old = this.ws;
+      this.ws = null;
+      this.clearPing();
+      this.downSince = this.timers.now();
+      this.setStatus('reconnecting');
+      try {
+        old?.close(4002, 'refresh');
+      } catch {
+        /* already gone */
+      }
+      this.dial();
+    }
+  }
+
   /** Cut the socket as a network failure would, without leaving: for tests and the e2e hook. */
   drop(): void {
     this.ws?.close(4001, 'dropped');

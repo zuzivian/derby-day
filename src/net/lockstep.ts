@@ -211,7 +211,10 @@ export class Lockstep {
         this.transport.send({ t: 'pong', n: m.n, at: m.at });
         return;
       case 'pong': {
-        const rtt = Math.max(0, this.now() - m.at);
+        // Only answers to pings we sent, with a believable round trip (a forged `at` can't skew the stats).
+        if (m.n < 1 || m.n > this.pingN) return;
+        const rtt = this.now() - m.at;
+        if (!(rtt >= 0 && rtt <= 60_000)) return;
         this.rttMs = this.rttMs ? this.rttMs * 0.8 + rtt * 0.2 : rtt;
         return;
       }
