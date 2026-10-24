@@ -290,10 +290,14 @@ export class Renderer3D implements MatchRenderer {
 
     const onLost = (e: Event) => {
       e.preventDefault();
+      if (this.disposed) return;
       this.lost = true;
+      this.onContextLost?.();
     };
     const onRestored = () => {
+      if (this.disposed) return;
       this.lost = false;
+      this.onContextRestored?.();
     };
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
@@ -308,6 +312,16 @@ export class Renderer3D implements MatchRenderer {
   }
 
   private prefMode: CameraMode = 'broadcast';
+
+  /** The GPU dropped the context (a driver reset, too many contexts): the pitch can't be drawn until it is restored. */
+  onContextLost: (() => void) | null = null;
+  /** The context is back; three re-uploads everything on the next draw. */
+  onContextRestored: (() => void) | null = null;
+
+  /** Is the GL context lost right now? */
+  get contextLost(): boolean {
+    return this.lost && !this.disposed;
+  }
 
   /** Software rendering (low): a slightly reduced resolution. */
   private basePixelRatio(): number {

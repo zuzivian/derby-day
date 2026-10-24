@@ -279,3 +279,75 @@ for (const [renderer, query] of [['3d', 'quality=high'], ['2d', '']]) test(
   },
   { timeoutMs: 120_000 },
 );
+
+/** Before boot: keep the WEBGL_lose_context extension of the pitch's context, so a test can lose and restore it. */
+function loseContextHook() {
+  const gc = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+    const c = gc.call(this, type, ...rest);
+    if (c && type === 'webgl2' && this.id === 'pitch') window.__lose = c.getExtension('WEBGL_lose_context');
+    return c;
+  };
+}
+
+async function startLongMatch(t, opts) {
+  const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, init: loseContextHook, ...opts });
+  await goTab(page, SEL.homeScreen);
+  await page.locator(SEL.playRanked).click();
+  await page.locator(SEL.pitch).waitFor();
+  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+  return page;
+}
+
+test(
+  'Perf: a lost WebGL context holds the match under "Restoring graphics…" and play resumes when it is restored',
+  async (t) => {
+    const page = await startLongMatch(t);
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__lose))) return;
+    await page.evaluate(() => window.__lose.loseContext());
+    await page.locator('.gfx-note').waitFor({ state: 'visible', timeout: 3000 });
+    expect(await page.locator('.gfx-note').innerText(), 'the note').toMatch(/restoring graphics/i);
+    const held = await page.evaluate(() => window.__derbyMatch.tick);
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate(() => window.__derbyMatch.tick), 'the match is held while the pitch cannot be drawn').toBe(held);
+    await page.evaluate(() => window.__lose.restoreContext());
+    await page.locator('.gfx-note').waitFor({ state: 'hidden', timeout: 5000 });
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => window.__derbyMatch.tick), 'play resumes').toBeGreaterThan(held);
+    expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'still the 3D view').toBe('3d');
+    // The scene is drawn again: the pitch is mostly green, not blank.
+    await page.waitForTimeout(500);
+    // Read in an animation frame after the game's own draw, while the drawing buffer still holds it.
+    const green = await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
+      const c = document.querySelector('#pitch');
+      const o = document.createElement('canvas');
+      o.width = 64; o.height = 40;
+      const g = o.getContext('2d');
+      g.drawImage(c, 0, 0, 64, 40);
+      const d = g.getImageData(0, 0, 64, 40).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 1] > d[i] + 15 && d[i + 1] > d[i + 2]) n++;
+      res(n / (64 * 40));
+    }))));
+    expect(green, 'the pitch is drawn again').toBeGreaterThan(0.2);
+  },
+  { timeoutMs: 120_000 },
+);
+
+test(
+  'Perf: a WebGL context that never comes back: the match carries on in 2D from the same state and finishes with its result',
+  async (t) => {
+    const page = await startLongMatch(t, { prefs: { halfSeconds: 4 } });
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__lose))) return;
+    const before = await page.evaluate(() => { const s = window.__derbyMatch; s.score = [2, 1]; return s.tick; });
+    await page.evaluate(() => window.__lose.loseContext());
+    await page.locator('.gfx-note').waitFor({ state: 'visible', timeout: 3000 });
+    await page.waitForFunction(() => document.querySelector('#pitch').dataset.renderer === '2d', null, { timeout: 8000 });
+    expect(await page.locator(SEL.pitch).getAttribute('data-fallback'), 'marked as a fallback').toBe('context-lost');
+    expect(await page.locator('.gfx-note').isVisible(), 'the note is gone').toBe(false);
+    expect(await page.evaluate(() => window.__derbyMatch.tick), 'the same match, not a new one').toBeGreaterThanOrEqual(before);
+    await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
+    expect(await page.locator(SEL.modal).innerText(), 'the result keeps the score').toMatch(/2\s*[–-]\s*1/);
+  },
+  { timeoutMs: 120_000 },
+);
