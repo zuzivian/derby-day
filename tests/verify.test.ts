@@ -12,7 +12,7 @@ function played(seed = 3): { code: string; replay: Replay } {
   const s = createMatch(opts);
   const rec = new ReplayRecorder(opts, 'Ranked');
   for (let t = 0; s.phase !== 'fulltime'; t++) {
-    step(s, rec.push({ cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 45) }, pass: t % 120 === 0, sprint: t % 300 < 80 }));
+    step(s, rec.push({ cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 45) }, moved: true, pass: t % 120 === 0, sprint: t % 300 < 80 }));
   }
   const replay = rec.finish(s, 1_700_000_000);
   return { code: encodeReplay(replay), replay };
@@ -48,7 +48,7 @@ describe('server/verify', () => {
     const k = Math.floor(r.runs.length / 4);
     for (let i = k; i < k + 40; i++) {
       const inp = r.runs[i].input;
-      r.runs[i] = { n: r.runs[i].n, input: { ...inp, cursor: { x: 50, y: 5 } } };
+      r.runs[i] = { n: r.runs[i].n, input: { ...inp, cursor: { x: 50, y: 5 }, moved: true, pass: true } };
     }
     const v = verifyReplay(decodeReplay(encodeReplay(r)));
     expect(v.ok).toBe(false);

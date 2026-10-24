@@ -61,6 +61,13 @@ function cleanPlayer(v: unknown): PlayerSetup | null {
   return { id, name, number, role, attrs };
 }
 
+/**
+ * The TeamSetup and PlayerSetup fields cleanTeam knows. Typed as full records: a new field (a tactics
+ * setting, say) is a type error here until cleanTeam handles it, instead of being dropped online.
+ */
+export const TEAM_FIELDS: Record<keyof TeamSetup, true> = { name: true, short: true, primary: true, secondary: true, players: true, aiSkill: true, formation: true };
+export const PLAYER_FIELDS: Record<keyof PlayerSetup, true> = { id: true, name: true, number: true, role: true, attrs: true };
+
 /** A team setup from the other side, or null. Exactly TEAM_SIZE well-formed players with unique ids. */
 export function cleanTeam(v: unknown): TeamSetup | null {
   if (!isObj(v) || !Array.isArray(v.players) || v.players.length !== TEAM_SIZE) return null;
@@ -133,6 +140,24 @@ function cleanVec(v: unknown, lim: number): Vec | undefined {
   return x === null || y === null ? undefined : { x, y };
 }
 
+/**
+ * Every HumanInput field cleanInput handles. Typed as a full record, so a new field on HumanInput is a
+ * type error here until cleanInput passes it through: otherwise it would silently not work online.
+ */
+export const INPUT_FIELDS: Record<keyof HumanInput, true> = {
+  cursor: true,
+  dir: true,
+  pass: true,
+  loft: true,
+  shoot: true,
+  tackle: true,
+  select: true,
+  sprint: true,
+  switchPlayer: true,
+  aim: true,
+  moved: true,
+};
+
 /** One tick of input with every field finite and in range; anything else is dropped. Never null: junk becomes {}. */
 export function cleanInput(v: unknown): HumanInput {
   if (!isObj(v)) return {};
@@ -150,6 +175,9 @@ export function cleanInput(v: unknown): HumanInput {
   if (v.select === true) o.select = true;
   if (v.sprint === true) o.sprint = true;
   if (v.switchPlayer === true) o.switchPlayer = true;
+  const aim = cleanVec(v.aim, COORD);
+  if (aim) o.aim = aim;
+  if (v.moved === true) o.moved = true;
   return o;
 }
 

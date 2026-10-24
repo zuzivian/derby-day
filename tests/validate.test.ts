@@ -4,10 +4,11 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { newGame, clubTeam } from '../src/meta/game.ts';
 import { Lockstep, type LockstepMsg } from '../src/net/lockstep.ts';
 import { botInput, drivePair, MemoryNetwork } from '../src/net/memory.ts';
-import { cleanInput, cleanLockstepMsg, cleanStart, cleanTeam, cleanText, isOwnTeam } from '../src/net/validate.ts';
+import { INPUT_FIELDS, cleanInput, cleanLockstepMsg, cleanStart, cleanTeam, cleanText, isOwnTeam } from '../src/net/validate.ts';
 import { Listeners, type Transport } from '../src/net/transport.ts';
 import { makeRng, next } from '../src/sim/rng.ts';
 import { createMatch, fingerprint } from '../src/sim/match.ts';
+import type { HumanInput } from '../src/sim/types.ts';
 
 function teams(seed = 11) {
   const [a, b] = generateLadder(seed, 2);
@@ -68,6 +69,13 @@ describe('team and start validation', () => {
 });
 
 describe('lockstep message validation', () => {
+  test('every HumanInput field survives cleaning, so no control is lost online', () => {
+    const full: Required<HumanInput> = { cursor: { x: 50, y: 30 }, dir: { x: 0.5, y: -1 }, pass: true, loft: 0.4, shoot: 0.9, tackle: true, select: true, sprint: true, switchPlayer: true, aim: { x: 104, y: 34 }, moved: true };
+    // INPUT_FIELDS (src/net/validate.ts) is type-checked to list every HumanInput field.
+    expect(Object.keys(full).sort()).toEqual(Object.keys(INPUT_FIELDS).sort());
+    expect(cleanInput(full)).toEqual(full);
+  });
+
   test('inputs are made finite and in range; junk fields go', () => {
     expect(cleanInput({ cursor: { x: 50, z: 30 }, loft: 'abc', shoot: Infinity, pass: 'yes', dir: { x: 9, y: -9 }, evil: 1 })).toEqual({ dir: { x: 1, y: -1 } });
     expect(cleanInput({ cursor: { x: 1e300, y: -5 }, loft: 7, sprint: true })).toEqual({ cursor: { x: 200, y: -5 }, loft: 1, sprint: true });
