@@ -106,8 +106,16 @@ test('onboarding: the first tip is readable: it holds for seconds and is not cut
   expect(seen.every((x) => x === 'run'), `'run' stays up for 4 s with a pass tip queued; saw ${JSON.stringify([...new Set(seen)])}`).toBe(true);
   // Not remembered until it has really been up for a few seconds (frame time, so a slow software renderer takes longer); then it is.
   await page.waitForFunction((k) => (JSON.parse(localStorage.getItem(k)).coachSeen || []).includes('run'), PREFS_KEY, { timeout: 15_000 });
-  // After its time, the queued tip takes over, if it is still true.
-  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 40_000 });
+  // After its time, the queued tip takes over, if it is still true: give him the ball again (an idle
+  // human is soon tackled, and whether he happens to have it when 'run' ends is luck), a few times if need be.
+  let shown = false;
+  for (let k = 0; k < 4 && !shown; k++) {
+    await giveBall(page);
+    shown = await page
+      .waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 10_000 })
+      .then(() => true, () => false);
+  }
+  expect(shown, "the queued 'pass' tip takes over once 'run' has had its time").toBe(true);
 });
 
 test('onboarding: a tip card never blocks the game: clicks pass through it, it is off the action, it hides while paused', async (t) => {
