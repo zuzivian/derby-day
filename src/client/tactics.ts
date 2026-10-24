@@ -85,3 +85,18 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
       </fieldset>
     </article>`;
 }
+
+/**
+ * Quick tactics for the pause menu: the five mentality steps as one radio group. The match
+ * view sends the change to the sim as HumanInput.tactic on the next tick, so replays and the
+ * other tab in a linked match see it too.
+ */
+export function quickTacticsMarkup(current: Mentality | undefined): string {
+  const m = mentalityOf(current);
+  return `<fieldset class="pause-tactics" id="quick-tactics">
+    <legend>Mentality</legend>
+    <div class="qt-steps">${MENTALITY_IDS.map(
+      (id) => `<label class="qt-step"><input type="radio" name="quick-mentality" value="${id}"${id === m ? ' checked' : ''}><span>${MENTALITY_LABEL[id]}</span></label>`,
+    ).join('')}</div>
+  </fieldset>`;
+}

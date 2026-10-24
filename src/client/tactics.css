@@ -60,3 +60,12 @@
 @media (prefers-reduced-motion: reduce) {
   .tac-card, .tac-step { transition: none; }
 }
+
+/* Quick tactics in the pause menu (matchView.ts). */
+.pause-tactics { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
+.pause-tactics legend { margin: 0 auto 6px; font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; opacity: .8; }
+.qt-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.qt-step { position: relative; display: grid; place-items: center; min-height: 40px; padding: 4px 6px; border: 1px solid var(--control-line); border-radius: 6px; font-size: 13px; font-weight: 700; line-height: 1.1; text-align: center; cursor: pointer; }
+.qt-step input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.qt-step:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.qt-step:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }

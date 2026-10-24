@@ -450,6 +450,12 @@ export interface HumanInput {
    * the pitch under it). Ends the hold after an automatic change of player (MatchState.ctlHold).
    */
   moved?: boolean;
+  /**
+   * Change this side's mentality from this tick on (the pause menu's quick tactics): its
+   * index in MENTALITY_IDS plus one, 1 (Park the bus) to 5 (High press). Sent for one tick;
+   * recorded in replays like any input, so they play back the same.
+   */
+  tactic?: number;
 }
 
 /** Input for both teams in one tick: index 0 is the home side, 1 the away side. */

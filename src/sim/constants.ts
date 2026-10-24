@@ -20,6 +20,13 @@
 export const SIM_VERSION = 4;
 
 export const TICK_HZ = 60;
+
+/**
+ * Extra spread on a shot (radians) per metre beyond 16 m from goal, times (1.3 - shooting).
+ * Real football scores about 4% of shots from 18-30 m; without it a shot from 25 m was as
+ * well placed as one from the penalty spot. The ball physics and the keepers are in match.ts.
+ */
+export const LONG_SHOT_ERR = 0.01;
 export const DT = 1 / TICK_HZ;
 
 export const PITCH_W = 105;

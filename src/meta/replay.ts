@@ -6,7 +6,7 @@
 // The only places this file touches the sim are createMatch(), step() and
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
-import { FORMATION_IDS, HALF_SECONDS, mentalityOf, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Mentality, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, HALF_SECONDS, MENTALITY_IDS, mentalityOf, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Mentality, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
 
@@ -76,6 +76,7 @@ export function quantiseInput(i: HumanInput): HumanInput {
   if (i.switchPlayer) o.switchPlayer = true;
   if (i.aim) o.aim = { x: q100(i.aim.x), y: q100(i.aim.y) };
   if (i.moved) o.moved = true;
+  if (i.tactic && i.tactic >= 1 && i.tactic <= MENTALITY_IDS.length) o.tactic = Math.round(i.tactic);
   return o;
 }
 
@@ -95,6 +96,7 @@ export function inputsEqual(a: HumanInput, b: HumanInput): boolean {
     a.aim?.x === b.aim?.x &&
     a.aim?.y === b.aim?.y &&
     a.moved === b.moved &&
+    a.tactic === b.tactic &&
     !a.cursor === !b.cursor &&
     !a.dir === !b.dir &&
     !a.aim === !b.aim
@@ -526,6 +528,8 @@ const E_LOFT = 8;
 const E_SWITCH = 16;
 /** Format 4: an aim point follows the cursor and axes, delta-coded against the cursor. */
 const E_AIM = 32;
+/** Format 5: a mentality change (HumanInput.tactic) byte follows everything else in the run. */
+const E_TACTIC = 64;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
   // Cursor and axes are delta-coded against the previous run's, in whole cm.
@@ -541,6 +545,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
     if (i.loft !== undefined) e |= E_LOFT;
     if (i.switchPlayer) e |= E_SWITCH;
     if (i.aim) e |= E_AIM;
+    if (i.tactic) e |= E_TACTIC;
     let f = 0;
     if (i.cursor) f |= F_CURSOR;
     if (i.dir) f |= F_DIR;
@@ -573,6 +578,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
       w.ivar(Math.round(i.aim.x * 100) - cx);
       w.ivar(Math.round(i.aim.y * 100) - cy);
     }
+    if (i.tactic) w.byte(i.tactic);
     if (n > 1) w.uvar(n);
   }
 }
@@ -612,6 +618,10 @@ function readRuns(r: Reader, ticks: number, version: number): InputRun[] {
     if (e & E_TACKLE) input.tackle = true;
     if (version >= 4 ? e & E_SWITCH : f & F_SWITCH_V3) input.switchPlayer = true;
     if (version >= 4 && f & F_MOVED) input.moved = true;
+    if (version >= 5 && e & E_TACTIC) {
+      input.tactic = r.byte();
+      if (input.tactic < 1 || input.tactic > MENTALITY_IDS.length) throw new Error('Replay code is damaged or cut short.');
+    }
     const n = f & F_MULTI ? r.uvar() : 1;
     if (n < 1 || total + n > ticks) throw new Error('Replay code is damaged or cut short.');
     runs.push({ n, input });
@@ -652,8 +662,10 @@ function checksum(b: Uint8Array): number {
  * 4: inputs carry `aim` (a click aims where the button went down) and `moved` (the pointer
  * really moved); switch player moved to the extra byte to make room. Version 3 codes still
  * open (recorded on an earlier sim, so flagged as from another version).
+ * 5: inputs may carry `tactic` (a mentality change from the pause menu). Version 4 codes still
+ * open (an earlier sim, so flagged as from another version).
  */
-export const REPLAY_VERSION = 4;
+export const REPLAY_VERSION = 5;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();

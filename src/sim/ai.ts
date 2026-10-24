@@ -52,6 +52,7 @@ import {
   REACH_Z,
   RETREAT,
   SPRINT_MULT,
+  TICK_HZ,
   type Mentality,
   type SubRole,
 } from './constants.ts';
@@ -102,6 +103,15 @@ const MID_Y = PITCH_H / 2;
 const GOAL_HALF = (GOAL_BOTTOM - GOAL_TOP) / 2;
 /** Shoot when the estimated chance of scoring beats this. */
 const SHOOT_XG = 0.011;
+/**
+ * From outside the box how keen a side is to shoot is its mentality's call (Tactic.shootLong):
+ * Balanced shoots as the CPU always has; Park the bus waits for a better look, Attacking and
+ * High press have a go more often. scripts/balance.ts prints shots and goals by distance.
+ */
+const LONG_SHOT_FROM = 18;
+/** A shot in flight longer than GK_TIME_FROM s lets him get further across, fully in line GK_TIME_SPAN s later. */
+const GK_TIME_FROM = 0.4;
+const GK_TIME_SPAN = 0.6;
 /** A metre in team-x units. */
 const M = 1 / PITCH_W;
 
@@ -158,6 +168,8 @@ export interface Tactic {
   tempo: number;
   urgency: number;
   carry: number;
+  /** How keen the side is to shoot from outside the box (1 = normal; scales the chance it needs). */
+  shootLong: number;
   /** Readiness to clear it long when pressed deep in our half (added to the pass score below which he clears). */
   clear: number;
   /** Direct play: the chance, on each decision in our own half, of hitting a long ball up to a forward instead of building up. */
@@ -178,7 +190,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     defWidth: 0.66, squeeze: 0.26, defDepth: 0.6, attWidth: 1, attDepth: 0.78,
     pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, markR: 0.75, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
-    risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
+    risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, shootLong: 0.7, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
     supporters: 2, supportR: 11, recover: 0.95,
   },
   defensive: {
@@ -186,7 +198,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     defWidth: 0.74, squeeze: 0.28, defDepth: 0.7, attWidth: 1.04, attDepth: 0.9,
     pressUpTo: 0.4, pressNear: 4, extra: 0, extraFrom: 2, markR: 0.8, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 2,
-    risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.15, tackle: 0.95, reach: 0,
+    risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, shootLong: 0.85, clear: 0.4, direct: 0.15, tackle: 0.95, reach: 0,
     supporters: 2, supportR: 10, recover: 0.85,
   },
   balanced: {
@@ -194,7 +206,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     defWidth: 0.8, squeeze: 0.3, defDepth: 1, attWidth: 1.08, attDepth: 1,
     pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, markR: 1, screen: 0, screenR: 0, counter: 0, counterN: 0,
     fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
-    risk: 1, tempo: 1, urgency: 1, carry: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
+    risk: 1, tempo: 1, urgency: 1, carry: 1, shootLong: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
     supporters: 3, supportR: 10, recover: 0.7,
   },
   attacking: {
@@ -202,7 +214,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     defWidth: 0.84, squeeze: 0.32, defDepth: 1.08, attWidth: 1.12, attDepth: 1.08,
     pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, markR: 1, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
-    risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
+    risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
     supporters: 3, supportR: 10, recover: 0.75,
   },
   press: {
@@ -210,7 +222,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     defWidth: 0.8, squeeze: 0.4, defDepth: 0.95, attWidth: 1.1, attDepth: 1.02,
     pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, markR: 1.15, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
-    risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.2, reach: 0.2,
+    risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.2, reach: 0.2,
     supporters: 3, supportR: 9, recover: 0.9,
   },
 };
@@ -1093,9 +1105,11 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
     const opt = bestPassOption(s, p, noise);
     const passScore = opt ? opt.score : -Infinity;
 
-    // From the edge of the box, a strike is often the best thing on.
-    const longShot = px > 0.66 && shotScore > SHOOT_XG * 0.35 && passScore < 2 && chance(s.rng, 0.15 + 0.3 * p.attrs.shooting + 0.25 * urge);
-    if (shotScore > SHOOT_XG || longShot || (shotScore > SHOOT_XG * 0.6 && pressure < 2 && passScore < 1.2)) return shootIntent(s, p, shot, skill);
+    // From the edge of the box, a strike is often the best thing on (more or less often by mentality).
+    const far = dist(p.pos, goal) > LONG_SHOT_FROM;
+    const keen = far ? k.shootLong : 1;
+    const longShot = px > 0.66 && shotScore * keen > SHOOT_XG * 0.35 && passScore < 2 && chance(s.rng, (0.15 + 0.3 * p.attrs.shooting + 0.25 * urge) * keen);
+    if (shotScore * keen > SHOOT_XG || longShot || (shotScore > SHOOT_XG * 0.6 && pressure < 2 && passScore < 1.2)) return shootIntent(s, p, shot, skill);
 
     // Wide in the final third: cross it.
     const wide = Math.abs(p.pos.y - MID_Y) > BOX_W / 2 - 6;
@@ -1290,7 +1304,11 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
       const lineX = Math.abs(p.pos.x - own.x) < 0.6 ? own.x + dir * 0.6 : p.pos.x;
       const tx = (lineX - ball.pos.x) / ball.vel.x;
       const pathY = tx > 0 ? ball.pos.y + ball.vel.y * tx : yCross;
-      const react = clamp(0.04 + 0.42 * p.attrs.goalkeeping + 0.1 * skill, 0, 1);
+      // How far across he gets is his reflexes, and the time he has: a shot from distance,
+      // in flight for most of a second, gives even a weak keeper time to get in line.
+      const flight = (s.tick - (ball.redirectedAt ?? s.tick)) / TICK_HZ + tx;
+      const quick = clamp(0.04 + 0.42 * p.attrs.goalkeeping + 0.1 * skill, 0, 1);
+      const react = quick + (1 - quick) * clamp((flight - GK_TIME_FROM) / GK_TIME_SPAN, 0, 1);
       const y = spot.y + (clamp(pathY, GOAL_TOP - 0.8, GOAL_BOTTOM + 0.8) - spot.y) * react;
       return seek(p, { x: lineX, y }, 0.5, 0.75 + 0.2 * p.attrs.goalkeeping);
     }

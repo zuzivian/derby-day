@@ -60,6 +60,8 @@ const SEL = {
   mentalityRadio: (id) => `input[name="mentality"][value="${id}"]`,
   formationChecked: 'input[name="formation"]:checked',
   mentalityChecked: 'input[name="mentality"]:checked',
+  // Pause-menu quick tactics (src/client/tactics.ts quickTacticsMarkup).
+  quickMentality: (id) => `#quick-tactics label:has(input[value="${id}"])`,
   // Two humans (versus.ts)
   playLocal2p: '[data-action="play-local2p"]',
   playLink: '[data-action="play-link"]',
