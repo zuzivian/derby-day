@@ -86,6 +86,8 @@ export interface MatchInputSource {
   /** The input scheme in use right now, when the source has one (mouse or keys); it follows whatever the player touches. */
   mode?(): 'mouse' | 'keys';
   extras(): RenderExtras;
+  /** Drop queued kicks and charges (pause, resume, replays): nothing pressed then fires afterwards. */
+  reset?(): void;
   dispose(): void;
 }
 
@@ -155,9 +157,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let paused = false;
   let done = false;
   let focusBeforePause: HTMLElement | null = null;
+  /** The final whistle has gone: no pause menu and no forfeit any more (the result stands). */
+  let ending = false;
   const setPaused = (v: boolean) => {
     if (done || v === paused) return;
+    if (v && (ending || s.phase === 'fulltime')) return;
     paused = v;
+    input.reset?.();
     $('pause').hidden = !v;
     coach?.setPaused(v);
     if (v) {
@@ -172,8 +178,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   function defaultInput(): MatchInputSource {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
+    c.paused = () => paused;
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), mode: () => c.mode, extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -184,9 +191,19 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
-  $('forfeit').addEventListener('click', () => finish(true));
+  $('forfeit').addEventListener('click', () => {
+    if (!ending && s.phase !== 'fulltime') finish(true);
+  });
   const onVis = () => document.hidden && setPaused(true);
   document.addEventListener('visibilitychange', onVis);
+  // Losing focus (another window, an alert) pauses a one-human match, as hiding the tab does.
+  const onBlur = () => {
+    if (!(s.humans[0] && s.humans[1])) setPaused(true);
+  };
+  window.addEventListener('blur', onBlur);
+  // No browser menu on a right click anywhere over the match (the HUD buttons too, not just the canvas).
+  const onCtx = (e: Event) => e.preventDefault();
+  root.querySelector('.pitch-wrap')!.addEventListener('contextmenu', onCtx);
   const onKey = (e: KeyboardEvent) => paused && trapTab($('pause'), e);
   document.addEventListener('keydown', onKey);
 
@@ -251,6 +268,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     wrapEl.appendChild(skip);
     wrapEl.classList.add('replaying');
     hudEl.classList.add('replaying');
+    input.reset?.();
     replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
     // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
     r3.replayShot = { kind: 'low', goalX: h.goalX };
@@ -264,6 +282,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   function endReplay() {
     if (!replay) return;
+    input.reset?.();
     replay.skip.remove();
     replay = null;
     wrapEl.classList.remove('replaying');
@@ -409,6 +428,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       bannerUntil = 0;
     }
     if (s.phase === 'fulltime') {
+      ending = true;
       banner('Full time', 99999);
       announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
@@ -428,6 +448,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     ro.disconnect();
     renderer.dispose();
     document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('keydown', onReplayKey, true);
     replay?.skip.remove();
