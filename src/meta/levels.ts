@@ -42,7 +42,7 @@ export interface LevelProgress {
   intoLevel: number;
   /** Length of this level's bar (xpToClear(level)). */
   needed: number;
-  /** Level 99 with a full bar. */
+  /** Level 99, the cap: the bar shows full and XP just keeps counting. */
   maxed: boolean;
 }
 
@@ -52,7 +52,7 @@ export function levelForXp(totalXp: number): LevelProgress {
   while (level < MAX_LEVEL && totalXpForLevel(level + 1) <= xp) level++;
   const intoLevel = xp - totalXpForLevel(level);
   const needed = xpToClear(level);
-  return { level, intoLevel, needed, maxed: level === MAX_LEVEL && intoLevel >= needed };
+  return { level, intoLevel, needed, maxed: level === MAX_LEVEL };
 }
 
 function clampLevel(level: number): number {

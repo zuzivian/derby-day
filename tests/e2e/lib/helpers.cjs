@@ -146,18 +146,19 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *                null leaves the fresh level-1 save alone. Everything up to the level counts
  *                as already seen, so no level-up dialog is waiting.
  *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
+ *   hasTouch     emulate a touch phone (pointer: coarse).
  *   renderer     '2d' or '3d': pin the match renderer (?renderer=). Tests that map world metres to
  *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query, hasTouch = false } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
   const userSrc = userMutate ? `(${userMutate.toString()})(save);` : '';
   const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
   const mutateSave = mutateSrc ? true : null;
-  const page = await t.newPage({ colorScheme, viewport: { width, height } });
+  const page = await t.newPage({ colorScheme, viewport: { width, height }, ...(hasTouch ? { hasTouch: true, isMobile: true } : {}) });
   // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
   if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
   // query: extra page parameters, e.g. 'relay=ws://127.0.0.1:8787/ws' for online tests.

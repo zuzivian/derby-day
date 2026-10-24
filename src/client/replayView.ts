@@ -38,7 +38,6 @@ export function resultReplayHtml(): string {
   return `<div class="replay-actions">
     ${goals ? `<button class="btn" data-replay="watch" data-id="${esc(last.id)}">Watch goals (${goals})</button>` : ''}
     <button class="btn" data-replay="copy" data-id="${esc(last.id)}">Copy replay code</button>
-    <span class="muted small">${formatSize(codeSize(last.code))}</span>
   </div>`;
 }
 
@@ -46,14 +45,14 @@ export function resultReplayHtml(): string {
 export function recentReplaysHtml(): string {
   const list = recentReplays();
   const rows = list
-    .map(({ id, code, replay }) => {
+    .map(({ id, replay }) => {
       const p = perspective(replay);
       const opp = replay[p.us === 0 ? 'away' : 'home'];
       const goals = replay.goals.length;
       return `<li class="rp-row">
         <span class="res res-${p.res}" aria-label="${p.res === 'W' ? 'Win' : p.res === 'D' ? 'Draw' : 'Defeat'}">${p.res}</span>
         <span class="res-score">${p.us_g}–${p.them_g}</span>
-        <span class="res-opp">${esc(opp.name)}<span class="muted small">${esc(replay.label || 'Match')} · ${goals} goal${goals === 1 ? '' : 's'} · ${formatSize(codeSize(code))}</span></span>
+        <span class="res-opp">${esc(opp.name)}<span class="muted small">${esc(replay.label || 'Match')} · ${goals} goal${goals === 1 ? '' : 's'}</span></span>
         <span class="rp-btns">
           <button class="btn small" data-replay="watch" data-id="${esc(id)}" aria-label="Watch ${esc(replay.home.name)} ${replay.score[0]}, ${esc(replay.away.name)} ${replay.score[1]}">Watch</button>
           <button class="btn small ghost" data-replay="copy" data-id="${esc(id)}" aria-label="Copy replay code for ${esc(opp.name)}">Copy code</button>
