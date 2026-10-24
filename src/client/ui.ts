@@ -188,7 +188,7 @@ export function clubScreen(app: App): string {
     <article class="panel form">
       <h2 class="eyebrow">Elo</h2>
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
-      ${sparkline(s.eloHistory)}
+      ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : `<div class="spark-empty"><span aria-hidden="true">${LADDER}</span>Your Elo chart starts with your first ranked match.</div>`}
       <h3 class="eyebrow">Recent</h3>
       ${formChips(s)}
       ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
@@ -370,6 +370,7 @@ const rsIcon = (body: string, size = 18) => `<svg class="icon" viewBox="0 0 24 2
 const RS_BALL = rsIcon('<circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".16"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.6 15.3 10l-1.3 3.9H10L8.7 10Z" fill="currentColor"/>', 14);
 const RS_UP = rsIcon('<path d="M12 5 20 16H4Z" fill="currentColor"/>', 16);
 const RS_DOWN = rsIcon('<path d="M12 19 4 8h16Z" fill="currentColor"/>', 16);
+const RS_LEVEL = rsIcon('<rect x="5" y="10.5" width="14" height="3" rx="1.5" fill="currentColor"/>', 16);
 const RS_SESSIONS = rsIcon('<rect x="3" y="6" width="4" height="12" rx="1.2" fill="currentColor"/><rect x="10" y="6" width="4" height="12" rx="1.2" fill="currentColor"/><rect x="17" y="6" width="4" height="12" rx="1.2" fill="currentColor" opacity=".35"/>');
 const RS_GROWTH = rsIcon('<path d="M4 17 10 11l4 4 6-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>', 16);
 
@@ -438,7 +439,7 @@ function resultModal(app: App): string {
   const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
   const chips = sum
     ? [
-        r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d >= 0 ? RS_UP : RS_DOWN, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
+        r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
         sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`) : '',
         sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`) : '',
       ].filter(Boolean)
@@ -448,6 +449,7 @@ function resultModal(app: App): string {
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
+      <div class="rs-scroll">
       <header class="rs-hero">
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · Full-time${r.forfeited ? ' · Forfeited' : ''}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${OUTCOME_WORD[outcome]}</h2>
@@ -493,6 +495,7 @@ function resultModal(app: App): string {
               ${xpCardHtml(app.save, sum.xp, r.forfeited)}`
             : `<p class="rs-empty">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
         </section>
+      </div>
       </div>
       <footer class="rs-foot">
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}

@@ -24,6 +24,14 @@ test('a short ranked match reaches the result modal, updates Elo, and closing re
   expect(after.club.played, 'played count').toBe(before.club.played + 1);
   expect(await headerElo(page), 'header Elo reflects the change').toBe(rec.eloAfter);
 
+  // The dialog title takes focus from code: it must not draw a focus ring (owner feedback 2026-10-24).
+  const title = await page.evaluate(() => ({ id: document.activeElement?.id, outline: getComputedStyle(document.activeElement).outlineStyle }));
+  expect(title.id, 'focus starts on the result title').toBe('result-title');
+  expect(title.outline, 'no focus ring on the programmatically focused title').toBe('none');
+  // The primary button stays in view without scrolling the dialog.
+  const btn = await page.locator(SEL.modalClose).boundingBox();
+  expect(btn && btn.y + btn.height <= 800, 'Back to the club is on screen').toBe(true);
+
   const modalText = await page.locator(SEL.modal).innerText();
   expect(modalText, 'modal shows the score').toContain(`${rec.goalsFor}`);
   expect(modalText, 'modal shows the new Elo').toContain(String(rec.eloAfter));
