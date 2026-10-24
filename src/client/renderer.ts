@@ -99,7 +99,10 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
     const gl = probeWebGL();
     if (gl.ok) {
       try {
-        return new Renderer3D(canvas, { quality: quality(gl.software), cinematic: opts.cinematic });
+        const r = new Renderer3D(canvas, { quality: quality(gl.software), cinematic: opts.cinematic });
+        // The 3D camera works at any aspect ratio, so phones in portrait get a taller pitch (hud.css).
+        canvas.classList.add('pitch-3d');
+        return r;
       } catch (e) {
         console.warn('3D renderer unavailable, using 2D', e);
       }

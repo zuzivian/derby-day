@@ -68,6 +68,10 @@
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
 }
+@media (max-width: 640px) and (orientation: portrait) {
+  #pitch.pitch-3d { aspect-ratio: 4 / 5; }
+  .hud-radar { width: 72px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word { animation: none; }
 }

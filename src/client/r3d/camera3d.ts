@@ -80,7 +80,8 @@ export class MatchCamera {
   update(dt: number, f: CameraFocus, aspect: number, cssWidth: number, reduced: boolean): void {
     const cam = this.camera;
     cam.aspect = aspect;
-    const narrow = cssWidth < 560 ? 0.86 : 1;
+    // Phones: closer in, and closer still in a portrait (taller than wide) view.
+    const narrow = (cssWidth < 560 ? 0.86 : 1) * (aspect < 1 ? 0.85 : 1);
     const slow = reduced ? 1.6 : 1;
 
     // Where to look: the ball plus where it's heading (or where the carrier's team attacks).

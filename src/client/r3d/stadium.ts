@@ -674,7 +674,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
   group.add(boards);
 
   // --- stands, crowd, flags --------------------------------------------------
-  const concrete = keep(new MeshLambertMaterial({ color: '#a9aeb4' }));
+  const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
   const seatMats = [keep(new MeshLambertMaterial({ color: '#2b4f8c' })), keep(new MeshLambertMaterial({ color: '#c9cdd2' }))];
   const roofMat = keep(new MeshStandardMaterial({ color: '#e7e9ec', roughness: 0.6, metalness: 0.2, side: DoubleSide }));
   const steelMat = keep(new MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.55, metalness: 0.2 }));
@@ -701,17 +701,18 @@ export function buildStadium(o: StadiumOptions): Stadium {
     const FRONT = 0.9;
     // Stand-local: x along, z away from the pitch (positive), y up. Front wall at z = 0.
     const blocks: Part[] = [];
-    blocks.push({ geo: new BoxGeometry(along, FRONT, 0.4).translate(0, FRONT / 2, 0.2) });
+    // Painted front wall, grey steps, lighter back and side walls.
+    blocks.push({ geo: new BoxGeometry(along, FRONT, 0.4).translate(0, FRONT / 2, 0.2), color: [0.07, 0.16, 0.3] });
     for (let i = 0; i < rows; i++) {
       const top = FRONT + i * RISE;
-      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2) });
+      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: i % 2 ? [0.42, 0.45, 0.5] : [0.36, 0.39, 0.44] });
     }
     const depth = 0.4 + rows * ROW_D;
     const backH = FRONT + rows * RISE + 2.2;
-    blocks.push({ geo: new BoxGeometry(along, backH, 0.5).translate(0, backH / 2, depth + 0.25) });
+    blocks.push({ geo: new BoxGeometry(along, backH, 0.5).translate(0, backH / 2, depth + 0.25), color: [0.68, 0.7, 0.73] });
     // Side walls.
-    for (const s of [-1, 1]) blocks.push({ geo: new BoxGeometry(0.4, backH, depth).translate((s * along) / 2, backH / 2, depth / 2) });
-    const shell = new Mesh(merge(blocks), concrete);
+    for (const s of [-1, 1]) blocks.push({ geo: new BoxGeometry(0.4, backH, depth).translate((s * along) / 2, backH / 2, depth / 2), color: [0.68, 0.7, 0.73] });
+    const shell = new Mesh(merge(blocks, [], true), concrete);
     disposables.push(shell.geometry);
     shell.castShadow = true;
     shell.receiveShadow = true;
