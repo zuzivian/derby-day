@@ -346,7 +346,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     const speed = (13 + 17 * power) * (0.8 + 0.3 * p.attrs.shooting);
     let err = 0.02 + 0.12 * power * power * (1.3 - p.attrs.shooting);
     // From distance a shot is harder to place (LONG_SHOT_ERR).
-    err += Math.max(0, dist(p.pos, oppGoal(team)) - 16) * LONG_SHOT_ERR * (1.3 - p.attrs.shooting);
+    err += clamp(dist(p.pos, oppGoal(team)) - 16, 0, 14) * LONG_SHOT_ERR * (1.3 - p.attrs.shooting);
     if (s.restart?.kind === 'penalty') err *= 0.45; // a dead ball from 11 m: no one closing you down
     kick(s, p, a.target, speed, err, -1);
     if (a.lift && a.lift > 0) {
