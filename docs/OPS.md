@@ -147,6 +147,7 @@ system-font fallbacks without them.
 - **Guest tabs and imports.** A guest tab (read-only second tab) cannot restore a backup, and its writes, telemetry and
   crash recovery are all off. Two tabs opened in the same instant settle within about 120 ms: the one whose lease write
   landed last keeps the club.
+- **What a backup holds.** The club only (`derbyday.save.v1`). Per-browser settings (`derbyday.prefs.v1`, replays, mute, `derby-renderer`, `derby-quality`, `derby-zoom`, `derby-instant-replays`, camera) stay in the browser they were set in: they are device preferences, never touched by import, and the tab guard only manages the club's lease. Imports are treated as hostile input (backup codes get shared): colours must be `#rrggbb`, club codes 1-4 capitals/digits, ids `[A-Za-z0-9_-]`, and any string containing `<`, `>`, a quote, a backtick or a control character anywhere in the file is refused.
 - **Back up your club** (Club tab → Back up or restore): downloads `derby-day-<club>-<date>.json`, or shows a
   copyable code (`DD1.` + gzip, base64url). Restore checks every field of the backup (players, lineup, ladder, colours, number ranges) and dry-runs the game's boot
   and every screen on it before offering the confirm button, previews the club's name, level and record, says what

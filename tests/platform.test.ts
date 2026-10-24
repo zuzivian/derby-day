@@ -271,6 +271,14 @@ describe('damaged backups are refused before they can brick the club', () => {
     ['negative games played', (s) => (s.club.played = -4)],
     ['huge history', (s) => (s.history = new Array(30000).fill({}))],
     ['rng not a number', (s) => (s.rng = { s: 'x' })],
+    ['hostile colour (markup injection)', (s) => (s.club.primary = '#f00"/><img src=x onerror=alert(1)>')],
+    ['hostile ladder colour', (s) => (s.ladder[2].secondary = '#00f"onload="alert(1)')],
+    ['hostile short code', (s) => (s.club.short = '<svg onload=alert(1)>')],
+    ['hostile short code on a ladder club', (s) => (s.ladder[0].short = 'A</text><script>')],
+    ['hostile club name', (s) => (s.club.name = 'Rovers<img src=x onerror=alert(1)>')],
+    ['hostile player id', (s) => (s.squad[0].id = 'a" data-x="y')],
+    ['hostile news line', (s) => s.news.push('<script>alert(1)</script>')],
+    ['markup hidden deep in an optional field', (s) => (s.cup = { kind: 'cup', note: { a: ['"><b>'] } })],
     ['squad ids repeat', (s) => (s.squad[1].id = s.squad[0].id)],
   ];
   for (const [name, mutate] of mutations) {
@@ -281,6 +289,14 @@ describe('damaged backups are refused before they can brick the club', () => {
       expect(r.ok).toBe(false);
     });
   }
+
+  test('a hostile backup shared as a code is refused too, with a reason and nothing imported', async () => {
+    const s = good();
+    s.club.primary = '#f00"/><img src=x onerror=alert(1)>';
+    const code = await backup.backupCode(s);
+    const r = await backup.parseBackup(code);
+    expect(r.ok).toBe(false);
+  });
 
   test('a healthy club passes both the field check and the boot dry run, and the dry run does not touch it', async () => {
     const s = good();

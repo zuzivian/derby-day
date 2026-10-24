@@ -99,13 +99,17 @@ export async function parseBackup(input: string): Promise<ParsedBackup> {
 const MAX_SEED = 2 ** 53;
 const ROLES = ['GK', 'DEF', 'MID', 'FWD'];
 const COLOR = /^#[0-9a-fA-F]{6}$/;
+const ID = /^[A-Za-z0-9_-]{1,40}$/;
+const SHORT = /^[A-Z0-9]{1,4}$/;
+/** Characters that can break out of markup or an attribute. No real name, id or news line contains them. */
+const MARKUP = /[<>"`\u0000-\u001f]/;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isStr = (v: unknown, max = 80): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
 /** A finite number in [lo, hi]. */
 const num = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
 
 function goodPlayer(p: unknown): boolean {
-  if (!isObj(p) || !isStr(p.id, 40) || !isStr(p.first) || !isStr(p.last)) return false;
+  if (!isObj(p) || !ID.test(String(p.id)) || !isStr(p.first) || !isStr(p.last)) return false;
   if (!STYLE_KEYS.includes(p.style as never) || !ROLES.includes(p.role as string)) return false;
   if (!num(p.age, 10, 70) || !num(p.potential, 0, 100) || !num(p.number, 0, 999)) return false;
   if (p.scout !== undefined && !num(p.scout, 0, 1000)) return false;
@@ -113,7 +117,7 @@ function goodPlayer(p: unknown): boolean {
 }
 
 function goodIdentity(c: Record<string, unknown>): boolean {
-  return isStr(c.id, 40) && isStr(c.name) && isStr(c.short, 12) && COLOR.test(String(c.primary)) && COLOR.test(String(c.secondary)) && CREST_PATTERNS.includes(c.crest as never);
+  return ID.test(String(c.id)) && isStr(c.name) && SHORT.test(String(c.short)) && COLOR.test(String(c.primary)) && COLOR.test(String(c.secondary)) && CREST_PATTERNS.includes(c.crest as never);
 }
 
 function goodRecord(c: Record<string, unknown>): boolean {
@@ -125,7 +129,17 @@ function goodRecord(c: Record<string, unknown>): boolean {
  * ladder is subtly wrong passes it and then crashes every boot, so an import has to get through this first
  * (and through dryRunBoot() in dryrun.ts).
  */
+/** True if any string anywhere in the value could break out of markup (backups get shared, so treat them as hostile). */
+function hostile(v: unknown, depth = 0): boolean {
+  if (depth > 8) return true;
+  if (typeof v === 'string') return v.length > 300 || MARKUP.test(v);
+  if (Array.isArray(v)) return v.some((x) => hostile(x, depth + 1));
+  if (isObj(v)) return Object.entries(v).some(([k, x]) => MARKUP.test(k) || hostile(x, depth + 1));
+  return false;
+}
+
 export function deepCheck(s: Save): string | null {
+  if (hostile(s)) return 'unsafe text';
   if (!num(s.seed, -MAX_SEED, MAX_SEED) || !isObj(s.rng) || !num((s.rng as { s: unknown }).s, -MAX_SEED, MAX_SEED)) return 'club seed';
   const c = s.club as unknown as Record<string, unknown>;
   if (!isObj(c) || !goodIdentity(c) || !goodRecord(c)) return 'club';
