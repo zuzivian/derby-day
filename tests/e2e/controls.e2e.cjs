@@ -256,6 +256,9 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
       s.switchTimer[0] = 1e9;
+      // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
+      // 1000 headless), and a right click during the restart that follows is not a tackle.
+      Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });
       window.__cd = 0;
       // Every value the sim writes, not one sample a frame (a slow frame steps several ticks).
       if (!me.__cdHooked) {
