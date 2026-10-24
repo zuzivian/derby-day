@@ -678,7 +678,12 @@ export class Renderer3D implements MatchRenderer {
     else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
     else this.longHold = null;
     if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
-    if (t0 < this.reframeUntil) this.cutCount++;
+    // A re-framing (a zoom easing in, the long view coming or going) re-takes a still pointer's point
+    // once, when it has settled, rather than every frame while it moves (which let a runner drift).
+    if (this.reframeUntil && t0 >= this.reframeUntil) {
+      this.reframeUntil = 0;
+      this.cutCount++;
+    }
     this.longViewOn = !!lv;
     this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
     const rs = this.replayShot;
