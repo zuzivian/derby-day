@@ -32,25 +32,33 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   // view can take a couple of seconds to get its first frames up.
   await page.waitForFunction(() => (document.getElementById('sb-clock')?.textContent ?? '00:00') !== '00:00', null, { timeout: 15_000 });
   await page.waitForTimeout(250);
-  const hold = async (keys, ms) => {
+  // Hold keys until `moved()` says the run has happened, or `ms` at most. Game time, not wall time,
+  // is what moves players: a software-rendered 3D view runs at a few frames per second and the
+  // match loop does not make up for very long frames, so fixed waits move them by varying amounts.
+  const hold = async (keys, ms, moved) => {
     for (const k of keys) await page.keyboard.down(k);
-    await page.waitForTimeout(ms);
+    const end = Date.now() + ms;
+    await page.waitForTimeout(150);
+    while (Date.now() < end && !(await moved())) await page.waitForTimeout(60);
     for (const k of keys) await page.keyboard.up(k);
   };
   const a1 = await pos(page, 'p1');
   const a2 = await pos(page, 'p2');
-  await hold(['ArrowDown'], 700);
+  await hold(['ArrowDown'], 2500, async () => (await pos(page, 'p2')).y - a2.y > 2.4);
   const b1 = await pos(page, 'p1');
   const b2 = await pos(page, 'p2');
   expect(b2.i, 'player 2 still on the same player').toBe(a2.i);
   expect(b2.y - a2.y, 'player 2 ran down on the arrow key').toBeGreaterThan(2);
   expect(Math.hypot(b1.x - a1.x, b1.y - a1.y), 'player 1 stayed put meanwhile').toBeLessThan(1);
-  await hold(['w'], 700);
+  await hold(['w'], 2500, async () => b1.y - (await pos(page, 'p1')).y > 2.4);
   const c1 = await pos(page, 'p1');
   expect(c1.i, 'player 1 still on the ball carrier').toBe(b1.i);
   expect(b1.y - c1.y, 'player 1 ran up on W').toBeGreaterThan(2);
   const c2 = await pos(page, 'p2');
-  await hold(['d', 'ArrowLeft'], 500);
+  await hold(['d', 'ArrowLeft'], 2500, async () => {
+    const [p1, p2] = [await pos(page, 'p1'), await pos(page, 'p2')];
+    return p1.x - c1.x > 1.2 && (p2.i !== c2.i || c2.x - p2.x > 1.2);
+  });
   const d1 = await pos(page, 'p1');
   const d2 = await pos(page, 'p2');
   expect(d1.x - c1.x, 'together: player 1 ran right on D').toBeGreaterThan(1);
