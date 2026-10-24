@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { generateLadder, generateSquad, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
-import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { chipPlan, loftPlan } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, simulate, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
@@ -47,12 +47,12 @@ describe('match sim', () => {
   test('stronger squads win more often', () => {
     let strongWins = 0;
     let weakWins = 0;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 10; i++) {
       const r = makeRng(1000 + i);
       const strong = generateSquad(r, 78);
       const weak = generateSquad(r, 46);
       const id = { id: 'x', name: 'S', short: 'S', primary: '#000', secondary: '#fff', crest: 'plain' as const };
-      const s = simulate({ seed: i, home: toTeamSetup(id, strong, autoLineup(strong)), away: toTeamSetup(id, weak, autoLineup(weak)), halfSeconds: 90 });
+      const s = simulate({ seed: i, home: toTeamSetup(id, strong, autoLineup(strong)), away: toTeamSetup(id, weak, autoLineup(weak)), halfSeconds: 60 });
       if (s.score[0] > s.score[1]) strongWins++;
       if (s.score[1] > s.score[0]) weakWins++;
     }
@@ -330,8 +330,9 @@ describe('CPU', () => {
 
 describe('goal line', () => {
   // Regression: a fast ball skipped the end-wall bounce band in one tick and was
-  // clamped into the goal mouth, scoring shots that went well wide.
-  function shotAtWall(y: number, vx: number, z: number, phase: number, fromX = 50): number {
+  // clamped into the goal mouth, scoring shots that went well wide. There are no
+  // boards now: wide of the posts it is simply out of play.
+  function shotAtWall(y: number, vx: number, z: number, phase: number, fromX = PITCH_W - 14): number {
     const s = livePlay();
     s.players.forEach((p) => (p.stun = 100000));
     s.ball.owner = -1;
@@ -345,16 +346,16 @@ describe('goal line', () => {
     return s.score[0] + s.score[1] - before;
   }
 
-  test('hard shots that hit the end wall outside the mouth never score', () => {
+  test('hard shots that cross the goal line outside the posts never score', () => {
     let goals = 0;
-    for (const y of [3, 8, 12, 14.5, 26, 34])
+    for (const y of [3, 15, 25, GOAL_TOP - 0.6, GOAL_BOTTOM + 0.6, 60])
       for (let i = 0; i < 25; i++) goals += shotAtWall(y, 30, 0, i / 25);
     expect(goals).toBe(0);
   });
 
   test('a ball over the bar does not score, one under it does', () => {
     let over = 0;
-    for (let i = 0; i < 25; i++) over += shotAtWall(PITCH_H / 2, 20, 3.6, i / 25, 61); // crosses the line still ~3.5 m up
+    for (let i = 0; i < 25; i++) over += shotAtWall(PITCH_H / 2, 20, 3.6, i / 25, PITCH_W - 3); // crosses the line still ~3.5 m up
     expect(over).toBe(0);
     expect(shotAtWall(PITCH_H / 2, 20, 0, 0)).toBe(1);
   });

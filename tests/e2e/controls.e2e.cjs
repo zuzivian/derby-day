@@ -7,10 +7,10 @@ const { test, expect } = require('./lib/harness.cjs');
 const { SEL, openApp, goTab, startRanked } = require('./lib/helpers.cjs');
 
 const PREFS = { halfSeconds: 120, controls: 'mouse', onboarded: true };
-// Pitch view in metres, see render.ts: the pitch plus a 2.6 m margin each side.
-const VIEW_W = 64 + 5.2;
-const VIEW_H = 40 + 5.2;
-const MARGIN = 2.6;
+// Pitch view in metres, see render.ts: the 105 x 68 m pitch plus a 3.5 m margin each side.
+const MARGIN = 3.5;
+const VIEW_W = 105 + 2 * MARGIN;
+const VIEW_H = 68 + 2 * MARGIN;
 
 async function openMatch(t) {
   // The 2D view: these tests place the pointer by world metres, and the 3D camera follows play.
@@ -214,6 +214,7 @@ test('mouse without the ball: left click on a teammate switches to him, elsewher
     const mates = s.players.filter((p) => p.team === 0 && p.role !== 'GK');
     const [cur, east, west, south, spare] = mates;
     spare.pos = { x: 60, y: 38 }; // out of everyone's way
+    mates.slice(5).forEach((p, k) => (p.pos = { x: 95 + k * 2, y: 66 })); // eleven-a-side: the rest too
     for (const p of s.players) {
       p.vel = { x: 0, y: 0 };
       p.stun = 1e7;
@@ -249,7 +250,8 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
       for (const p of s.players) p.stun = 1e7;
       Object.assign(me, { stun: 0, tackleCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
-      Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 } });
+      // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
+      Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
       opp.attrs.dribbling = 0;
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
@@ -275,8 +277,10 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
   await click(page, { x: 31.5, y: 20 }, 'right');
   await page.waitForTimeout(250);
   const stand = await page.evaluate(() => window.__cd);
+  // A standing tackle sets a 36-tick cooldown, or 50 if it fails (it wins at most 88% of the
+  // time), so accept either outcome; a slide is 70 or 90, which is what tells the two apart.
   expect(stand, 'a close pointer is a standing tackle').toBeGreaterThan(30);
-  expect(stand, 'standing tackle cooldown').toBeLessThan(40);
+  expect(stand, 'standing tackle cooldown (won or lost), shorter than any slide').toBeLessThan(55);
   const opp = await setup(2.6);
   await click(page, { x: 36, y: 20 }, 'right');
   await page.waitForTimeout(250);
@@ -324,7 +328,8 @@ test('training ground: the move and pass drills are done with the pointer', asyn
   await page.waitForSelector('#tr-pitch');
   expect(await page.locator('#coach-text').innerText(), 'the coach explains the speed by distance').toMatch(/further/i);
   // Drill 1: put the pointer on the marker.
-  const marker = { x: 38, y: 12 };
+  // The training-ground marker (drills.ts MARKER: the drills sit in the attacking end of the full pitch).
+  const marker = { x: 79, y: 26 };
   await moveTo(page, marker);
   await page.waitForSelector('.coach-dots li[data-drill="move"].done', { timeout: 15_000 });
   // Drill 2: left click a teammate. The CPU moves them about, so hold them where they stand.
@@ -348,7 +353,7 @@ test('training ground: the move and pass drills are done with the pointer', asyn
       requestAnimationFrame(pin);
     };
     pin();
-    const m = pins.map((k) => k.pos).sort((a, b) => Math.hypot(a.x - 38, a.y - 12) - Math.hypot(b.x - 38, b.y - 12))[0];
+    const m = pins.map((k) => k.pos).sort((a, b) => Math.hypot(a.x - 79, a.y - 26) - Math.hypot(b.x - 79, b.y - 26))[0];
     return { x: m.x + 0.4, y: m.y - 0.3 };
   });
   await click(page, mate);

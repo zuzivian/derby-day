@@ -7,8 +7,8 @@
 //                  (src/net/lockstep.ts). One hosts and shows a room code, the
 //                  other joins with it. Only inputs cross between the tabs.
 
-import { autoLineup, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
-import type { Save } from '../meta/game.ts';
+import { cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
+import { clubTeam, lineupReady, type Save } from '../meta/game.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { BroadcastTransport, broadcastSupport } from '../net/broadcast.ts';
 import { Lockstep, syncHash } from '../net/lockstep.ts';
@@ -25,8 +25,7 @@ import { mountMatch } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
 import { createMatchRenderer, mountCameraToggle } from './renderer.ts';
-import { hudMarkup, mountHud } from './hud.ts';
-import { classifyEvent } from './r3d/director.ts';
+import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
 import { esc, type ResultView } from './ui.ts';
@@ -78,15 +77,15 @@ const dot = (team: 0 | 1) => `<span class="vs-dot" style="background:${HUMAN_COL
 const kbd = (t: string) => t.replace(/(Hold |Esc|Enter|Space|Left Shift|Right Shift|Arrow keys|W A S D|\b[FEP]\b|, \(comma\)|\. \(period\)|\/)/g, (k) => (k === 'Hold ' ? k : `<kbd>${k}</kbd>`));
 
 function ownTeam(save: Save): TeamSetup | null {
-  if (save.lineup.filter(Boolean).length < 6) return null;
-  return toTeamSetup(save.club, save.squad, save.lineup, 0.6);
+  if (!lineupReady(save)) return null;
+  return clubTeam(save, 0.6);
 }
 
 /** A result for the usual dialog, from `side`'s point of view. */
 function resultFor(m: MatchState, side: 0 | 1, opp: ResultView['opp'], elo: number, label: string, note: string): ResultView {
   const o = side === 0 ? 1 : 0;
   const poss = possessionShare(m);
-  const scorers = (team: 0 | 1) => m.events.filter((e) => e.team === team).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorers = (team: 0 | 1) => m.goals.filter((e) => e.team === team).map((e) => `${e.scorer} ${e.minute}'`);
   return {
     ranked: false,
     forfeited: false,
@@ -130,7 +129,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
     </div>
     <table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col">${dot(0)} Player 1</th><th scope="col">${dot(1)} Player 2</th></tr></thead>
       <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table>
-    ${home ? '' : '<p class="link-warn" role="alert">Pick six players in Squad first.</p>'}
+    ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="vs-actions">
       <button class="btn primary big" id="l2p-start"${home ? '' : ' disabled'}>Kick off</button>
       <button class="btn" id="l2p-back">Back to the club</button>
@@ -146,7 +145,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
 
   function start(club: LadderClub) {
     const squad = ladderSquad(club);
-    const away = o.avoidClash(home!, toTeamSetup(club, squad, autoLineup(squad), 0.6));
+    const away = o.avoidClash(home!, cpuTeam(club, squad, 0.6));
     stopMatch = mountMatch(root, {
       seed: clientSeed(),
       home: home!,
@@ -202,7 +201,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     <h1 id="link-title" tabindex="-1">Link two tabs</h1>
     <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, open the club, choose <b>Link two tabs</b> and join with that code. Each tab steers its own team, and the tabs exchange only inputs: both run the same deterministic match in lockstep. No Elo, no rewards.</p>
     ${support.ok ? (support.note ? `<p class="link-note">${esc(support.note)}</p>` : '') : `<p class="link-warn" id="link-unsupported" role="alert">${esc(support.reason)}</p>`}
-    ${home ? '' : '<p class="link-warn" role="alert">Pick six players in Squad first.</p>'}
+    ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
       <div class="link-col">
         <h2>Host</h2>
@@ -489,6 +488,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
 
   let raf = 0;
   let lastGoals = 0;
+  let lastEvent = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
   let fullAt = 0;
@@ -523,9 +523,13 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       $('net-stats').textContent = `Tick ${s.tick} · input delay ${o.start.delay} ticks (${delayMs} ms) · round trip ${ls.rttMs.toFixed(1)} ms · waited ${Math.round(((stalledMs + stallNow) / elapsed) * 100)}% of the time · in sync ×${ls.checksPassed}`;
     }
 
-    while (s.events.length > lastGoals) {
-      const ev = s.events[lastGoals++];
-      if (classifyEvent(s, ev).kind !== 'goal') continue;
+    while (lastEvent < s.events.length) {
+      const w = refereeWord(s, s.events[lastEvent++]);
+      if (w) banner(w.word, 1500, w.sub);
+    }
+    if (s.goals.length > lastGoals) {
+      const ev = s.goals[s.goals.length - 1];
+      lastGoals = s.goals.length;
       banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}.`);
     }

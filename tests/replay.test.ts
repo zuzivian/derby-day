@@ -153,7 +153,7 @@ describe('replay codes', () => {
       return 'DD1.' + btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
     };
     expect(() => decodeReplay(withVersion(1))).toThrow(/older version/);
-    expect(() => decodeReplay(withVersion(3))).toThrow(/newer version/);
+    expect(() => decodeReplay(withVersion(REPLAY_VERSION + 1))).toThrow(/newer version/);
     expect(decodeReplay(withVersion(REPLAY_VERSION))).toEqual(replay);
   });
 
@@ -215,7 +215,7 @@ describe('deterministic re-simulation', () => {
       expect(re.score).toEqual(s.score);
       expect(re.events).toEqual(s.events);
       expect(decoded.score).toEqual(s.score);
-      expect(decoded.goals.map((g) => g.tick)).toEqual(s.events.map((e) => e.tick));
+      expect(decoded.goals.map((g) => g.tick)).toEqual(s.goals.map((e) => e.tick));
     });
   }
 

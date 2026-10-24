@@ -72,6 +72,8 @@ export interface PlayerContext {
   holding: boolean;
   /** Dribbling: the ball is at this player's feet. */
   hasBall: boolean;
+  /** Standing in a defensive wall at a free kick. */
+  wall: boolean;
   reducedMotion: boolean;
 }
 
@@ -85,7 +87,10 @@ export interface PlayerLook {
   hair: string;
   /** 0 short, 1 buzz, 2 long, 3 shaved, 4 curly/big. */
   hairStyle: number;
+  /** Boot upper (dark or neutral), sole, and the coloured flash on the side. */
   boots: string;
+  bootSole: string;
+  bootAccent: string;
   gloves: string | null;
   /** Long sleeves (keepers). */
   longSleeves: boolean;
@@ -381,21 +386,31 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     [shR, elR],
   ] as const) {
     part(sh, new SphereGeometry(0.08, 10, 8), look.shirt, 0, -0.01, 0);
-    part(sh, cyl(0.076, 0.066, look.longSleeves ? 0.29 : 0.16), look.shirt);
-    if (!look.longSleeves) part(sh, cyl(0.057, 0.048, 0.29), look.skin);
-    part(el, cyl(0.05, 0.04, 0.25), look.longSleeves ? look.shirt : look.skin);
-    part(el, new SphereGeometry(look.gloves ? 0.066 : 0.05, 8, 6), look.gloves ?? look.skin, 0, -0.29, 0.005, [0.75, 1.2, look.gloves ? 1 : 0.65]);
+    part(sh, cyl(0.076, 0.066, look.longSleeves ? 0.29 : 0.16, 10), look.shirt);
+    if (!look.longSleeves) part(sh, cyl(0.058, 0.044, 0.29, 10), look.skin);
+    // Forearm tapering to the wrist, then a flat hand with a thumb (a padded glove for keepers).
+    part(el, cyl(0.05, 0.033, 0.25, 10), look.longSleeves ? look.shirt : look.skin);
+    const g = !!look.gloves;
+    const handC = look.gloves ?? look.skin;
+    part(el, new BoxGeometry(g ? 0.08 : 0.062, g ? 0.11 : 0.085, g ? 0.042 : 0.03).translate(0, -0.045, 0), handC, 0, -0.25, 0.004);
+    part(el, new BoxGeometry(0.022, g ? 0.055 : 0.045, 0.024).translate(0, -0.022, 0), handC, 0, -0.26, g ? 0.03 : 0.024, [1, 1, 1], -0.45);
   }
   // Legs.
   for (const [hip, kn, an] of [
     [hipL, knL, anL],
     [hipR, knR, anR],
   ] as const) {
-    part(hip, cyl(0.1 * bw, 0.068, 0.45), look.skin);
-    part(hip, cyl(0.116 * bw, 0.106 * bw, 0.22), look.shorts, 0, 0.03, 0);
-    part(kn, cyl(0.067, 0.06, 0.08), look.skin, 0, 0.02, 0);
-    part(kn, cyl(0.072, 0.05, 0.36), look.socks, 0, -0.04, 0);
-    part(an, new BoxGeometry(0.1, 0.08, 0.27).translate(0, -0.032, 0.06), look.boots);
+    // Thigh tapering to the knee; the calf swells under the sock and narrows to the ankle.
+    part(hip, cyl(0.102 * bw, 0.064, 0.45, 10), look.skin);
+    part(hip, cyl(0.116 * bw, 0.106 * bw, 0.22, 10), look.shorts, 0, 0.03, 0);
+    part(kn, cyl(0.064, 0.06, 0.08, 10), look.skin, 0, 0.02, 0);
+    part(kn, cyl(0.066, 0.075, 0.12, 10), look.socks, 0, -0.04, -0.006);
+    part(kn, cyl(0.075, 0.042, 0.26, 10), look.socks, 0, -0.16, -0.006);
+    // Boot: sole, heel and upper, a rounded toe, and a coloured flash along the side.
+    part(an, new BoxGeometry(0.094, 0.022, 0.27).translate(0, -0.064, 0.052), look.bootSole);
+    part(an, new BoxGeometry(0.088, 0.07, 0.15).translate(0, -0.022, -0.012), look.boots);
+    part(an, new SphereGeometry(0.05, 10, 6).translate(0, 0, 0), look.boots, 0, -0.04, 0.1, [0.9, 0.62, 1.55]);
+    part(an, new BoxGeometry(0.092, 0.016, 0.13).translate(0, -0.03, 0.035), look.bootAccent);
   }
 
   const geo = merge(parts, ['aBone'], true);
@@ -455,6 +470,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let throwW = 0;
   let holdW = 0;
   let dribbleW = 0;
+  let wallW = 0;
   const idleSeed = Math.random() * 10;
   let last = 0;
 
@@ -550,6 +566,14 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       stance.set('shL', -0.95, 0, 0.25).set('shR', -0.95, 0, -0.25).set('elL', -0.25).set('elR', -0.25);
       stance.a[BODY + 1] = -0.07;
       P.blend(stance, windedW);
+    }
+    if (wallW > 0.01) {
+      // In the wall: feet together, hands crossed low in front.
+      stance.copy(P);
+      stance.set('hipL', -0.05, 0, -0.03).set('hipR', -0.05, 0, 0.03).set('knL', 0.12).set('knR', 0.12);
+      stance.set('shL', -0.45, 0, -0.32).set('shR', -0.45, 0, 0.32).set('elL', -0.55).set('elR', -0.55);
+      stance.set('spine', 0.08).set('head', 0.05);
+      P.blend(stance, wallW * (1 - smooth(1, 3, speedS)));
     }
     if (dribbleW > 0.01) {
       P.add('spine', 0.08 * dribbleW, 0, 0);
@@ -783,6 +807,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       throwW = damp(throwW, ctx.throwHold ? 1 : 0, 8, dt);
       holdW = damp(holdW, ctx.holding ? 1 : 0, 10, dt);
       dribbleW = damp(dribbleW, ctx.hasBall ? 1 : 0, 6, dt);
+      wallW = damp(wallW, ctx.wall ? 1 : 0, 5, dt);
 
       locomotion(loco, ctx.time, ctx.dtSim, reduced);
       stances(loco);
@@ -895,7 +920,8 @@ export function lookFor(id: string, kit: { shirt: string; shorts: string; socks:
   const hairPool = dark ? [0, 1, 7] : [0, 1, 2, 3, 4, 5, 6, 8];
   const hair = HAIRS[hairPool[Math.floor(rand(2) * hairPool.length)]];
   const style = Math.floor(rand(3) * 5);
-  const bootPick = ['#111111', '#111111', '#f5f5f5', '#ff5a1f', '#2563eb', '#d4ff3a'][Math.floor(rand(4) * 6)];
+  const bootPick = ['#141414', '#141414', '#1e2a3a', '#2b2b2b', '#f2f2f2'][Math.floor(rand(4) * 5)];
+  const accent = ['#ff5a1f', '#2563eb', '#d4ff3a', '#e11d48', '#ffffff', '#ffd60a', '#22d3ee'][Math.floor(rand(7) * 7)];
   void id;
   return {
     ...kit,
@@ -903,6 +929,8 @@ export function lookFor(id: string, kit: { shirt: string; shorts: string; socks:
     hair,
     hairStyle: style,
     boots: bootPick,
+    bootSole: bootPick === '#f2f2f2' ? '#d8d8d8' : '#3a3a3a',
+    bootAccent: accent === bootPick ? '#ff5a1f' : accent,
     gloves: keeper ? '#f4f4f4' : null,
     longSleeves: keeper,
     number,

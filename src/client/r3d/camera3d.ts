@@ -55,7 +55,8 @@ class Spring {
   }
 }
 
-const VFOV = 28;
+/** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
+const VFOV = 40;
 
 export class MatchCamera {
   readonly camera = new PerspectiveCamera(VFOV, 16 / 10, 0.5, 2000);
@@ -98,21 +99,26 @@ export class MatchCamera {
     let tz: number;
     const close = f.close && !reduced;
     if (this.mode === 'broadcast') {
-      const base = (BIG_PITCH ? 36 : 30) * narrow;
-      const air = clamp01((f.air - 1) / 3);
-      const kick = f.phase === 'kickoff' ? 0.12 : 0;
-      width = base * (1 + (reduced ? 0.5 : 1) * (0.18 * air + kick));
-      elev = this.cinematic ? 24 : 37;
-      if (this.cinematic) width *= 0.82;
+      // Close and fairly low, like Power Soccer: about 28 m across on the full-size pitch, the far
+      // boards and stand across the top of the frame. Long balls (in the air, or hit hard) widen it.
+      const base = (BIG_PITCH ? 28 : 26) * narrow;
+      const air = clamp01((f.air - 0.8) / 3);
+      const long = clamp01((Math.hypot(f.vx, f.vz) - 16) / 10);
+      const kick = f.phase === 'kickoff' ? 0.15 : 0;
+      width = base * (1 + (reduced ? 0.5 : 1) * (0.28 * Math.max(air, long * 0.7) + kick));
+      elev = this.cinematic ? 20 : 27;
+      if (this.cinematic) width *= 0.85;
       tx = f.x + this.leadX.x;
-      // Biased toward the far side so the far stand stays in the top of the frame.
-      tz = f.z * 0.75 + this.leadZ.x - 5;
-      const edge = HALF_W - width * 0.32;
+      // Biased toward the far side so the far stand stays in the top of the frame; near the near
+      // touchline the target follows far enough that the ball stays in the bottom of the frame.
+      tz = f.z * 0.8 - 9 + 0.5 * Math.max(0, f.z) + this.leadZ.x;
+      // Keep the goal near the edge of frame at most, and the far touchline in the top fifth or so.
+      const edge = HALF_W - width * 0.22;
       tx = Math.max(-edge, Math.min(edge, tx));
-      tz = Math.max(-HALF_H + 2, Math.min(HALF_H - 3, tz));
+      tz = Math.max(-HALF_H + 8, Math.min(HALF_H - 3, tz));
     } else {
       const d = f.humanDir;
-      width = (BIG_PITCH ? 30 : 26) * narrow * (1 + 0.12 * clamp01((f.air - 1) / 3));
+      width = (BIG_PITCH ? 28 : 26) * narrow * (1 + 0.15 * clamp01((f.air - 1) / 3));
       elev = 30;
       tx = f.x + d * 7 + this.leadX.x * 0.5;
       tz = f.z * 0.9 + this.leadZ.x * 0.5;

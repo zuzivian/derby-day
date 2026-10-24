@@ -92,7 +92,7 @@ export interface Unlock {
 
 export const UNLOCKS: readonly Unlock[] = [
   { id: 'club', level: 1, kind: 'feature', name: 'Home and Club', text: 'Kick off your next match from Home; club news and this list live under Club.' },
-  { id: 'squad', level: 1, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting six.' },
+  { id: 'squad', level: 1, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting eleven.' },
   { id: 'ranked', level: 1, kind: 'feature', name: 'Ranked matches', text: 'Play ladder clubs near your Elo, live.' },
   { id: 'practice', level: 1, kind: 'feature', name: 'Practice (Easy, Normal)', text: 'Friendlies against the CPU. No Elo.' },
   { id: 'local2p', level: 1, kind: 'feature', name: 'Local 2P', text: 'vs Player on one screen: two humans, one keyboard. Nothing recorded.' },
@@ -105,16 +105,16 @@ export const UNLOCKS: readonly Unlock[] = [
   { id: 'replays', level: 6, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
   { id: 'league', level: 8, kind: 'feature', name: 'League season', text: 'An 8-club round robin over 7 matchdays, with prize money for every place.', go: { screen: 'competitions', label: 'Go to Competitions', focusId: 'comp-start-season' } },
   { id: 'calendar', level: 10, kind: 'feature', name: 'Season calendar and academy', text: 'Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive.', go: { screen: 'club', label: 'Show me', focusId: 'news-title' } },
-  { id: 'squad-15', level: 15, kind: 'perk', name: 'Squad of 15', text: 'Room for one more player (14 to 15).', go: { screen: 'squad', label: 'Go to Squad' } },
+  { id: 'squad-15', level: 15, kind: 'perk', name: 'Squad of 25', text: 'Room for one more player (24 to 25).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'crest', level: 18, kind: 'perk', name: 'Crest pattern', text: 'Change your crest pattern any time from Club news.', go: { screen: 'club', label: 'Show me', focusId: 'crest-select' } },
   { id: 'market-20', level: 20, kind: 'perk', name: 'Deeper market', text: 'Two extra players on the transfer market (10 to 12).', go: { screen: 'transfers', label: 'Go to Transfers' } },
   { id: 'kit', level: 22, kind: 'perk', name: 'Custom kit colours', text: 'Pick your own kit colours from Club news.', go: { screen: 'club', label: 'Show me', focusId: 'kit-primary' } },
   { id: 'scouting', level: 25, kind: 'perk', name: 'Sharper scouts', text: "An academy prospect's potential is known one match sooner (5 instead of 6)." },
   { id: 'badge-silver', level: 25, kind: 'perk', name: 'Silver badge', text: 'Your level badge turns silver.' },
-  { id: 'squad-30', level: 30, kind: 'perk', name: 'Squad of 16', text: 'Room for another player (15 to 16).', go: { screen: 'squad', label: 'Go to Squad' } },
+  { id: 'squad-30', level: 30, kind: 'perk', name: 'Squad of 26', text: 'Room for another player (25 to 26).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'win-bonus', level: 35, kind: 'perk', name: 'Win bonus', text: 'One extra training session for every ranked or competition win.' },
   { id: 'replays-40', level: 40, kind: 'perk', name: 'Replay shelf of 8', text: 'Keep your last 8 replays instead of 5.' },
-  { id: 'squad-50', level: 50, kind: 'perk', name: 'Squad of 17', text: 'Room for another player (16 to 17).', go: { screen: 'squad', label: 'Go to Squad' } },
+  { id: 'squad-50', level: 50, kind: 'perk', name: 'Squad of 27', text: 'Room for another player (26 to 27).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'badge-gold', level: 50, kind: 'perk', name: 'Gold badge', text: 'Your level badge turns gold.' },
   { id: 'replays-65', level: 65, kind: 'perk', name: 'Replay shelf of 10', text: 'Keep your last 10 replays.' },
   { id: 'badge-platinum', level: 75, kind: 'perk', name: 'Platinum badge', text: 'Your level badge turns platinum.' },
@@ -189,7 +189,7 @@ export function markUnlocksSeen(save: Save): void {
 const has = (save: Save, id: UnlockId) => isUnlocked(save, id);
 
 /** Base squad cap (MAX_SQUAD in game.ts) plus one at levels 15, 30 and 50. */
-export const BASE_SQUAD_CAP = 14;
+export const BASE_SQUAD_CAP = 24;
 export function squadCap(save: Save): number {
   return BASE_SQUAD_CAP + (['squad-15', 'squad-30', 'squad-50'] as const).filter((id) => has(save, id)).length;
 }

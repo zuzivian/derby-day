@@ -1,14 +1,14 @@
 // three.js match renderer. Reads sim state only, like the 2D PitchRenderer,
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
-import { attackDir, inOwnBox } from '../../sim/field.ts';
+import { attackDir } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer } from './aim3d.ts';
 import { MatchCamera, type CameraMode } from './camera3d.ts';
-import { AnimDirector, keeperSet, readReferee, readRestart } from './director.ts';
+import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
@@ -47,7 +47,8 @@ export interface Renderer3DOptions {
   cinematic?: boolean;
 }
 
-const BALL_VIS_R = 0.17;
+/** Drawn a little larger than a real ball (0.11 m) so it reads at broadcast distance. */
+const BALL_VIS_R = 0.15;
 const CAMERA_KEY = 'derby-camera';
 /** Visual events with no sim cause linger on this clock, so they need their own lifetimes. */
 const NO_EVENTS: AnimEvent[] = [];
@@ -145,6 +146,8 @@ export class Renderer3D implements MatchRenderer {
   private heads: Vector3[] = [];
   private reduced = prefersReducedMotion();
   private celebrate: { i: number; until: number } | null = null;
+  /** The referee turns to the player he is booking until this clock time. */
+  private cardFace: { player: number; until: number } | null = null;
   private lost = false;
   private frameTimes: number[] = [];
   private pixelRatio: number;
@@ -388,31 +391,48 @@ export class Renderer3D implements MatchRenderer {
     this.lastState = s;
 
     const dir = this.director.update(s, clock);
-    const restart = readRestart(s);
+    const restart = s.restart;
     const b = s.ball;
+    // Who has the ball in his hands: a keeper holding it (ball.inHands), the thrower at a throw-in,
+    // or a keeper carrying it out to the spot for a goal kick.
+    const taker = restart && restart.taker >= 0 ? s.players[restart.taker] : null;
+    const throwTaker = restart?.kind === 'throwin' && taker && (restart.stage === 'ready' || Math.hypot(taker.pos.x - restart.spot.x, taker.pos.y - restart.spot.y) < 1.2) ? taker.i : -1;
+    const gkCarry = restart?.kind === 'goalkick' && restart.stage !== 'ready' && taker && taker.role === 'GK' && Math.hypot(taker.pos.x - restart.spot.x, taker.pos.y - restart.spot.y) > 0.8 ? taker.i : -1;
+    const handsOf = throwTaker >= 0 ? throwTaker : gkCarry >= 0 ? gkCarry : b.inHands && b.owner >= 0 ? b.owner : -1;
+    for (const c of dir.cards) {
+      if (c.player >= 0) this.cardFace = { player: c.player, until: clock + 2.4 };
+      if (c.player >= 0 && !s.players[c.player].sentOff) this.aim?.card(c.player, c.color, clock + 3);
+    }
 
-    // Players.
+    // Players. A player sent off is parked far off the pitch by the sim: not drawn.
     for (const p of s.players) {
       const model = this.players[p.i];
-      const ownsInBox = b.owner === p.i && p.role === 'GK' && inOwnBox(p.team, p.pos);
-      const throwHold = !!restart && /throw/i.test(restart.kind) && (restart.taker === p.i || (restart.taker < 0 && b.owner === p.i));
+      model.object.visible = !p.sentOff;
+      if (p.sentOff) continue;
+      const throwHold = p.i === throwTaker && (b.inHands || b.owner === p.i || restart?.stage === 'ready');
       model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, {
         time: clock,
         dtSim,
         lead,
         keeperSet: keeperSet(s, p),
         throwHold,
-        holding: ownsInBox && !throwHold,
+        holding: p.i === handsOf && !throwHold,
         hasBall: b.owner === p.i,
+        wall: inWall(s, p),
         reducedMotion: this.reduced,
       });
       const ev = dir.events[p.i];
       if (ev) for (const e of ev) if (e.kind === 'celebrate') this.celebrate = { i: p.i, until: clock + 2.4 };
     }
 
-    // Referee, when the sim has one.
-    const ref = readReferee(s);
+    // The referee, in black. While showing a card he turns to the player.
+    const ref = s.referee;
     if (ref) {
+      let facing = ref.facing;
+      if (this.cardFace && clock < this.cardFace.until) {
+        const q = s.players[this.cardFace.player];
+        if (q && !q.sentOff) facing = { x: q.pos.x - ref.pos.x, y: q.pos.y - ref.pos.y };
+      }
       if (!this.referee) {
         this.referee = createProceduralPlayer(this.kit, {
           shirt: '#151515',
@@ -423,6 +443,8 @@ export class Renderer3D implements MatchRenderer {
           hair: '#2b1c12',
           hairStyle: 1,
           boots: '#111111',
+          bootSole: '#2a2a2a',
+          bootAccent: '#f4dc1c',
           gloves: null,
           longSleeves: false,
           number: null,
@@ -431,7 +453,7 @@ export class Renderer3D implements MatchRenderer {
         });
         this.scene.add(this.referee.object);
       }
-      this.referee.update(dt, { pos: ref.pos, vel: ref.vel, facing: ref.facing }, dir.referee, {
+      this.referee.update(dt, { pos: ref.pos, vel: ref.vel, facing }, dir.referee, {
         time: clock,
         dtSim,
         lead,
@@ -439,6 +461,7 @@ export class Renderer3D implements MatchRenderer {
         throwHold: false,
         holding: false,
         hasBall: false,
+        wall: false,
         reducedMotion: this.reduced,
       });
     } else if (this.referee) {
@@ -451,18 +474,19 @@ export class Renderer3D implements MatchRenderer {
     if (this.feet) {
       for (const p of s.players) {
         const o = this.players[p.i].object.position;
-        this.m4.makeTranslation(o.x + 0.25, 0.015, o.z - 0.2);
+        if (p.sentOff) this.m4.makeTranslation(0, -50, 0);
+        else this.m4.makeTranslation(o.x + 0.25, 0.015, o.z - 0.2);
         this.feet.setMatrixAt(p.i, this.m4);
       }
       this.feet.count = s.players.length;
       this.feet.instanceMatrix.needsUpdate = true;
     }
 
-    // Ball: in the keeper's hands, overhead for a throw-in, or where the sim has it.
+    // Ball: in someone's hands (see handsOf), or where the sim has it.
     const holder = b.owner >= 0 ? s.players[b.owner] : null;
-    const inHands = !!holder && ((holder.role === 'GK' && inOwnBox(holder.team, holder.pos)) || (!!restart && /throw/i.test(restart.kind)));
-    if (holder && inHands) {
-      this.players[holder.i].handsWorld(this.ball.position);
+    const inHands = handsOf >= 0;
+    if (inHands) {
+      this.players[handsOf].handsWorld(this.ball.position);
       this.ball.position.y += 0.02;
     } else {
       const free = b.owner < 0;
@@ -505,13 +529,28 @@ export class Renderer3D implements MatchRenderer {
       if (dir.goal) this.stadium.ripple(dir.goal.side, this.ball.position, dir.goal.speed);
       this.stadium.update(dt, clock, { excite, ball: { x: this.ball.position.x, y: this.ball.position.z, z: h, speed: sp } });
     }
-    for (const c of dir.cards) if (c.player >= 0) this.aim?.card(c.player, c.color, clock + 3);
 
     // Camera.
     if (this.celebrate && (clock > this.celebrate.until || s.phase !== 'goal')) this.celebrate = null;
     const cel = this.celebrate ? s.players[this.celebrate.i] : null;
-    const focusX = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
-    const focusY = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
+    let focusX = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
+    let focusY = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
+    // Set pieces: frame what matters. A corner or free kick shows the spot and the box it is aimed at,
+    // a throw-in the thrower and the play in front of him.
+    if (restart && restart.stage !== 'whistle') {
+      const gx = restart.team === 0 ? HALF_W * 2 : 0;
+      const k = restart.kind === 'corner' ? 0.2 : restart.kind === 'freekick' || restart.kind === 'penalty' ? 0.3 : 0;
+      focusX = restart.spot.x + (gx - restart.spot.x) * k;
+      focusY = restart.spot.y + (HALF_H - restart.spot.y) * (restart.kind === 'throwin' ? 0.2 : k);
+    }
+    // A booking: frame the referee and the player he is showing the card to.
+    if (this.cardFace && clock < this.cardFace.until && s.referee) {
+      const q = s.players[this.cardFace.player];
+      if (q && !q.sentOff) {
+        focusX = (q.pos.x + s.referee.pos.x) / 2;
+        focusY = (q.pos.y + s.referee.pos.y) / 2;
+      }
+    }
     this.cam.update(
       dt,
       {
@@ -535,10 +574,20 @@ export class Renderer3D implements MatchRenderer {
       const st = this.stadium.stands;
       // A stand the camera sits in or looks through goes to layer 1: still casting its
       // shadow on the pitch (the sun's shadow camera sees layer 1), but not drawn.
-      this.standLayer(st.near, camPos.z < HALF_H + 4);
-      this.standLayer(st.far, camPos.z > -HALF_H - 4);
-      this.standLayer(st.left, camPos.x > -HALF_W - 4);
-      this.standLayer(st.right, camPos.x < HALF_W + 4);
+      const bd = this.stadium.boards;
+      const near = camPos.z < HALF_H + 4;
+      const far = camPos.z > -HALF_H - 4;
+      const left = camPos.x > -HALF_W - 4;
+      const right = camPos.x < HALF_W + 4;
+      this.standLayer(st.near, near);
+      this.standLayer(st.far, far);
+      this.standLayer(st.left, left);
+      this.standLayer(st.right, right);
+      // The boards between the camera and the pitch would hide the near touchline: same treatment.
+      this.standLayer(bd.near, near);
+      this.standLayer(bd.far, far);
+      this.standLayer(bd.left, left);
+      this.standLayer(bd.right, right);
     }
 
     // Shadows follow the view, snapped to texels so they don't shimmer.

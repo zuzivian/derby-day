@@ -3,7 +3,7 @@
 // town outside (car park, trees, low buildings). Sized from the sim constants
 // so the six-a-side arena and a full 105 × 68 pitch both work.
 
-import { BOX_DEPTH, BOX_W, GOAL_BAR_H, GOAL_DEPTH, GOAL_W, PITCH_H, PITCH_W } from '../../sim/constants.ts';
+import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BAR_H, GOAL_DEPTH, GOAL_W, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../../sim/constants.ts';
 import type { TeamSetup } from '../../sim/types.ts';
 import { arcPoints, merge, place, ribbon, type Part } from './geo.ts';
 import { BIG_PITCH, HALF_H, HALF_W, clamp01 } from './space.ts';
@@ -47,6 +47,8 @@ export interface Stadium {
   group: Group;
   /** Stands keyed by side, so the camera can hide the one it looks through. */
   stands: Record<'far' | 'near' | 'left' | 'right', Object3D>;
+  /** The ad boards along each side, so the camera can hide the ones it looks through (like the stands). */
+  boards: Record<'far' | 'near' | 'left' | 'right', Object3D>;
   update(dt: number, time: number, o: { excite: [number, number]; ball: { x: number; y: number; z: number; speed: number } }): void;
   /** A goal went in at this end (0: home goal at x = 0, 1: away goal), ball at scene position. */
   ripple(side: 0 | 1, at: Vector3, strength: number): void;
@@ -540,13 +542,13 @@ export function buildStadium(o: StadiumOptions): Stadium {
   const hh = HALF_H;
   seg([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]], true);
   seg([[0, -hh], [0, hh]]);
-  const centreR = BIG_PITCH ? 9.15 : 5;
+  const centreR = CENTRE_R;
   seg(arcPoints(0, 0, centreR, 0, Math.PI * 2, 72));
   const spot = (x: number, z: number, rr = 0.16) => lines.push({ geo: ribbon(arcPoints(x, z, rr / 2, 0, Math.PI * 2, 12), rr, Y) });
   spot(0, 0, 0.22);
-  const sixD = BOX_DEPTH / 3;
-  const sixW = GOAL_W + 2 * sixD;
-  const penD = BOX_DEPTH * (BIG_PITCH ? 0.667 : 0.75);
+  const sixD = SIX_DEPTH;
+  const sixW = SIX_W;
+  const penD = PENALTY_SPOT;
   for (const s of [-1, 1]) {
     const gx = s * hw;
     const bx = gx - s * BOX_DEPTH;
@@ -555,7 +557,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     seg([[gx, -sixW / 2], [sx6, -sixW / 2], [sx6, sixW / 2], [gx, sixW / 2]]);
     spot(gx - s * penD, 0);
     // The "D": the part of the 9.15 m circle round the spot outside the box.
-    const dr = BIG_PITCH ? 9.15 : 3;
+    const dr = RETREAT;
     const off = BOX_DEPTH - penD;
     if (dr > off) {
       const a = Math.acos(off / dr);
@@ -570,7 +572,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
         let d = a2 - a1;
         if (d > Math.PI) d -= Math.PI * 2;
         if (d < -Math.PI) d += Math.PI * 2;
-        seg(arcPoints(gx, t * hh, 1, a1, a1 + d, 10));
+        seg(arcPoints(gx, t * hh, CORNER_R, a1, a1 + d, 10));
       }
     }
   }
@@ -641,8 +643,9 @@ export function buildStadium(o: StadiumOptions): Stadium {
   const boardTex = keep(boardTexture(o.anisotropy));
   const boardMat = keep(new MeshLambertMaterial({ map: boardTex, emissive: new Color('#ffffff'), emissiveMap: boardTex, emissiveIntensity: 0.45 } as Record<string, unknown>));
   const boardBack = keep(new MeshLambertMaterial({ color: '#6b7178' }));
-  const boards = new Group();
+  const boards = { far: new Group(), near: new Group(), left: new Group(), right: new Group() };
   const addBoard = (x0: number, z0: number, x1: number, z1: number) => {
+    const side: keyof typeof boards = Math.abs(z0 - z1) < 0.01 ? (z0 < 0 ? 'far' : 'near') : x0 < 0 ? 'left' : 'right';
     const len = Math.hypot(x1 - x0, z1 - z0);
     if (len < 0.5) return;
     const g = new BoxGeometry(len, BOARD_H, 0.12);
@@ -655,7 +658,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     m.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
     m.castShadow = true;
     m.receiveShadow = true;
-    boards.add(m);
+    boards[side].add(m);
   };
   const bx = hw + BOARD_END;
   const bz = hh + BOARD_SIDE;
@@ -671,7 +674,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
       addBoard(x, s * gap, x, s * bz);
     } else addBoard(x, -s * bz, x, s * bz);
   }
-  group.add(boards);
+  group.add(boards.far, boards.near, boards.left, boards.right);
 
   // --- stands, crowd, flags --------------------------------------------------
   const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
@@ -997,6 +1000,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
   return {
     group,
     stands,
+    boards,
     update(dt, time, s) {
       for (const m of fanMats) {
         m.uniforms.uTime.value = time;
@@ -1004,7 +1008,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
         m.uniforms.uExcite.value = clamp01(s.excite[side]);
       }
       // Nets: ripples and the ball pressing in.
-      const BALL_VIS_R = 0.17;
+      const BALL_VIS_R = 0.15;
       for (const side of [0, 1] as const) {
         const list = impulses[side];
         for (const im of list) im.age += dt;

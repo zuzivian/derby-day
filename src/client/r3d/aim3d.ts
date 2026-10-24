@@ -2,7 +2,7 @@
 // the target reticle and aim wedge, pass/through/chip previews, the marker
 // and ground ring under the controlled player, stamina bars and name tags.
 
-import { AIR_DRAG, CHIP_Z0, GRAVITY } from '../../sim/constants.ts';
+import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
 import { humanPass, loftPlan, pointerPass } from '../../sim/kicks.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
@@ -153,6 +153,7 @@ export class AimLayer {
   private wedgeMat: ShaderMaterial;
   private recvRing: Mesh;
   private switchRing: Mesh;
+  private retreat: Mesh;
   private chipDots: InstancedMesh;
   private chipRing: Mesh;
   private markers: Sprite[] = [];
@@ -204,6 +205,9 @@ export class AimLayer {
     this.wedge.renderOrder = 4;
 
     this.recvRing = flat(new Mesh(keepG(new RingGeometry(0.85, 1.0, 40)), keepM(overlay('#ffffff', 0.75))), 0.04) as Mesh;
+    // Pale blue, not white, so it doesn't read as a pitch marking.
+    this.retreat = flat(new Mesh(keepG(new RingGeometry(RETREAT - 0.06, RETREAT + 0.06, 96)), keepM(overlay('#9fd4ff', 0.6))), 0.03) as Mesh;
+    this.retreat.renderOrder = 3;
     this.switchRing = flat(new Mesh(keepG(new RingGeometry(0.9, 1.08, 40)), keepM(overlay('#ffd60a', 0.9))), 0.04) as Mesh;
 
     this.chipDots = new InstancedMesh(keepG(new SphereGeometry(0.09, 8, 6)), keepM(new MeshBasicMaterial({ color: '#8cdcff', transparent: true, opacity: 0.9, toneMapped: false })), 28);
@@ -241,7 +245,7 @@ export class AimLayer {
     this.bars.frustumCulled = false;
     this.bars.renderOrder = 19;
 
-    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
+    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.retreat, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
   }
 
   private name(p: MatchPlayer): Sprite {
@@ -282,8 +286,9 @@ export class AimLayer {
     const me: 0 | 1 = x.team ?? (s.humans[0] || !s.humans[1] ? 0 : 1);
     const both = s.humans[0] && s.humans[1];
     const ctrl = s.controlled[me] >= 0 && s.humans[me] ? s.players[s.controlled[me]] : null;
-    const live = s.phase === 'play' || s.phase === 'kickoff';
-    const hasBall = !!ctrl && s.ball.owner === ctrl.i && s.phase === 'play';
+    const live = s.phase === 'play' || s.phase === 'kickoff' || s.phase === 'restart';
+    // A human taking a set piece aims it like any other kick.
+    const hasBall = !!ctrl && s.ball.owner === ctrl.i && (s.phase === 'play' || (s.phase === 'restart' && s.restart?.stage === 'ready'));
     const cursor = x.cursor;
     // World overlays grow a little with camera distance so they stay readable when zoomed out.
     const k = Math.max(0.8, Math.min(1.5, f.camDist / 40));
@@ -393,6 +398,12 @@ export class AimLayer {
     const showBarsFor = (p: MatchPlayer) => s.humans[p.team];
     for (const p of s.players) {
       const head = f.heads[p.i];
+      if (p.sentOff) {
+        this.alpha[p.i] = 0;
+        const n = this.names.get(p.i);
+        if (n) n.visible = false;
+        continue;
+      }
       const isCtrl = s.humans[p.team] && s.controlled[p.team] === p.i;
       const near = Math.hypot(p.pos.x - bx, p.pos.y - by) < 6;
       const level = clamp01((p.energy - 0.4) / 0.6);
@@ -413,9 +424,14 @@ export class AimLayer {
     this.bars.instanceMatrix.needsUpdate = true;
     (this.bars.geometry.attributes.aFill as InstancedBufferAttribute).needsUpdate = true;
     (this.bars.geometry.attributes.aAlpha as InstancedBufferAttribute).needsUpdate = true;
+    // Free kicks and corners: the 9.15 m the defending side must give, while it is being set up.
+    const r = s.restart;
+    const ring = !!r && (r.kind === 'freekick' || r.kind === 'corner') && r.stage !== 'whistle';
+    this.retreat.visible = ring;
+    if (r && ring) this.retreat.position.set(sx(r.spot.x), 0.03, sz(r.spot.y));
     for (const [i, c] of this.cards) {
       const head = f.heads[i];
-      c.sprite.visible = f.time < c.until && !!head;
+      c.sprite.visible = f.time < c.until && !!head && !s.players[i]?.sentOff;
       if (head) c.sprite.position.set(head.x, head.y + 0.85, head.z);
     }
   }

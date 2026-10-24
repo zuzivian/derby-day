@@ -3,11 +3,10 @@
 
 import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
-import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
+import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { mountJuice } from './fx.ts';
-import { hudMarkup, mountHud } from './hud.ts';
-import { classifyEvent } from './r3d/director.ts';
+import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { InputController } from './input.ts';
 import type { RenderExtras } from './render.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
@@ -36,6 +35,26 @@ export interface MatchInputSource {
   take(): HumanInput | TeamInputs;
   extras(): RenderExtras;
   dispose(): void;
+}
+
+/** A short banner for a referee decision, or null for events that don't need one. */
+export function refereeCall(s: MatchState, e: MatchEvent): string | null {
+  const team = s.teams[e.team]?.name ?? '';
+  switch (e.kind) {
+    case 'offside':
+      return `Offside: ${s.players[e.player].name}`;
+    case 'card':
+      return e.color === 'yellow' ? `Yellow card: ${e.name}` : e.secondYellow ? `Second yellow, red card: ${e.name}` : `Red card: ${e.name}`;
+    case 'advantage':
+      return 'Advantage';
+    case 'restart':
+      if (e.restart === 'penalty') return `Penalty to ${team}`;
+      if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
+      if (e.restart === 'corner') return `Corner to ${team}`;
+      return null;
+    default:
+      return null;
+  }
 }
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -67,7 +86,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`}</p>
+    <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
@@ -95,6 +115,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
     return { take: () => c.take(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
+  // The controls line is one line until asked for (the drills taught them); the button opens it all.
+  $('hint-more').addEventListener('click', (e) => {
+    const open = $('controls-hint').classList.toggle('clamp') === false;
+    $('hint-more').setAttribute('aria-expanded', String(open));
+    $('hint-more').textContent = open ? 'Fewer' : 'All controls';
+    if ((e as MouseEvent).detail > 0) canvas.focus({ preventScroll: true });
+  });
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
   $('forfeit').addEventListener('click', () => finish(true));
@@ -115,6 +142,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let last = performance.now();
   let acc = 0;
   let lastGoals = 0;
+  let lastEvent = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
@@ -160,9 +188,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     $('sb-min').textContent = `${matchMinute(s)}'`;
     $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`;
 
-    while (s.events.length > lastGoals) {
-      const ev = s.events[lastGoals++];
-      if (classifyEvent(s, ev).kind !== 'goal') continue;
+    // Referee's calls: offside, fouls, cards, penalties, set pieces, as big HUD words (goals have their own below).
+    while (lastEvent < s.events.length) {
+      const e = s.events[lastEvent++];
+      const w = refereeWord(s, e);
+      if (w) banner(w.word, 1500, w.sub);
+      const call = refereeCall(s, e);
+      if (call) announce(call);
+    }
+    if (s.goals.length > lastGoals) {
+      const ev = s.goals[s.goals.length - 1];
+      lastGoals = s.goals.length;
       banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }

@@ -8,11 +8,11 @@
 // (it carries both club names for screen readers).
 
 import type { CrestPattern } from '../meta/names.ts';
-import { PITCH_H, PITCH_W } from '../sim/constants.ts';
-import type { MatchState, TeamSetup } from '../sim/types.ts';
+import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { matchSeconds } from '../sim/rules.ts';
+import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import { HUMAN_COLORS } from './render.ts';
-import { classifyEvent } from './r3d/director.ts';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -70,10 +70,29 @@ export interface Hud {
   dispose(): void;
 }
 
-/** Match clock as MM:SS of the 90 shown minutes. */
+/**
+ * The big HUD word for a referee's call (goals, half and full time are shown by the match view
+ * from s.goals and the phase), with a smaller line under it.
+ */
+export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string } | null {
+  const name = (i: number) => (i >= 0 && s.players[i] ? s.players[i].name : undefined);
+  switch (e.kind) {
+    case 'offside':
+      return { word: 'Offside', sub: name(e.player) };
+    case 'foul':
+      if (e.advantage) return { word: 'Advantage', sub: s.teams[e.team === 0 ? 1 : 0].name };
+      return e.penalty ? { word: 'Penalty', sub: s.teams[e.team === 0 ? 1 : 0].name } : { word: 'Foul', sub: name(e.player) };
+    case 'card':
+      // A second yellow is followed by its red in the same tick; the red is the word left showing.
+      return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
+    default:
+      return null;
+  }
+}
+
+/** Match clock as MM:SS of the 90 shown minutes (matchSeconds: live play only, so it holds at stoppages). */
 export function matchClock(s: MatchState): string {
-  const total = Math.max(1, s.halfTicks * 2);
-  const secs = Math.min(90 * 60, Math.floor((s.clock / total) * 90 * 60));
+  const secs = matchSeconds(s);
   const mm = Math.floor(secs / 60);
   const ss = secs % 60;
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
@@ -88,7 +107,6 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   const fill = power.querySelector('i') as HTMLElement;
   const ctx = radar.getContext('2d');
   let until = 0;
-  let nEvents = s0.events.length;
   let lastClock = '';
   let lastCharge = -1;
   const colors: [string, string] = [s0.teams[0].primary, s0.teams[1].primary];
@@ -121,10 +139,13 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     ctx.lineTo(PITCH_W / 2, PITCH_H);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(PITCH_W / 2, PITCH_H / 2, PITCH_H * 0.13, 0, Math.PI * 2);
+    ctx.arc(PITCH_W / 2, PITCH_H / 2, CENTRE_R, 0, Math.PI * 2);
     ctx.stroke();
-    const dot = 2.6 * dpr / k;
+    ctx.strokeRect(0, (PITCH_H - BOX_W) / 2, BOX_DEPTH, BOX_W);
+    ctx.strokeRect(PITCH_W - BOX_DEPTH, (PITCH_H - BOX_W) / 2, BOX_DEPTH, BOX_W);
+    const dot = (2.3 * dpr) / k;
     for (const p of s.players) {
+      if (p.sentOff) continue;
       const ctrl = s.humans[p.team] && s.controlled[p.team] === p.i;
       ctx.fillStyle = colors[p.team];
       ctx.strokeStyle = ctrl ? HUMAN_COLORS[s.humans[0] && s.humans[1] ? p.team : 0] : 'rgba(0,0,0,.7)';
@@ -163,15 +184,6 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         fill.style.width = `${Math.round(charge * 100)}%`;
         power.classList.toggle('on', charge > 0);
         power.classList.toggle('hot', charge > SWEET_SPOT + 0.05);
-      }
-      // Fouls and offsides from a richer sim's events.
-      if (s.events.length > nEvents) {
-        for (let i = nEvents; i < s.events.length; i++) {
-          const k = classifyEvent(s, s.events[i]).kind;
-          if (k === 'foul') hud.word('Foul', 1400);
-          else if (k === 'offside') hud.word('Offside', 1400);
-        }
-        nEvents = s.events.length;
       }
       drawRadar(s);
       if (until && performance.now() > until) {

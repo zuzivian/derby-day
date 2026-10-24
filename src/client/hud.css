@@ -76,6 +76,14 @@
   .hud .hud-word { animation: none; }
 }
 
+/* The controls line under the pitch: one line, with a button to show it all. */
+.controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+.hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.hint-more:hover { color: var(--ink); }
+@media (pointer: coarse) {
+  .hint-more { display: none; }
+}
+
 /* Replay viewer stage (src/client/replayView.ts) */
 .rp-stage { position: relative; width: min(100%, calc((100vh - 300px) * 1.531)); margin: 0 auto; }
 .rp-stage .replay-canvas { width: 100%; }

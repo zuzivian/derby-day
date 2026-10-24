@@ -19,7 +19,7 @@ for (let seed = 1; seed < 200; seed++) {
     step(s, rec.push({ cursor, pass: t % 150 === 0, sprint: t % 400 < 90 }));
     t++;
   }
-  if (s.events.length >= minGoals) {
+  if (s.goals.length >= minGoals) {
     console.log(encodeReplay(rec.finish(s, 1_700_000_000)));
     process.exit(0);
   }
