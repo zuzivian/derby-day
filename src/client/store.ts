@@ -3,8 +3,25 @@
 
 import { isSave, type Save } from '../meta/game.ts';
 
-const SAVE_KEY = 'overlap.save.v1';
-const PREFS_KEY = 'overlap.prefs.v1';
+const SAVE_KEY = 'throughball.save.v1';
+const PREFS_KEY = 'throughball.prefs.v1';
+
+// The game was called Overlap until 2026-10-24. Copy anything saved under the old
+// keys so existing clubs, settings and replays carry over. Runs once, on import.
+const LEGACY_KEYS: [string, string][] = [
+  ['overlap.save.v1', SAVE_KEY],
+  ['overlap.prefs.v1', PREFS_KEY],
+  ['overlap.replays.v1', 'throughball.replays.v1'],
+  ['overlap.audio.muted.v1', 'throughball.audio.muted.v1'],
+];
+try {
+  for (const [from, to] of LEGACY_KEYS) {
+    const old = localStorage.getItem(from);
+    if (old !== null && localStorage.getItem(to) === null) localStorage.setItem(to, old);
+  }
+} catch {
+  /* storage unavailable */
+}
 
 export type ControlStyle = 'mouse' | 'keys';
 

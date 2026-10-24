@@ -1,5 +1,5 @@
 // Zero-dependency build: bundle with Bun, inline into one HTML file.
-//   bun run build           -> dist/index.html (open directly) + dist/overlap.artifact.html
+//   bun run build           -> dist/index.html (open directly) + dist/through-ball.artifact.html
 //   bun run dev             -> rebuild on change and serve on http://localhost:5173
 
 import { watch } from 'node:fs';
@@ -25,7 +25,7 @@ async function build(): Promise<void> {
   await mkdir(dist, { recursive: true });
   await writeFile(`${dist}/index.html`, full);
   // The artifact host supplies its own document skeleton.
-  await writeFile(`${dist}/overlap.artifact.html`, fragment);
+  await writeFile(`${dist}/through-ball.artifact.html`, fragment);
   console.log(`built in ${Math.round(performance.now() - t0)} ms, ${(full.length / 1024).toFixed(0)} KB`);
 }
 

@@ -278,9 +278,11 @@ export class ReplaySeeker {
 }
 
 // ---------------------------------------------------------------------------
-// Compact code: binary body, base64url, "OVR1." prefix, FNV checksum.
+// Compact code: binary body, base64url, "TB1." prefix, FNV checksum. Codes made
+// before the rename start "OVR1." and decode the same way.
 
-const PREFIX = 'OVR1.';
+const PREFIX = 'TB1.';
+const LEGACY_PREFIXES = ['OVR1.'];
 const MAX_TICKS = 600_000;
 const ROLES: Role[] = ['GK', 'DEF', 'MID', 'FWD'];
 const ATTRS: (keyof SimAttrs)[] = ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'stamina', 'goalkeeping'];
@@ -608,10 +610,11 @@ export function decodeReplay(code: string): Replay {
 
 function decodeBody(code: string): Replay {
   const text = code.replace(/\s+/g, '');
-  if (!text.startsWith(PREFIX)) throw new Error('That is not an Overlap replay code.');
+  const prefix = [PREFIX, ...LEGACY_PREFIXES].find((p) => text.startsWith(p));
+  if (!prefix) throw new Error('That is not a Through Ball replay code.');
   let bytes: Uint8Array;
   try {
-    bytes = fromBase64Url(text.slice(PREFIX.length));
+    bytes = fromBase64Url(text.slice(prefix.length));
   } catch {
     throw new Error('Replay code is damaged or cut short.');
   }

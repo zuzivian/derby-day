@@ -53,7 +53,7 @@ jobs:
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: overlap-dist
+          name: through-ball-dist
           path: dist/index.html
           if-no-files-found: error
 

@@ -59,7 +59,7 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
       case 'welcome':
         return `<section class="panel ob-card ob-welcome" aria-labelledby="ob-title">
           <h2 id="ob-title" class="ob-title" tabindex="-1">Welcome, coach</h2>
-          <p class="ob-lede">Overlap is a football club manager where you also play every match yourself, with the mouse or the keyboard.</p>
+          <p class="ob-lede">Through Ball is a football club manager where you also play every match yourself, with the mouse or the keyboard.</p>
           <p class="muted">Setup takes about two minutes: name your club, pick your controls, then a short session on the training ground.</p>
           <div class="ob-nav"><span></span><button class="btn primary big" data-ob="next" type="button">Set up my club</button></div>
         </section>`;
@@ -137,7 +137,7 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
     const key = focusTitle ? null : captureFocus(host);
     host.innerHTML = `
       <header class="ob-top">
-        <h1 class="wordmark">Overlap</h1>
+        <h1 class="wordmark">Through Ball</h1>
         <button class="btn small ghost" data-action="skip-onboarding" type="button">Skip setup</button>
       </header>
       <nav class="ob-steps" aria-label="Setup progress">${progress()}</nav>

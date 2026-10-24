@@ -146,7 +146,7 @@ export function crowdLevel(s: MatchState): number {
 // ---------------------------------------------------------------------------
 // Engine (browser)
 
-export const MUTE_KEY = 'overlap.audio.muted.v1';
+export const MUTE_KEY = 'throughball.audio.muted.v1';
 const MASTER_GAIN = 0.55;
 
 export function loadMuted(): boolean {

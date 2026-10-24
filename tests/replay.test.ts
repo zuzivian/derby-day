@@ -76,10 +76,16 @@ describe('replay recording', () => {
 });
 
 describe('replay codes', () => {
+  test('codes made before the rename (OVR1.) still decode', () => {
+    const { replay } = playLive(11, 6);
+    const legacy = 'OVR1.' + encodeReplay(replay).slice('TB1.'.length);
+    expect(encodeReplay(decodeReplay(legacy))).toBe(encodeReplay(replay));
+  });
+
   test('encode then decode round-trips everything, byte for byte', () => {
     const { replay } = playLive(11, 6);
     const code = encodeReplay(replay);
-    expect(code.startsWith('OVR1.')).toBe(true);
+    expect(code.startsWith('TB1.')).toBe(true);
     expect(/^[A-Za-z0-9._-]+$/.test(code)).toBe(true);
     const back = decodeReplay(code);
     expect(back).toEqual(replay);
@@ -96,14 +102,14 @@ describe('replay codes', () => {
   test('rejects garbage, truncation and tampering with a readable error', () => {
     const { replay } = playLive(5, 3);
     const code = encodeReplay(replay);
-    expect(() => decodeReplay('hello')).toThrow(/not an Overlap replay/);
-    expect(() => decodeReplay('')).toThrow(/not an Overlap replay/);
+    expect(() => decodeReplay('hello')).toThrow(/not a Through Ball replay/);
+    expect(() => decodeReplay('')).toThrow(/not a Through Ball replay/);
     expect(() => decodeReplay(code.slice(0, code.length - 9))).toThrow(/damaged or cut short/);
     const mid = Math.floor(code.length / 2);
     const flipped = code.slice(0, mid) + (code[mid] === 'A' ? 'B' : 'A') + code.slice(mid + 1);
     expect(() => decodeReplay(flipped)).toThrow(/damaged or cut short/);
-    expect(() => decodeReplay('OVR1.!!!!')).toThrow(/damaged or cut short/);
-    expect(() => decodeReplay('OVR1.AAAAAAAAAAAAAAAA')).toThrow(/damaged or cut short|newer/);
+    expect(() => decodeReplay('TB1.!!!!')).toThrow(/damaged or cut short/);
+    expect(() => decodeReplay('TB1.AAAAAAAAAAAAAAAA')).toThrow(/damaged or cut short|newer/);
   });
 
   test('odd team data survives: unicode names, non-hex colours, awkward floats', () => {

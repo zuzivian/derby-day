@@ -6,7 +6,7 @@ const { execFileSync } = require('node:child_process');
 const { test, expect } = require('./lib/harness.cjs');
 const { SEL, openApp, goTab, skipOnboarding, startRanked, pageWidths } = require('./lib/helpers.cjs');
 
-const REPLAYS_KEY = 'overlap.replays.v1';
+const REPLAYS_KEY = 'throughball.replays.v1';
 const SHORT = { halfSeconds: 3 };
 const VIEWER = '.replay-viewer';
 
@@ -62,7 +62,7 @@ test('replay: a played match is recorded, listed under Recent, and the viewer dr
   expect(await page.locator('.modal').innerText(), 'size shown').toMatch(/\d+(\.\d)? (B|KB)/);
   const stored = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '[]'), REPLAYS_KEY);
   expect(stored.length, 'one replay stored').toBe(1);
-  expect(stored[0].code.startsWith('OVR1.'), 'code prefix').toBe(true);
+  expect(stored[0].code.startsWith('TB1.'), 'code prefix').toBe(true);
 
   await page.locator(SEL.modalClose).click();
   await page.locator(SEL.modal).waitFor({ state: 'detached' });
@@ -193,7 +193,7 @@ test('replay: copy a code, paste it back, and a bad code is refused politely', a
   // Paste: garbage first.
   await page.fill('#replay-paste', 'not a replay');
   await page.locator('[data-replay="paste"]').click();
-  expect(await page.locator('#replay-paste-msg').innerText(), 'error shown').toMatch(/not an Overlap replay/i);
+  expect(await page.locator('#replay-paste-msg').innerText(), 'error shown').toMatch(/not a Through Ball replay/i);
   expect(await page.locator(VIEWER).count(), 'no viewer').toBe(0);
   await page.fill('#replay-paste', code.slice(0, code.length - 12));
   await page.locator('[data-replay="paste"]').click();
@@ -219,7 +219,7 @@ test('replay: when the clipboard is refused, the code is offered in a selected t
   await page.goto(require('./lib/helpers.cjs').APP_URL);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
-  await page.evaluate(() => localStorage.setItem('overlap.prefs.v1', JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true })));
+  await page.evaluate(() => localStorage.setItem('throughball.prefs.v1', JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true })));
   await page.reload();
   await skipOnboarding(page);
   await startRanked(page);
@@ -228,7 +228,7 @@ test('replay: when the clipboard is refused, the code is offered in a selected t
   await page.locator('.modal [data-replay="copy"]').click();
   await page.locator('#rc-text').waitFor();
   const sel = await page.$eval('#rc-text', (el) => ({ v: el.value, a: el.selectionStart, b: el.selectionEnd, focused: document.activeElement === el }));
-  expect(sel.v.startsWith('OVR1.'), 'code in the textarea').toBe(true);
+  expect(sel.v.startsWith('TB1.'), 'code in the textarea').toBe(true);
   expect([sel.a, sel.b], 'all of it is selected').toEqual([0, sel.v.length]);
   expect(sel.focused, 'and focused').toBe(true);
 

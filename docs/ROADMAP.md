@@ -1,6 +1,6 @@
-# Overlap roadmap: from prototype to live service
+# Through Ball roadmap: from prototype to live service
 
-Working title **Overlap** (the run a full-back makes around a winger). The old game that inspired this is not named anywhere in the product. Clubs, players, nations and the currency (club florins, ƒ) are all generated.
+Working title **Through Ball** (the pass into space behind the defence, which is also this game's signature move: Ctrl/Cmd-click). The old game that inspired this is not named anywhere in the product. Clubs, players, nations and the currency (club florins, ƒ) are all generated.
 
 ## The bet
 
