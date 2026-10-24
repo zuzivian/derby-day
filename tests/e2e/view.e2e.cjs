@@ -46,6 +46,18 @@ test('3D view: the mouse wheel, + / - and the touch buttons zoom the camera, wit
   expect(await page.evaluate(() => window.scrollY), 'wheel over the pitch does not scroll the page').toBe(0);
   await page.keyboard.press('0');
   expect(await zoom(), '0 resets').toBe(1);
+  // A gentle trackpad scroll (40 events of 3 px) zooms a little, not to the limit.
+  await page.evaluate(() => {
+    const el = document.querySelector('#pitch');
+    for (let i = 0; i < 40; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 3, deltaMode: 0, bubbles: true, cancelable: true }));
+  });
+  const gentle = await zoom();
+  expect(gentle, 'a gentle scroll zooms out a bit').toBeGreaterThan(1.05);
+  expect(gentle, 'but nowhere near the limit').toBeLessThan(1.3);
+  // The wheel over a HUD button doesn't scroll the page.
+  const prevented = await page.evaluate(() => !document.querySelector('#cam-btn').dispatchEvent(new WheelEvent('wheel', { deltaY: 30, bubbles: true, cancelable: true })));
+  expect(prevented, 'the wheel over a HUD button zooms instead of scrolling the page').toBe(true);
+  await page.keyboard.press('0');
   await page.keyboard.press('Minus');
   const kept = await zoom();
   expect(kept, '- zooms out').toBeGreaterThan(1);

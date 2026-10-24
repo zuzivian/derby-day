@@ -140,7 +140,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           </div>
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
-          <p class="hint">Esc or P pauses. Mouse wheel or + / − zooms the camera.</p>
+          <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
       <div class="touch-pad" aria-hidden="true">
@@ -154,6 +154,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
   const renderer = createMatchRenderer(canvas);
+  // Only the 3D view zooms (the 2D one already shows the whole pitch).
+  if (renderer.kind !== '3d') root.querySelector('#zoom-hint')?.remove();
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   let paused = false;
   let done = false;
@@ -403,7 +405,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     while (lastEvent < s.events.length) {
       const e = s.events[lastEvent++];
       const w = refereeWord(s, e);
-      if (w) banner(w.word, 1500, w.sub);
+      if (w?.live) hud.tag(w.word, 1800, w.sub);
+      else if (w) banner(w.word, 1500, w.sub);
       const call = refereeCall(s, e);
       if (call) announce(call);
     }

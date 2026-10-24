@@ -15,7 +15,7 @@
 
 import type { HumanInput, TeamInputs } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
-import { CLICK_MS, leftRelease, loftPower, MOVE_PX, shotPower, SHOT_FULL_MS, type WorldPicker } from './input.ts';
+import { CLICK_MS, latchedPoint, leftRelease, loftPower, MOVE_PX, shotPower, SHOT_FULL_MS, type WorldPicker } from './input.ts';
 
 export interface PadKeys {
   up: string[];
@@ -118,8 +118,12 @@ export class HotseatInput {
   mouse = false;
   private pads: [Pad, Pad] = [new Pad(P1_KEYS), new Pad(P2_KEYS)];
   private cleanup: (() => void)[] = [];
-  /** Last pointer position, client pixels: re-projected each tick, since a 3D camera moves under a still mouse. */
+  /**
+   * Last pointer position, client pixels. As in InputController, the world point is taken when the
+   * mouse moves and kept while it is still (and again when the renderer reports a cut).
+   */
   private client: { x: number; y: number } | null = null;
+  private cutSeen = -1;
   /** Player 1's on-screen pointer travel since the last tick (HumanInput.moved). */
   private travel = 0;
 
@@ -177,9 +181,10 @@ export class HotseatInput {
 
     // Player 1's mouse: the same scheme as a normal match.
     const toWorld = (e: PointerEvent) => {
-      this.client = { x: e.clientX, y: e.clientY };
       const r = canvas.getBoundingClientRect();
-      return picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      const w = latchedPoint(this.cursor, this.client, e, () => picker.toWorld(e.clientX - r.left, e.clientY - r.top));
+      this.client = { x: e.clientX, y: e.clientY };
+      return w;
     };
     on(canvas, 'pointermove', (e) => {
       if (e.pointerType !== 'mouse') return;
@@ -224,9 +229,13 @@ export class HotseatInput {
     const p = this.pads[team];
     const k = p.keys;
     const input: HumanInput = {};
-    if (team === 0 && this.mouse && this.client) {
-      const r = this.canvas.getBoundingClientRect();
-      this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
+    const cuts = this.picker.cuts?.() ?? 0;
+    if (team === 0 && cuts !== this.cutSeen) {
+      this.cutSeen = cuts;
+      if (this.mouse && this.client) {
+        const r = this.canvas.getBoundingClientRect();
+        this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
+      }
     }
     const pointer = team === 0 && this.mouse && this.cursor;
     if (pointer) {
