@@ -192,8 +192,12 @@ async function openApp(t, opts = {}) {
  * localStorage when the page that wrote it unloads, now and then, even for a static page that only writes a key.
  * Measured on such a page, 40 runs each: a second page with the old one left open lost 0 (at 6 s and at 15 s);
  * page.reload() 3 (at 15 s); close then reopen 13 and 8; a real on-disk profile closed and relaunched 1.
- * The new page sets window.__e2eSkipTabGuard so a one-club-per-browser guard does not block it while the old page is open;
- * it is a different flag from __e2e, so tests of that guard (which set __e2e) still meet it.
+ * The new page sets window.__e2eSkipTabGuard, because the first page stays open and owns the club and a one-club-per-browser
+ * guard would otherwise park the returned page; it is a different flag from __e2e, so tests of that guard (which set __e2e) still
+ * meet it. It also sets window.__e2e (the live-match hooks) when `e2e` is true, the default (nextVisit); openApp passes its own
+ * e2eHook option so a test sees what it asked for.
+ * The first page stays inert after seeding: it sits on Home, and nothing on Home runs a timer or writes the save (timers and
+ * unload handlers exist only in a match, the tutorial and the two-player lobbies), so it cannot overwrite the second page's saves.
  */
 async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
   const next = await page.context().newPage(); // fonts are blocked and errors watched for the whole context (run.cjs)
