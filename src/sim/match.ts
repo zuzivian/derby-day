@@ -278,6 +278,11 @@ function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): vo
 
 function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigma: number, receiver: number): void {
   const b = s.ball;
+  // Law 12: an opponent may not prevent a keeper releasing the ball. Those standing close
+  // can't touch his throw, roll or punt until it is past them.
+  if (b.inHands && b.owner === p.i) {
+    for (const o of s.players) if (o.team !== p.team && dist(o.pos, p.pos) < RELEASE_CLEAR) b.noPickup[o.i] = Math.max(b.noPickup[o.i], RELEASE_CLEAR_TICKS);
+  }
   const dir = rotate(norm(sub(target, b.pos)), gauss(s.rng) * errSigma);
   b.vel = scale(dir, speed);
   b.owner = -1;
@@ -595,6 +600,9 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
 
 /** Law 12: a keeper with the ball in his hands may not be challenged. Opponents are kept this far off him. */
 export const KEEPER_SPACE = 1.5;
+/** Opponents this close when he releases it can't touch the ball for RELEASE_CLEAR_TICKS (Law 12). */
+const RELEASE_CLEAR = 2.5;
+const RELEASE_CLEAR_TICKS = 20;
 
 function separate(s: MatchState): void {
   const ps = s.players;

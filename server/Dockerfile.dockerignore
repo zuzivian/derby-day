@@ -1,0 +1,4 @@
+*
+!server/
+!src/
+src/client/

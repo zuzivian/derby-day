@@ -11,7 +11,7 @@ import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
 import { announce, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
-import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
+import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
 import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
@@ -24,7 +24,8 @@ import { mountAfterMatch, mountWelcome } from './onboarding.ts';
 import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
-import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
+import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
+import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
 import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
@@ -171,6 +172,7 @@ function startOnboarding() {
       app.prefs.onboarded = true;
       writePrefs(app.prefs);
       app.screen = 'home';
+      if (openInvite()) return; // came from an invite link: straight to the online lobby
       render();
       if (!root.querySelector('.modal')) focusMain(true);
     },
@@ -208,6 +210,7 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
         stop();
         takeover = false;
         app.screen = 'home';
+        if (openInvite()) return; // a friend's invite was waiting on this first match
         render();
         if (!root.querySelector('.modal')) focusMain(true);
       },
@@ -492,6 +495,9 @@ root.addEventListener('click', (e) => {
     case 'play-link':
       if (isUnlocked(s, 'link')) startVersus(mountLink);
       return;
+    case 'play-online':
+      if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
+      return;
     case 'auto-lineup':
       s.lineup = autoLineup(s.squad, s.formation);
       toast('Best XI picked.');
@@ -652,6 +658,44 @@ document.addEventListener('keydown', (e) => {
   } else trapTab(modal, e);
 });
 
-if (app.prefs.onboarded === false) startOnboarding();
-else render();
+/**
+ * An invite link (?join=CODE). It opens the online lobby with the code once vs Player is open
+ * (the same unlock as the Online button). A brand-new club plays its first match first, with the
+ * welcome as usual: the invite waits (in sessionStorage, so a reload keeps it) and opens when that
+ * match is done. If the club still can't play online, a toast says when it can.
+ */
+const JOIN_KEY = 'derbyday.pendingJoin';
+let pendingJoin = relayConfig() ? inviteCode() : null;
+try {
+  if (pendingJoin) sessionStorage.setItem(JOIN_KEY, pendingJoin);
+  else if (relayConfig()) pendingJoin = sessionStorage.getItem(JOIN_KEY);
+} catch {
+  /* storage blocked: the invite lives as long as this page */
+}
+if (location.search.includes('join=')) history.replaceState(null, '', location.href.replace(/([?&])join=[^&#]*&?/, '$1').replace(/[?&](#|$)/, '$1'));
+function dropInvite() {
+  pendingJoin = null;
+  try {
+    sessionStorage.removeItem(JOIN_KEY);
+  } catch {
+    /* nothing stored */
+  }
+}
+/** Open the waiting invite if the club can play online. Returns true when the lobby took over the page. */
+function openInvite(): boolean {
+  const code = pendingJoin;
+  if (!code || app.prefs.onboarded === false) return false;
+  dropInvite();
+  if (!isUnlocked(app.save, 'link')) {
+    toast(`A friend invited you to an online friendly, but vs Player opens at club level ${unlockLevel(app.save, 'link')}. Ask them for a new link once you're there.`, false);
+    return false;
+  }
+  startVersus((r, o) => mountOnline(r, { ...o, joinCode: code }));
+  return true;
+}
+
+if (app.prefs.onboarded === false) {
+  startOnboarding();
+  if (pendingJoin) toast('A friend invited you to an online friendly. Play your first match, then you will join them.');
+} else if (!openInvite()) render();
 if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

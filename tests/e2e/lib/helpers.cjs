@@ -76,6 +76,15 @@ const SEL = {
   netMatch: '#net-match',
   netWait: '#net-wait',
   netStop: '#net-stop',
+  // Online (versus.ts, mountOnline)
+  playOnline: '[data-action="play-online"]',
+  onlineLobby: '#online-lobby',
+  onlineHost: '#online-host',
+  onlineCode: '#online-code',
+  onlineLink: '#online-link',
+  onlineCodeInput: '#online-code-input',
+  onlineJoin: '#online-join',
+  onlineStatus: '#online-status',
   resultNote: '.modal .result-note',
   // Match
   pitch: '#pitch',
@@ -148,7 +157,7 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -158,7 +167,9 @@ async function openApp(t, opts = {}) {
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
   // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
   if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
-  await page.goto(renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL);
+  // query: extra page parameters, e.g. 'relay=ws://127.0.0.1:8787/ws' for online tests.
+  const base = renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL;
+  await page.goto(query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   if (prefs || mutateSave) {
@@ -178,6 +189,24 @@ async function openApp(t, opts = {}) {
     await skipOnboarding(page);
   }
   return page;
+}
+
+/**
+ * The player's next visit: a new page in the same browser context, at the app's URL, returned ready for use. The old
+ * page stays open on purpose. Use this instead of page.reload() to check what survived a visit: Chromium drops
+ * localStorage when the page that wrote it unloads, now and then, even for a static page that only writes a key.
+ * Measured on such a page, 40 runs each: a second page with the old one left open lost 0 (at 6 s and at 15 s);
+ * page.reload() 3 (at 15 s); close then reopen 13 and 8; a real on-disk profile closed and relaunched 1.
+ * The new page sets window.__e2eSkipTabGuard so a one-club-per-browser guard does not block it while the old page is open;
+ * it is a different flag from __e2e, so tests of that guard (which set __e2e) still meet it.
+ */
+async function nextVisit(page) {
+  const next = await page.context().newPage();
+  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await next.addInitScript(() => { window.__e2e = true; window.__e2eSkipTabGuard = true; });
+  await next.goto(APP_URL);
+  await next.waitForSelector(SEL.app + ' *');
+  return next;
 }
 
 async function goTab(page, screen) {
@@ -202,4 +231,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { nextVisit, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

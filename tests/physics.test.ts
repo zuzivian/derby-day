@@ -658,6 +658,33 @@ describe("the human's keeper (ask 8)", () => {
     expect(released).toBeGreaterThan(KEEPER_HOLD_TICKS - 30);
   });
 
+  test('Law 12: an opponent standing close may not stop the keeper releasing it', () => {
+    // Auto-release at the countdown, and a human click, with a forward standing right in front of him.
+    for (const human of [false, true]) {
+      for (const dy of [-0.8, -0.3, 0, 0.3, 0.8]) {
+        const { s, gk } = keeperHas();
+        const fwd = s.players.find((p) => p.team === 1 && p.role === 'FWD')!;
+        fwd.stun = 0;
+        const mate = s.players.find((p) => p.team === 0 && p.role === 'DEF')!;
+        mate.stun = 0;
+        mate.pos = { x: 25, y: gk.pos.y + dy * 10 };
+        let released = -1;
+        for (let t = 0; t < KEEPER_HOLD_TICKS + 120; t++) {
+          if (released < 0) {
+            fwd.pos = { x: gk.pos.x + 1.4, y: gk.pos.y + dy };
+            fwd.vel = { x: 0, y: 0 };
+          }
+          const click = human && t === 60;
+          step(s, click ? { cursor: mate.pos, aim: mate.pos, pass: true } : { cursor: { x: 40, y: 30 } });
+          if (released < 0 && s.ball.owner !== gk.i) released = t;
+          if (released >= 0 && t - released < 20) expect(s.players[s.ball.lastTouch].team).toBe(0);
+          if (released >= 0 && t - released >= 20) break;
+        }
+        expect(released).toBeGreaterThan(-1);
+      }
+    }
+  });
+
   test('a click rolls it out, a right click punts it long', () => {
     const a = keeperHas();
     const mate = a.s.players.find((p) => p.team === 0 && p.role === 'DEF')!;

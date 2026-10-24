@@ -16,6 +16,7 @@ import { expectedScore, kFactor } from '../meta/elo.ts';
 import type { Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
+import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
 import { clubFormation, clubMentality } from '../meta/club.ts';
 import { crestSvg } from './crest.ts';
@@ -47,6 +48,7 @@ const ICON = {
   league: svg('<path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 5 1.5 3.1 3.4.5-2.5 2.4.6 3.4L12 14.8 9 16.4l.6-3.4-2.5-2.4 3.4-.5L12 7Z" fill="currentColor"/>', 34),
   lock: (size = 16) => svg('<rect x="5" y="10.5" width="14" height="10" rx="2" fill="currentColor"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" fill="none" stroke="currentColor" stroke-width="2.2"/>', size, 'icon lock'),
   keys: svg('<rect x="2.5" y="6" width="19" height="12" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M6 10h1.5M10 10h1.5M14 10h1.5M18 10h.1M7.5 14h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>', 20),
+  globe: svg('<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18" fill="none" stroke="currentColor" stroke-width="2"/>', 20),
   tabs: svg('<rect x="2.5" y="5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="10.5" y="10" width="11" height="9" rx="1.5" fill="var(--surface)" stroke="currentColor" stroke-width="2"/>', 20),
   arrow: svg('<path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>', 18),
 };
@@ -168,6 +170,7 @@ function versusCard(s: Save): string {
     <div class="mode-actions">
       ${local ? `<button class="mode-btn" id="play-local2p" data-action="play-local2p" aria-label="vs Player on one screen: Local 2P">${ICON.keys}<span>One screen</span></button>` : ''}
       ${link ? `<button class="mode-btn" id="play-link" data-action="play-link" aria-label="vs Player in two browser tabs: Link two tabs">${ICON.tabs}<span>Two tabs</span></button>` : ''}
+      ${link && relayConfig() ? `<button class="mode-btn" id="play-online" data-action="play-online" style="flex-basis: 100%" aria-label="vs Player online: invite a friend">${ICON.globe}<span>Online</span></button>` : ''}
     </div>
   </article>`;
 }

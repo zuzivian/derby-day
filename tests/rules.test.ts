@@ -485,6 +485,16 @@ describe('determinism with restarts', () => {
     expect(seeker.state.players.length).toBe(TEAM_SIZE * 2);
     expect(SIM_VERSION).toBeGreaterThan(1);
   });
+
+  test('a replay recorded on the previous sim version opens but is flagged, not verified', () => {
+    const t = teams(2);
+    const r: Replay = { seed: 4, halfSeconds: 5, humanTeam: 0, home: t.home, away: t.away, ticks: 600, runs: [{ n: 600, input: {} as HumanInput }], goals: [], score: [0, 0], fp: 12345, label: 'Prev', at: 1, sim: SIM_VERSION - 1 };
+    const back = decodeReplay(encodeReplay(r));
+    expect(back.sim).toBe(SIM_VERSION - 1);
+    const seeker = new ReplaySeeker(back);
+    while (!seeker.warm(5000));
+    expect(seeker.verified).toBe(false);
+  });
 });
 
 describe('eleven-a-side balance', () => {
