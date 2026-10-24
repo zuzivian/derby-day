@@ -25,6 +25,8 @@ export interface RenderExtras {
   team?: 0 | 1;
   /** Shot charge per team when both humans charge on one screen (hot-seat). Overrides `charge` for the bars. */
   charges?: [number, number];
+  /** An instant replay is showing: no pointer, aim wedge or previews. */
+  noAim?: boolean;
 }
 
 /** Controlled-player marker colours when both teams have a human: home yellow, away cyan. */
