@@ -19,10 +19,14 @@ async function secondTab(page, problems) {
   await p.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   p.on('pageerror', (e) => problems.push(`guest pageerror: ${e.message}`));
   p.on('console', (m) => {
-    if (m.type() !== 'error' || /fonts\.(googleapis|gstatic)\.com/.test(`${m.location().url || ''} ${m.text()}`)) return;
+    const where = m.location().url || '';
+    // Fonts are unreachable here, and the root-relative manifest/icon links cannot resolve on file://.
+    if (m.type() !== 'error' || /fonts\.(googleapis|gstatic)\.com/.test(`${where} ${m.text()}`) || /^file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/.test(where)) return;
     problems.push(`guest console.error: ${m.text()}`);
   });
   await p.goto(TAB_URL);
+  // The club is owned by the first tab, so the second one is offered as a read-only guest (src/client/guardView.ts).
+  await p.locator('#guard-guest').click();
   await p.waitForSelector(SEL.app + ' *');
   await skipOnboarding(p);
   return p;

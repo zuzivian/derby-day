@@ -203,6 +203,7 @@ export function clubScreen(app: App): string {
       <div class="news-actions">
         ${reviewButton(app)}
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
+        <button class="btn small" data-action="open-backup">Back up or restore</button>
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
@@ -217,7 +218,7 @@ export function clubScreen(app: App): string {
         </div>
         <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
       </form>
-      <p class="muted small">Saved in this browser only.</p>
+      <p class="muted small">Saved in this browser only. Use Back up or restore to keep a copy.</p>
     </article>
 
     ${levelPanel(s)}
