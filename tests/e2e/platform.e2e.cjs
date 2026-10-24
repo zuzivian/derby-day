@@ -406,6 +406,7 @@ test('a club the game cannot open offers to restore the previous one, and a newe
   const p2 = await crashed.newPage();
   await p2.route(FONT_HOST, (r) => r.abort());
   await p2.goto(APP_URL);
+  await p2.waitForSelector(SEL.app + ' *'); // the game loads after 'load' (dynamic import): let its first boot finish before storage is rewritten
   await p2.evaluate(([k, g, b, pk]) => {
     localStorage.setItem(pk, JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true }));
     localStorage.setItem(k + '.pre-import', g);
