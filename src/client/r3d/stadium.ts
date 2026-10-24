@@ -678,7 +678,8 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
   // --- stands, crowd, flags --------------------------------------------------
   const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
-  const seatMats = [keep(new MeshLambertMaterial({ color: '#2b4f8c' })), keep(new MeshLambertMaterial({ color: '#c9cdd2' }))];
+  // Muted seats: dark enough that empty rows read as shadow rather than bright stripes.
+  const seatMats = [keep(new MeshLambertMaterial({ color: '#243a5e' })), keep(new MeshLambertMaterial({ color: '#4a5260' }))];
   const roofMat = keep(new MeshStandardMaterial({ color: '#e7e9ec', roughness: 0.6, metalness: 0.2, side: DoubleSide }));
   const steelMat = keep(new MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.55, metalness: 0.2 }));
   const fanGeo = keep(fanGeometry());
@@ -755,12 +756,12 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
     // Fans.
     const seatsAlong = Math.floor((along - 1.2) / 0.56);
-    const spots: [number, number, number][] = [];
+    const spots: [number, number, number, number][] = [];
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < seatsAlong; j++) {
         if (r() > density) continue;
         const x = -along / 2 + 0.6 + j * 0.56 + (r() - 0.5) * 0.12;
-        spots.push([x, FRONT + i * RISE, 0.4 + i * ROW_D + ROW_D * 0.55]);
+        spots.push([x, FRONT + i * RISE, 0.4 + i * ROW_D + ROW_D * 0.55, i]);
       }
     }
     const cm = crowdMaterial('fan');
@@ -768,16 +769,34 @@ export function buildStadium(o: StadiumOptions): Stadium {
     disposables.push(cm.mat);
     const im = new InstancedMesh(fanGeo, cm.mat, spots.length);
     const seeds = new Float32Array(spots.length);
-    const palette = [fans.primary, fans.primary, fans.primary, fans.secondary, fans.secondary, '#f2f2f2', '#262a30', '#3b5f8a', '#8a3b3b', fans.primary];
-    spots.forEach(([x, y, z], i) => {
+    // A calm crowd (the owner's screenshot read as random bright blocks): each stand is cut into
+    // sections about 14 m long, most in the fans' primary colour and some in their secondary, with a
+    // few fans in muted everyday clothes. Colours are pulled toward a mid grey (less contrast) and
+    // darken toward the back rows, under the roof, so the stand reads as a mass, not as noise.
+    const section = 14;
+    const nSec = Math.max(1, Math.round(along / section));
+    const secCol = Array.from({ length: nSec }, (_, k) => (k % 4 === 2 ? fans.secondary : fans.primary));
+    const casual = ['#30343b', '#3d434c', '#4b4f57', '#5a4a3c', '#2f3c52'];
+    const grey = new Color('#5b616b');
+    const tone = (c: Color) => {
+      // Very light kits (white, cream) would turn a stand into a white wall: knock them back.
+      const l = (c.r + c.g + c.b) / 3;
+      if (l > 0.72) c.multiplyScalar(0.72 / l);
+      return c.lerp(grey, 0.28);
+    };
+    spots.forEach(([x, y, z, row], i) => {
       const sc = 0.92 + r() * 0.16;
       tmpQ.setFromAxisAngle(UP, Math.PI + (r() - 0.5) * 0.5);
       tmpP.set(x, y, z);
       tmpS.set(sc, sc, sc);
       tmpM.compose(tmpP, tmpQ, tmpS);
       im.setMatrixAt(i, tmpM);
-      crowdColor.set(palette[Math.floor(r() * palette.length)]);
-      crowdColor.multiplyScalar(0.8 + r() * 0.3);
+      const sec = Math.min(nSec - 1, Math.max(0, Math.floor(((x + along / 2) / along) * nSec)));
+      const pick = r();
+      crowdColor.set(pick < 0.8 ? secCol[sec] : pick < 0.88 ? (secCol[sec] === fans.primary ? fans.secondary : fans.primary) : casual[Math.floor(r() * casual.length)]);
+      tone(crowdColor);
+      // Darker toward the back (under the roof), and a small per-fan variation.
+      crowdColor.multiplyScalar((1 - 0.34 * (row / Math.max(1, rows - 1))) * (0.9 + r() * 0.14));
       im.setColorAt(i, crowdColor);
       seeds[i] = r();
     });
@@ -799,7 +818,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     disposables.push(flags.geometry);
     const poles = new InstancedMesh(poleGeo, keep(new MeshLambertMaterial({ color: '#d9d9d9' })), nFlags);
     const fseeds = new Float32Array(nFlags);
-    const flagCols = [fans.primary, fans.secondary, fans.primary, '#ffffff'];
+    const flagCols = [fans.primary, fans.secondary, fans.primary, fans.primary];
     for (let i = 0; i < nFlags; i++) {
       const row = Math.floor(r() * rows);
       const x = -along / 2 + 1 + r() * (along - 2);

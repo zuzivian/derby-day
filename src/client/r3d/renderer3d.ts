@@ -7,7 +7,7 @@ import type { Vec } from '../../sim/vec.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer } from './aim3d.ts';
-import { MatchCamera, type CameraMode } from './camera3d.ts';
+import { LONG_WIDTH, MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
@@ -50,6 +50,7 @@ export interface Renderer3DOptions {
 /** Drawn a little larger than a real ball (0.11 m) so it reads at broadcast distance. */
 const BALL_VIS_R = 0.15;
 const CAMERA_KEY = 'derby-camera';
+const ZOOM_KEY = 'derby-zoom';
 /** Visual events with no sim cause linger on this clock, so they need their own lifetimes. */
 const NO_EVENTS: AnimEvent[] = [];
 
@@ -59,6 +60,52 @@ function storedCamera(): CameraMode {
   } catch {
     return 'broadcast';
   }
+}
+
+function storedZoom(): number {
+  try {
+    const v = localStorage.getItem(ZOOM_KEY);
+    return v === null ? 1 : clampZoom(Number(v));
+  } catch {
+    return 1;
+  }
+}
+
+/** An instant-replay camera: low from the side, or from behind the goal at that end (sim x 0 or PITCH_W). */
+export interface ReplayShot {
+  kind: 'low' | 'goal';
+  /** Sim x of the goal line the shot looks out from ('goal'), or the goal the move ended at ('low'). */
+  goalX: number;
+}
+
+/**
+ * Should the camera pull back to the long view? When the human's side has a goal kick, or a free
+ * kick in its own half, or the human's keeper holds the ball: the player is about to distribute it
+ * and needs to see who is free up to and beyond halfway. Returns the sim point to centre on and the
+ * width to show, or null. Pure, for tests.
+ */
+export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; width: number } | null {
+  if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
+  const dir = attackDir(me);
+  const r = s.restart;
+  const b = s.ball;
+  const half = HALF_W;
+  let from: number | null = null;
+  let width = LONG_WIDTH;
+  if (r && r.team === me && r.stage !== 'whistle') {
+    const own = dir > 0 ? r.spot.x < half : r.spot.x > half;
+    if (r.kind === 'goalkick') from = r.spot.x;
+    else if (r.kind === 'freekick' && own) {
+      from = r.spot.x;
+      width = LONG_WIDTH * 0.82;
+    }
+  } else if (s.phase === 'play' && b.inHands && b.owner >= 0) {
+    const k = s.players[b.owner];
+    if (k.team === me && k.role === 'GK') from = k.pos.x;
+  }
+  if (from === null) return null;
+  // Centre a good way upfield of the ball, so the frame runs from the ball to beyond halfway.
+  return { x: from + dir * width * 0.36, y: HALF_H, width };
 }
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
@@ -172,6 +219,7 @@ export class Renderer3D implements MatchRenderer {
     this.gl.shadowMap.type = PCFShadowMap;
     this.prefMode = storedCamera();
     this.cam.mode = this.prefMode;
+    this.cam.zoom = storedZoom();
     this.cam.cinematic = !!opts.cinematic;
 
     const scene = this.scene;
@@ -248,6 +296,33 @@ export class Renderer3D implements MatchRenderer {
       /* private mode */
     }
   }
+
+  /** The player's zoom, a multiplier on the framing width: above 1 shows more pitch. */
+  get zoom(): number {
+    return this.cam.zoom;
+  }
+
+  /** Set the zoom (clamped to ZOOM_MIN..ZOOM_MAX) and remember it in this browser. Returns the new value. */
+  setZoom(z: number): number {
+    this.cam.zoom = clampZoom(z);
+    try {
+      localStorage.setItem(ZOOM_KEY, this.cam.zoom.toFixed(3));
+    } catch {
+      /* private mode */
+    }
+    return this.cam.zoom;
+  }
+
+  /** One wheel notch or +/- press: out (1) shows more pitch, in (-1) less. */
+  zoomStep(dir: 1 | -1): number {
+    return this.setZoom(this.cam.zoom * (dir > 0 ? ZOOM_STEP : 1 / ZOOM_STEP));
+  }
+
+  /** Instant replays: the replay camera to use, or null for the normal match cameras. */
+  replayShot: ReplayShot | null = null;
+
+  /** Tooling: is the long view on this frame? */
+  longViewOn = false;
 
   resize(): void {
     const r = this.canvas.getBoundingClientRect();
@@ -551,6 +626,15 @@ export class Renderer3D implements MatchRenderer {
         focusY = (q.pos.y + s.referee.pos.y) / 2;
       }
     }
+    // Replays follow the ball itself, tightly.
+    if (this.replayShot) {
+      focusX = b.pos.x;
+      focusY = b.pos.y;
+    }
+    const lv = this.replayShot ? null : longView(s, this.me);
+    this.longViewOn = !!lv;
+    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? 'long' : this.cam.mode;
+    const rs = this.replayShot;
     this.cam.update(
       dt,
       {
@@ -561,8 +645,10 @@ export class Renderer3D implements MatchRenderer {
         air: b.z,
         attack: holder && s.phase === 'play' ? attackDir(holder.team) : 0,
         phase: s.phase,
-        close: cel ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
+        close: cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
         humanDir: attackDir(this.me) as 1 | -1,
+        long: lv ? { x: sx(lv.x), z: sz(lv.y), width: lv.width } : null,
+        replay: rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null,
       },
       this.cssW / this.cssH,
       this.cssW,

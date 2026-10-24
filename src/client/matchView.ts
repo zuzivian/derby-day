@@ -1,18 +1,25 @@
 // Runs a live match: fixed 60 Hz sim steps on a requestAnimationFrame loop,
-// with the HUD in DOM and the pitch on canvas.
+// with the HUD in DOM and the pitch on canvas. Also orchestrates instant
+// replays: highlights.ts spots goals, cards, saves, the woodwork and near
+// misses; at the next stoppage the live sim is held while the last few seconds
+// are re-simulated from a snapshot buffer and shown with replay cameras, then
+// play resumes exactly where it stopped.
 
-import { DT } from '../sim/constants.ts';
+import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { mountJuice } from './fx.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
+import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
 import { InputController } from './input.ts';
+import { kickGauge } from './power.ts';
 import type { RenderExtras } from './render.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
+import { Renderer3D } from './r3d/renderer3d.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
@@ -28,7 +35,45 @@ export interface MatchViewOptions extends MatchOptions {
   controlsHint?: string;
   /** Top-right HUD label. Defaults to "You vs AI" (or "P1 vs P2" with two humans). */
   modeLabel?: string;
+  /** Instant replays of goals, cards and big chances at the next stoppage. Default: the stored preference (on). */
+  instantReplays?: boolean;
 }
+
+const REPLAYS_KEY = 'derby-instant-replays';
+
+/** The player's instant-replay setting (on unless turned off in the pause menu). */
+export function instantReplaysPref(): boolean {
+  try {
+    return localStorage.getItem(REPLAYS_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function setInstantReplaysPref(on: boolean): void {
+  try {
+    localStorage.setItem(REPLAYS_KEY, on ? 'on' : 'off');
+  } catch {
+    /* storage blocked */
+  }
+}
+
+/**
+ * Instant-replay timing (research brief §6, owner ask 10). The clip runs from LEAD before the moment
+ * to TAIL after it; the last SLOW_TICKS before the end play at half speed. A goal of 4 s lead,
+ * 0.75 s tail and 1.5 s slow-mo is about 6.5 s on screen; other moments are a little shorter.
+ */
+export const REPLAY_LEAD: Record<Highlight['kind'], number> = { goal: 4 * TICK_HZ, red: 3 * TICK_HZ, yellow: 3 * TICK_HZ, save: 3.2 * TICK_HZ, woodwork: 3.2 * TICK_HZ, miss: 3.2 * TICK_HZ };
+export const REPLAY_TAIL = Math.round(0.75 * TICK_HZ);
+export const REPLAY_SLOW_TICKS = Math.round(1.5 * TICK_HZ);
+/** Wait this long after the moment before cutting to the replay (a goal gets its celebration first). */
+const REPLAY_DELAY: Record<Highlight['kind'], number> = { goal: 2.6, red: 1.2, yellow: 1.2, save: 1.1, woodwork: 1.1, miss: 1.1 };
+/** A pending moment not shown within this long (play went on) is dropped. */
+const REPLAY_STALE = 6 * TICK_HZ;
+/** Between replays of anything but goals and red cards, at least this much match time, ticks. */
+const REPLAY_GAP = 50 * TICK_HZ;
+/** Clicks and keys can't skip in the first moments, so a click already in progress doesn't. */
+const REPLAY_SKIP_AFTER_MS = 400;
 
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
 export interface MatchInputSource {
@@ -78,7 +123,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
             <button class="btn primary" id="resume">Resume</button>
             <button class="btn" id="forfeit">${esc(o.forfeitText ?? (o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'))}</button>
           </div>
-          <p class="hint">Esc or P pauses.</p>
+          <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
+          <p class="hint">Esc or P pauses. Mouse wheel or + / − zooms the camera.</p>
         </div>
       </div>
       <div class="touch-pad" aria-hidden="true">
@@ -136,7 +182,106 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
-  const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
+  const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
+
+  // Instant replays: never with two tabs in lockstep (versus.ts runs its own loop), only in 3D.
+  const replaysOk = renderer instanceof Renderer3D;
+  let replaysOn = replaysOk && (o.instantReplays ?? instantReplaysPref());
+  const optReplays = root.querySelector<HTMLInputElement>('#opt-replays')!;
+  optReplays.checked = replaysOn;
+  optReplays.closest('label')!.hidden = !replaysOk;
+  optReplays.addEventListener('change', () => {
+    replaysOn = optReplays.checked;
+    setInstantReplaysPref(replaysOn);
+  });
+  const spotter = new HighlightSpotter(s);
+  const buffer = new ReplayBuffer(s);
+  let pending: Highlight | null = null;
+  let lastReplayTick = -Infinity;
+  /** A replay was shown in this stoppage: no second one until play is live again. */
+  let shownThisStop = false;
+  let replay: {
+    h: Highlight;
+    state: MatchState;
+    step: () => boolean;
+    end: number;
+    acc: number;
+    started: number;
+    skip: HTMLButtonElement;
+  } | null = null;
+  const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
+  const live = () => s.phase === 'play' && !s.ball.inHands;
+
+  function consider(h: Highlight) {
+    if (!replaysOn) return;
+    if (h.kind !== 'goal' && h.kind !== 'red' && s.tick - lastReplayTick < REPLAY_GAP) return;
+    if (!pending || HIGHLIGHT_RANK[h.kind] >= HIGHLIGHT_RANK[pending.kind]) pending = h;
+  }
+
+  function startReplay(h: Highlight) {
+    const r3 = renderer as Renderer3D;
+    const from = h.tick - REPLAY_LEAD[h.kind];
+    const opened = buffer.open(from);
+    const skip = document.createElement('button');
+    skip.type = 'button';
+    skip.className = 'replay-skip';
+    skip.setAttribute('aria-label', 'Skip replay');
+    skip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (replay && performance.now() - replay.started > REPLAY_SKIP_AFTER_MS) endReplay();
+    });
+    skip.addEventListener('contextmenu', (e) => e.preventDefault());
+    wrapEl.appendChild(skip);
+    wrapEl.classList.add('replaying');
+    replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
+    // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
+    r3.replayShot = { kind: 'low', goalX: h.goalX };
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    hud.replay(`${h.label} · ${coarse ? 'tap' : 'click'} to skip`);
+    canvas.dataset.replay = h.kind;
+    lastReplayTick = s.tick;
+    shownThisStop = true;
+    announce(`Replay. ${h.label}.`);
+  }
+
+  function endReplay() {
+    if (!replay) return;
+    replay.skip.remove();
+    replay = null;
+    wrapEl.classList.remove('replaying');
+    (renderer as Renderer3D).replayShot = null;
+    hud.replay(null);
+    delete canvas.dataset.replay;
+    // Back to the live match: no stale accumulated time, so it resumes on the tick it stopped at.
+    last = performance.now();
+    acc = 0;
+    canvas.focus({ preventScroll: true });
+  }
+
+  /** Advance the replay by `elapsed` seconds of wall time; false once it has finished. */
+  function stepReplay(elapsed: number): boolean {
+    const r = replay!;
+    const slow = r.state.tick >= r.end - REPLAY_SLOW_TICKS;
+    r.acc += elapsed * (slow ? 0.5 : 1);
+    if (slow && r.h.kind !== 'red' && r.h.kind !== 'yellow') (renderer as Renderer3D).replayShot = { kind: 'goal', goalX: r.h.goalX };
+    while (r.acc >= DT) {
+      r.acc -= DT;
+      if (r.state.tick >= r.end || !r.step()) return false;
+    }
+    return r.state.tick < r.end;
+  }
+
+  // Space, Enter and Esc skip a replay; caught before the match's own keys see them.
+  const onReplayKey = (e: KeyboardEvent) => {
+    if (!replay) return;
+    if (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter') {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (!e.repeat && performance.now() - replay.started > REPLAY_SKIP_AFTER_MS) endReplay();
+    }
+  };
+  window.addEventListener('keydown', onReplayKey, true);
 
   let raf = 0;
   let last = performance.now();
@@ -168,20 +313,46 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
-    if (!paused) {
-      acc += elapsed;
-      let steps = 0;
-      while (acc >= DT && steps < 12) {
-        const raw = input.take();
-        step(s, rec && !Array.isArray(raw) ? rec.push(raw) : raw);
-        juice.tick(s);
-        acc -= DT;
-        steps++;
+    if (replay && !paused) {
+      if (!stepReplay(elapsed)) endReplay();
+    }
+    if (replay) {
+      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+      hud.update(s, 0, null);
+    } else {
+      if (!paused) {
+        acc += elapsed;
+        let steps = 0;
+        while (acc >= DT && steps < 12) {
+          const raw = input.take();
+          const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
+          step(s, used);
+          juice.tick(s);
+          buffer.push(used, s);
+          for (const h of spotter.update(s)) consider(h);
+          acc -= DT;
+          steps++;
+          if (live()) shownThisStop = false;
+          // At a stoppage (or the keeper holding the ball), show the pending moment once it is due.
+          const p = pending;
+          if (p && s.tick - p.tick > REPLAY_STALE) pending = null;
+          else if (p && !live() && !shownThisStop && s.phase !== 'fulltime' && s.tick - p.tick >= REPLAY_DELAY[p.kind] * TICK_HZ && s.tick >= p.tick + REPLAY_TAIL) {
+            pending = null;
+            startReplay(p);
+            break;
+          }
+        }
+      }
+      if (replay) {
+        renderer.draw((replay as { state: MatchState }).state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+        hud.update(s, 0, null);
+      } else {
+        const extras = input.extras();
+        renderer.draw(s, extras);
+        const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
+        hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));
       }
     }
-    const extras = input.extras();
-    renderer.draw(s, extras);
-    hud.update(s, extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge);
 
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
@@ -230,6 +401,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     renderer.dispose();
     document.removeEventListener('visibilitychange', onVis);
     document.removeEventListener('keydown', onKey);
+    window.removeEventListener('keydown', onReplayKey, true);
+    replay?.skip.remove();
+    replay = null;
   }
   return () => {
     done = true;
