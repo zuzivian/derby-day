@@ -5,6 +5,13 @@
 const { test, expect } = require('./lib/harness.cjs');
 const { APP_URL, SEL, openApp, goTab, readSave, skipOnboarding } = require('./lib/helpers.cjs');
 
+// Both tabs draw with the 2D renderer. These tests are about the netcode, and two software-rendered
+// (SwiftShader) 3D tabs in one browser share one GPU process: one tab's frames starve the other's
+// shader compiles, so mounting the second 3D match measured 42 s under 4x CPU throttle (2 s for the
+// first), which made the joins time out on busy CI runners. The renderer never touches the sim.
+const RENDERER = '2d';
+const TAB_URL = `${APP_URL.split('?')[0]}?renderer=${RENDERER}`;
+
 /** A second tab in the same browser context (same origin, so BroadcastChannel connects them). */
 async function secondTab(page, problems) {
   const p = await page.context().newPage();
@@ -17,7 +24,7 @@ async function secondTab(page, problems) {
     if (m.type() !== 'error' || /fonts\.(googleapis|gstatic)\.com/.test(`${where} ${m.text()}`) || /^file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/.test(where)) return;
     problems.push(`guest console.error: ${m.text()}`);
   });
-  await p.goto(APP_URL);
+  await p.goto(TAB_URL);
   // The club is owned by the first tab, so the second one is offered as a read-only guest (src/client/guardView.ts).
   await p.locator('#guard-guest').click();
   await p.waitForSelector(SEL.app + ' *');
@@ -46,7 +53,7 @@ const net = (page) =>
 test('Link two tabs: host and guest play a lockstep match to full-time with no desync', async (t) => {
   const problems = [];
   // 2 x 5 s halves keeps the run near 15 s including kick-off and half-time pauses.
-  const host = await openApp(t, { prefs: { halfSeconds: 5, controls: 'mouse' } });
+  const host = await openApp(t, { prefs: { halfSeconds: 5, controls: 'mouse' }, renderer: RENDERER });
   const before = await readSave(host);
   const guest = await secondTab(host, problems);
 
@@ -138,7 +145,7 @@ test('Link two tabs: a wrong code times out with a clear message', async (t) => 
 
 test('Link two tabs: when one tab goes quiet the other shows "waiting for opponent", then the leaver is reported', async (t) => {
   const problems = [];
-  const host = await openApp(t, { prefs: { controls: 'mouse' } }); // the standard length: long enough to freeze a tab mid-match
+  const host = await openApp(t, { prefs: { controls: 'mouse' }, renderer: RENDERER }); // the standard length: long enough to freeze a tab mid-match
   const guest = await secondTab(host, problems);
   await goTab(host, SEL.homeScreen);
   await host.locator(SEL.playLink).click();
