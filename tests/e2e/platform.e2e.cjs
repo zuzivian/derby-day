@@ -429,16 +429,55 @@ test('a club the game cannot open offers to restore the previous one, and a newe
   await crashed.close();
 });
 
-test('two tabs opened at the same instant: exactly one gets the club', async (t) => {
+test('two tabs opened at the same instant: exactly one gets the club, and it stays that way', async (t) => {
   const first = await t.newPage();
-  const ctx = first.context();
-  const second = await ctx.newPage();
+  const second = await first.context().newPage();
   await Promise.all([first.goto(APP_URL), second.goto(APP_URL)]);
-  await first.waitForTimeout(1500);
-  const guards = (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count());
-  const games = (await first.locator('#app > *').count() ? 1 : 0) + (await second.locator('#app > *').count() ? 1 : 0);
-  expect(guards, 'one tab parked').toBe(1);
-  expect(games >= 1, 'one tab plays').toBe(true);
+  const state = async () => {
+    const guards = (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count());
+    const games = ((await first.locator('#app > *').count()) ? 1 : 0) + ((await second.locator('#app > *').count()) ? 1 : 0);
+    return { guards, games };
+  };
+  // The claim is atomic (Web Locks), so this is true almost at once; the bound allows a slow runner.
+  const deadline = Date.now() + 3000;
+  let s = await state();
+  while (!(s.guards === 1 && s.games === 1) && Date.now() < deadline) {
+    await first.waitForTimeout(100);
+    s = await state();
+  }
+  expect(s, 'one tab parked, one tab playing within 3 s').toEqual({ guards: 1, games: 1 });
+  await first.waitForTimeout(600);
+  expect(await state(), 'still one and one a moment later').toEqual({ guards: 1, games: 1 });
+});
+
+test('without Web Locks the lease fallback still gives the club to exactly one of two simultaneous tabs, and hand-over works', async (t) => {
+  const first = await t.newPage();
+  await first.context().addInitScript(() => Object.defineProperty(Navigator.prototype, 'locks', { value: undefined, configurable: true }));
+  const second = await first.context().newPage();
+  await Promise.all([first.goto(APP_URL), second.goto(APP_URL)]);
+  const state = async () => ({
+    guards: (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count()),
+    games: ((await first.locator('#app > *').count()) ? 1 : 0) + ((await second.locator('#app > *').count()) ? 1 : 0),
+  });
+  const deadline = Date.now() + 5000;
+  let s = await state();
+  while (!(s.guards === 1 && s.games === 1) && Date.now() < deadline) {
+    await first.waitForTimeout(100);
+    s = await state();
+  }
+  expect(s, 'one parked, one playing (lowest tab id keeps it)').toEqual({ guards: 1, games: 1 });
+  await first.waitForTimeout(2500); // past a heartbeat: still one and one
+  expect(await state(), 'stable').toEqual({ guards: 1, games: 1 });
+  // Hand-over through the lease: the parked tab asks, the owner yields.
+  const parked = (await first.locator('#guard-title').count()) ? first : second;
+  const playing = parked === first ? second : first;
+  await skipOnboarding(playing); // first-run setup counts as busy: the owner would (rightly) refuse the hand-over
+  await playing.waitForSelector(SEL.tab);
+  await parked.locator('#guard-here').click();
+  await parked.waitForSelector(SEL.app + ' *', { timeout: 15_000 });
+  await skipOnboarding(parked); // a brand-new club starts in first-run setup
+  await parked.waitForSelector(SEL.tab, { timeout: 15_000 });
+  await playing.waitForSelector('#guard-title');
 });
 
 test('the artifact build runs inside a sandboxed cross-origin iframe on http: no crash panel, no errors', async (t) => {
