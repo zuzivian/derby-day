@@ -1,8 +1,12 @@
-// Match cameras. Broadcast: elevated, from the long side, follows the ball
-// with look-ahead and widens a little when the ball is in the air. End: from
-// behind the goal you attack. Goal celebrations (and replays) use a lower,
-// closer framing. Everything is spring-smoothed with capped speed; no shake,
-// no roll, and the yaw never changes within a mode, so nothing spins.
+// Match cameras. Broadcast: elevated, from the long side, wide enough to see
+// passing options (about 50 m of pitch across at the default zoom), following
+// the ball through a dead zone so a slow dribble does not slide the pitch
+// under a still pointer. End: from behind the goal you attack. A long view
+// (goal kicks, the human's keeper holding the ball) pulls up and out to show
+// most of the pitch. Goal celebrations use a lower, closer framing, and
+// instant replays have their own shots (low side, behind the goal).
+// Everything is spring-smoothed with capped speed; no shake, no roll, and the
+// yaw never changes within a mode, so nothing spins.
 
 import { BIG_PITCH, HALF_H, HALF_W, clamp01, lerp } from './space.ts';
 import { PerspectiveCamera, Vector3 } from './three.ts';
@@ -24,7 +28,40 @@ export interface CameraFocus {
   close: { x: number; z: number } | null;
   /** The human's attack direction, for the end camera. */
   humanDir: 1 | -1;
+  /** Elevated long view centred here (scene x/z), at least this wide: goal kicks, the keeper's ball. */
+  long?: { x: number; z: number; width: number } | null;
+  /** An instant-replay shot: 'low' from the side near pitch level, 'goal' from behind the goal at scene x = goalX. */
+  replay?: { kind: 'low' | 'goal'; goalX: number } | null;
 }
+
+/**
+ * Broadcast framing at zoom 1: metres across the frame at the camera's target. Research brief §5
+ * ("frame at least 60 m along the play axis") and the owner's "too zoomed in" ask. With the ball
+ * below the frame centre this is about 48 m across at the ball on a desktop window (it was 19 m),
+ * more toward the far touchline; zoom takes it from about 29 m to 69 m.
+ */
+export const BROADCAST_WIDTH = 56;
+/** Camera tilt for the broadcast view, degrees down. Higher than before (27) so a wider frame keeps the far side readable. */
+export const BROADCAST_ELEV = 33;
+/** Zoom limits (a multiplier on the framing width) and the step per wheel notch or +/- key. */
+export const ZOOM_MIN = 0.6;
+export const ZOOM_MAX = 1.45;
+export const ZOOM_STEP = 1.12;
+/** Long view: elevated, wide, showing about three quarters of the pitch (research brief §5). */
+export const LONG_WIDTH = 90;
+/** The long view on the narrowest screens is still at least this wide. */
+export const LONG_MIN = 70;
+export const LONG_ELEV = 46;
+
+export const clampZoom = (z: number): number => (Number.isFinite(z) ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)) : 1);
+
+/**
+ * Dead zone: the camera's anchor only moves when the focus leaves a box this fraction of the frame
+ * width around it (half-extents along and across). Inside it the camera holds still, so a still
+ * pointer stays on the same patch of grass (research brief §2 on stale pointers).
+ */
+const DEAD_X = 0.09;
+const DEAD_Z = 0.05;
 
 /** Critically damped spring toward a target, Unity-style SmoothDamp. */
 class Spring {
@@ -70,19 +107,29 @@ export class MatchCamera {
   private leadX = new Spring(0);
   private leadZ = new Spring(0);
   private snapped = false;
+  private anchorX = 0;
+  private anchorZ = 0;
+  /** Replay shots: where the camera sits and looks, smoothed. */
+  private eye = new Vector3();
+  private look = new Vector3();
   readonly target = new Vector3();
+  /** The player's zoom: a multiplier on the framing width (ZOOM_MIN..ZOOM_MAX). */
+  zoom = 1;
   /** Tooling only: frame this point instead of following play. */
   override: { x: number; z: number; width: number; elev: number } | null = null;
 
   snap(): void {
     this.snapped = false;
+    this.replayKind = null;
   }
 
   update(dt: number, f: CameraFocus, aspect: number, cssWidth: number, reduced: boolean): void {
     const cam = this.camera;
     cam.aspect = aspect;
-    // Phones: closer in, and closer still in a portrait (taller than wide) view.
-    const narrow = (cssWidth < 560 ? 0.86 : 1) * (aspect < 1 ? 0.85 : 1);
+    // Phones: a little closer in, and a little closer again in a portrait (taller than wide) view,
+    // which shows more depth instead: about 45 m across at the ball at zoom 1 on a 390 px portrait
+    // phone (pinch or the on-screen buttons zoom in for bigger players).
+    const narrow = (cssWidth < 560 ? 0.93 : 1) * (aspect < 1 ? 0.93 : 1);
     const slow = reduced ? 1.6 : 1;
 
     // Where to look: the ball plus where it's heading (or where the carrier's team attacks).
@@ -99,31 +146,63 @@ export class MatchCamera {
     let tz: number;
     const close = f.close && !reduced;
     if (this.mode === 'broadcast') {
-      // Close and fairly low, like Power Soccer: about 28 m across on the full-size pitch, the far
-      // boards and stand across the top of the frame. Long balls (in the air, or hit hard) widen it.
-      const base = (BIG_PITCH ? 28 : 26) * narrow;
+      // Elevated, from the long side, like Power Soccer, but wide: BROADCAST_WIDTH across at zoom 1,
+      // the far boards and stand across the top of the frame. Long balls (in the air, or hit hard)
+      // widen it a little more.
+      const base = (BIG_PITCH ? BROADCAST_WIDTH : 26) * narrow * this.zoom;
       const air = clamp01((f.air - 0.8) / 3);
       const long = clamp01((Math.hypot(f.vx, f.vz) - 16) / 10);
-      const kick = f.phase === 'kickoff' ? 0.15 : 0;
-      width = base * (1 + (reduced ? 0.5 : 1) * (0.28 * Math.max(air, long * 0.7) + kick));
-      elev = this.cinematic ? 20 : 27;
+      const kick = f.phase === 'kickoff' ? 0.1 : 0;
+      width = base * (1 + (reduced ? 0.5 : 1) * (0.14 * Math.max(air, long * 0.7) + kick));
+      elev = this.cinematic ? 20 : BROADCAST_ELEV;
       if (this.cinematic) width *= 0.85;
-      tx = f.x + this.leadX.x;
+      // Dead zone: follow the focus only once it leaves a box round the anchor.
+      const fx = f.x + this.leadX.x;
+      const fz = f.z + this.leadZ.x;
+      const dzx = width * DEAD_X;
+      const dzz = width * DEAD_Z;
+      if (!this.snapped) {
+        this.anchorX = fx;
+        this.anchorZ = fz;
+      }
+      this.anchorX = Math.max(fx - dzx, Math.min(fx + dzx, this.anchorX));
+      this.anchorZ = Math.max(fz - dzz, Math.min(fz + dzz, this.anchorZ));
+      tx = this.anchorX;
       // Biased toward the far side so the far stand stays in the top of the frame; near the near
       // touchline the target follows far enough that the ball stays in the bottom of the frame.
-      tz = f.z * 0.8 - 9 + 0.5 * Math.max(0, f.z) + this.leadZ.x;
+      // A wider frame needs less bias: the far side is already in shot.
+      const bias = width * 0.16;
+      tz = this.anchorZ * 0.8 - bias + 0.35 * Math.max(0, this.anchorZ);
       // Keep the goal near the edge of frame at most, and the far touchline in the top fifth or so.
-      const edge = HALF_W - width * 0.22;
+      const edge = Math.max(0, HALF_W - width * 0.3);
       tx = Math.max(-edge, Math.min(edge, tx));
-      tz = Math.max(-HALF_H + 8, Math.min(HALF_H - 3, tz));
+      tz = Math.max(-HALF_H + 4, Math.min(HALF_H - 6, tz));
     } else {
       const d = f.humanDir;
-      width = (BIG_PITCH ? 28 : 26) * narrow * (1 + 0.15 * clamp01((f.air - 1) / 3));
+      width = (BIG_PITCH ? 34 : 26) * narrow * this.zoom * (1 + 0.15 * clamp01((f.air - 1) / 3));
       elev = 30;
-      tx = f.x + d * 7 + this.leadX.x * 0.5;
+      tx = f.x + d * 9 + this.leadX.x * 0.5;
       tz = f.z * 0.9 + this.leadZ.x * 0.5;
       tx = Math.max(-HALF_W + 4, Math.min(HALF_W - 4, tx));
       tz = Math.max(-HALF_H + 3, Math.min(HALF_H - 3, tz));
+    }
+    const lv = f.long;
+    if (lv && !close) {
+      // Long view: up and out, so the player can pick out teammates up to and beyond halfway.
+      // Never narrowed below LONG_MIN on a phone: the point is to see past halfway.
+      width = Math.max(width, Math.max(LONG_MIN, lv.width * narrow));
+      elev = this.mode === 'broadcast' ? LONG_ELEV : 40;
+      if (this.mode === 'broadcast') {
+        tx = lv.x;
+        tz = lv.z - width * 0.12;
+        const edge = Math.max(0, HALF_W - width * 0.3);
+        tx = Math.max(-edge, Math.min(edge, tx));
+      } else {
+        tx = lv.x;
+        tz = lv.z;
+      }
+      this.anchorX = f.x;
+      this.anchorZ = f.z;
     }
     if (close && f.close) {
       width = 13;
@@ -139,6 +218,7 @@ export class MatchCamera {
       tz = o.z;
     }
 
+    this.replayKind = null;
     if (!this.snapped) {
       this.snapped = true;
       this.leadX.snap(lx);
@@ -153,8 +233,14 @@ export class MatchCamera {
       // Pan follows briskly but with a capped speed; zoom and tilt change slowly.
       this.tx.step(tx, 0.42 * slow, dt, 32);
       this.tz.step(tz, 0.6 * slow, dt, 22);
-      this.width.step(width, (close ? 1.1 : 0.9) * slow, dt, 30);
-      this.elev.step(elev, 1.1 * slow, dt, 30);
+      // The long view eases out in about a second (research brief §5), quicker than other zooms.
+      this.width.step(width, (close ? 1.1 : lv ? 0.5 : 0.9) * slow, dt, lv ? 70 : 30);
+      this.elev.step(elev, (lv ? 0.6 : 1.1) * slow, dt, 30);
+    }
+
+    if (f.replay) {
+      this.replayShot(dt, f, f.replay, slow);
+      return;
     }
 
     const vfov = (VFOV * Math.PI) / 180;
@@ -168,12 +254,55 @@ export class MatchCamera {
       const d = f.humanDir;
       cam.position.set(this.tx.x - d * Math.cos(e) * dist, Math.sin(e) * dist, this.tz.x);
     }
+    cam.fov = VFOV;
     cam.near = Math.max(0.5, dist * 0.05);
     cam.far = 2400;
     cam.lookAt(this.target.x, lerp(0, 0.6, 0), this.target.z);
     cam.updateProjectionMatrix();
     cam.updateMatrixWorld();
   }
+
+  /**
+   * Instant-replay shots. 'low': the long side near pitch level, close on the ball. 'goal': behind
+   * the goal at scene x = goalX, a little above the bar, looking out at the ball.
+   */
+  private replayShot(dt: number, f: CameraFocus, r: { kind: 'low' | 'goal'; goalX: number }, slow: number): void {
+    const cam = this.camera;
+    const ex = r.kind === 'goal' ? r.goalX + Math.sign(r.goalX || 1) * 9 : f.x - f.vx * 0.15;
+    const ey = r.kind === 'goal' ? 5.5 : 7;
+    const ez = r.kind === 'goal' ? f.z * 0.35 : Math.min(HALF_H + 14, f.z + 24);
+    const lx = f.x;
+    const ly = Math.min(2, f.air * 0.5) + 0.6;
+    const lz = f.z;
+    if (this.replayKind !== r.kind) {
+      // A cut: the first frame of a shot (or a change of angle) jumps straight to it.
+      this.replayKind = r.kind;
+      this.eye.set(ex, ey, ez);
+      this.look.set(lx, ly, lz);
+    } else {
+      const k = 1 - Math.exp((-dt * 5) / slow);
+      const kl = 1 - Math.exp((-dt * 9) / slow);
+      this.eye.x += (ex - this.eye.x) * k;
+      this.eye.y += (ey - this.eye.y) * k;
+      this.eye.z += (ez - this.eye.z) * k;
+      this.look.x += (lx - this.look.x) * kl;
+      this.look.y += (ly - this.look.y) * kl;
+      this.look.z += (lz - this.look.z) * kl;
+    }
+    this.target.set(this.look.x, 0, this.look.z);
+    cam.fov = r.kind === 'goal' ? 46 : 34;
+    cam.position.copy(this.eye);
+    cam.near = 0.5;
+    cam.far = 2400;
+    cam.lookAt(this.look);
+    cam.updateProjectionMatrix();
+    cam.updateMatrixWorld();
+    // The next broadcast frame starts from scratch rather than springing from the replay's framing.
+    this.snapped = false;
+  }
+
+  /** The replay shot on screen last frame, or null: a different one (or none) is a cut. */
+  private replayKind: 'low' | 'goal' | null = null;
 
   /** Keyboard direction in screen terms (x right, y down) to world terms, for this camera. */
   screenDir(d: { x: number; y: number }, humanDir: 1 | -1): { x: number; y: number } {
