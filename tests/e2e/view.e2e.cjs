@@ -26,11 +26,18 @@ test('3D view: the mouse wheel, + / - and the touch buttons zoom the camera, wit
   const zoom = () => page.evaluate(() => Number(localStorage.getItem('derby-zoom') || '1'));
   const box = await page.locator(SEL.pitch).boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  // Record every text the camera chip shows: it flashes "Zoom N%" for 1.4 s of wall time, and on a
+  // CPU-starved runner reading it after the wheel, a wait and two round trips can land after that.
+  await page.evaluate(() => {
+    const btn = document.querySelector('#cam-btn');
+    window.__chipTexts = [btn.textContent];
+    new MutationObserver(() => window.__chipTexts.push(btn.textContent)).observe(btn, { childList: true, characterData: true, subtree: true });
+  });
   await page.mouse.wheel(0, 120);
   await page.waitForTimeout(150);
   const out = await zoom();
   expect(out, 'wheel down zooms out').toBeGreaterThan(1);
-  expect(await page.locator('#cam-btn').innerText(), 'the chip says the new zoom').toMatch(/zoom \d+%/i);
+  expect((await page.evaluate(() => window.__chipTexts)).join(' | '), 'the chip says the new zoom').toMatch(/zoom \d+%/i);
   for (let i = 0; i < 12; i++) await page.keyboard.press('Equal');
   const tight = await zoom();
   expect(tight, '+ zooms in').toBeLessThan(out);
