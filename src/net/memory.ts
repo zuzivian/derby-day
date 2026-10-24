@@ -88,7 +88,7 @@ export function botInput(seed: number): () => HumanInput {
     n++;
     x = Math.min(60, Math.max(1, x + (next(r) - 0.5) * 3));
     y = Math.min(39, Math.max(1, y + (next(r) - 0.5) * 3));
-    const inp: HumanInput = { cursor: { x, y } };
+    const inp: HumanInput = { cursor: { x, y }, moved: true };
     const roll = next(r);
     if (roll < 0.03) inp.pass = true;
     else if (roll < 0.04) inp.shoot = next(r);

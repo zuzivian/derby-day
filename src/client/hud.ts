@@ -9,6 +9,7 @@
 
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { keeperHoldLeft } from '../sim/human.ts';
 import { matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
@@ -60,6 +61,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="banner hud-word" id="banner" hidden></div>
       <canvas class="hud-radar" aria-hidden="true" style="aspect-ratio: ${PITCH_W} / ${PITCH_H}"></canvas>
       <div class="hud-power" aria-hidden="true"><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
+      <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
     </div>`;
 }
@@ -113,6 +115,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   const radar = q<HTMLCanvasElement>('.hud-radar');
   const power = q('.hud-power');
   const fill = power.querySelector('i') as HTMLElement;
+  // The human's keeper with the ball in his hands: seconds left to play it (Law 12), src/sim/human.ts.
+  const hold = q('.hud-hold');
+  let lastHold: number | null = null;
   const tick = power.querySelector('b') as HTMLElement;
   const replayTag = q('.hud-replay');
   let lastGauge = '';
@@ -209,6 +214,13 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         fill.style.width = `${Math.round(charge * 100)}%`;
         power.classList.toggle('on', charge > 0);
         power.classList.toggle('hot', charge > SWEET_SPOT + 0.05);
+      }
+      const left = keeperHoldLeft(s, 0) ?? keeperHoldLeft(s, 1);
+      if (left !== lastHold) {
+        lastHold = left;
+        hold.hidden = left === null;
+        if (left !== null) hold.textContent = `Keeper · ${left}`;
+        hold.classList.toggle('hot', left !== null && left <= 2);
       }
       drawRadar(s);
       if (until && performance.now() > until) {
