@@ -82,3 +82,32 @@ test(
   },
   { timeoutMs: 240_000 },
 );
+
+test(
+  'Perf: opening and closing the 3D replay viewer three times leaves nothing behind',
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 1 }, renderer: '3d' });
+    const p = await probe(page);
+    if ((await playOne(page)) !== '3d') return;
+    await goTab(page, SEL.clubScreen);
+    const open = async () => {
+      await page.locator('.rp-row [data-replay="watch"]').first().click();
+      await page.locator('[data-rp="close"]').waitFor();
+      await page.waitForTimeout(1500);
+      await page.locator('[data-rp="close"]').click();
+      await page.locator('[data-rp="close"]').waitFor({ state: 'detached' });
+    };
+    await open(); // the first open pays three.js's one-time set-up
+    const base = await p.measure();
+    for (let i = 0; i < 3; i++) await open();
+    const last = await p.measure();
+    console.log(`      after the first open ${base.heapMB.toFixed(2)} MB/${base.nodes} nodes/${base.listeners} listeners; after three more ${last.heapMB.toFixed(2)} MB/${last.nodes}/${last.listeners}, ${last.detachedCanvases} canvases, ${last.glContexts} gl`);
+    expect(last.detachedCanvases, 'no detached canvas survives').toBeLessThanOrEqual(1);
+    expect(last.glContexts, 'no WebGL context survives').toBe(0);
+    expect(last.resizeObservers, 'no ResizeObserver survives').toBe(0);
+    expect(last.listeners - base.listeners, 'listeners stay flat').toBeLessThanOrEqual(1);
+    expect(last.nodes - base.nodes, 'DOM nodes stay flat (a leaked viewer is ~76)').toBeLessThan(30);
+    expect(last.heapMB - base.heapMB, 'JS heap stays flat').toBeLessThan(0.8);
+  },
+  { timeoutMs: 180_000 },
+);
