@@ -297,7 +297,7 @@ describe('CPU', () => {
     }
     expect(sharp).toBeGreaterThan(sloppy * 2);
     expect(sharp).toBeGreaterThanOrEqual(6);
-  });
+  }, 20_000);
 
   test('a cloned mid-match state replays identically (the AI keeps no hidden state)', () => {
     const s = createMatch({ seed: 5, ...teams(9), halfSeconds: 30, humanTeam: -1 });

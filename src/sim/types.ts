@@ -94,6 +94,8 @@ export interface AiMemory {
   retarget: number;
   /** Whether the team was attacking when the target was chosen. */
   attacking: boolean;
+  /** Whether the target is a support spot for the carrier (TeamPlan.support); optional for older memories. */
+  supporting?: boolean;
   /** Carrier behaviour that persists across ticks. */
   mode: 'none' | 'takeon' | 'shield' | 'dive';
   modeTicks: number;

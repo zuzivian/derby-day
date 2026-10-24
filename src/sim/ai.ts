@@ -556,10 +556,24 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     if (center) {
       const cpos = owner ? owner.pos : focus;
       const cx = teamX(team, cpos.x);
-      const near = mates
-        .filter((m) => m.i !== center.i && m.i !== human && !keepsOut(s, m) && !(m.sub === 'CB' && cx > line + 0.3) && dist(m.pos, cpos) < 30)
-        .sort((x, y) => dist(x.pos, cpos) - dist(y.pos, cpos))
-        .slice(0, k.supporters);
+      // The k.supporters nearest within 30 m, kept in order as they are found (this runs on every plan).
+      const near: MatchPlayer[] = [];
+      const nearD: number[] = [];
+      for (const m of mates) {
+        if (m.i === center.i || m.i === human || (m.sub === 'CB' && cx > line + 0.3)) continue;
+        const dx = m.pos.x - cpos.x;
+        const dy = m.pos.y - cpos.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 >= 900 || (near.length === k.supporters && d2 >= nearD[near.length - 1]) || keepsOut(s, m)) continue;
+        let at = near.length;
+        while (at > 0 && nearD[at - 1] > d2) at--;
+        near.splice(at, 0, m);
+        nearD.splice(at, 0, d2);
+        if (near.length > k.supporters) {
+          near.pop();
+          nearD.pop();
+        }
+      }
       const angs = supportSlots(team, cpos, near.length);
       const fwd = { x: attackDir(team), y: 0 };
       const spots = angs.map((a) => add(cpos, scale(rotate(fwd, a), k.supportR)));
@@ -1348,14 +1362,13 @@ function laneShut(s: MatchState, team: 0 | 1, from: Vec, to: Vec): boolean {
 }
 
 /** A supporter tries his angle and a little either side of it, short and a bit longer. */
-const SUPPORT_TURN = [-0.5, -0.25, 0, 0.25, 0.5];
+const SUPPORT_TURN = [-0.4, 0, 0.4];
 const SUPPORT_REACH = [0.75, 1, 1.25];
 
 function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, j: number): Vec {
   const team = p.team;
   const k = tacticOf(s, team);
   const skill = skillOf(s, team);
-  const fwd = { x: attackDir(team), y: 0 };
   // Where the ball will be: the carrier a moment from now, or where the pass is going.
   const c = carrier ? clampToPitch(add(carrier.pos, scale(carrier.vel, 0.3)), 0.5) : plan.focus;
   const cx = teamX(team, c.x);
@@ -1366,29 +1379,52 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   let bestScore = -Infinity;
   // Opponents a moment from now: a lane someone is stepping into is already shut.
   const opp: Vec[] = [];
-  for (const o of s.players) if (o.team !== team && !o.sentOff) opp.push({ x: o.pos.x + o.vel.x * 0.35, y: o.pos.y + o.vel.y * 0.35 });
+  // Where teammates are, or are heading: spots too close to them are crowded. Only players near
+  // enough to the carrier to touch a lane or crowd a spot this short count.
+  const mates: Vec[] = [];
+  const near = k.supportR * SUPPORT_REACH[SUPPORT_REACH.length - 1] + 9;
+  const near2 = near * near;
+  for (const o of s.players) {
+    if (o.sentOff) continue;
+    if (o.team !== team) {
+      const x = o.pos.x + o.vel.x * 0.35;
+      const y = o.pos.y + o.vel.y * 0.35;
+      if ((x - c.x) ** 2 + (y - c.y) ** 2 < near2) opp.push({ x, y });
+    } else if (o.i !== p.i && o.role !== 'GK' && o.i !== carrier?.i) {
+      const spot = o.ai?.target && o.ai.attacking ? o.ai.target : o.pos;
+      if ((spot.x - c.x) ** 2 + (spot.y - c.y) ** 2 < near2) mates.push(spot);
+    }
+  }
+  // Plain numbers in this loop: it runs for every candidate spot (no vectors made but the winner).
+  const fx = attackDir(team);
+  const toTeamX = (x: number) => (team === 0 ? x / PITCH_W : 1 - x / PITCH_W);
+  const fromTeamX = (nx: number) => (team === 0 ? nx * PITCH_W : (1 - nx) * PITCH_W);
+  const sixYard = cx < 0.3;
   for (const da of SUPPORT_TURN) {
+    const dx = fx * Math.cos(base + da);
+    const dy = fx * Math.sin(base + da);
     for (const rf of SUPPORT_REACH) {
-      let cand = clampToPitch(add(c, scale(rotate(fwd, base + da), k.supportR * rf)), 2);
-      if (teamX(team, cand.x) > onsideX) cand = fromTeam(team, onsideX, cand.y / PITCH_H);
+      const r = k.supportR * rf;
+      let x = Math.min(PITCH_W - 2, Math.max(2, c.x + dx * r));
+      const y = Math.min(PITCH_H - 2, Math.max(2, c.y + dy * r));
+      if (toTeamX(x) > onsideX) x = fromTeamX(onsideX);
       // Never a square ball across our own six-yard box.
-      if (teamX(team, cand.x) < 0.1 && cx < 0.3) cand = fromTeam(team, 0.1, cand.y / PITCH_H);
+      if (sixYard && toTeamX(x) < 0.1) x = fromTeamX(0.1);
+      const cand = { x, y };
       let lane = 5;
-      let space = 8;
+      let space2 = 64;
       for (const o of opp) {
         lane = Math.min(lane, distToSegment(o, c, cand));
-        space = Math.min(space, dist(o, cand));
+        space2 = Math.min(space2, (o.x - x) ** 2 + (o.y - y) ** 2);
       }
-      let score = Math.min(lane, 4) * 1.1 + space * 0.35 - (lane < 1.6 ? 3 : 0);
-      for (const m of s.players) {
-        if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK' || m.i === carrier?.i) continue;
-        const spot = m.ai?.target && m.ai.attacking ? m.ai.target : m.pos;
-        const d = dist(cand, spot);
-        if (d < 7) score -= (7 - d) * 0.45;
+      let score = Math.min(lane, 4) * 1.1 + Math.sqrt(space2) * 0.35 - (lane < 1.6 ? 3 : 0);
+      for (const spot of mates) {
+        const d2 = (spot.x - x) ** 2 + (spot.y - y) ** 2;
+        if (d2 < 49) score -= (7 - Math.sqrt(d2)) * 0.45;
       }
-      const dc = dist(cand, c);
+      const dc = Math.sqrt((x - c.x) ** 2 + (y - c.y) ** 2);
       if (dc < 5) score -= (5 - dc) * 0.8;
-      score += (teamX(team, cand.x) - cx) * PITCH_W * 0.035 - dist(p.pos, cand) * 0.05 + gauss(s.rng) * noise;
+      score += (toTeamX(x) - cx) * PITCH_W * 0.035 - Math.sqrt((p.pos.x - x) ** 2 + (p.pos.y - y) ** 2) * 0.05 + gauss(s.rng) * noise;
       if (score > bestScore) {
         bestScore = score;
         best = cand;
@@ -1401,15 +1437,19 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
 function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec {
   const mem = memOf(s, p);
   const sj = plan.support ? plan.support.indexOf(p.i) : -1;
-  // A supporter re-reads the lanes every few ticks; everyone else holds a target longer.
-  // A supporter whose lane has just been shut moves again straight away.
-  if (sj >= 0 && carrier && mem.retarget > 2 && laneShut(s, p.team, carrier.pos, p.pos)) mem.retarget = 0;
-  if (mem.target && mem.attacking && mem.retarget-- > 0 && !(sj >= 0 && mem.retarget > 12)) return mem.target;
+  // A supporter re-reads the lanes every few ticks; everyone else holds a target longer. One who
+  // has just become a supporter drops the target he had and finds his angle at once, and one
+  // whose lane has just been shut moves again straight away (checked every third tick: lanes
+  // don't open and shut faster than a player can react).
+  const newSupporter = sj >= 0 && !mem.supporting;
+  mem.supporting = sj >= 0;
+  if (sj >= 0 && carrier && mem.retarget > 2 && (s.tick + p.i) % 3 === 0 && laneShut(s, p.team, carrier.pos, p.pos)) mem.retarget = 0;
+  if (mem.target && mem.attacking && !newSupporter && mem.retarget-- > 0) return mem.target;
   const skill = skillOf(s, p.team);
   const k = tacticOf(s, p.team);
   mem.attacking = true;
   if (sj >= 0) {
-    mem.retarget = Math.round(7 + 6 * (1 - skill) + next(s.rng) * 4);
+    mem.retarget = Math.round(10 + 8 * (1 - skill) + next(s.rng) * 4);
     mem.target = supportSpot(s, p, plan, carrier, sj);
     return mem.target;
   }
