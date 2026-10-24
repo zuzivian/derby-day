@@ -153,8 +153,6 @@ export class AimLayer {
   private wedgeMat: ShaderMaterial;
   private recvRing: Mesh;
   private switchRing: Mesh;
-  private diamond: Mesh;
-  private runLine: Mesh;
   private chipDots: InstancedMesh;
   private chipRing: Mesh;
   private markers: Sprite[] = [];
@@ -207,9 +205,6 @@ export class AimLayer {
 
     this.recvRing = flat(new Mesh(keepG(new RingGeometry(0.85, 1.0, 40)), keepM(overlay('#ffffff', 0.75))), 0.04) as Mesh;
     this.switchRing = flat(new Mesh(keepG(new RingGeometry(0.9, 1.08, 40)), keepM(overlay('#ffd60a', 0.9))), 0.04) as Mesh;
-    this.diamond = flat(new Mesh(keepG(new RingGeometry(0.62, 0.8, 4)), keepM(overlay('#ffd60a', 0.95))), 0.045) as Mesh;
-    this.runLine = new Mesh(keepG(new PlaneGeometry(1, 0.1).translate(0.5, 0, 0).rotateX(-Math.PI / 2)), keepM(overlay('#ffd60a', 0.55)));
-    this.runLine.position.y = 0.035;
 
     this.chipDots = new InstancedMesh(keepG(new SphereGeometry(0.09, 8, 6)), keepM(new MeshBasicMaterial({ color: '#8cdcff', transparent: true, opacity: 0.9, toneMapped: false })), 28);
     this.chipDots.frustumCulled = false;
@@ -246,7 +241,7 @@ export class AimLayer {
     this.bars.frustumCulled = false;
     this.bars.renderOrder = 19;
 
-    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.diamond, this.runLine, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
+    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
   }
 
   private name(p: MatchPlayer): Sprite {
@@ -303,8 +298,6 @@ export class AimLayer {
     let showWedge = false;
     let showRet = false;
     this.recvRing.visible = false;
-    this.diamond.visible = false;
-    this.runLine.visible = false;
     this.chipDots.visible = false;
     this.chipRing.visible = false;
     const pointerOn = !!cursor && x.showCursor;

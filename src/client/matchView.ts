@@ -106,6 +106,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
   renderer.resize();
+  renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
   const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
@@ -136,12 +137,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    const elapsed = Math.min(0.1, (now - last) / 1000);
+    // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
+    const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
     if (!paused) {
       acc += elapsed;
       let steps = 0;
-      while (acc >= DT && steps < 6) {
+      while (acc >= DT && steps < 12) {
         const raw = input.take();
         step(s, rec && !Array.isArray(raw) ? rec.push(raw) : raw);
         juice.tick(s);

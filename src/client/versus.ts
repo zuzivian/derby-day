@@ -424,6 +424,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
   renderer.resize();
+  renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
   const offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);

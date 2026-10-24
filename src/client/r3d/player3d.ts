@@ -465,7 +465,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       const fx = p.facing.x;
       const fy = p.facing.y;
       const side = fx * ev.dir.y - fy * ev.dir.x; // > 0: target to the player's right (sim y is down)
-      mirror = side < -0.25 ? true : side > 0.25 ? false : Math.random() < 0.3;
+      mirror = side > 0.25 ? true : side < -0.25 ? false : Math.random() < 0.3;
     } else if (ev.kind === 'tackle' || ev.kind === 'knockdown') mirror = Math.random() < 0.5;
     else if (ev.kind === 'dive') mirror = ev.side < 0;
     else if (ev.kind === 'celebrate') mirror = Math.random() < 0.4;

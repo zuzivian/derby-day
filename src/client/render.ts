@@ -58,6 +58,9 @@ export class PitchRenderer {
     return { x: (cssX / rect.width) * VIEW_W - MARGIN, y: (cssY / rect.height) * VIEW_H - MARGIN };
   }
 
+  /** Nothing to warm up for a 2D canvas. */
+  prepare(_s: MatchState): void {}
+
   /** Top-down view: screen axes are world axes. */
   screenDir(d: Vec): Vec {
     return d;

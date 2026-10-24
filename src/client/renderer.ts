@@ -15,6 +15,11 @@ export interface MatchRenderer {
   resize(): void;
   /** CSS pixel position inside the canvas to world metres on the pitch plane (mouse picking). */
   toWorld(cssX: number, cssY: number): Vec;
+  /**
+   * Build and draw once now, before the loop starts, so shader compiles and texture uploads (slow
+   * on software GPUs) happen while the screen is being set up rather than in the first seconds of play.
+   */
+  prepare(s: MatchState): void;
   /** Draw one frame. Reads the state, never writes it. */
   draw(s: MatchState, extras: RenderExtras): void;
   /** A keyboard direction in screen terms (x right, y down) to world terms for the current view. */

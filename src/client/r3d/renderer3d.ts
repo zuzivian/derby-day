@@ -124,6 +124,9 @@ export class Renderer3D implements MatchRenderer {
   private blob: Mesh;
   private ballQ = new Quaternion();
   private blobMat: MeshBasicMaterial;
+  /** Ghost balls behind a fast shot, newest first. */
+  private trail: InstancedMesh;
+  private trailPts: Vector3[] = [];
   private feet: InstancedMesh | null = null;
   private m4 = new Matrix4();
   private aim: AimLayer | null = null;
@@ -202,7 +205,10 @@ export class Renderer3D implements MatchRenderer {
     this.blob = new Mesh(new PlaneGeometry(1, 1), this.blobMat.clone());
     this.blob.rotation.x = -Math.PI / 2;
     this.blob.renderOrder = 1;
-    scene.add(this.ball, this.blob);
+    this.trail = new InstancedMesh(new IcosahedronGeometry(BALL_VIS_R, 1), new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.28, depthWrite: false, toneMapped: false }), 10);
+    this.trail.frustumCulled = false;
+    this.trail.count = 0;
+    scene.add(this.ball, this.blob, this.trail);
 
     const onLost = (e: Event) => {
       e.preventDefault();
@@ -242,9 +248,14 @@ export class Renderer3D implements MatchRenderer {
 
   resize(): void {
     const r = this.canvas.getBoundingClientRect();
-    this.cssW = Math.max(1, r.width);
-    this.cssH = Math.max(1, r.height);
-    this.gl.setSize(this.cssW, this.cssH, false);
+    const w = Math.max(1, r.width);
+    const h = Math.max(1, r.height);
+    // Setting canvas.width, even to the same value, reallocates the drawing buffer: skip no-op resizes.
+    const pr = this.gl.getPixelRatio();
+    if (w === this.cssW && h === this.cssH && this.canvas.width === Math.floor(w * pr)) return;
+    this.cssW = w;
+    this.cssH = h;
+    this.gl.setSize(w, h, false);
   }
 
   toWorld(cssX: number, cssY: number): Vec {
@@ -317,6 +328,26 @@ export class Renderer3D implements MatchRenderer {
     this.aim = new AimLayer(s.players.length);
     this.scene.add(this.aim.group);
     this.director.reset(s);
+  }
+
+  prepare(s: MatchState): void {
+    if (this.lost) return;
+    this.build(s);
+    // Compile every program now, including overlays that are hidden until the pointer moves or a
+    // kick is charged: on a software GPU each first-use compile is a visible stall mid-match.
+    const hidden: Object3D[] = [];
+    this.scene.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    this.gl.compile(this.scene, this.cam.camera);
+    for (const o of hidden) o.visible = false;
+    this.draw(s, { cursor: null, charge: 0, showCursor: false });
+    // Wait for the GPU to finish those compiles and uploads here, during set-up, instead of the
+    // match's first frames stalling on them.
+    this.gl.getContext().finish();
   }
 
   draw(s: MatchState, x: RenderExtras): void {
@@ -447,6 +478,18 @@ export class Renderer3D implements MatchRenderer {
       this.ballQ.setFromAxisAngle(axis, b.z > 0.05 ? ang * 0.6 : ang);
       this.ball.quaternion.premultiply(this.ballQ);
     }
+    // Trail behind fast, free balls (shots, hard passes), fading as it shrinks.
+    if (sp > 14 && b.owner < 0 && s.phase === 'play' && dtSim > 0) {
+      this.trailPts.unshift(this.ball.position.clone());
+      if (this.trailPts.length > 10) this.trailPts.pop();
+    } else if (this.trailPts.length && (dtSim > 0 || jumped)) this.trailPts.pop();
+    this.trailPts.forEach((p, i) => {
+      const k = 1 - i / 11;
+      this.m4.makeScale(k, k, k).setPosition(p.x, p.y, p.z);
+      this.trail.setMatrixAt(i, this.m4);
+    });
+    this.trail.count = Math.max(0, this.trailPts.length - 1);
+    this.trail.instanceMatrix.needsUpdate = true;
     const h = Math.max(0, this.ball.position.y - BALL_VIS_R);
     this.blob.position.set(this.ball.position.x, 0.02, this.ball.position.z);
     this.blob.scale.setScalar(0.5 + h * 0.12);
@@ -555,6 +598,9 @@ export class Renderer3D implements MatchRenderer {
     this.ball.geometry.dispose();
     (this.ball.material as MeshStandardMaterial).dispose();
     this.blob.geometry.dispose();
+    this.trail.geometry.dispose();
+    (this.trail.material as MeshBasicMaterial).dispose();
+    this.trail.dispose();
     (this.blob.material as MeshBasicMaterial).dispose();
     this.blobMat.map?.dispose();
     this.blobMat.dispose();

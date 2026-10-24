@@ -104,7 +104,8 @@ export class MatchCamera {
       elev = this.cinematic ? 24 : 37;
       if (this.cinematic) width *= 0.82;
       tx = f.x + this.leadX.x;
-      tz = f.z * 0.8 + this.leadZ.x - 2.5;
+      // Biased toward the far side so the far stand stays in the top of the frame.
+      tz = f.z * 0.75 + this.leadZ.x - 5;
       const edge = HALF_W - width * 0.32;
       tx = Math.max(-edge, Math.min(edge, tx));
       tz = Math.max(-HALF_H + 2, Math.min(HALF_H - 3, tz));

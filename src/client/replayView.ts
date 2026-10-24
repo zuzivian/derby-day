@@ -447,12 +447,12 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
 
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
-    const dt = Math.min(0.1, (now - last) / 1000);
+    const dt = Math.min(0.2, (now - last) / 1000);
     last = now;
     if (playing) {
       acc += dt * (slow ? 0.5 : 1);
       let n = 0;
-      while (acc >= DT && n < 6 && seeker.state.tick < clip.end) {
+      while (acc >= DT && n < 12 && seeker.state.tick < clip.end) {
         seeker.stepForward();
         acc -= DT;
         n++;
@@ -493,6 +493,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   pushLayer(layer);
   renderer = createMatchRenderer(canvas, { cinematic: true });
   renderer.resize();
+  renderer.prepare(seeker.state);
   ro.observe(canvas);
   setClip(idx, true);
   q('#rv-title').focus();
