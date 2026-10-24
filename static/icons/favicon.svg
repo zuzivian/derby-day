@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Derby Day crest</title>
+  <defs>
+    <clipPath id="shield"><path d="M256 40 452 100v150c0 118-78 190-196 222C138 440 60 368 60 250V100z"/></clipPath>
+  </defs>
+  <rect width="512" height="512" rx="104" fill="#17223a"/>
+  <g clip-path="url(#shield)">
+    <rect x="40" y="30" width="432" height="460" fill="#2f7d4a"/>
+    <g fill="#3a8f58">
+      <rect x="40" y="30" width="72" height="460"/><rect x="184" y="30" width="72" height="460"/><rect x="328" y="30" width="72" height="460"/>
+    </g>
+    <path d="M40 330 256 210 472 330v200H40z" fill="#c22d20"/>
+    <circle cx="256" cy="250" r="72" fill="#f3f6f1"/>
+    <path d="m256 206 34 25-13 40h-42l-13-40z" fill="#17223a"/>
+    <g stroke="#17223a" stroke-width="7" stroke-linecap="round"><path d="M256 206v-34M290 231l32-11M277 271l20 28M235 271l-20 28M222 231l-32-11"/></g>
+  </g>
+  <path d="M256 40 452 100v150c0 118-78 190-196 222C138 440 60 368 60 250V100z" fill="none" stroke="#f3f6f1" stroke-width="14" stroke-linejoin="round"/>
+</svg>
