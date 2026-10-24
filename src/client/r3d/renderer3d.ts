@@ -482,6 +482,12 @@ export class Renderer3D implements MatchRenderer {
       this.clock = tickTime;
       this.rate = 1;
       if (jumped) {
+        // A different state or a seek (an instant replay starting or ending): booking cards, the
+        // referee's turn and a celebration belong to the old timeline (a card replay used to show
+        // the card over the offender before the foul had happened in it).
+        this.aim?.clearCards();
+        this.cardFace = null;
+        this.celebrate = null;
         this.cam.snap();
         this.cutCount++;
       }
