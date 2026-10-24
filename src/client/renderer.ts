@@ -6,6 +6,7 @@ import type { MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 import { PitchRenderer, type RenderExtras } from './render.ts';
 import { Renderer3D, type Quality } from './r3d/renderer3d.ts';
+import { showToast } from './a11y.ts';
 
 export interface MatchRenderer {
   readonly kind: '2d' | '3d';
@@ -62,6 +63,7 @@ export function setRendererPref(p: RendererPref): void {
   }
 }
 
+let toldFallback = false;
 let probed: { ok: boolean; software: boolean } | null = null;
 
 /** WebGL2 on a throwaway canvas, so a failure leaves the real canvas free for 2D. */
@@ -95,8 +97,10 @@ function quality(software: boolean): Quality {
 
 export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic?: boolean } = {}): MatchRenderer {
   const pref = rendererPref();
+  let why: string | null = null;
   if (pref !== '2d') {
     const gl = probeWebGL();
+    if (!gl.ok) why = 'webgl-unavailable';
     if (gl.ok) {
       try {
         const r = new Renderer3D(canvas, { quality: quality(gl.software), cinematic: opts.cinematic });
@@ -105,10 +109,17 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
         return r;
       } catch (e) {
         console.warn('3D renderer unavailable, using 2D', e);
+        why = 'webgl-failed';
       }
     }
   }
   canvas.dataset.renderer = '2d';
+  if (why) {
+    // Not asked for 2D, but 3D is not possible here: say so (once a page load) instead of silently looking different.
+    canvas.dataset.fallback = why;
+    if (!toldFallback) showToast('3D view is not available on this device, so you are seeing the simple 2D view.', false, 6000);
+    toldFallback = true;
+  }
   return new PitchRenderer(canvas);
 }
 
