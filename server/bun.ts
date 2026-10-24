@@ -9,8 +9,10 @@
 //   PORT, HOST            where to listen (HOST default 0.0.0.0)
 //   ALLOWED_ORIGINS       comma-separated Origin allow-list, e.g. https://derby.natwong.dev.
 //                         Empty allows every origin (fine locally; set it in production).
-//   TRUST_PROXY=1         take the client address from Fly-Client-IP / X-Forwarded-For
-//                         (only behind a proxy that sets them, or clients can spoof the per-IP limit)
+//   TRUST_PROXY=1         behind a reverse proxy: take the client address from X-Forwarded-For,
+//                         counting TRUST_PROXY_HOPS (default 1) trusted proxies from the right, since
+//                         everything left of those is whatever the client sent. On Fly.io
+//                         (FLY_APP_NAME is set) Fly-Client-IP is used instead.
 //   RELAY_MAX_ROOMS, RELAY_MAX_SOCKETS, RELAY_MAX_SOCKETS_PER_IP, RELAY_MAX_FRAME_BYTES,
 //   RELAY_RATE_PER_SEC, RELAY_BURST, RELAY_GRACE_MS, ...   any field of RelayLimits, in SCREAMING_SNAKE_CASE
 
@@ -23,6 +25,10 @@ export interface ServeOptions {
   host?: string;
   allowedOrigins?: string[];
   trustProxy?: boolean;
+  /** Trusted proxies in front of the relay (X-Forwarded-For entries to count from the right). Default 1. */
+  proxyHops?: number;
+  /** Running on Fly.io: trust Fly-Client-IP, which Fly's edge always overwrites. */
+  fly?: boolean;
   limits?: Partial<RelayLimits>;
   quiet?: boolean;
 }
@@ -40,6 +46,19 @@ export function limitsFromEnv(env: Record<string, string | undefined>): Partial<
     out[k] = n;
   }
   return out;
+}
+
+/**
+ * The client's address for per-address limits. Without a trusted proxy that is the socket's peer.
+ * Behind `hops` proxies, each appends the address it saw to X-Forwarded-For, so the client is the
+ * entry `hops` from the right; anything further left is client-supplied and can be forged.
+ */
+export function clientIp(headers: Headers, socketIp: string, o: { trustProxy?: boolean; proxyHops?: number; fly?: boolean }): string {
+  if (!o.trustProxy) return socketIp;
+  if (o.fly) return headers.get('fly-client-ip')?.trim() || socketIp;
+  const hops = Math.max(1, Math.floor(o.proxyHops ?? 1));
+  const chain = (headers.get('x-forwarded-for') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  return chain.length >= hops ? chain[chain.length - hops] : socketIp;
 }
 
 interface WsData {
@@ -60,8 +79,7 @@ export function startRelay(o: ServeOptions = {}) {
       const url = new URL(req.url);
       if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
         if (!originAllowed(req.headers.get('origin'), allowed)) return new Response('Origin not allowed', { status: 403 });
-        const fwd = o.trustProxy ? req.headers.get('fly-client-ip') ?? req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() : null;
-        const ip = fwd || srv.requestIP(req)?.address || '';
+        const ip = clientIp(req.headers, srv.requestIP(req)?.address ?? '', o);
         const data = { ip } as WsData;
         if (srv.upgrade(req, { data })) return undefined;
         return new Response('Expected a WebSocket', { status: 400 });
@@ -108,6 +126,8 @@ if (import.meta.main) {
     host: env.HOST || '0.0.0.0',
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '').split(','),
     trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true',
+    proxyHops: env.TRUST_PROXY_HOPS ? Number(env.TRUST_PROXY_HOPS) : 1,
+    fly: !!env.FLY_APP_NAME,
     limits: limitsFromEnv(env),
     quiet: env.RELAY_QUIET === '1',
   });

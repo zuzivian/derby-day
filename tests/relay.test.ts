@@ -106,7 +106,7 @@ describe('relay core', () => {
   test('unknown codes say so, and a socket guessing codes is cut off', () => {
     const r = relay({ maxBadJoins: 3 });
     const s = r.connect();
-    for (const code of ['AAAAA', 'zzzzz', '!!', 'BBBBB']) r.say(s, { t: 'join', code, v: 'v1' });
+    for (const code of ['AAAAAA', 'zzzzzz', '!!', 'BBBBBB']) r.say(s, { t: 'join', code, v: 'v1' });
     const errors = s.sent.filter((m) => m.t === 'error');
     expect(errors.length).toBe(3);
     expect(errors[0]).toMatchObject({ code: 'no-room' });
@@ -322,5 +322,58 @@ describe('relay core', () => {
     r.core.close(s);
     const t = r.connect('1.2.3.4');
     expect(t.closed).toBeNull();
+  });
+
+  test('code guessing is limited per address, and reconnecting does not reset it', () => {
+    const r = relay({ maxBadJoins: 5, maxBadJoinsPerIp: 12, badJoinWindowMs: 60_000 });
+    let refused = 0;
+    let tries = 0;
+    for (let sock = 0; sock < 10; sock++) {
+      const s = r.connect('6.6.6.6');
+      for (let i = 0; i < 5 && !s.closed; i++) {
+        r.say(s, { t: 'join', code: 'QQQQQ' + 'ABCDEFGHJK'[i], v: 'v1' });
+        tries++;
+        if (s.sent.some((m) => m.t === 'error' && m.code === 'rate')) refused++;
+      }
+    }
+    expect(refused).toBeGreaterThan(0);
+    expect(tries - refused).toBeLessThanOrEqual(12);
+    // Another address is unaffected, and the window expires.
+    const other = r.connect('7.7.7.7');
+    r.say(other, { t: 'join', code: 'QQQQQQ', v: 'v1' });
+    expect(other.last()).toMatchObject({ code: 'no-room' });
+    r.wait(61_000);
+    const later = r.connect('6.6.6.6');
+    r.say(later, { t: 'join', code: 'QQQQQQ', v: 'v1' });
+    expect(later.last()).toMatchObject({ code: 'no-room' });
+  });
+
+  test('resume answers the same for an unknown room and a wrong token, and counts as a guess', () => {
+    const r = relay({ maxBadJoinsPerIp: 3, badJoinWindowMs: 60_000 });
+    const { code } = r.pair();
+    const answers: unknown[] = [];
+    for (const [c, tok] of [[code, 'wrong'], ['ZZZZZZ', 'wrong']] as const) {
+      const s = r.connect('5.5.5.5');
+      r.say(s, { t: 'resume', code: c, seat: 1, token: tok });
+      answers.push(s.last());
+    }
+    expect(answers[0]).toEqual(answers[1]);
+    expect(answers[0]).toMatchObject({ t: 'error', code: 'bad-token' });
+    const s = r.connect('5.5.5.5');
+    r.say(s, { t: 'resume', code, seat: 1, token: 'x' });
+    const t = r.connect('5.5.5.5');
+    r.say(t, { t: 'join', code, v: 'v1' });
+    expect(t.last()).toMatchObject({ code: 'rate' });
+  });
+
+  test('byte budget: a stream of maximum-size frames is cut off even under the message rate', () => {
+    const r = relay({ maxFrameBytes: 32_000, bytesPerSec: 100_000, byteBurst: 200_000, ratePerSec: 1000, burst: 1000 });
+    const { a } = r.pair();
+    const big = 'x'.repeat(30_000);
+    for (let i = 0; i < 20 && !a.closed; i++) {
+      r.clock.now += 50;
+      r.say(a, { t: 'relay', m: big });
+    }
+    expect(a.last()).toMatchObject({ code: 'rate' });
   });
 });

@@ -40,7 +40,7 @@ Messages are JSON text frames, one object per frame, told apart by `t`. Types li
 | | `error { code, msg }`, always followed by a close. Codes: `no-room`, `full`, `version`, `bad-token`, `busy`, `rate`, `too-big`, `bad-msg`, `timeout` |
 
 - **Version:** `v` is `p<protocol>.s<SIM_VERSION>.r<REPLAY_VERSION>` (`netVersion()` in `websocket.ts`). A room is pinned to the host's `v`. A guest on another build gets `version` and sees "Your friend is on a different version of Derby Day. Both of you reload the page, then try again." So when the physics stream bumps `SIM_VERSION`, old and new builds can't pair and desync.
-- **Room codes:** 5 characters from a 32-letter alphabet with no 0/O or 1/I. That is 33.5 million codes, against 1 million for the 4-letter codes used in two-tab play.
+- **Room codes:** 6 characters from a 32-letter alphabet with no 0/O or 1/I. That is about a billion codes, against 1 million for the 4-letter codes used in two-tab play.
 - **Seat tokens:** `crypto.randomUUID()`, given to each seat once. Only the holder can resume that seat.
 - **After pairing:** the existing room handshake (`src/net/room.ts`) runs inside `relay` envelopes. The guest sends `join { team, crest }` until the host answers with `start { seed, home, away, delay, ... }`. The guest then sends `ready`, and lockstep starts.
 
@@ -52,16 +52,18 @@ These are defaults in `DEFAULT_LIMITS` (`server/relay-core.ts`). Every one can b
 |---|---|---|
 | `maxFrameBytes` | 32 KB | A room start with two full squads is ~4.5 KB. A worst-case lockstep batch (120 unacknowledged inputs) is ~17 KB, and a typical one ~0.4 KB. Bun also enforces the cap itself (`maxPayloadLength`). |
 | `ratePerSec` / `burst` | 150/s, 300 | A token bucket per socket. Lockstep sends about 65 messages a second. Going over closes the socket. |
+| `bytesPerSec` / `byteBurst` | 96 KB/s, 512 KB | A byte budget on top of the message rate, so 150 maximum-size frames a second (4.8 MB/s) aren't allowed. A player sends about 25 KB/s. |
 | `maxRooms` | 2000 | 4000 players at once. |
 | `maxSockets` | 5000 | |
-| `maxSocketsPerIp` | 8 | Stops one machine filling the relay. Behind a proxy, set `TRUST_PROXY=1` so the real client address is used. |
+| `maxSocketsPerIp` | 8 | Stops one machine filling the relay. Behind a proxy, set `TRUST_PROXY=1` (and `TRUST_PROXY_HOPS`) so the real client address is used. |
 | `helloMs` | 10 s | A new socket must send `host`, `join` or `resume` within this. |
 | `heartbeatMs` | 30 s | A socket silent this long is dropped (clients ping every 5 s). |
 | `graceMs` | 30 s | How long a dropped seat can be resumed. The client gives up at 25 s and the UI at 20 s. |
 | `waitingMs` | 30 min | A hosted room nobody joins. |
 | `idleMs` | 2 min | A full room in which nothing is relayed. |
 | `roomTtlMs` | 2 h | Hard cap on a room's life. A match is 6 minutes. |
-| `maxBadJoins` | 5 | Joins to unknown codes before the socket is closed (slows code guessing). |
+| `maxBadJoins` | 5 | Failed joins or resumes before the socket is closed. |
+| `maxBadJoinsPerIp` / `badJoinWindowMs` | 30 per 10 min | Failed joins and resumes per client address, across reconnects. Past that, the address is refused (`rate`) until the window passes. Together with the 6-character codes, guessing a live room takes years: with 2,000 rooms open, each guess hits one in about 500,000. |
 
 The relay keeps every room in memory, so a restart ends the matches in progress. Clients see `Lost the connection to the match server` and go back to the club; nothing is lost, because friendlies record nothing.
 
@@ -75,23 +77,29 @@ This is the Phase 3 exit criterion: "a disconnect pauses for 20 s and then forfe
 - **Our own freezes don't count.** Only time this tab spends running counts towards the 20 s: each gap between frames counts at most 1 s. A tab that was backgrounded or stuck compiling shaders doesn't come back and abandon an opponent who was waiting for it the whole time. (The first version of this did exactly that, in the e2e test: SwiftShader froze one page for 20 s.)
 - **Coming back.** The client reconnects with backoff (250 ms doubling to 4 s, with jitter), sends `resume` with its token, and lockstep re-sends whatever was lost. Both sides carry on from the same tick, still in sync (tested in `tests/websocket.test.ts` and the e2e).
 - **Not coming back.** After 20 s the match ends as an **abandoned friendly**: a result dialog that says so, with no Elo, money, training or XP for either side. Friendlies award nothing anyway, so there is nothing to farm by pulling the plug.
-- **Leaving on purpose.** Leave from the menu, or close the tab, and the opponent is told at once ("Your opponent left the match"). Closing the tab sends lockstep's `bye` on `pagehide` and the relay sends `leave`.
+- **Leaving on purpose.** Leave from the menu, or close the tab, and the opponent is told at once ("Your opponent left the match"). Closing the tab sends lockstep's `bye` and the relay's `leave` on `pagehide`. If the page may come back (`pagehide` with `persisted`: the back-forward cache, or a phone switching apps), nothing is sent and the countdown covers it.
 
 ## Threat model and trust
 
 Lockstep sends only inputs. Each client runs the whole match itself.
 
+**Everything a peer sends is untrusted, and is checked where it arrives** (`src/net/validate.ts`, `tests/validate.test.ts`, and the e2e "hostile guest" test):
+- **Team setups and the start message.** Colours must be `#rrggbb`. The short name is 1–4 of A–Z and 0–9. Names lose markup and control characters and are length-capped. There must be exactly 11 players with unique ids, a known role and finite attributes clamped to 0..1. The formation and crest pattern must come from the known lists. Seed, half length and input delay are bounded. A join with a bad team is refused ("Your friend's team couldn't be read"), and a bad start is refused on the guest. The host runs its own start through the same function, so both sides build exactly the same match from exactly the same data.
+- **Lockstep messages.** These must be a known type with the right fields. Input batches are at most 120. Inputs are stored only for ticks the peer could really be at (no far-future ticks, so no memory growth). Every input field is clamped to a finite value in range, and anything else is dropped. Each side runs its own sampled inputs through the same cleaning, so a dropped field is dropped on both screens and can't cause a desync.
+- **Relay envelopes** that aren't JSON objects never reach the game.
+
 **A malicious client can:**
-- Send any input it likes for **its own team**: a perfect bot, instant reactions, inputs no human could make. Lockstep can't tell a bot from a person.
+- Steer **its own player** with any well-formed input: a perfect bot, instant reactions. Lockstep can't tell a bot from a person.
 - Refuse to send inputs, which stalls the match. After 20 s it ends as abandoned, with nothing gained.
-- As host, choose the seed and its own team setup (the host sends both teams in `start`). A host could send a doctored squad for itself, with better attributes than its save really has.
+- As host, choose the seed and its own team setup (the host sends both teams in `start`). A host could send a doctored squad for itself. Attributes are clamped to the legal range, but within that range the guest has to take the host's word.
 - Read everything the other side sends (its inputs and team). Nothing secret is in there.
-- Spam the relay. Rate limits, size caps and connection caps contain that to its own sockets.
+- Spam the relay. Message and byte rate limits, size caps, connection caps and per-address guess limits contain that to its own sockets.
 
 **A malicious client cannot:**
-- Move the other team's players, or change the score or the state on the other screen. Both sides simulate the same inputs, and any difference shows up as a desync at the next 60-tick hash check, which stops both sides.
+- Move the other team's players. Each side's inputs only drive that side's controlled player, and both screens apply the same inputs, so there is one match, not two. A difference between the screens (a determinism bug) shows up as a desync at the next 60-tick hash check and stops both sides.
+- Put markup or script into the other player's page, or break their sim with NaN, Infinity or junk. Everything is validated at the boundary, as above.
 - Reach anyone but its opponent. The relay forwards only within a room of two.
-- Take over a seat. Resuming needs the seat's token, which only that player's browser ever had.
+- Take over a seat. Resuming needs the seat's token, which only that player's browser ever had. An unknown room and a wrong token get the same answer, so resume can't be used to probe which codes exist.
 
 **So results from online friendlies are not trusted.** They record nothing today. Before an online match can count for Elo, a server must decide the result:
 1. **Re-simulate.** `server/verify.ts` already replays a replay code (`src/meta/replay.ts`) and returns the true score, stats and state fingerprint. It flags an edited score, edited goals, a tampered input log (the final state hash no longer matches), a log that stops before full-time, and a replay from another sim version (`tests/verify.test.ts`). Usage: `bun server/verify.ts <code>` prints a JSON verdict and exits 1 if the replay doesn't hold up.
@@ -100,7 +108,11 @@ Lockstep sends only inputs. Each client runs the whole match itself.
 
 `verify.ts` is not exposed over HTTP. Re-simulating a 6-minute match costs about a second of CPU, so a public endpoint would need authentication and a queue first.
 
-The `?relay=` override lets anyone point their own copy of the page at another relay, which is useful for testing. A link with someone else's `?relay=` sends that relay your inputs and team setup, and nothing else: no save, no cookies, no account.
+**`?relay=` works only on local pages** (`file:`, `localhost`, `127.0.0.1`). On the real site the relay is the one baked into the build, so a link like `https://derby.natwong.dev/?join=X&relay=wss://evil.example` can't send players to someone else's server.
+
+**The Origin allow-list only stops browsers.** `ALLOWED_ORIGINS` keeps other websites from opening sockets to the relay from their visitors' browsers. Any non-browser client can send whatever `Origin` header it likes, so it is not authentication. The limits above are what contain such a client.
+
+**`/health` is public** and shows counts only: rooms, sockets, matches, messages relayed and uptime. No codes, addresses or tokens. Put it behind the host's private network if even the counts matter.
 
 ## Run it locally
 
@@ -125,7 +137,8 @@ The relay is one process with no dependencies, no disk and no database. Any host
 | `PORT` | `8787` | Listen port (`0` = any free port). |
 | `HOST` | `0.0.0.0` | Listen address. |
 | `ALLOWED_ORIGINS` | `https://derby.natwong.dev` | Comma-separated Origin allow-list. **Set this in production.** Empty allows every origin. Vercel preview URLs need adding if previews should work. |
-| `TRUST_PROXY` | `1` | Read the client address from `Fly-Client-IP` / `X-Forwarded-For`. Only set it behind a proxy that sets those headers. |
+| `TRUST_PROXY` | `1` | Behind a reverse proxy: read the client address from `X-Forwarded-For`, counting `TRUST_PROXY_HOPS` trusted proxies from the right (the entries further left are whatever the client sent). On Fly.io (`FLY_APP_NAME` set) `Fly-Client-IP` is used instead. Without it, every player behind the proxy shares one address and the per-address limits bite. |
+| `TRUST_PROXY_HOPS` | `1` | How many proxies you run in front of the relay that each append to `X-Forwarded-For`. One for Render, Railway or a single Caddy/nginx; more if there's a CDN in front as well. |
 | `RELAY_*` | `RELAY_MAX_ROOMS=500` | Any limit above. |
 | `RELAY_QUIET` | `1` | No JSON event log (room open and close) on stdout. |
 
@@ -166,7 +179,7 @@ So one small machine with one core carries about 300–400 matches at a time, or
 1. **Pick a host and create an account.** Fly.io is the recommendation (above). Render, Railway or a VPS work the same way.
 2. **Choose a domain** for the relay, e.g. `relay.derby.natwong.dev`, and add the DNS record the host gives you.
 3. **Deploy** `server/Dockerfile` with `ALLOWED_ORIGINS=https://derby.natwong.dev` (plus any preview origins you want) and `TRUST_PROXY=1`. Check `https://relay.derby.natwong.dev/health` answers `{"ok":true,...}`.
-4. **In Vercel**, add the environment variable `DERBY_RELAY_URL=wss://relay.derby.natwong.dev/ws` (Production, and Preview if wanted) and redeploy. The build bakes it in (`scripts/build.ts`), and the Online button appears on the vs Player card. Before that, you can test production against the relay with `https://derby.natwong.dev/?relay=wss://relay.derby.natwong.dev/ws`.
+4. **In Vercel**, add the environment variable `DERBY_RELAY_URL=wss://relay.derby.natwong.dev/ws` (Production, and Preview if wanted) and redeploy. The build bakes it in (`scripts/build.ts`), and the Online button appears on the vs Player card. Before that, you can try the deployed relay from a local build: `bun run build`, then open `dist/index.html?relay=wss://relay.derby.natwong.dev/ws`. `?relay=` is ignored on the real site.
 5. **Play a match with someone in another city** and look at the stats line under the pitch (round trip, share of time waiting). If waits are common, raise the default input delay (`DEFAULT_DELAY` in `src/client/versus.ts`, 4 ticks = 67 ms).
 
 Rough cost: one small always-on machine, about $2–5 a month on Fly.io or Railway, or $7 on Render's cheapest paid instance. Bandwidth is about 18 KB/s per player in each direction (JSON), roughly 13 MB in and 13 MB out of the relay per 6-minute match.

@@ -19,6 +19,7 @@ import { BroadcastTransport, broadcastSupport } from '../net/broadcast.ts';
 import { inviteLink, relayConfig, type RelayConfig } from '../net/config.ts';
 import { Lockstep, syncHash } from '../net/lockstep.ts';
 import { PeerWatch } from '../net/presence.ts';
+import { cleanCrest, cleanStart, cleanTeam } from '../net/validate.ts';
 import { isLockstepMsg, matchFromStart, roomCode, cleanCode, type RoomMsg, type StartInfo, type WireMsg } from '../net/room.ts';
 import { narrow, type Transport } from '../net/transport.ts';
 import { netVersion, WebSocketTransport } from '../net/websocket.ts';
@@ -266,9 +267,10 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     let guest: string | null = null;
     const seed = clientSeed();
     const off = tr.onMessage((m) => {
-      if (m.t === 'join' && (!guest || guest === m.id)) {
-        guest = m.id;
+      if (m.t === 'join' && typeof m.id === 'string' && (!guest || guest === m.id)) {
         start ??= hostStart(o, home, m, seed, delay);
+        if (!start) return;
+        guest = m.id;
         tr.send({ t: 'start', to: guest, host: id, start });
         status('Guest found. Starting…');
       } else if (m.t === 'ready' && m.id === guest && start) {
@@ -294,11 +296,13 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     let started = false;
     const off = tr.onMessage((m) => {
       if (m.t !== 'start' || m.to !== id || started) return;
+      const st = cleanStart(m.start);
+      if (!st || typeof m.host !== 'string') return;
       started = true;
       off();
       cleanupLobby();
       tr.peer = m.host;
-      launch(tr, m.start, 1);
+      launch(tr, st, 1);
       tr.send({ t: 'ready', id });
     });
     const join = () => tr.send({ t: 'join', id, team: home, crest: o.save.club.crest });
@@ -363,11 +367,17 @@ function netResult(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o:
   return resultFor(m, side, opp, o.save.club.elo, label, note);
 }
 
-/** The host's half of the room handshake: answer a guest's join with the start info. */
-function hostStart(o: VersusOptions, home: TeamSetup, m: Extract<RoomMsg, { t: 'join' }>, seed: number, delay: number): StartInfo {
-  let away = o.avoidClash(home, m.team);
+/**
+ * The host's half of the room handshake: answer a guest's join with the start info, or null when the
+ * guest's team isn't well-formed. The guest's team is untrusted (it ends up in the page and in the sim),
+ * and the whole start goes through cleanStart() on both sides so both build exactly the same match.
+ */
+function hostStart(o: VersusOptions, home: TeamSetup, m: Extract<RoomMsg, { t: 'join' }>, seed: number, delay: number): StartInfo | null {
+  const theirs = cleanTeam(m.team);
+  if (!theirs) return null;
+  let away = o.avoidClash(home, theirs);
   if (away.name === home.name) away = { ...away, name: `${away.name} II` };
-  return { seed, home, away, crests: [o.save.club.crest, m.crest], halfSeconds: o.prefs.halfSeconds, delay };
+  return cleanStart({ seed, home, away, crests: [o.save.club.crest, cleanCrest(m.crest)], halfSeconds: o.prefs.halfSeconds, delay });
 }
 
 // ---------------------------------------------------------------------------
@@ -511,6 +521,10 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       tr.onMessage((m) => {
         if (m.t === 'join') {
           start ??= hostStart(o, home, m, seed, delay);
+          if (!start) {
+            status("Your friend's team couldn't be read. Ask them to reload the page and try again.", true, 'bad-team');
+            return;
+          }
           tr.send({ t: 'start', to: m.id, host: 'host', start });
         } else if (m.t === 'ready' && start) launch(tr, start, 0);
       }),
@@ -539,8 +553,13 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       }),
       tr.onMessage((m) => {
         if (m.t !== 'start' || m.to !== id || started) return;
+        const st = cleanStart(m.start);
+        if (!st) {
+          status("The host's match couldn't be read. Both of you reload the page, then try again.", true, 'bad-start');
+          return;
+        }
         started = true;
-        launch(tr, m.start, 1);
+        launch(tr, st, 1);
         tr.send({ t: 'ready', id });
       }),
     );
@@ -649,7 +668,10 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   $('net-stop-back').addEventListener('click', () => finish('left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
-  const onHide = () => {
+  const onHide = (e: PageTransitionEvent) => {
+    // persisted: the page may come back (the back-forward cache; mobile browsers switching apps).
+    // Don't end the match for the opponent then: the disconnect countdown covers it if we don't return.
+    if (e.persisted) return;
     ls.leave();
     o.link?.close(); // the relay tells the opponent at once too
   };

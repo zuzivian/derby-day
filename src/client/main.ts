@@ -513,7 +513,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 /** An invite link (?join=CODE) opens the online lobby with the code, once any first-run setup is done. */
-let pendingJoin = relayConfig() ? inviteCode() : null;
+let pendingJoin = relayConfig() && isUnlocked(app.save, 'link') ? inviteCode() : null;
 if (pendingJoin) history.replaceState(null, '', location.href.replace(/([?&])join=[^&#]*&?/, '$1').replace(/[?&](#|$)/, '$1'));
 function openInvite(): boolean {
   const code = pendingJoin;

@@ -48,6 +48,12 @@ export interface RelayLimits {
   roomTtlMs: number;
   /** Joins to codes that don't exist before the socket is closed (slows down code guessing). */
   maxBadJoins: number;
+  /** Failed joins and resumes per client address within `badJoinWindowMs` before that address is refused (0 = no limit). */
+  maxBadJoinsPerIp: number;
+  badJoinWindowMs: number;
+  /** Byte budget per socket on top of the message rate: sustained bytes per second, and the burst. */
+  bytesPerSec: number;
+  byteBurst: number;
 }
 
 export const DEFAULT_LIMITS: RelayLimits = {
@@ -64,6 +70,10 @@ export const DEFAULT_LIMITS: RelayLimits = {
   idleMs: 2 * 60_000,
   roomTtlMs: 2 * 3600_000,
   maxBadJoins: 5,
+  maxBadJoinsPerIp: 30,
+  badJoinWindowMs: 10 * 60_000,
+  bytesPerSec: 96 * 1024,
+  byteBurst: 512 * 1024,
 };
 
 export interface RelayOptions {
@@ -86,6 +96,7 @@ interface Conn {
   tokens: number;
   refillAt: number;
   badJoins: number;
+  bytes: number;
   room: Room | null;
   seat: 0 | 1;
 }
@@ -124,6 +135,8 @@ export class RelayCore {
   private conns = new Map<RelaySocket, Conn>();
   private rooms = new Map<string, Room>();
   private perIp = new Map<string, number>();
+  /** Failed joins and resumes per address: count and when its window started. Reconnecting doesn't reset it. */
+  private badByIp = new Map<string, { n: number; since: number }>();
   private relayed = 0;
 
   constructor(private o: RelayOptions) {
@@ -146,7 +159,7 @@ export class RelayCore {
       return false;
     }
     const now = this.o.now();
-    this.conns.set(sock, { sock, ip, openedAt: now, lastAt: now, tokens: L.burst, refillAt: now, badJoins: 0, room: null, seat: 0 });
+    this.conns.set(sock, { sock, ip, openedAt: now, lastAt: now, tokens: L.burst, bytes: L.byteBurst, refillAt: now, badJoins: 0, room: null, seat: 0 });
     if (ip) this.perIp.set(ip, ipCount + 1);
     return true;
   }
@@ -157,7 +170,7 @@ export class RelayCore {
     if (!c) return;
     const now = this.o.now();
     if (bytes > this.limits.maxFrameBytes) return this.fail(c, 'too-big', `Message over ${this.limits.maxFrameBytes} bytes.`, CLOSE.tooBig);
-    if (!this.take(c, now)) return this.fail(c, 'rate', 'Too many messages.', CLOSE.policy);
+    if (!this.take(c, now, bytes)) return this.fail(c, 'rate', 'Too many messages.', CLOSE.policy);
     c.lastAt = now;
     let msg: ClientMsg;
     try {
@@ -212,6 +225,7 @@ export class RelayCore {
         c.sock.close(CLOSE.error, 'timeout');
       }
     }
+    for (const [ip, b] of this.badByIp) if (now - b.since >= L.badJoinWindowMs) this.badByIp.delete(ip);
     for (const room of [...this.rooms.values()]) {
       for (const i of [0, 1] as const) {
         const seat = room.seats[i];
@@ -249,13 +263,15 @@ export class RelayCore {
 
   private join(c: Conn, rawCode: unknown, v: unknown): void {
     if (c.room) return this.fail(c, 'bad-msg', 'Already in a room.');
+    const now = this.o.now();
+    if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many wrong codes from this connection. Wait a few minutes, then try again.');
     const code = typeof rawCode === 'string' ? rawCode.toUpperCase() : '';
     const room = CODE_RE.test(code) ? this.rooms.get(code) : undefined;
     if (!room || room.seats[0].left) {
-      c.badJoins++;
-      const msg: ServerMsg = { t: 'error', code: 'no-room', msg: `No match with code ${code || '?'}. Check the code, or ask your friend for a new link.` };
+      const shown = CODE_RE.test(code) ? code : '?';
+      const msg: ServerMsg = { t: 'error', code: 'no-room', msg: `No match with code ${shown}. Check the code, or ask your friend for a new link.` };
       this.sendTo(c.sock, msg);
-      if (c.badJoins >= this.limits.maxBadJoins) this.kick(c, CLOSE.policy, 'too many bad joins');
+      this.badGuess(c, now);
       return;
     }
     if (room.seats[1]) return this.reply(c, 'full', 'That match already has two players.');
@@ -273,10 +289,16 @@ export class RelayCore {
 
   private resume(c: Conn, rawCode: unknown, seatNo: unknown, token: unknown): void {
     if (c.room) return this.fail(c, 'bad-msg', 'Already in a room.');
+    const now = this.o.now();
+    if (this.guessing(c, now)) return this.fail(c, 'rate', 'Too many failed attempts from this connection. Wait a few minutes, then try again.');
     const room = typeof rawCode === 'string' ? this.rooms.get(rawCode.toUpperCase()) : undefined;
-    if (!room) return this.fail(c, 'no-room', 'That match is over.', CLOSE.normal);
-    const seat = seatNo === 0 || seatNo === 1 ? room.seats[seatNo] : null;
-    if (!seat || seat.left || typeof token !== 'string' || token !== seat.token) return this.fail(c, 'bad-token', 'Could not rejoin that match.', CLOSE.normal);
+    const seat = room && (seatNo === 0 || seatNo === 1) ? room.seats[seatNo] : null;
+    // Unknown room and wrong token get the same answer, so resume can't be used to probe which codes exist.
+    if (!room || !seat || seat.left || typeof token !== 'string' || token !== seat.token) {
+      this.sendTo(c.sock, { t: 'error', code: 'bad-token', msg: 'Could not rejoin that match.' });
+      if (!this.badGuess(c, now)) this.kick(c, CLOSE.normal, 'bad-token');
+      return;
+    }
     if (seat.conn) {
       // The old socket is still open from our side (it went quiet without closing): the new one wins.
       const old = seat.conn;
@@ -322,13 +344,39 @@ export class RelayCore {
   // -------------------------------------------------------------------------
 
   /** Token bucket. */
-  private take(c: Conn, now: number): boolean {
+  private take(c: Conn, now: number, bytes: number): boolean {
     const L = this.limits;
-    c.tokens = Math.min(L.burst, c.tokens + ((now - c.refillAt) * L.ratePerSec) / 1000);
+    const dt = now - c.refillAt;
+    c.tokens = Math.min(L.burst, c.tokens + (dt * L.ratePerSec) / 1000);
+    c.bytes = Math.min(L.byteBurst, c.bytes + (dt * L.bytesPerSec) / 1000);
     c.refillAt = now;
-    if (c.tokens < 1) return false;
+    if (c.tokens < 1 || c.bytes < bytes) return false;
     c.tokens -= 1;
+    c.bytes -= bytes;
     return true;
+  }
+
+  /** This address has guessed wrong too often lately. */
+  private guessing(c: Conn, now: number): boolean {
+    const L = this.limits;
+    if (!c.ip || !L.maxBadJoinsPerIp) return false;
+    const b = this.badByIp.get(c.ip);
+    return !!b && now - b.since < L.badJoinWindowMs && b.n >= L.maxBadJoinsPerIp;
+  }
+
+  /** Count a failed join or resume against the socket and its address. Returns true when the socket was closed. */
+  private badGuess(c: Conn, now: number): boolean {
+    c.badJoins++;
+    if (c.ip) {
+      const b = this.badByIp.get(c.ip);
+      if (!b || now - b.since >= this.limits.badJoinWindowMs) this.badByIp.set(c.ip, { n: 1, since: now });
+      else b.n++;
+    }
+    if (c.badJoins >= this.limits.maxBadJoins) {
+      this.kick(c, CLOSE.policy, 'too many bad joins');
+      return true;
+    }
+    return false;
   }
 
   /** Every seat gone for good (or never taken)? */

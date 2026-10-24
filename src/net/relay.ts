@@ -65,8 +65,8 @@ export const CLOSE = {
 } as const;
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-/** Room codes: 5 characters from a 32-letter alphabet with no 0/O or 1/I (33.5 million codes). */
-export const CODE_LENGTH = 5;
+/** Room codes: 6 characters from a 32-letter alphabet with no 0/O or 1/I (about a billion codes). */
+export const CODE_LENGTH = 6;
 export const CODE_RE = new RegExp(`^[${CODE_CHARS}]{${CODE_LENGTH}}$`);
 
 export function makeCode(rand: () => number): string {

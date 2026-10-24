@@ -1,7 +1,9 @@
 // Where the relay lives, if anywhere. The build bakes in DERBY_RELAY_URL
 // (scripts/build.ts; empty by default, so the Online option stays hidden
-// until a relay is deployed), and ?relay=wss://... in the page address
-// overrides it for testing. Only ws: and wss: URLs are accepted.
+// until a relay is deployed). ?relay=wss://... in the page address overrides
+// it, but only on a local page (file:, localhost, 127.0.0.1): on the real
+// site a link with ?relay= would send players to someone else's server.
+// Only ws: and wss: URLs are accepted.
 
 declare const __DERBY_RELAY_URL__: string | undefined;
 
@@ -23,8 +25,15 @@ function wsUrl(raw: string | null | undefined): string | null {
   }
 }
 
-export function relayConfig(search: string = typeof location === 'undefined' ? '' : location.search, builtIn: string = BUILT_IN): RelayConfig | null {
-  const q = wsUrl(new URLSearchParams(search).get('relay'));
+/** A page where ?relay= may be honoured: a local file or a local dev server. */
+export function isLocalPage(loc: { protocol: string; hostname: string }): boolean {
+  return loc.protocol === 'file:' || ['localhost', '127.0.0.1', '[::1]', '::1'].includes(loc.hostname);
+}
+
+const here = () => (typeof location === 'undefined' ? { protocol: 'file:', hostname: '', search: '' } : location);
+
+export function relayConfig(loc: { protocol: string; hostname: string; search: string } = here(), builtIn: string = BUILT_IN): RelayConfig | null {
+  const q = isLocalPage(loc) ? wsUrl(new URLSearchParams(loc.search).get('relay')) : null;
   if (q) return { url: q, fromQuery: true };
   const b = wsUrl(builtIn);
   return b ? { url: b, fromQuery: false } : null;

@@ -94,7 +94,7 @@ test('Online: two browsers pair by invite link, stay in sync through a dropped s
   const relay = await startRelay();
   try {
     const { host, guest, code, link } = await pairedPages(t, relay.port);
-    expect(code, 'room code').toMatch(/^[A-Z0-9]{5}$/);
+    expect(code, 'room code').toMatch(/^[A-Z0-9]{6}$/);
     expect(link, 'invite link').toContain(`?join=${code}`);
     expect(await host.locator(SEL.onlineStatus).innerText(), 'host waiting').toMatch(/Waiting for them to join/);
     const before = await readSave(host);
@@ -176,9 +176,9 @@ test('Online: a wrong code and a different game version get clear messages', asy
     const { guest, code } = await pairedPages(t, relay.port);
     await goTab(guest, SEL.homeScreen);
     await guest.locator(SEL.playOnline).click();
-    await guest.locator(SEL.onlineCodeInput).fill('ZZZZZ');
+    await guest.locator(SEL.onlineCodeInput).fill('ZZZZZZ');
     await guest.locator(SEL.onlineJoin).click();
-    await guest.waitForFunction((sel) => /No match with code ZZZZZ/.test(document.querySelector(sel).textContent), SEL.onlineStatus, { timeout: 10_000 });
+    await guest.waitForFunction((sel) => /No match with code ZZZZZZ/.test(document.querySelector(sel).textContent), SEL.onlineStatus, { timeout: 10_000 });
     expect(await guest.locator(SEL.onlineJoin).isEnabled(), 'can try again').toBe(true);
 
     // Pretend to be an older build: rewrite the version this page sends to the relay.
@@ -192,6 +192,73 @@ test('Online: a wrong code and a different game version get clear messages', asy
     await guest.locator(SEL.onlineJoin).click();
     await guest.waitForFunction((sel) => /different version/.test(document.querySelector(sel).textContent), SEL.onlineStatus, { timeout: 10_000 });
     expect(await guest.locator(SEL.onlineLobby).getAttribute('data-state'), 'version state').toBe('version');
+  } finally {
+    relay.stop();
+  }
+});
+
+/** A raw relay client in Node (the attacker), speaking the protocol directly. */
+function rawClient(port) {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const inbox = [];
+    ws.onmessage = (e) => inbox.push(JSON.parse(String(e.data)));
+    ws.onopen = () => resolve({ ws, inbox, send: (m) => ws.send(JSON.stringify(m)) });
+    ws.onerror = reject;
+  });
+}
+
+test('Online: a hostile guest cannot inject markup or script into the host page', async (t) => {
+  const relay = await startRelay();
+  try {
+    const query = `relay=${encodeURIComponent(`ws://127.0.0.1:${relay.port}/ws`)}`;
+    const host = await openApp(t, { prefs: { controls: 'mouse' }, query, e2eHook: true, renderer: '2d' });
+    await host.evaluate(() => {
+      window.__pwned = 0;
+    });
+    await goTab(host, SEL.homeScreen);
+    await host.locator(SEL.playOnline).click();
+    await host.locator(SEL.onlineHost).click();
+    await host.locator(SEL.onlineCode).waitFor({ state: 'visible', timeout: 10_000 });
+    const code = (await host.locator(SEL.onlineCode).innerText()).trim();
+
+    // A well-formed team to tamper with: the host's own, from its save.
+    const team = await host.evaluate(() => {
+      const s = JSON.parse(localStorage.getItem('derbyday.save.v1'));
+      const players = s.lineup.map((id, i) => {
+        const p = s.squad.find((x) => x.id === id);
+        const a = {};
+        for (const k of ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'stamina', 'goalkeeping']) a[k] = p.attrs[k] / 100;
+        return { id: p.id, name: `P${i}`, number: p.number, role: p.role, attrs: a };
+      });
+      return { name: 'Evil FC', short: 'EVL', primary: '#112233', secondary: '#ddeeff', players, aiSkill: 0.6, formation: '4-4-2' };
+    });
+    const xss = '<img src=x onerror="window.__pwned++">';
+    const bad = await rawClient(relay.port);
+    bad.send({ t: 'join', code, v: await host.evaluate(() => window.__derbyNet.version) });
+    await new Promise((r) => setTimeout(r, 300));
+    expect(bad.inbox[0] && bad.inbox[0].t, 'attacker joined the room').toBe('joined');
+
+    // 1. Markup in a colour: the join is refused and the host says so.
+    bad.send({ t: 'relay', m: { t: 'join', id: 'evil', team: { ...team, primary: `#f00"/>${xss}` }, crest: 'plain' } });
+    await host.waitForFunction((sel) => document.querySelector(sel).dataset.state === 'bad-team', SEL.onlineLobby, { timeout: 5000 });
+
+    // 2. Markup in names: accepted with the markup stripped; the match starts and renders the names.
+    bad.send({ t: 'relay', m: { t: 'join', id: 'evil2', team: { ...team, name: `Evil ${xss}`, players: team.players.map((p) => ({ ...p, name: `${xss}${p.name}` })) }, crest: '<b>' } });
+    await new Promise((r) => setTimeout(r, 500));
+    const start = bad.inbox.find((m) => m.t === 'relay' && m.m.t === 'start');
+    expect(!!start, 'host answered the second join').toBe(true);
+    expect(JSON.stringify(start.m.start.away), 'no markup in the start the host built').notToContain('<');
+    bad.send({ t: 'relay', m: { t: 'ready', id: 'evil2' } });
+    await host.waitForSelector(SEL.netMatch, { timeout: 15_000 });
+    // 3. Junk lockstep traffic: nulls, wrong shapes, non-finite numbers, far-future ticks.
+    const junk = [null, 7, 'x', { t: 'in', inputs: null }, { t: 'in', from: 5, ack: 0, inputs: [null, { loft: 'abc', cursor: { x: 50, z: 1 } }] }, { t: 'in', from: 1e9, ack: 1e9, inputs: new Array(120).fill({ pass: true }) }, { t: 'fp', tick: 1e9, fp: 1 }, { t: 'ping' }];
+    for (let i = 0; i < 50; i++) for (const m of junk) bad.send({ t: 'relay', m });
+    await host.waitForTimeout(1500);
+    expect(await host.evaluate(() => window.__pwned), 'no injected handler ran').toBe(0);
+    expect(await host.locator('#app img[src="x"]').count(), 'no injected element').toBe(0);
+    // (Page errors from the junk would fail the test through the harness.)
+    bad.ws.close();
   } finally {
     relay.stop();
   }

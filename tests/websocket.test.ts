@@ -6,7 +6,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { RelayCore, type RelayLimits, type RelaySocket } from '../server/relay-core.ts';
-import { startRelay } from '../server/bun.ts';
+import { clientIp, startRelay } from '../server/bun.ts';
 import { Lockstep, syncHash, type LockstepMsg } from '../src/net/lockstep.ts';
 import { botInput } from '../src/net/memory.ts';
 import { ABANDON_MS, PeerWatch } from '../src/net/presence.ts';
@@ -115,7 +115,7 @@ function linkPair(sched: Sched, relay: ReturnType<typeof fakeRelay>) {
   host.onEvent((e) => events[0].push(e));
   sched.advance(100);
   expect(host.status).toBe('open');
-  expect(host.code).toMatch(/^[A-Z0-9]{5}$/);
+  expect(host.code).toMatch(/^[A-Z0-9]{6}$/);
   const guest = new WebSocketTransport<LockstepMsg>({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched });
   guest.onEvent((e) => events[1].push(e));
   sched.advance(100);
@@ -240,7 +240,7 @@ describe('websocket transport over the relay core', () => {
     sched.advance(100);
     const old = new WebSocketTransport({ url: 'ws://relay', version: netVersion(1, 3), role: { join: lonely.code! }, connect: relay.connect, timers: sched });
     const third = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: host.code! }, connect: relay.connect, timers: sched });
-    const nobody = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: 'QQQQQ' }, connect: relay.connect, timers: sched });
+    const nobody = new WebSocketTransport({ url: 'ws://relay', version: V, role: { join: 'QQQQQQ' }, connect: relay.connect, timers: sched });
     const before = relay.net.sockets.length;
     sched.advance(10_000);
     expect([old.status, third.status, nobody.status]).toEqual(['closed', 'closed', 'closed']);
@@ -357,5 +357,24 @@ describe('Bun relay over real sockets', () => {
     } finally {
       strict.stop();
     }
+  });
+});
+
+describe('client address behind proxies', () => {
+  const h = (xff: string, fly?: string) => new Headers({ 'x-forwarded-for': xff, ...(fly ? { 'fly-client-ip': fly } : {}) });
+  test('no trusted proxy: the socket address, whatever the headers say', () => {
+    expect(clientIp(h('1.1.1.1'), '9.9.9.9', {})).toBe('9.9.9.9');
+  });
+  test('one trusted proxy: the rightmost entry, so a forged left part changes nothing', () => {
+    expect(clientIp(h('6.6.6.6, 2.2.2.2'), '10.0.0.1', { trustProxy: true })).toBe('2.2.2.2');
+    expect(clientIp(h('2.2.2.2'), '10.0.0.1', { trustProxy: true })).toBe('2.2.2.2');
+    expect(clientIp(h('a, b, c, 2.2.2.2'), '10.0.0.1', { trustProxy: true, proxyHops: 1 })).toBe('2.2.2.2');
+  });
+  test('two hops count two from the right; a short chain falls back to the socket', () => {
+    expect(clientIp(h('6.6.6.6, 2.2.2.2, 10.0.0.5'), '10.0.0.1', { trustProxy: true, proxyHops: 2 })).toBe('2.2.2.2');
+    expect(clientIp(h('2.2.2.2'), '10.0.0.1', { trustProxy: true, proxyHops: 2 })).toBe('10.0.0.1');
+  });
+  test('Fly: Fly-Client-IP', () => {
+    expect(clientIp(h('6.6.6.6', '3.3.3.3'), '10.0.0.1', { trustProxy: true, fly: true })).toBe('3.3.3.3');
   });
 });

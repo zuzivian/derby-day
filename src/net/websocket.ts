@@ -85,6 +85,8 @@ export class WebSocketTransport<M> implements Transport<M> {
   error: { code: ErrorCode | 'network'; msg: string } | null = null;
   /** Successful resumes, for stats and tests. */
   resumes = 0;
+  /** The build identity sent in host/join. */
+  readonly version: string;
 
   private ws: SocketLike | null = null;
   private token: string | null = null;
@@ -103,6 +105,7 @@ export class WebSocketTransport<M> implements Transport<M> {
   private pingN = 0;
 
   constructor(private o: WebSocketTransportOptions) {
+    this.version = o.version;
     this.timers = o.timers ?? defaultTimers;
     this.connectFn = o.connect ?? ((url) => new WebSocket(url) as unknown as SocketLike);
     this.random = o.random ?? Math.random;
@@ -166,7 +169,7 @@ export class WebSocketTransport<M> implements Transport<M> {
       } catch {
         return;
       }
-      this.receive(msg);
+      if (msg && typeof msg === 'object') this.receive(msg);
     };
     ws.onerror = () => {
       /* a close follows */
@@ -181,7 +184,8 @@ export class WebSocketTransport<M> implements Transport<M> {
   private receive(msg: ServerMsg): void {
     switch (msg.t) {
       case 'relay':
-        this.listeners.emit(msg.m as M);
+        // Whatever the peer sent: only objects get through; their contents are checked by the receivers.
+        if (msg.m && typeof msg.m === 'object' && !Array.isArray(msg.m)) this.listeners.emit(msg.m as M);
         return;
       case 'hosted':
       case 'joined':
