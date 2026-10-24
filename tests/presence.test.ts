@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ABANDON_MS, PeerWatch, SILENT_MS, type Presence, type PresenceInput } from '../src/net/presence.ts';
+import { ABANDON_MS, MAX_STEP_MS, PeerWatch, SILENT_MS, type Presence, type PresenceInput } from '../src/net/presence.ts';
 
 /** Update every 100 ms (like a slow frame loop) from `from` to `to`; returns the last result. */
 function run(w: PeerWatch, from: number, to: number, f: (now: number) => Omit<PresenceInput, 'now'>): Presence {
@@ -40,9 +40,18 @@ describe('peer presence', () => {
     // peer's queued messages haven't been read yet: still not "lost", and certainly not abandoned.
     expect(w.update({ now: 26_000, stalled: true, lastHeardAt: 1000, away: false }).state).toBe('ok');
     expect(run(w, 26_100, 27_000, () => ({ stalled: true, lastHeardAt: 1000, away: false })).state).toBe('ok');
-    // Even with the relay saying "away", each frozen gap counts at most 250 ms.
+    // Even with the relay saying "away", each frozen gap counts at most MAX_STEP_MS.
     w.update({ now: 30_000, stalled: true, lastHeardAt: 1000, away: true });
     const p = w.update({ now: 60_000, stalled: true, lastHeardAt: 1000, away: true });
-    expect(p).toEqual({ state: 'lost', remainingMs: ABANDON_MS - 500 });
+    expect(p).toEqual({ state: 'lost', remainingMs: ABANDON_MS - 2 * MAX_STEP_MS });
+  });
+
+  test('a slow but live tab (2 frames a second) still counts down in real time', () => {
+    const w = new PeerWatch();
+    let p: Presence = { state: 'ok' };
+    let t = 0;
+    for (; t <= ABANDON_MS + 500 && p.state !== 'abandoned'; t += 500) p = w.update({ now: t, stalled: true, lastHeardAt: 0, away: true });
+    expect(p.state).toBe('abandoned');
+    expect(t).toBeLessThanOrEqual(ABANDON_MS + 500);
   });
 });

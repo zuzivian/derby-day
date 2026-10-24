@@ -30,8 +30,8 @@ export interface PresenceInput {
 
 export type Presence = { state: 'ok' } | { state: 'lost'; remainingMs: number } | { state: 'abandoned' };
 
-/** Longest gap between two updates that counts in full. Longer gaps are our own tab stalling, not the peer. */
-export const MAX_STEP_MS = 250;
+/** Longest gap between two updates that counts in full (a busy tab may draw only 1 or 2 frames a second). Longer gaps are our own tab freezing, not the peer. */
+export const MAX_STEP_MS = 1000;
 
 export class PeerWatch {
   /** Time spent lost, counting only time this side was actually running. */
