@@ -125,6 +125,10 @@ export interface Ball {
   handTicks?: number;
   /** A player who stretched for this ball and missed it: no second try with his feet until someone touches it (his body still blocks it). */
   whiff?: number;
+  /** The opponent whose shot the keeper last parried (until anyone else touches it), so a parry that goes in is his goal. */
+  parriedFrom?: number;
+  /** Tick the ball last changed course (kicked, headed, deflected): keepers react from here. */
+  redirectedAt?: number;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
@@ -328,6 +332,8 @@ export interface MatchState {
    * the ball, or plays like the CPU without it, instead of running back to a stale pointer.
    */
   ctlHold?: [boolean, boolean];
+  /** Per team: ticks the pointer has really moved since the hold began (it ends at HOLD_MOVES, human.ts). */
+  ctlHoldMoves?: [number, number];
   /** Per team: a first-time kick queued while a pass was on its way to the human's player (human.ts). */
   queued?: [QueuedKick | null, QueuedKick | null];
   /** Per team: this tick's pointer aim of a human (headers at goal go toward it), or null. */

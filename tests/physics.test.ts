@@ -238,6 +238,18 @@ describe('quick click passes chain (ask 6)', () => {
     expect(mate.pos.x).toBeGreaterThan(got.x + 2);
   });
 
+  test('a resting hand that nudges the mouse now and then does not send him back to the stale pointer', () => {
+    const { s, mate } = passScene({ x: 30, y: 30 }, { x: 44, y: 30 });
+    const stale = { x: 30, y: 44 }; // well off to one side
+    step(s, { cursor: mate.pos, aim: mate.pos, pass: true });
+    let t = 0;
+    while (s.ball.owner !== mate.i && t++ < 120) step(s, { cursor: stale });
+    const got = { ...mate.pos };
+    // Two seconds with a one-tick nudge every 25 ticks (about 4% of ticks).
+    for (let k = 0; k < 120; k++) step(s, { cursor: stale, moved: k % 25 === 0 });
+    expect(dist(mate.pos, got)).toBeLessThan(0.6);
+  });
+
   test('a click made while the pass is still coming is played first time the moment he has it', () => {
     const s = livePlay();
     const me = s.players[s.controlled[0]];
@@ -396,6 +408,29 @@ describe('the ball meets bodies by height (ask 4)', () => {
     expect(headed).toBeGreaterThan(6);
   });
 
+  test('a missed header does not let the ball through him: no ball below body height passes through a standing player', () => {
+    let through = 0;
+    let n = 0;
+    for (let seed = 0; seed < 60; seed++)
+      for (const z of [0.3, 1.0, 1.6, 1.75]) {
+        const { s, o } = oneOpponent({ x: 50, y: 30 });
+        s.rng.s = seed * 7919 + 13;
+        o.attrs.defending = 0.1; // misses most headers
+        o.attrs.dribbling = 0;
+        fire(s, { x: 44, y: 30 + (seed % 5) * 0.06 }, { x: 22, y: 0 }, z, 0.4);
+        s.ball.lastTouch = s.players.find((p) => p.team === 0 && p.role === 'FWD')!.i;
+        let touched = false;
+        for (let t = 0; t < 40 && s.phase === 'play'; t++) {
+          step(s);
+          if (s.ball.lastTouch === o.i) touched = true;
+        }
+        n++;
+        if (!touched && s.ball.pos.x > o.pos.x + 1) through++;
+      }
+    expect(n).toBe(240);
+    expect(through).toBe(0);
+  });
+
   test('no teleporting: a loose ball never moves further in a tick than its speed allows', () => {
     const s = livePlay(3, -1);
     let worst = 0;
@@ -426,7 +461,7 @@ describe('the ball meets bodies by height (ask 4)', () => {
 
 describe('goalkeeping (ask 5)', () => {
   /** A shot at team 1's goal (x = PITCH_W) from 20 m out, keeper set in the middle. */
-  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75) {
+  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2) {
     const s = livePlay(4, -1);
     const gk = goalkeeper(s, 1);
     const shooter = s.players.find((p) => p.team === 0 && p.role === 'FWD')!;
@@ -435,11 +470,11 @@ describe('goalkeeping (ask 5)', () => {
     gk.pos = { x: PITCH_W - 1, y: PITCH_H / 2 };
     gk.vel = { x: 0, y: 0 };
     gk.attrs.goalkeeping = gkSkill;
-    shooter.pos = { x: PITCH_W - 21, y: PITCH_H / 2 };
+    shooter.pos = { x: PITCH_W - dist - 1, y: fromY };
     shooter.stun = 0;
-    const from = { x: PITCH_W - 20, y: PITCH_H / 2 };
-    const d = Math.hypot(20, yAim - PITCH_H / 2);
-    fire(s, from, { x: (speed * 20) / d, y: (speed * (yAim - PITCH_H / 2)) / d }, z, vz);
+    const from = { x: PITCH_W - dist, y: fromY };
+    const d = Math.hypot(dist, yAim - fromY);
+    fire(s, from, { x: (speed * dist) / d, y: (speed * (yAim - fromY)) / d }, z, vz);
     s.ball.kickedBy = shooter.i;
     s.ball.lastTouch = shooter.i;
     s.ball.noPickup[shooter.i] = 30;
@@ -449,14 +484,18 @@ describe('goalkeeping (ask 5)', () => {
     let dived = false;
     let touched = false;
     // Until the keeper has touched it (or it is dead): a rebound is another story.
+    let diveEndedEarly = false;
     for (let t = 0; t < 150 && s.phase === 'play' && !touched; t++) {
+      const wasDiving = !!gk.dive && gk.dive.ticks > 0;
       step(s);
       if (gk.dive && gk.dive.ticks > 0) dived = true;
       if (s.ball.lastTouch === gk.i) touched = true;
+      // The dive is over and he is back on his feet with the ball still on its way to him.
+      if (wasDiving && !gk.dive && s.ball.pos.x < gk.pos.x - 0.5) diveEndedEarly = true;
     }
     // A parry: follow it a second longer, nobody else involved, to see it does not go in.
     for (let t = 0; t < 60 && s.phase === 'play' && touched && s.ball.owner < 0; t++) step(s);
-    return { s, gk, goal: s.score[0] > goals, dived, touched, caught: s.ball.owner === gk.i };
+    return { s, gk, goal: s.score[0] > goals, dived, touched, caught: s.ball.owner === gk.i, scorer: s.goals[s.goals.length - 1], diveEndedEarly };
   }
 
   test('a firm shot at the keeper is caught; a soft one along the floor is gathered', () => {
@@ -494,9 +533,10 @@ describe('goalkeeping (ask 5)', () => {
     const weak = rate(0.3);
     const strong = rate(0.9);
     console.log(`save rate: keeper 0.3 ${(weak * 100).toFixed(0)}%, keeper 0.9 ${(strong * 100).toFixed(0)}%`);
-    expect(strong).toBeGreaterThan(weak);
-    expect(weak).toBeGreaterThan(0.3);
-    expect(strong).toBeLessThan(1);
+    // Quality matters a lot: a weak keeper is beaten often, a top one rarely.
+    expect(strong).toBeGreaterThan(weak + 0.2);
+    expect(weak).toBeGreaterThan(0.2);
+    expect(weak).toBeLessThan(0.75);
   });
 
   test('a fierce shot into the top corner beats him', () => {
@@ -505,19 +545,43 @@ describe('goalkeeping (ask 5)', () => {
     expect(r.goal).toBe(true);
   });
 
-  test('a parry goes away from goal: wide, or over the bar; only a rare fingertip touch still creeps in', () => {
+  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar', () => {
     let parried = 0;
-    let crept = 0;
-    for (const off of [1.6, 1.8, 2.0, 2.2, 2.5, -1.7, -2.0, -2.3]) {
-      for (const z of [0, 1.2]) {
-        const r = shot(PITCH_H / 2 + off, 27, z, 0, 0.8);
-        if (!r.touched || r.caught) continue;
-        parried++;
-        if (r.goal) crept++;
+    for (const skill of [0.3, 0.6, 0.9])
+      for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
+        for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
+          const r = shot(PITCH_H / 2 + off, 24, z, vz, skill);
+          if (!r.touched || r.caught) continue;
+          parried++;
+          expect(r.goal).toBe(false);
+        }
+    expect(parried).toBeGreaterThan(20);
+  });
+
+  test('timing: he dives late, landing as the ball arrives: he is never down and out of it when a reachable shot passes', () => {
+    let untouched = 0;
+    let n = 0;
+    for (const dist of [16, 20, 25])
+      for (const off of [0.9, 1.4, 1.9, -1.1, -1.6])
+        for (const [sp, z, vz] of [[14, 0.2, 4], [17, 0.2, 3.5], [16, 0, 0], [20, 0, 0]]) {
+          const r = shot(PITCH_H / 2 + off, sp, z, vz, 0.9, dist);
+          n++;
+          if (r.goal && !r.touched) untouched++;
+          // When the shot goes past him, his dive (if any) is still on, or he is stretched out where his hands reach.
+          if (r.dived && !r.touched) expect(r.diveEndedEarly).toBe(false);
+        }
+    // A 0.9 keeper still misreads one now and then (seeded), never because he went too early.
+    expect(n).toBe(60);
+    expect(untouched).toBeLessThanOrEqual(2);
+  });
+
+  test("a shot he parries in is the shooter's goal, not the keeper's own goal", () => {
+    // Weak keeper, shots near the post: some get a hand to it and still concede.
+    for (const off of [2.6, 2.9, 3.2, -2.7, -3.1])
+      for (const sp of [24, 28]) {
+        const r = shot(PITCH_H / 2 + off, sp, 0, 0, 0.3);
+        if (r.goal) expect(r.scorer!.ownGoal).toBe(false);
       }
-    }
-    expect(parried).toBeGreaterThan(5);
-    expect(crept / parried).toBeLessThan(0.25);
   });
 
   test('outside his box a keeper has no hands: the ball meets his feet or body like anyone else', () => {
@@ -561,6 +625,26 @@ describe("the human's keeper (ask 8)", () => {
     for (let t = 0; t < 300; t++) step(s, { cursor: { x: 40, y: 30 } });
     expect(s.ball.owner).toBe(gk.i);
     expect(gk.pos.x).toBeLessThan(16);
+  });
+
+  test('Law 12: holding the ball he cannot be bundled over his own line by a pressing forward, and releases it at the countdown', () => {
+    const { s, gk } = keeperHas();
+    expect(s.ball.owner).toBe(gk.i);
+    gk.pos = { x: 1.5, y: PITCH_H / 2 };
+    const fwd = s.players.find((p) => p.team === 1 && p.role === 'FWD')!;
+    fwd.stun = 0;
+    // The forward leans on him from the front for the whole six seconds.
+    let released = -1;
+    const goals = s.score[1] + s.score[0];
+    for (let t = 0; t < KEEPER_HOLD_TICKS + 120 && released < 0; t++) {
+      fwd.pos = { x: gk.pos.x + 0.6, y: gk.pos.y + 0.1 };
+      fwd.vel = { x: -6, y: 0 };
+      step(s, { cursor: { x: 40, y: 30 } });
+      expect(gk.pos.x).toBeGreaterThan(0.45);
+      if (s.ball.owner !== gk.i) released = t;
+    }
+    expect(s.score[1] + s.score[0]).toBe(goals);
+    expect(released).toBeGreaterThan(KEEPER_HOLD_TICKS - 30);
   });
 
   test('a click rolls it out, a right click punts it long', () => {
@@ -661,18 +745,33 @@ describe('match stats are meaningful', () => {
     expect(s.stats[0].shots).toBe(0);
   });
 
-  test('a long solo dribble is possession; a CPU match splits possession and passes sensibly', () => {
-    const s = createMatch({ seed: 2, ...teams(3), halfSeconds: 60, humanTeam: -1 });
-    while (s.phase !== 'fulltime') step(s);
-    const [a, b] = possessionShare(s);
-    expect(a + b).toBe(100);
-    expect(a).toBeGreaterThan(25);
-    expect(b).toBeGreaterThan(25);
-    for (const st of s.stats) {
-      expect(st.passes).toBeLessThanOrEqual(st.passAttempts);
-      expect(st.passes / st.passAttempts).toBeGreaterThan(0.45);
-      expect(st.onTarget).toBeLessThanOrEqual(st.shots);
+  test('a chip at goal is a shot, not a pass attempt', () => {
+    const { s, me } = passScene({ x: PITCH_W - 18, y: PITCH_H / 2 }, { x: 40, y: 10 });
+    void me;
+    step(s, { cursor: { x: PITCH_W, y: PITCH_H / 2 }, aim: { x: PITCH_W, y: PITCH_H / 2 }, loft: 0.3 });
+    expect(s.stats[0].shots).toBe(1);
+    expect(s.stats[0].passAttempts).toBe(0);
+  });
+
+  test('CPU matches split possession and pass sensibly', () => {
+    let passes = 0;
+    let attempts = 0;
+    for (const seed of [2, 3, 4]) {
+      const s = createMatch({ seed, ...teams(seed + 1), halfSeconds: 60, humanTeam: -1 });
+      while (s.phase !== 'fulltime') step(s);
+      const [a, b] = possessionShare(s);
+      expect(a + b).toBe(100);
+      expect(a).toBeGreaterThan(25);
+      expect(b).toBeGreaterThan(25);
+      for (const st of s.stats) {
+        expect(st.passes).toBeLessThanOrEqual(st.passAttempts);
+        expect(st.onTarget).toBeLessThanOrEqual(st.shots);
+        passes += st.passes;
+        attempts += st.passAttempts;
+      }
     }
+    // Clearances and long balls count as attempts, so this is below a pure ground-pass rate.
+    expect(passes / attempts).toBeGreaterThan(0.45);
   });
 });
 

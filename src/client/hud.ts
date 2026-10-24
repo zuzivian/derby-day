@@ -190,7 +190,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         power.classList.toggle('on', charge > 0);
         power.classList.toggle('hot', charge > SWEET_SPOT + 0.05);
       }
-      const left = keeperHoldLeft(s, s.humans[0] ? 0 : 1);
+      const left = keeperHoldLeft(s, 0) ?? keeperHoldLeft(s, 1);
       if (left !== lastHold) {
         lastHold = left;
         hold.hidden = left === null;

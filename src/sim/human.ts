@@ -125,6 +125,9 @@ export function pickTeammate(s: MatchState, team: 0 | 1, point: Vec): number {
 // ---------------------------------------------------------------------------
 // Intent
 
+/** Ticks the pointer must really move before a player held after an automatic switch is the human's again (about 0.13 s of moving it). */
+export const HOLD_MOVES = 8;
+
 /** A first-time shot struck off a right click made before the ball arrived. */
 export const FIRST_TIME_SHOT = 0.75;
 /** A click queued for a first-time kick lapses this many ticks after it was made, if the ball has not come. */
@@ -295,8 +298,14 @@ function give(s: MatchState, team: 0 | 1, i: number, auto: boolean): void {
 
 export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): void {
   if (!s.humans[team]) return;
-  // Moving the pointer (or pressing a direction key) ends the hold after an automatic switch.
-  if (s.ctlHold?.[team] && (input.moved || (input.dir && (input.dir.x !== 0 || input.dir.y !== 0)) || !input.cursor)) s.ctlHold[team] = false;
+  // Really moving the pointer (HOLD_MOVES ticks of it, so a resting hand's nudge doesn't
+  // count), or pressing a direction key, ends the hold after an automatic switch.
+  if (s.ctlHold?.[team]) {
+    if (!s.ctlHoldMoves) s.ctlHoldMoves = [0, 0];
+    if (input.moved) s.ctlHoldMoves[team]++;
+    if (s.ctlHoldMoves[team] >= HOLD_MOVES || (input.dir && (input.dir.x !== 0 || input.dir.y !== 0)) || !input.cursor) s.ctlHold[team] = false;
+  }
+  if (s.ctlHoldMoves && !s.ctlHold?.[team]) s.ctlHoldMoves[team] = 0;
   const q = s.queued?.[team];
   if (q && s.tick > q.until && s.ball.owner !== q.player) s.queued![team] = null;
   const ball = s.ball;
