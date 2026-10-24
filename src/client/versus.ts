@@ -355,8 +355,8 @@ function netResult(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o:
   if (end === 'left') return null;
   const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
   if (end === 'abandoned') {
-    const note = `Your opponent disconnected and did not come back within 20 seconds. Abandoned at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
-    return { ...resultFor(m, side, opp, o.save.club.elo, 'Abandoned friendly', note), unrecorded: 'Abandoned friendly: no result, no Elo, no money, no training.' };
+    const note = `Your opponent disconnected and did not come back within 20 seconds. Stopped at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
+    return { ...resultFor(m, side, opp, o.save.club.elo, label, note), abandoned: true, unrecorded: 'Abandoned friendly: no result, no Elo, no money, no training.' };
   }
   const hash = syncHash(m).toString(16).padStart(8, '0');
   const note = `Final ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short} at tick ${m.tick}, state #${hash}. Input delay ${start.delay} ticks.`;
@@ -445,6 +445,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     link = null;
     $('online-code').hidden = true;
     $('online-invite').hidden = true;
+    $('online-host').hidden = false;
     buttons(true);
   };
   const leave = () => {
@@ -501,6 +502,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
           const url = inviteLink(e.code, cfg);
           $('online-code').textContent = e.code;
           $('online-code').hidden = false;
+          $('online-host').hidden = true;
           $<HTMLInputElement>('online-link').value = url;
           $('online-invite').hidden = false;
           status(`Send your friend the link or the code ${e.code}. Waiting for them to join…`, false, 'waiting');

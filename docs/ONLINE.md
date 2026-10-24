@@ -152,7 +152,14 @@ The client connects to whatever URL it is given, so use `wss://relay.derby.natwo
 
 ### Scaling
 
-One Bun process forwards the ~65 messages a second each player sends without doing any game work, so one small machine should carry hundreds of simultaneous matches. This has not been load-tested on real hardware. When one region isn't enough, run one relay per region and put the region in the room code or the invite link, so both players reach the same machine. Rooms don't need to be shared between machines. The step after that is the Phase 3 authoritative server, which runs `src/sim` itself.
+One Bun process forwards messages without doing any game work. A local load test (`Bun.serve` relay in one process, the clients in another, on the same 4-core sandbox) had every player send 60 typical input messages a second:
+
+| Matches | Sockets | Messages/s through the relay | Relay CPU (one core) | Relay memory | Relay latency p50 / p95 |
+|---|---|---|---|---|---|
+| 100 | 200 | 11,800 | 27% | 33 MB | 2.5 / 5.8 ms |
+| 300 | 600 | 34,900 | 70% | 34 MB | 7.1 / 17.5 ms |
+
+So one small machine with one core carries about 300–400 matches at a time, or 600–800 players. The latency figures include the load client's own scheduling, so the relay alone is faster. This hasn't been measured on real hosting hardware or over the internet. When one region isn't enough, run one relay per region and put the region in the room code or the invite link, so both players reach the same machine. Rooms don't need to be shared between machines. The step after that is the Phase 3 authoritative server, which runs `src/sim` itself.
 
 ## Going live: what the owner needs to do
 
@@ -162,7 +169,7 @@ One Bun process forwards the ~65 messages a second each player sends without doi
 4. **In Vercel**, add the environment variable `DERBY_RELAY_URL=wss://relay.derby.natwong.dev/ws` (Production, and Preview if wanted) and redeploy. The build bakes it in (`scripts/build.ts`), and the Online button appears on the vs Player card. Before that, you can test production against the relay with `https://derby.natwong.dev/?relay=wss://relay.derby.natwong.dev/ws`.
 5. **Play a match with someone in another city** and look at the stats line under the pitch (round trip, share of time waiting). If waits are common, raise the default input delay (`DEFAULT_DELAY` in `src/client/versus.ts`, 4 ticks = 67 ms).
 
-Rough cost: one small always-on machine, about $2–5 a month on Fly.io or Railway, or $7 on Render's cheapest paid instance. Bandwidth is about 25 KB/s per match (both directions, JSON), roughly 9 MB per 6-minute match.
+Rough cost: one small always-on machine, about $2–5 a month on Fly.io or Railway, or $7 on Render's cheapest paid instance. Bandwidth is about 18 KB/s per player in each direction (JSON), roughly 13 MB in and 13 MB out of the relay per 6-minute match.
 
 ## Accounts and server-side saves (not built)
 

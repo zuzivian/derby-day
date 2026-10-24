@@ -160,7 +160,7 @@ function versusCard(s: Save): string {
     <div class="mode-actions">
       ${local ? `<button class="mode-btn" id="play-local2p" data-action="play-local2p" aria-label="vs Player on one screen: Local 2P">${ICON.keys}<span>One screen</span></button>` : ''}
       ${link ? `<button class="mode-btn" id="play-link" data-action="play-link" aria-label="vs Player in two browser tabs: Link two tabs">${ICON.tabs}<span>Two tabs</span></button>` : ''}
-      ${link && relayConfig() ? `<button class="mode-btn" id="play-online" data-action="play-online" aria-label="vs Player online: invite a friend">${ICON.globe}<span>Online</span></button>` : ''}
+      ${link && relayConfig() ? `<button class="mode-btn" id="play-online" data-action="play-online" style="flex-basis: 100%" aria-label="vs Player online: invite a friend">${ICON.globe}<span>Online</span></button>` : ''}
     </div>
   </article>`;
 }

@@ -21,6 +21,8 @@ export type Screen = 'home' | 'squad' | 'transfers' | 'training' | 'ladder' | 'c
 export interface ResultView {
   ranked: boolean;
   forfeited: boolean;
+  /** An online friendly that ended because the opponent never came back: no winner, no "full-time". */
+  abandoned?: boolean;
   gf: number;
   ga: number;
   opp: { name: string; short: string; primary: string; secondary: string; crest: CrestPattern };
@@ -359,13 +361,13 @@ export function ladderScreen(app: App): string {
 function resultModal(app: App): string {
   const r = app.result!;
   const c = app.save.club;
-  const outcome = r.gf > r.ga ? 'Win' : r.gf === r.ga ? 'Draw' : 'Defeat';
+  const outcome = r.abandoned ? 'Abandoned' : r.gf > r.ga ? 'Win' : r.gf === r.ga ? 'Draw' : 'Defeat';
   const d = r.eloAfter - r.eloBefore;
   const stat = (label: string, a: number | string, b: number | string) => `<div class="stat"><span class="num">${a}</span><span class="stat-label">${label}</span><span class="num">${b}</span></div>`;
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
     <div class="modal-card">
-      <div class="eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · full-time${r.forfeited ? ' · forfeited' : ''}</div>
+      <div class="eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))}${r.abandoned ? '' : ' · full-time'}${r.forfeited ? ' · forfeited' : ''}</div>
       <h2 id="result-title" class="result-title" tabindex="-1">${outcome}</h2>
       <div class="result-score">
         <div class="side">${crestSvg(c, 44)}<span>${esc(c.short)}</span></div>
