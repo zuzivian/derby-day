@@ -4,11 +4,16 @@
 const { test, expect } = require('./lib/harness.cjs');
 const { SEL, openApp, goTab, readSave } = require('./lib/helpers.cjs');
 
+// Where each human's man is, read from the sim. The pitch's data-p1/data-p2 hooks are only written
+// when a frame is drawn, so under load they can lag the sim by a dozen ticks.
 const pos = async (page, which) => {
-  const v = await page.locator(SEL.pitch).getAttribute(`data-${which}`);
-  if (!v) throw new Error(`no data-${which} on the pitch`);
-  const [i, x, y] = v.split(',').map(Number);
-  return { i, x, y };
+  const p = await page.evaluate((team) => {
+    const s = window.__derbyMatch;
+    const m = s.players[s.controlled[team]];
+    return { i: m.i, x: m.pos.x, y: m.pos.y };
+  }, which === 'p1' ? 0 : 1);
+  expect(await page.locator(SEL.pitch).getAttribute(`data-${which}`), `the pitch exposes data-${which}`).toBeTruthy();
+  return p;
 };
 
 test('Local 2P: pick an opponent, both players steer their own team, nothing is recorded', async (t) => {
@@ -32,19 +37,29 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   // view can take a couple of seconds to get its first frames up.
   await page.waitForFunction(() => (document.getElementById('sb-clock')?.textContent ?? '00:00') !== '00:00', null, { timeout: 15_000 });
   await page.waitForTimeout(250);
-  // Hold keys for a stretch of SIM time, not wall time: a software-rendered 3D view on a slow runner
-  // gives the sim at most 0.2 s per frame, so 500 ms of wall time could be a single sampled frame
-  // (CI once saw player 1 move 0.4 m in a 500 ms hold). The count starts when the team's man starts
-  // moving, because under load the key event itself can land a few frames late. 60 ticks = 1 s.
-  const hold = async (keys, ticks, team, dir) => {
-    for (const k of keys) await page.keyboard.down(k);
-    const start = await page.waitForFunction(([team, dir]) => {
+  // Hold keys until each listed man has covered `dist` metres the way his key says, or for at most
+  // two seconds of SIM time once they start moving, then let go; the assertions below check the
+  // distances. Fixed holds were either wall time (a software-rendered 3D frame gives the sim at most
+  // 0.2 s, so CI once saw 0.4 m in a 500 ms hold) or a tick count that sat too close to the
+  // thresholds once acceleration and turning out of the previous run are counted (0.87 m for 1 m).
+  const hold = async (keys, goals) => {
+    await page.evaluate((goals) => {
       const s = window.__derbyMatch;
-      const v = s.players[s.controlled[team]].vel;
-      return v.x * dir.x + v.y * dir.y > 0.3 ? s.tick : null; // moving the way the key says (not still coasting from the last hold)
-    }, [team, dir], { timeout: 20_000, polling: 'raf' });
-    const until = (await start.jsonValue()) + ticks;
-    await page.waitForFunction((t) => window.__derbyMatch.tick >= t, until, { timeout: 20_000, polling: 30 });
+      window.__hold = { from: -1, start: goals.map((g) => ({ ...s.players[s.controlled[g.team]].pos })) };
+    }, goals);
+    for (const k of keys) await page.keyboard.down(k);
+    await page.waitForFunction((goals) => {
+      const s = window.__derbyMatch;
+      const h = window.__hold;
+      let reached = 0;
+      goals.forEach((g, n) => {
+        const m = s.players[s.controlled[g.team]];
+        // Count from when one moves the way his key says (under load the key event can land a few frames late).
+        if (h.from < 0 && m.vel.x * g.dir.x + m.vel.y * g.dir.y > 0.3) h.from = s.tick;
+        if ((m.pos.x - h.start[n].x) * g.dir.x + (m.pos.y - h.start[n].y) * g.dir.y >= g.dist + 0.3) reached++;
+      });
+      return reached === goals.length || (h.from >= 0 && s.tick >= h.from + 120);
+    }, goals, { timeout: 30_000, polling: 'raf' });
     for (const k of keys) await page.keyboard.up(k);
   };
   // Pin each human to the man they start on: the auto-switch hands control to whoever is nearest the
@@ -53,13 +68,13 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   await page.evaluate(() => { window.__derbyMatch.switchTimer[0] = window.__derbyMatch.switchTimer[1] = 1e9; });
   const a1 = await pos(page, 'p1');
   const a2 = await pos(page, 'p2');
-  await hold(['ArrowDown'], 42, 1, { x: 0, y: 1 });
+  await hold(['ArrowDown'], [{ team: 1, dir: { x: 0, y: 1 }, dist: 2 }]);
   const b1 = await pos(page, 'p1');
   const b2 = await pos(page, 'p2');
   expect(b2.i, 'player 2 still on the same player').toBe(a2.i);
   expect(b2.y - a2.y, 'player 2 ran down on the arrow key').toBeGreaterThan(2);
   expect(Math.hypot(b1.x - a1.x, b1.y - a1.y), 'player 1 stayed put meanwhile').toBeLessThan(1);
-  await hold(['w'], 42, 0, { x: 0, y: -1 });
+  await hold(['w'], [{ team: 0, dir: { x: 0, y: -1 }, dist: 2 }]);
   const c1 = await pos(page, 'p1');
   expect(c1.i, 'player 1 still on the ball carrier').toBe(b1.i);
   expect(b1.y - c1.y, 'player 1 ran up on W').toBeGreaterThan(2);
@@ -73,9 +88,8 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
     for (const p of s.players) if (p !== me && p !== p2) p.stun = 1e7;
     Object.assign(p2, { pos: { x: me.pos.x + 2, y: me.pos.y + 12 }, vel: { x: 0, y: 0 } });
   });
-  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // the pitch's data-p2 is written per frame
   const c2 = await pos(page, 'p2');
-  await hold(['d', 'ArrowLeft'], 30, 0, { x: 1, y: 0 });
+  await hold(['d', 'ArrowLeft'], [{ team: 0, dir: { x: 1, y: 0 }, dist: 1 }, { team: 1, dir: { x: -1, y: 0 }, dist: 1 }]);
   const d1 = await pos(page, 'p1');
   const d2 = await pos(page, 'p2');
   expect(d1.x - c1.x, 'together: player 1 ran right on D').toBeGreaterThan(1);
