@@ -242,8 +242,10 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   };
   el.addEventListener('click', onClick);
 
-  return {
+  let lastState: MatchState | null = null;
+  const handle: CoachHandle = {
     update(s, dtMs) {
+      lastState = s;
       tracker.observe(s, human);
       if (shown) {
         age += dtMs;
@@ -265,8 +267,21 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     dispose() {
       el.removeEventListener('click', onClick);
       el.remove();
+      if (e2eHook && (globalThis as { __derbyCoach?: unknown }).__derbyCoach === hook) delete (globalThis as { __derbyCoach?: unknown }).__derbyCoach;
     },
   };
+  // End-to-end tests set window.__e2e before the page loads (as for window.__derbyMatch in matchView.ts). They get the
+  // coach's own tip clock, so "a tip holds for N seconds" is measured in tip time, not in wall time that a slow
+  // software renderer stretches, and can advance it without waiting for frames.
+  const e2eHook = !!(globalThis as { __e2e?: boolean }).__e2e;
+  const hook = {
+    state: () => ({ shown, age, counted, minMs: shown ? minTipMs(text) : 0, seenAfterMs: SEEN_AFTER_MS, queue: [...tracker.queue] }),
+    advance: (ms: number) => {
+      if (lastState) handle.update(lastState, ms);
+    },
+  };
+  if (e2eHook) (globalThis as { __derbyCoach?: unknown }).__derbyCoach = hook;
+  return handle;
 }
 
 // ---------------------------------------------------------------------------

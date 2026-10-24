@@ -22,6 +22,8 @@ export type Screen = 'home' | 'squad' | 'transfers' | 'training' | 'ladder' | 'c
 export interface ResultView {
   ranked: boolean;
   forfeited: boolean;
+  /** An online friendly that ended because the opponent never came back: no winner, no "full-time". */
+  abandoned?: boolean;
   gf: number;
   ga: number;
   opp: { name: string; short: string; primary: string; secondary: string; crest: CrestPattern };
@@ -437,9 +439,12 @@ function rewardChip(cls: string, icon: string, label: string, main: string, sub 
 function resultModal(app: App): string {
   const r = app.result!;
   const c = app.save.club;
-  const outcome: Outcome = r.pens
-    ? r.pens.you > r.pens.opp ? 'win' : 'loss'
-    : r.gf > r.ga ? 'win' : r.gf === r.ga ? 'draw' : 'loss';
+  // An abandoned online friendly has no winner: it takes the neutral (draw) look and says "Abandoned".
+  const outcome: Outcome = r.abandoned
+    ? 'draw'
+    : r.pens
+      ? r.pens.you > r.pens.opp ? 'win' : 'loss'
+      : r.gf > r.ga ? 'win' : r.gf === r.ga ? 'draw' : 'loss';
   const d = r.eloAfter - r.eloBefore;
   const [a, b] = r.stats;
   const us = c.short;
@@ -461,8 +466,8 @@ function resultModal(app: App): string {
     <div class="modal-card result-card" data-outcome="${outcome}">
       <div class="rs-scroll">
       <header class="rs-hero">
-        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.forfeited ? 'Forfeited' : 'Full-time'}</div>
-        <h2 id="result-title" class="result-title" tabindex="-1">${OUTCOME_WORD[outcome]}</h2>
+        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
+        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : OUTCOME_WORD[outcome]}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
           <div class="rs-team">
