@@ -23,7 +23,6 @@ import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
 import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
-import { setBusyProbe } from './tabguard.ts';
 import { openSettings } from './settings.ts';
 import { telemetry } from './telemetry.ts';
 import { clubLevel } from '../meta/levels.ts';
@@ -71,7 +70,6 @@ writePrefs(app.prefs);
 let saved = writeSaveResult(app.save) !== 'blocked';
 /** True while a match, setup or the training ground owns #app. */
 let takeover = false;
-setBusyProbe(() => takeover); // another tab asking for the club waits while a match is on (tabguard.ts)
 /** Where focus goes after the next render, when it isn't simply "where it was". */
 let pendingFocus: FocusKey | null = null;
 /** The control that started the last match, to return focus to after the result dialog. */

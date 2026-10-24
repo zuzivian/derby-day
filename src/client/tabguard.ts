@@ -21,10 +21,12 @@ export const HEARTBEAT_MS = 2000;
 export const STALE_MS = 7000;
 /** How long a taker waits for the owner to answer before treating it as gone. */
 const ASK_MS = 1500;
+/** How long a booting tab waits for a sign of life from the tab holding a lease before deciding it is gone. */
+const PING_MS = 400;
 /** After the owner yields, how long a taker waits for the lock to come free before taking it by force. */
 const LOCK_WAIT_MS = 3000;
 
-type Msg = { type: 'ask' | 'yield' | 'busy' | 'claim'; from: string; to?: string };
+type Msg = { type: 'ask' | 'yield' | 'busy' | 'claim' | 'ping' | 'alive'; from: string; to?: string };
 interface Lease {
   id: string;
   t: number;
@@ -35,11 +37,17 @@ export interface GuardHooks {
   onLost: () => void;
 }
 
-let busyProbe: () => boolean = () => false;
-/** The game tells the guard when a match, setup or the training ground is on screen: the club is not handed over then. */
-export function setBusyProbe(fn: () => boolean): void {
-  busyProbe = fn;
-}
+/**
+ * A live match is on screen (the pitch exists): the club is never handed over or yielded mid-match, so its result
+ * is saved first. Setup, menus and the result dialog hold nothing that is not already saved, so they do not count.
+ */
+const matchOn = (): boolean => {
+  try {
+    return !!document.querySelector('#pitch, #net-match');
+  } catch {
+    return false;
+  }
+};
 
 const me = Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 let owner = false;
@@ -47,6 +55,7 @@ let hooks: GuardHooks | null = null;
 let channel: BroadcastChannel | null = null;
 let beat: ReturnType<typeof setInterval> | undefined;
 let waiting: ((m: Msg) => void) | null = null;
+let pinging: (() => void) | null = null;
 /** This browser did hand out a Web Lock for the club (so the lease is not needed). */
 let useLocks = false;
 let releaseLock: (() => void) | null = null;
@@ -114,7 +123,7 @@ function stolen(): void {
   releaseLock = null;
   const go = () => {
     // A match in progress finishes and saves its result first; only then does this tab step aside.
-    if (busyProbe()) setTimeout(go, 1000);
+    if (matchOn()) setTimeout(go, 1000);
     else hooks?.onLost();
   };
   go();
@@ -152,18 +161,28 @@ function post(m: Omit<Msg, 'from'>): void {
   }
 }
 
-/** Two tabs both believe they own the club (lease fallback only). The lowest tab id keeps it. */
+/**
+ * Two tabs both believe they own the club (lease fallback only). The lowest tab id keeps it, always: whichever
+ * tab hears of a lower id yields (after a live match, if one is on). Heartbeats, claim messages and storage
+ * events all feed this, so two owners cannot outlive the next heartbeat even if one signal is late.
+ */
 function conflict(other: string): void {
-  if (!owner || useLocks || other >= me || busyProbe()) return;
+  if (!owner || useLocks || other >= me) return;
+  if (matchOn()) return; // the heartbeat tries again once the match is over
   release();
   hooks?.onLost();
 }
 
 function onMessage(m: Msg): void {
   if (!m || m.from === me || (m.to && m.to !== me)) return;
-  if (m.type === 'claim') conflict(m.from);
+  if (m.type === 'claim') {
+    conflict(m.from);
+    if (owner && !useLocks && m.from > me) post({ type: 'claim' }); // tell the newcomer who has priority
+  } else if (m.type === 'ping') {
+    if (owner) post({ type: 'alive', to: m.from });
+  } else if (m.type === 'alive') pinging?.();
   else if (m.type === 'ask' && owner && hooks) {
-    if (busyProbe()) post({ type: 'busy', to: m.from });
+    if (matchOn()) post({ type: 'busy', to: m.from });
     else {
       // Everything is saved as it changes, so letting go is just stopping.
       release();
@@ -191,6 +210,33 @@ function listen(): void {
         /* ignore */
       }
     }
+  });
+}
+
+/** The lease key changed in another tab: if it names a live owner with priority over this one, yield. */
+function watchLease(): void {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== LEASE_KEY || !e.newValue) return;
+    try {
+      const l = JSON.parse(e.newValue) as Lease;
+      if (l && l.id !== me && fresh(l)) conflict(l.id);
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+/** True if a tab holding the lease answers within PING_MS. Lets a new tab tell a live owner from one that vanished. */
+function ownerAlive(): Promise<boolean> {
+  return new Promise((resolve) => {
+    const done = (v: boolean) => {
+      clearTimeout(timer);
+      pinging = null;
+      resolve(v);
+    };
+    const timer = setTimeout(() => done(false), PING_MS);
+    pinging = () => done(true);
+    post({ type: 'ping' });
   });
 }
 
@@ -259,13 +305,11 @@ export async function claim(h: GuardHooks): Promise<boolean> {
     }
     // 'unsupported': fall through to the lease
   }
+  watchLease();
   const l = readLease();
-  if (!l || l.id === me) {
-    startLease();
-    return true;
-  }
-  if (fresh(l)) return false;
-  return (await take()) === 'taken';
+  if (l && l.id !== me && (await ownerAlive())) return false; // fresh or stale: a live owner always answers
+  startLease(); // no lease, or its owner is gone (closed, crashed, or its storage write was lost on unload)
+  return true;
 }
 
 export type TakeResult = 'taken' | 'busy';

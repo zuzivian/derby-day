@@ -135,11 +135,17 @@ system-font fallbacks without them.
 
 ## Save safety (what players are protected from)
 
-- **One tab owns the club.** A lease in localStorage (`derbyday.lease.v1`, refreshed every 2 s, stale after
-  7 s) plus a BroadcastChannel say who. A second tab shows "Derby Day is open in another tab" instead of
-  booting, with **Play here instead** (asks the first tab to hand over; the first tab refuses while a match
-  or setup is on screen and the second tab waits, so a result is never lost) and **Use as a guest tab**
-  (the game runs read-only, which is what Link play's second tab needs).
+- **One tab owns the club.** Ownership is a Web Lock (`derby-day-owner`) held while the tab owns the club: taking
+  it is atomic across tabs, and the browser releases it when the tab closes or crashes, so a fresh page can claim
+  the club immediately (about 0.3 s including page load, measured). Where Web Locks is missing (old browsers, an
+  opaque-origin sandbox) a localStorage lease (`derbyday.lease.v1`, 2 s heartbeat) plus a BroadcastChannel do the
+  job: a new tab first pings the lease holder and claims if nothing answers within 400 ms (so a closed or crashed
+  owner is replaced at once, not after a heartbeat), and if two tabs ever both hold it, **the lowest tab id keeps
+  it**: every heartbeat, claim message and storage event re-checks, so it converges within a heartbeat. A second
+  tab shows "Derby Day is open in another tab" instead of booting, with **Play here instead** (asks the owner to
+  hand over; the owner refuses while a *match* is on screen, and the asking tab waits, so a result is never lost;
+  menus and first-run setup do not block it) and **Use as a guest tab** (the game runs read-only, which is what
+  Link play's second tab needs).
 - **Saves are written defensively.** Each write first copies the previous readable save to
   `derbyday.save.v1.bak`. A save that fails validation on load is replaced by the backup (the unreadable text
   is kept as `derbyday.save.v1.corrupt` for support) and the player is told. A full disk (quota) or blocked

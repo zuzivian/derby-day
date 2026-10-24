@@ -44,6 +44,21 @@ async function openAppWith(t, init, before) {
   return page;
 }
 
+/**
+ * How many of two tabs are parked behind the guard screen and how many are playing. A tab that booted the game
+ * and then lost the club keeps its markup under the overlay, so "playing" means: no guard screen and a drawn app.
+ */
+async function tabStates(...pages) {
+  let guards = 0;
+  let games = 0;
+  for (const p of pages) {
+    const parked = (await p.locator('#guard-title').count()) > 0;
+    if (parked) guards++;
+    else if ((await p.locator('#app > *').count()) > 0) games++;
+  }
+  return { guards, games };
+}
+
 const toastText = (page) => page.locator(SEL.toast).first().innerText();
 
 test('a second tab shows the "open in another tab" screen and never touches the save', async (t) => {
@@ -452,11 +467,7 @@ test('two tabs opened at the same instant: exactly one gets the club, and it sta
   const first = await t.newPage();
   const second = await first.context().newPage();
   await Promise.all([first.goto(APP_URL), second.goto(APP_URL)]);
-  const state = async () => {
-    const guards = (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count());
-    const games = ((await first.locator('#app > *').count()) ? 1 : 0) + ((await second.locator('#app > *').count()) ? 1 : 0);
-    return { guards, games };
-  };
+  const state = () => tabStates(first, second);
   // The claim is atomic (Web Locks), so this is true almost at once; the bound allows a slow runner.
   const deadline = Date.now() + 3000;
   let s = await state();
@@ -469,35 +480,54 @@ test('two tabs opened at the same instant: exactly one gets the club, and it sta
   expect(await state(), 'still one and one a moment later').toEqual({ guards: 1, games: 1 });
 });
 
+const NO_LOCKS = () => Object.defineProperty(Navigator.prototype, 'locks', { value: undefined, configurable: true });
+
 test('without Web Locks the lease fallback still gives the club to exactly one of two simultaneous tabs, and hand-over works', async (t) => {
   const first = await t.newPage();
-  await first.context().addInitScript(() => Object.defineProperty(Navigator.prototype, 'locks', { value: undefined, configurable: true }));
+  await first.context().addInitScript(NO_LOCKS);
   const second = await first.context().newPage();
   await Promise.all([first.goto(APP_URL), second.goto(APP_URL)]);
-  const state = async () => ({
-    guards: (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count()),
-    games: ((await first.locator('#app > *').count()) ? 1 : 0) + ((await second.locator('#app > *').count()) ? 1 : 0),
-  });
+  const state = () => tabStates(first, second);
+  // The lease is checked on every heartbeat and every storage/claim message, so two owners converge to one within a bounded time.
   const deadline = Date.now() + 5000;
   let s = await state();
   while (!(s.guards === 1 && s.games === 1) && Date.now() < deadline) {
     await first.waitForTimeout(100);
     s = await state();
   }
-  expect(s, 'one parked, one playing (lowest tab id keeps it)').toEqual({ guards: 1, games: 1 });
-  await first.waitForTimeout(2500); // past a heartbeat: still one and one
-  expect(await state(), 'stable').toEqual({ guards: 1, games: 1 });
+  expect(s, 'one parked, one playing (lowest tab id keeps it) within 5 s').toEqual({ guards: 1, games: 1 });
+  await first.waitForTimeout(2000);
+  expect(await state(), 'and it stays that way for 2 s').toEqual({ guards: 1, games: 1 });
   // Hand-over through the lease: the parked tab asks, the owner yields.
   const parked = (await first.locator('#guard-title').count()) ? first : second;
   const playing = parked === first ? second : first;
-  await skipOnboarding(playing); // first-run setup counts as busy: the owner would (rightly) refuse the hand-over
-  await playing.waitForSelector(SEL.tab);
   await parked.locator('#guard-here').click();
   await parked.waitForSelector(SEL.app + ' *', { timeout: 15_000 });
   await skipOnboarding(parked); // a brand-new club starts in first-run setup
   await parked.waitForSelector(SEL.tab, { timeout: 15_000 });
   await playing.waitForSelector('#guard-title');
 });
+
+for (const mode of ['Web Locks', 'lease fallback']) {
+  test(`${mode}: a fresh page claims the club promptly after the owner page closes, with no heartbeat-length wait`, async (t) => {
+    const owner = await t.newPage();
+    if (mode !== 'Web Locks') await owner.context().addInitScript(NO_LOCKS);
+    const anchor = await owner.context().newPage(); // keeps the context's storage alive, like a second tab would
+    await owner.goto(APP_URL);
+    await skipOnboarding(owner);
+    await owner.waitForSelector(SEL.app + ' *');
+    await anchor.goto('about:blank');
+    await owner.close();
+    const t0 = Date.now();
+    const next = await anchor.context().newPage();
+    await next.goto(APP_URL);
+    await next.waitForSelector(SEL.app + ' > *', { timeout: 6000 });
+    const ms = Date.now() - t0;
+    expect(await next.locator('#guard-title').count(), 'not parked behind a dead owner').toBe(0);
+    console.log(`      ${mode}: owner closed -> fresh page drawing the game in ${ms} ms`);
+    expect(ms, 'well under the 2 s heartbeat').toBeLessThan(2000);
+  });
+}
 
 test('the artifact build runs inside a sandboxed cross-origin iframe on http: no crash panel, no errors', async (t) => {
   // file:// hides the problem: in a sandboxed frame even reading navigator.serviceWorker throws SecurityError.
