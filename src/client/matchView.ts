@@ -5,6 +5,7 @@ import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { InputController } from './input.ts';
@@ -26,6 +27,8 @@ export interface MatchViewOptions extends MatchOptions {
   inputSource?: (canvas: HTMLCanvasElement, renderer: MatchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
   /** Replaces the controls line under the pitch (HTML). */
   controlsHint?: string;
+  /** Coach tips over the pitch (src/client/coach.ts). Off unless given. */
+  coach?: Omit<CoachOptions, 'controls'>;
   /** Top-right HUD label. Defaults to "You vs AI" (or "P1 vs P2" with two humans). */
   modeLabel?: string;
 }
@@ -136,6 +139,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, controls: o.controls ?? 'mouse' }) : null;
   const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
 
   let raf = 0;
@@ -179,6 +183,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         steps++;
       }
     }
+    coach?.update(s, paused ? 0 : elapsed * 1000);
     const extras = input.extras();
     renderer.draw(s, extras);
     hud.update(s, extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge);
@@ -225,6 +230,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     input.dispose();
     juice.dispose();
     hud.dispose();
+    coach?.dispose();
     offCam();
     ro.disconnect();
     renderer.dispose();

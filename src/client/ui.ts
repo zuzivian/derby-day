@@ -56,7 +56,7 @@ export const esc = (t: string | number): string =>
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
 const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
-  home: ['club'],
+  home: ['home'],
   club: ['club'],
   squad: ['squad'],
   transfers: ['transfers'],
@@ -83,8 +83,8 @@ export const PRACTICE = [
   { id: 'hard', label: 'Hard', name: 'Veterans Select', short: 'VET', quality: 72, aiSkill: 0.85, primary: '#1f2937', secondary: '#facc15' },
 ] as const;
 
-/** Easy and Normal from level 1; Hard needs its own unlock. */
-export const practiceUnlocked = (save: Save, id: string): boolean => (id === 'hard' ? isUnlocked(save, 'practice-hard') : true);
+/** Easy and Normal arrive with Practice (level 4); Hard needs its own unlock. */
+export const practiceUnlocked = (save: Save, id: string): boolean => (id === 'hard' ? isUnlocked(save, 'practice-hard') : isUnlocked(save, 'practice'));
 
 function rankOf(save: Save): number {
   return ladderTable(save).findIndex((r) => r.you) + 1;
@@ -198,7 +198,7 @@ export function clubScreen(app: App): string {
       <div class="news-actions">
         ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
         ${reviewButton(app)}
-        <button class="btn small" data-action="replay-tutorial">Replay tutorial</button>
+        ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}

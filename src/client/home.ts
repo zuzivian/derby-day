@@ -4,8 +4,9 @@
 // picture has a text equivalent. Locked modes are visible teasers with a
 // padlock and the level that opens them; they are not controls.
 //
-// As the club levels up the screen gains one thing at a time: the Hard
-// practice button (level 5), the Cup card (5) and the League card (8) open.
+// As the club levels up the screen gains one thing at a time: Practice (level
+// 4), vs Player (5), the Hard practice button and the Cup card (7) and the
+// League card (8). At level 1 it is the hero and its Kick off, nothing else.
 // Everything secondary (news, replays, club level details, tutorial, reset)
 // lives on the Club tab (clubScreen in ui.ts). Styles: the "Home" section of
 // styles.css.
@@ -151,7 +152,7 @@ function hero(app: App): string {
 function versusCard(s: Save): string {
   const local = isUnlocked(s, 'local2p');
   const link = isUnlocked(s, 'link');
-  if (!local && !link) return lockedCard('player', 'vs Player', ICON.players, 'local2p');
+  if (!local && !link) return isUnlocked(s, 'practice') ? lockedCard('player', 'vs Player', ICON.players, 'local2p') : '';
   return `
   <article class="mode-card" data-mode="player" aria-labelledby="mode-player">
     <div class="mode-top"><span class="mode-icon">${ICON.players}</span><div><h3 id="mode-player" class="mode-title">vs Player</h3><p class="mode-sub">Friendly · no Elo</p></div></div>
@@ -163,6 +164,7 @@ function versusCard(s: Save): string {
 }
 
 function practiceCard(s: Save): string {
+  if (!isUnlocked(s, 'practice')) return '';
   const hard = unlockOf('practice-hard').level;
   return `
   <article class="mode-card" data-mode="practice" aria-labelledby="mode-practice">
@@ -187,7 +189,7 @@ function lockedCard(mode: string, title: string, icon: string, id: UnlockId): st
 }
 
 function cupCard(s: Save): string {
-  if (!isUnlocked(s, 'cup')) return lockedCard('cup', 'Cup', ICON.cup, 'cup');
+  if (!isUnlocked(s, 'cup')) return !isUnlocked(s, 'practice') ? '' : lockedCard('cup', 'Cup', ICON.cup, 'cup');
   const cup = s.cup;
   const opp = cup && !cup.done ? cupOpponent(s, cup) : null;
   const action = opp
@@ -201,7 +203,7 @@ function cupCard(s: Save): string {
 }
 
 function leagueCard(s: Save): string {
-  if (!isUnlocked(s, 'league')) return lockedCard('league', 'League', ICON.league, 'league');
+  if (!isUnlocked(s, 'league')) return !isUnlocked(s, 'practice') ? '' : lockedCard('league', 'League', ICON.league, 'league');
   const season = s.season;
   const opp = season && !season.done ? seasonOpponent(s, season) : null;
   const action = opp
@@ -216,12 +218,14 @@ function leagueCard(s: Save): string {
 
 export function homeScreen(app: App): string {
   const s = app.save;
+  // At level 1 there is only the hero and its Kick off; the other ways to play appear as they unlock.
+  const cards = `${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}`;
   return `
   <div class="home">
     ${hero(app)}
-    <section class="modes" aria-labelledby="modes-title">
+    ${cards ? `<section class="modes" aria-labelledby="modes-title">
       <h2 id="modes-title" class="sr-only">Other ways to play</h2>
-      <div class="mode-grid">${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}</div>
-    </section>
+      <div class="mode-grid">${cards}</div>
+    </section>` : ''}
   </div>`;
 }

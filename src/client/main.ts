@@ -1,4 +1,4 @@
-import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
+import { autoLineup, cpuTeam, generateIdentity, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
 import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
@@ -18,7 +18,8 @@ import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
-import { mountOnboarding } from './onboarding.ts';
+import { mountAfterMatch, mountWelcome } from './onboarding.ts';
+import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
@@ -100,6 +101,7 @@ function render() {
   pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
   const levelUp = !app.result && levelUpOpen(app.save);
+  syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
   else if (levelUp && !hadLevelUp) {
     levelOrigin = key;
@@ -109,31 +111,107 @@ function render() {
   else restoreFocus(root, key, '#main');
 }
 
+/**
+ * Tab marks (coach.ts): a tab a level-up just revealed gets a spotlight and a card, once. Only while no dialog is open;
+ * opening the tab counts as seeing it. Players who predate the first-run flow have no `marks` and never see one.
+ */
+function syncMark(clear: boolean) {
+  const marks = app.prefs.marks;
+  if (!marks || !clear) return;
+  if (acknowledge(marks, app.screen)) writePrefs(app.prefs);
+  const mark = pendingMark(app.save, marks, app.screen);
+  if (!mark) return;
+  root.insertAdjacentHTML('beforeend', markHtml(mark));
+  placeMark(root);
+  announce(`${mark.title}. ${mark.text}`);
+}
+window.addEventListener('resize', () => placeMark(root));
+window.addEventListener('scroll', () => placeMark(root), { passive: true });
+
 /** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
 function focusMain(keepScroll = false) {
   root.querySelector<HTMLElement>('#main')?.focus({ preventScroll: keepScroll });
   if (keepScroll) window.scrollTo({ top: 0 });
 }
 
+/** The easy CPU club of a new club's first match: name, colours and squad are generated from the save's seed. */
+const FIRST_OPPONENT = { quality: PRACTICE[0].quality, aiSkill: 0.15 };
+function firstOpponent(save: Save): { id: ClubIdentity; away: TeamSetup } {
+  const r = makeRng(save.seed ^ 0x1f5a);
+  const id = generateIdentity(r);
+  const squad = generateSquad(r, FIRST_OPPONENT.quality);
+  return { id, away: toTeamSetup(id, squad, autoLineup(squad), FIRST_OPPONENT.aiSkill) };
+}
+
+/** First run: one welcome, one Kick off. Nothing is asked before the first match. */
 function startOnboarding() {
   takeover = true;
   hideToast();
-  const stop = mountOnboarding(root, {
+  const opp = firstOpponent(app.save);
+  const leave = () => {
+    stop();
+    takeover = false;
+    app.prefs.onboarded = true;
+    writePrefs(app.prefs);
+  };
+  const stop = mountWelcome(root, {
     save: app.save,
-    prefs: app.prefs,
-    nextOpp: app.nextOpp,
-    persist,
-    savePrefs: () => writePrefs(app.prefs),
-    onDone: () => {
-      stop();
-      takeover = false;
-      app.prefs.onboarded = true;
-      writePrefs(app.prefs);
+    opp: opp.id,
+    onKickOff: () => {
+      leave();
+      startFirstMatch(opp);
+    },
+    onSkip: () => {
+      // "I've played before": no first-run flow, so no tips or tab marks either.
+      leave();
       app.screen = 'home';
       render();
       if (!root.querySelector('.modal')) focusMain(true);
     },
   });
+}
+
+/** The first match, against an easy club, with coach tips. It counts as a friendly: XP, no Elo. */
+function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
+  const s = app.save;
+  // From here on the coach is on: tips are remembered one by one, and each tab a level reveals is pointed out once.
+  app.prefs.coachSeen ??= [];
+  app.prefs.marks ??= openTabs(s);
+  writePrefs(app.prefs);
+  const finish = (m: MatchState, forfeited: boolean, away: TeamSetup) => {
+    const [gf, ga] = m.score;
+    if (forfeited) {
+      // Left the first match early: nothing recorded, back to Home and Kick off.
+      app.screen = 'home';
+      render();
+      return;
+    }
+    const summary = applyResult(s, null, { name: away.name, short: away.short }, gf, ga, false, m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`), undefined, false, 'easy');
+    award(s, [claimMilestone(s, 'first-match')], summary.xp);
+    persist();
+    takeover = true;
+    const stop = mountAfterMatch(root, {
+      save: s,
+      opp: opp.id,
+      gf,
+      ga,
+      xp: summary.xp,
+      persist,
+      onDone: () => {
+        stop();
+        takeover = false;
+        app.screen = 'home';
+        render();
+        if (!root.querySelector('.modal')) focusMain(true);
+      },
+    });
+    window.scrollTo({ top: 0 });
+    announce(`Full time. ${gf} ${ga}. ${summary.xp.total} XP earned.`);
+  };
+  if (!playLive(opp.away, opp.id.crest, 'Friendly', finish, 'Leave match')) {
+    app.screen = 'home';
+    render();
+  }
 }
 
 /** First completion of the training ground (setup or Replay tutorial) earns its milestone XP. */
@@ -217,6 +295,10 @@ function playLive(
     label,
     forfeitText,
     controls: app.prefs.controls,
+    // Coach tips only for a club that went through the first-run flow (prefs.coachSeen); each is shown once, ever.
+    coach: app.prefs.coachSeen
+      ? { seen: app.prefs.coachSeen, onSeen: (id) => { if (!app.prefs.coachSeen!.includes(id)) { app.prefs.coachSeen!.push(id); writePrefs(app.prefs); } } }
+      : undefined,
     onEnd: (m, forfeited) => {
       unmount();
       takeover = false;
@@ -350,6 +432,7 @@ root.addEventListener('click', (e) => {
       break;
     }
     case 'level-open':
+      if (!screenUnlocked(s, 'club')) return; // the club tab opens at level 3
       app.screen = 'club';
       pendingFocus = { elId: 'level-title', data: {}, index: 0 };
       break;
@@ -364,6 +447,13 @@ root.addEventListener('click', (e) => {
       } else pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     }
+    case 'mark-ok':
+      if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(el.dataset.screen)) {
+        app.prefs.marks.push(el.dataset.screen);
+        writePrefs(app.prefs);
+      }
+      pendingFocus = { elId: `tab-${el.dataset.screen}`, data: {}, index: 0 };
+      break;
     case 'replay-tutorial':
       startTraining();
       return;
@@ -429,6 +519,8 @@ root.addEventListener('click', (e) => {
       clearSave();
       app = boot(newGame(freshSeed()));
       app.prefs.onboarded = true;
+      if (app.prefs.marks) app.prefs.marks = ['home']; // the new club is level 1 again
+      writePrefs(app.prefs);
       persist();
       pendingFocus = keyFor({ action: 'play-ranked' });
       toast(`${app.save.club.name} founded.`);

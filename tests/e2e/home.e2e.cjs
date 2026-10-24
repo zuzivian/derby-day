@@ -1,5 +1,5 @@
-// Home screen (src/client/home.ts): at level 1 it is one hero Kick off plus the play-mode cards
-// (vs CPU is the hero; vs Player, Practice, and locked Cup and League teasers), nothing else.
+// Home screen (src/client/home.ts): at level 1 it is one hero Kick off and nothing else; the play-mode cards
+// (vs Player, Practice, and locked Cup and League teasers) appear as the club levels up.
 // The match length is standard, locked cards are not controls, the layout fits 390 and 1280
 // in both themes, and the keyboard reaches Kick off first after the skip link.
 
@@ -8,9 +8,9 @@ const { SEL, PREFS_KEY, openApp, readSave, pageWidths, tabScreens } = require('.
 
 const SHORT = { halfSeconds: 3, controls: 'mouse', onboarded: true };
 
-test('home: a level-1 club sees exactly the hero Kick off and the mode cards', async (t) => {
+test('home: a level-1 club sees exactly the hero Kick off, and the mode cards arrive with levels', async (t) => {
   const page = await openApp(t, { level: null });
-  expect(await tabScreens(page), 'tabs').toEqual(['home', 'squad', 'club']);
+  expect(await tabScreens(page), 'tabs').toEqual(['home']);
   expect(await page.locator(`${SEL.tabFor('home')}[aria-current]`).count(), 'Home is the first view').toBe(1);
 
   // The hero is the vs CPU mode: two crests, the gauge, Elo numbers and one Kick off.
@@ -22,18 +22,12 @@ test('home: a level-1 club sees exactly the hero Kick off and the mode cards', a
   expect(await page.locator(`${SEL.hero} .hero-elo`).allInnerTexts().then((x) => x.join(' ')), 'Elo as numbers').toMatch(/Elo\s*\d+[\s\S]*Elo\s*\d+/);
   expect(await page.locator(`${SEL.hero} .mini-spark`).count(), 'no sparkline without history').toBe(0);
 
-  // Mode cards, in order; the locked ones show their level.
-  const modes = await page.$$eval(SEL.modeCard, (els) => els.map((e) => e.getAttribute('data-mode')));
-  expect(modes, 'mode cards').toEqual(['player', 'practice', 'cup', 'league']);
-  const locked = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => [e.getAttribute('data-mode'), e.getAttribute('data-locked-level'), e.innerText]));
-  expect(locked.map((l) => l.slice(0, 2)), 'locked Cup and League with levels').toEqual([['cup', '5'], ['league', '8']]);
-  expect(locked[0][2], 'Cup shows its level').toMatch(/Level 5/);
-  expect(locked[1][2], 'League shows its level').toMatch(/Level 8/);
-  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badges').toBe(2);
+  // No mode cards at level 1.
+  expect(await page.locator(SEL.modeCard).count(), 'no mode cards at level 1').toBe(0);
 
-  // Nothing else on the first view: the only controls are the play buttons.
+  // Nothing else on the first view: the only control is Kick off.
   const buttons = await page.$$eval('#main button, #main select, #main input, #main a[href], #main details', (els) => els.map((e) => e.id || e.tagName));
-  expect(buttons, 'controls in the first view').toEqual(['kick-off', 'play-local2p', 'play-link', 'practice-easy', 'practice-normal']);
+  expect(buttons, 'controls in the first view').toEqual(['kick-off']);
   for (const gone of ['#half-length', SEL.newsTitle, SEL.levelPanel, '.facts', '[data-action="replay-tutorial"]', '[data-action="reset"]', '.news-list']) {
     expect(await page.locator(gone).count(), `${gone} is not on Home`).toBe(0);
   }
@@ -59,10 +53,15 @@ test('home: Kick off starts a ranked match against the opponent shown', async (t
   expect(await page.locator(`${SEL.hero} .form-strip`).getAttribute('aria-label'), 'form updated').toMatch(/^Recent form, oldest first: (win|draw|defeat)$/);
 });
 
-test('home: locked Cup and League cards are teasers, not controls', async (t) => {
-  const page = await openApp(t, { level: null });
+test('home: the mode cards appear with Practice; locked ones are teasers, not controls', async (t) => {
+  const page = await openApp(t, { level: 4 });
+  const modes = await page.$$eval(SEL.modeCard, (els) => els.map((e) => e.getAttribute('data-mode')));
+  expect(modes, 'mode cards at level 4, in order').toEqual(['player', 'practice', 'cup', 'league']);
+  const locked = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => [e.getAttribute('data-mode'), e.getAttribute('data-locked-level')]));
+  expect(locked, 'locked vs Player, Cup and League with their levels').toEqual([['player', '5'], ['cup', '7'], ['league', '8']]);
+  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badges').toBe(3);
   const inside = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => e.querySelectorAll('button, a, input, select, [tabindex], [data-action]').length));
-  expect(inside, 'nothing focusable or actionable inside').toEqual([0, 0]);
+  expect(inside, 'nothing focusable or actionable inside').toEqual([0, 0, 0]);
   for (const mode of ['cup', 'league']) {
     await page.locator(SEL.modeCardFor(mode)).click();
     await page.waitForTimeout(150);
@@ -137,20 +136,21 @@ test('home: the dashboard gains one element per unlock', async (t) => {
     await page.close();
     return r;
   };
-  expect((await stats(2)).stats, 'level 2: sessions').toEqual(['sessions']);
-  expect((await stats(3)).stats, 'level 3: money').toEqual(['sessions', 'money']);
-  expect((await stats(4)).stats, 'level 4: ladder position').toEqual(['sessions', 'money', 'rank']);
-  const five = await stats(5);
-  expect(five.locked, 'level 5: the Cup opens').toEqual(['league']);
-  expect(five.hard, 'and Practice Hard').toBe(1);
-  expect(five.cards, 'still four mode cards').toBe(4);
+  expect((await stats(3)).stats, 'level 3: nothing yet').toEqual([]);
+  expect((await stats(4)).stats, 'level 4: sessions').toEqual(['sessions']);
+  expect((await stats(5)).stats, 'level 5: money').toEqual(['sessions', 'money']);
+  expect((await stats(6)).stats, 'level 6: ladder position').toEqual(['sessions', 'money', 'rank']);
+  const seven = await stats(7);
+  expect(seven.locked, 'level 7: the Cup opens').toEqual(['league']);
+  expect(seven.hard, 'and Practice Hard').toBe(1);
+  expect(seven.cards, 'still four mode cards').toBe(4);
   const eight = await stats(8);
   expect(eight.locked, 'level 8: the League opens').toEqual([]);
   expect((await stats(10)).stats, 'level 10: the season week').toEqual(['sessions', 'money', 'rank', 'week']);
 });
 
 test('home: an unlocked Cup card opens Competitions', async (t) => {
-  const page = await openApp(t, { level: 5 });
+  const page = await openApp(t, { level: 7 });
   await page.locator(`${SEL.modeCardFor('cup')} [data-action="go"]`).click();
   await page.waitForSelector(`${SEL.tabFor('competitions')}[aria-current]`);
   expect(await page.evaluate(() => document.activeElement.id), 'focus on the Competitions tab').toBe('tab-competitions');
