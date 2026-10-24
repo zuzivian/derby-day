@@ -35,10 +35,11 @@ import {
   TICK_HZ,
 } from './constants.ts';
 import { attackDir, fromTeam, inGoalMouth, inOwnBox, oppGoal } from './field.ts';
-import { chipPlan, humanPass } from './kicks.ts';
+import { humanIntent, updateControl } from './human.ts';
+import { chipPlan, loftPlan } from './kicks.ts';
 import { gauss, makeRng, next, range } from './rng.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState, TeamInputs, TeamSetup, TeamStats } from './types.ts';
-import { add, clamp, dist, len, norm, rotate, scale, sub, type Vec } from './vec.ts';
+import { add, clamp, dist, dot, len, norm, rotate, scale, sub, type Vec } from './vec.ts';
 
 export interface MatchOptions {
   seed: number;
@@ -57,6 +58,9 @@ function humansOf(o: MatchOptions): [boolean, boolean] {
   const t = o.humanTeam ?? 0;
   return [t === 0, t === 1];
 }
+
+/** A human aims with the pointer, so their passes and lofted balls scatter this fraction of what a CPU's do. */
+const HUMAN_AIM = 0.4;
 
 const emptyStats = (): TeamStats => ({ shots: 0, onTarget: 0, passes: 0, tackles: 0, possessionTicks: 0 });
 
@@ -156,71 +160,6 @@ function resetKickoff(s: MatchState, team: 0 | 1): void {
 }
 
 // ---------------------------------------------------------------------------
-// Human control
-
-function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
-  let move: Vec = { x: 0, y: 0 };
-  let throttle = 0;
-  if (input.cursor) {
-    const d = sub(input.cursor, p.pos);
-    const l = len(d);
-    move = norm(d);
-    throttle = clamp((l - 0.35) / 2.2, 0, 1);
-  } else if (input.dir && (input.dir.x !== 0 || input.dir.y !== 0)) {
-    move = norm(input.dir);
-    throttle = 1;
-  }
-  const hasBall = s.ball.owner === p.i;
-  const sprint = !!input.sprint;
-  const aimDefault = add(p.pos, scale(throttle > 0 ? move : p.facing, 14));
-  const aim = input.cursor ?? aimDefault;
-
-  if (hasBall && input.shoot !== undefined) {
-    const goal = oppGoal(p.team);
-    const target = input.cursor ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
-    const power = clamp(input.shoot, 0, 1);
-    if (input.chip) return { move, throttle, sprint, action: { kind: 'chip', target, power } };
-    return { move, throttle, sprint, action: { kind: 'shoot', target, power } };
-  }
-  if (input.pass) {
-    if (hasBall) {
-      const r = humanPass(s, p, aim, !!input.through);
-      return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, through: !!input.through } };
-    }
-    return { move, throttle, sprint, action: { kind: 'tackle', target: s.ball.pos } };
-  }
-  return { move, throttle, sprint };
-}
-
-function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): void {
-  if (!s.humans[team]) return;
-  const ball = s.ball;
-  const outfield = s.players.filter((p) => p.team === team && p.role !== 'GK');
-  const owner = ball.owner >= 0 ? s.players[ball.owner] : null;
-
-  if (owner && owner.team === team) {
-    if (owner.role !== 'GK') s.controlled[team] = owner.i;
-    return;
-  }
-  if (ball.receiver >= 0 && s.players[ball.receiver].team === team && s.players[ball.receiver].role !== 'GK') {
-    s.controlled[team] = ball.receiver;
-    return;
-  }
-  const spot = add(ball.pos, scale(ball.vel, 0.3));
-  const byDist = [...outfield].sort((a, b) => dist(a.pos, spot) - dist(b.pos, spot));
-  if (input.switchPlayer) {
-    const pick = byDist[0].i === s.controlled[team] ? byDist[1] : byDist[0];
-    s.controlled[team] = pick.i;
-    s.switchTimer[team] = 30;
-    return;
-  }
-  if (--s.switchTimer[team] > 0) return;
-  s.switchTimer[team] = 12;
-  const cur = s.players[s.controlled[team]];
-  if (dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) s.controlled[team] = byDist[0].i;
-}
-
-// ---------------------------------------------------------------------------
 // Actions
 
 function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigma: number, receiver: number): void {
@@ -245,14 +184,17 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
 
   if (a.kind === 'pass' && b.owner === p.i) {
     const d = dist(b.pos, a.target);
-    const err = 0.14 - 0.115 * p.attrs.passing;
-    kick(s, p, a.target, passSpeed(d, p.attrs.passing) * (a.through ? 1.05 : 1), err, a.receiver);
+    const err = (0.14 - 0.115 * p.attrs.passing) * (isHumanControlled(s, p) ? HUMAN_AIM : 1);
+    kick(s, p, a.target, a.speed ?? passSpeed(d, p.attrs.passing) * (a.through ? 1.05 : 1), err, a.receiver);
     b.passFrom = p.i;
     return;
   }
-  if (a.kind === 'chip' && b.owner === p.i) {
-    const plan = chipPlan(b.pos, a.target, a.power);
-    const err = 0.03 + 0.09 * a.power * a.power * (1.3 - p.attrs.shooting);
+  if ((a.kind === 'chip' || a.kind === 'loft') && b.owner === p.i) {
+    const loft = a.kind === 'loft';
+    const plan = loft ? loftPlan(b.pos, a.target, a.power) : chipPlan(b.pos, a.target, a.power);
+    const err = loft
+      ? (0.015 + 0.04 * a.power * (1.3 - p.attrs.passing)) * (isHumanControlled(s, p) ? HUMAN_AIM : 1)
+      : 0.03 + 0.09 * a.power * a.power * (1.3 - p.attrs.shooting);
     kick(s, p, plan.landing, plan.speed, err, -1);
     b.z = CHIP_Z0;
     b.vz = plan.vz;
@@ -283,15 +225,20 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     return;
   }
   if (a.kind === 'tackle' && p.tackleCd === 0 && b.owner !== p.i) {
-    p.tackleCd = 36;
+    // A slide is a committed lunge: it reaches further (and has to be roughly toward the carrier),
+    // is a little less sure, and leaves the tackler on the floor for longer either way.
+    const slide = !!a.slide;
+    p.tackleCd = slide ? 70 : 36;
     const lunge = norm(sub(a.target, p.pos));
-    p.vel = add(p.vel, scale(lunge, 3));
+    p.vel = add(p.vel, scale(lunge, slide ? 13 : 3));
     const owner = b.owner >= 0 ? s.players[b.owner] : null;
-    if (!owner || owner.team === team || dist(owner.pos, p.pos) > 1.7) {
-      p.stun = 10;
+    const reach = slide ? 3 : 1.7;
+    const onLine = !slide || !owner || dot(lunge, norm(sub(owner.pos, p.pos))) > 0.4;
+    if (!owner || owner.team === team || dist(owner.pos, p.pos) > reach || !onLine) {
+      p.stun = slide ? 30 : 10;
       return;
     }
-    let pWin = clamp(0.35 + 0.7 * p.attrs.defending - 0.5 * owner.attrs.dribbling, 0.1, 0.88);
+    let pWin = clamp(0.35 + 0.7 * p.attrs.defending - 0.5 * owner.attrs.dribbling - (slide ? 0.08 : 0), 0.1, 0.88);
     if (owner.role === 'GK' && inOwnBox(owner.team, owner.pos)) pWin *= 0.25;
     if (next(s.rng) < pWin) {
       b.owner = -1;
@@ -301,10 +248,11 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
       b.touch = 0;
       b.noPickup[owner.i] = 24;
       owner.stun = 18;
+      if (slide) p.stun = 14;
       s.stats[team].tackles++;
     } else {
-      p.stun = 26;
-      p.tackleCd = 50;
+      p.stun = slide ? 40 : 26;
+      p.tackleCd = slide ? 90 : 50;
     }
   }
 }

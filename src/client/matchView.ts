@@ -42,13 +42,15 @@ const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const s = createMatch(o);
+  // End-to-end tests set window.__e2e before the page loads to get at the live state (to set a scene up and read it back).
+  if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: MatchState }).__derbyMatch = s;
   // Replays record one human's input; two-human matches (hot-seat) aren't recorded.
   const rec = o.humans?.[0] && o.humans?.[1] ? null : new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. Mouse: move to run, left click to pass or tackle, hold right button to shoot. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, E to switch, Esc to pause."></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, Esc to pause."></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -61,11 +63,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         </div>
       </div>
       <div class="touch-pad" aria-hidden="true">
-        <button class="pad-btn" id="pad-pass">Pass</button>
+        <button class="pad-btn" id="pad-pass" aria-label="Pass: tap to pass, hold to loft">Pass</button>
         <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer · <b>left click</b> pass / tackle · <b>hold right</b> to shoot · <b>right click</b> switch · <b>Shift</b> or <b>middle button</b> sprint · <b>Ctrl+click</b> through ball · <b>Ctrl + hold right</b> chip. <b>Keys:</b> WASD · Space · R through · hold F shoot · hold C chip · Shift · E.`}</p>
+    <p class="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`}</p>
   </section>`;
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
@@ -91,7 +93,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed() }), dispose: () => c.dispose() };
+    return { take: () => c.take(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));

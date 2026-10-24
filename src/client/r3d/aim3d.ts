@@ -3,7 +3,8 @@
 // and ground ring under the controlled player, stamina bars and name tags.
 
 import { AIR_DRAG, CHIP_Z0, GRAVITY } from '../../sim/constants.ts';
-import { chipPlan, humanPass } from '../../sim/kicks.ts';
+import { pickTeammate } from '../../sim/human.ts';
+import { humanPass, loftPlan, pointerPass } from '../../sim/kicks.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
 import type { RenderExtras } from '../render.ts';
 import { clamp01, sx, sz } from './space.ts';
@@ -151,6 +152,7 @@ export class AimLayer {
   private wedge: Mesh;
   private wedgeMat: ShaderMaterial;
   private recvRing: Mesh;
+  private switchRing: Mesh;
   private diamond: Mesh;
   private runLine: Mesh;
   private chipDots: InstancedMesh;
@@ -204,6 +206,7 @@ export class AimLayer {
     this.wedge.renderOrder = 4;
 
     this.recvRing = flat(new Mesh(keepG(new RingGeometry(0.85, 1.0, 40)), keepM(overlay('#ffffff', 0.75))), 0.04) as Mesh;
+    this.switchRing = flat(new Mesh(keepG(new RingGeometry(0.9, 1.08, 40)), keepM(overlay('#ffd60a', 0.9))), 0.04) as Mesh;
     this.diamond = flat(new Mesh(keepG(new RingGeometry(0.62, 0.8, 4)), keepM(overlay('#ffd60a', 0.95))), 0.045) as Mesh;
     this.runLine = new Mesh(keepG(new PlaneGeometry(1, 0.1).translate(0.5, 0, 0).rotateX(-Math.PI / 2)), keepM(overlay('#ffd60a', 0.55)));
     this.runLine.position.y = 0.035;
@@ -243,7 +246,7 @@ export class AimLayer {
     this.bars.frustumCulled = false;
     this.bars.renderOrder = 19;
 
-    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.diamond, this.runLine, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
+    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.diamond, this.runLine, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
   }
 
   private name(p: MatchPlayer): Sprite {
@@ -304,42 +307,41 @@ export class AimLayer {
     this.runLine.visible = false;
     this.chipDots.visible = false;
     this.chipRing.visible = false;
-    if (ctrl && hasBall && cursor) {
-      const chip = !!x.armed?.chip && x.charge > 0;
-      const through = !!x.armed?.through;
-      let tx = cursor.x;
-      let ty = cursor.y;
-      if (chip) {
-        const plan = chipPlan(s.ball.pos, cursor, x.charge);
+    const pointerOn = !!cursor && x.showCursor;
+    // Keys: aim where the player faces (that is where Space passes and F shoots).
+    const aimAt = pointerOn ? cursor : ctrl ? { x: ctrl.pos.x + ctrl.facing.x * 14, y: ctrl.pos.y + ctrl.facing.y * 14 } : null;
+    const armed = x.armed;
+    this.switchRing.visible = false;
+    let tx = 0;
+    let ty = 0;
+    let wedgeColor = '#ffffff';
+    let wedgeAlpha = 0.42;
+    if (ctrl && hasBall && aimAt) {
+      tx = aimAt.x;
+      ty = aimAt.y;
+      if (armed?.kind === 'loft') {
+        // Lofted ball: the real flight as dots in the air, and the landing ring.
+        const plan = loftPlan(s.ball.pos, aimAt, armed.power);
         this.chipArc(s.ball.pos, plan.landing, plan.speed, plan.vz);
         tx = plan.landing.x;
         ty = plan.landing.y;
-      } else if (x.charge > 0) {
-        // Shot: aim at the pointer.
+      } else if (armed?.kind === 'shot') {
+        // Shot: a firmer wedge toward the pointer that warms to red past the sweet spot.
         showWedge = true;
-        showRet = true;
+        showRet = pointerOn;
+        wedgeColor = armed.power > 0.85 ? '#ff5a3c' : '#ffffff';
+        wedgeAlpha = 0.3 + 0.5 * x.charge;
       } else {
-        const r = humanPass(s, ctrl, cursor, through);
+        // A click (or Space) would pass here.
+        const r = pointerOn && cursor ? pointerPass(s, ctrl, cursor) : humanPass(s, ctrl, aimAt);
         tx = r.target.x;
         ty = r.target.y;
         showWedge = true;
-        showRet = !through;
+        showRet = pointerOn;
         if (r.receiver >= 0) {
           const m = s.players[r.receiver];
           this.recvRing.visible = true;
           this.recvRing.position.set(sx(m.pos.x), 0.04, sz(m.pos.y));
-          if (through) {
-            this.diamond.visible = true;
-            this.diamond.position.set(sx(tx), 0.045, sz(ty));
-            this.diamond.rotation.z = Math.PI / 4;
-            const dx = sx(tx) - sx(m.pos.x);
-            const dz = sz(ty) - sz(m.pos.y);
-            const L = Math.hypot(dx, dz);
-            this.runLine.visible = L > 0.5;
-            this.runLine.position.set(sx(m.pos.x), 0.035, sz(m.pos.y));
-            this.runLine.scale.set(L, 1, 1);
-            this.runLine.rotation.y = -Math.atan2(dz, dx);
-          }
         }
       }
       if (showWedge) {
@@ -351,15 +353,23 @@ export class AimLayer {
         this.wedge.position.set(ox, 0.035, oz);
         this.wedge.scale.set(L, 1, Math.min(2.2, 0.6 + L * 0.06));
         this.wedge.rotation.y = -Math.atan2(dz, dx);
-        const charge = x.charge;
-        this.wedgeMat.uniforms.color.value.set(charge > 0 ? (charge > 0.85 ? '#ff5a3c' : '#ffffff') : through ? '#ffd60a' : '#ffffff');
-        this.wedgeMat.uniforms.opacity.value = charge > 0 ? 0.35 + 0.45 * charge : 0.42;
+        this.wedgeMat.uniforms.color.value.set(wedgeColor);
+        this.wedgeMat.uniforms.opacity.value = wedgeAlpha;
       }
-      if (showRet) {
-        this.reticle.position.set(sx(tx), 0, sz(ty));
-        this.reticle.scale.setScalar(k);
-        this.reticle.rotation.y = f.reduced ? 0 : f.time * 0.8;
+    } else if (ctrl && !hasBall && pointerOn && cursor && s.phase === 'play') {
+      // No ball: who a left click would switch to.
+      const pick = x.switchTo ?? pickTeammate(s, me, cursor);
+      if (pick >= 0 && pick !== ctrl.i) {
+        const m = s.players[pick];
+        this.switchRing.visible = true;
+        this.switchRing.position.set(sx(m.pos.x), 0.04, sz(m.pos.y));
+        this.switchRing.scale.setScalar(1 + (f.reduced ? 0 : Math.sin(f.time * 6) * 0.06));
       }
+    }
+    if (showRet) {
+      this.reticle.position.set(sx(tx), 0, sz(ty));
+      this.reticle.scale.setScalar(k);
+      this.reticle.rotation.y = f.reduced ? 0 : f.time * 0.8;
     }
     this.wedge.visible = showWedge;
     this.reticle.visible = showRet;

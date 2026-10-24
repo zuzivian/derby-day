@@ -47,7 +47,7 @@ export type KickStyle = 'pass' | 'chip' | 'shot' | 'throw';
 /** One-shot animation triggers, detected by the renderer from sim state changes. */
 export type AnimEvent =
   | { kind: 'kick'; style: KickStyle; t0: number; dir: { x: number; y: number }; power: number }
-  | { kind: 'tackle'; t0: number; failed: boolean }
+  | { kind: 'tackle'; t0: number; failed: boolean; slide: boolean }
   | { kind: 'knockdown'; t0: number }
   | { kind: 'header'; t0: number }
   | { kind: 'dive'; t0: number; side: -1 | 1; height: number; reach: number }
@@ -471,7 +471,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     else if (ev.kind === 'celebrate') mirror = Math.random() < 0.4;
     from.copy(out);
     fromW = 1;
-    action = { ev, dur: DUR[ev.kind] + (ev.kind === 'tackle' && ev.failed ? 0.35 : 0), mirror };
+    const dur = ev.kind === 'tackle' ? (ev.slide ? DUR.tackle + (ev.failed ? 0.35 : 0) : 0.45) : DUR[ev.kind];
+    action = { ev, dur, mirror };
   }
 
   function locomotion(P: Pose, time: number, dtSim: number, reduced: boolean) {
@@ -606,6 +607,16 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         break;
       }
       case 'tackle': {
+        if (!ev.slide) {
+          // Standing tackle: plant, lean in and poke a leg at the ball.
+          const w = bump(u, 0, 1);
+          P.set('hipR', -1.0 * w, 0, -0.15 * w).set('knR', 0.2 * w).set('anR', -0.2 * w);
+          P.set('hipL', 0.2 * w, 0, 0.05 * w).set('knL', 0.6 * w);
+          P.set('spine', 0.3 * w, 0.25 * w, 0).set('head', 0.15 * w);
+          P.set('shL', -0.4 * w, 0, 0.7 * w).set('shR', 0.3 * w, 0, -0.5 * w).set('elL', -0.5).set('elR', -0.5);
+          P.body(0, loco.a[BODY + 1] - 0.12 * w, 0.1 * w);
+          break;
+        }
         // Slide on the hip: lean back, lead leg out straight, trailing leg tucked.
         const down = smooth(0, 0.16, t) * (1 - smooth(a.dur - 0.3, a.dur, t));
         P.set('spine', -0.55 * down, 0.35 * down, 0.25 * down);

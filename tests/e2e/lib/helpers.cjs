@@ -31,9 +31,20 @@ const SEL = {
   levelUpGo: '[data-action="levelup-go"]',
   levelUpClose: '[data-action="levelup-close"]',
   xpGain: '.modal .xp-gain',
-  // Club screen
+  // Home screen (src/client/home.ts): the hero Kick off and the play-mode cards.
+  // Screen ids: 'home' is the first view, 'club' the secondary Club tab (news, replays, club level).
+  homeScreen: 'home',
+  clubScreen: 'club',
+  kickOff: '#kick-off',
   playRanked: '[data-action="play-ranked"]',
   playPractice: '[data-action="play-practice"]',
+  hero: '.hero[data-mode="cpu"]',
+  modeCard: '.mode-grid [data-mode]',
+  modeCardFor: (mode) => `.mode-grid [data-mode="${mode}"]`,
+  lockedCard: '.mode-card.locked',
+  statusStrip: '.topbar .status-strip',
+  // Club tab
+  newsTitle: '#news-title',
   // Training
   train: '[data-action="train"]',
   // Transfers
@@ -126,9 +137,11 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *                null leaves the fresh level-1 save alone. Everything up to the level counts
  *                as already seen, so no level-up dialog is waiting.
  *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
+ *   renderer     '2d' or '3d': pin the match renderer (?renderer=). Tests that map world metres to
+ *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -136,7 +149,9 @@ async function openApp(t, opts = {}) {
   const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
   const mutateSave = mutateSrc ? true : null;
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
-  await page.goto(APP_URL);
+  // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
+  if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
+  await page.goto(renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   if (prefs || mutateSave) {
@@ -167,9 +182,9 @@ async function tabScreens(page) {
   return page.$$eval(SEL.tab, (els) => [...new Set(els.map((e) => e.getAttribute('data-screen')))]);
 }
 
-/** Start a ranked match by clicking the primary button, then wait for the pitch. */
+/** Start a ranked match with the home screen's Kick off, then wait for the pitch. */
 async function startRanked(page) {
-  await goTab(page, 'club');
+  await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playRanked).click();
   await page.waitForSelector(SEL.pitch);
 }

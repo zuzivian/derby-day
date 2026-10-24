@@ -1,7 +1,8 @@
 // Canvas renderer for a match. Reads state, never writes it.
 
-import { BOX_DEPTH, BOX_W, CHIP_Z0, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
-import { chipPlan, humanPass } from '../sim/kicks.ts';
+import { BOX_DEPTH, BOX_W, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { pickTeammate } from '../sim/human.ts';
+import { humanPass, loftPlan, pointerPass } from '../sim/kicks.ts';
 import type { MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 
@@ -16,8 +17,10 @@ export interface RenderExtras {
   cursor: Vec | null;
   charge: number;
   showCursor: boolean;
-  /** What the next kick would be: through ball (modifier held) or a chip being charged. */
-  armed?: { through: boolean; chip: boolean };
+  /** The kick being charged (InputController.armed()): a loft or a shot, and the power it would go with. */
+  armed?: { kind: 'loft' | 'shot' | null; power: number };
+  /** Teammate a left click would switch to (InputController.switchCandidate()); computed here when absent. */
+  switchTo?: number;
   /** Whose cursor, previews and charge these are. Defaults to the first team with a human. */
   team?: 0 | 1;
   /** Shot charge per team when both humans charge on one screen (hot-seat). Overrides `charge` for the bars. */
@@ -69,7 +72,8 @@ export class PitchRenderer {
     ctx.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
     this.drawPitch();
 
-    // Pass preview: who a click would pass to right now, or where a through ball lands.
+    // Aim feedback. With the ball: where a click would pass to, or the landing ring and arc of a
+    // lofted ball being charged, or the line of a shot being charged. Without it: who a click picks.
     const me: 0 | 1 = x.team ?? (s.humans[0] || !s.humans[1] ? 0 : 1);
     const ctrl = s.controlled[me] >= 0 ? s.players[s.controlled[me]] : null;
     // Each human's player gets a marker; with two humans the colours tell them apart.
@@ -77,77 +81,64 @@ export class PitchRenderer {
     const mark = (team: 0 | 1) => (both ? team : 0);
     const ctrls = ([0, 1] as const).filter((t) => s.humans[t] && s.controlled[t] >= 0).map((t) => s.players[s.controlled[t]]);
     const hasBall = !!ctrl && s.ball.owner === ctrl.i && s.phase === 'play';
-    const through = !!x.armed?.through;
-    if (ctrl && hasBall && x.cursor) {
-      const r = humanPass(s, ctrl, x.cursor, through);
+    const ring = (p: Vec, r: number, style: string) => {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    };
+    const dashed = (a: Vec, b: Vec, style: string, width = 0.12) => {
       ctx.save();
       ctx.setLineDash([0.5, 0.5]);
-      ctx.strokeStyle = through ? 'rgba(255,214,10,.8)' : 'rgba(255,255,255,.55)';
-      ctx.lineWidth = 0.12;
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
       ctx.beginPath();
-      ctx.moveTo(s.ball.pos.x, s.ball.pos.y);
-      ctx.lineTo(r.target.x, r.target.y);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
       ctx.stroke();
       ctx.restore();
-      if (r.receiver >= 0) {
-        const m = s.players[r.receiver];
-        ctx.strokeStyle = 'rgba(255,255,255,.7)';
-        ctx.lineWidth = 0.1;
+    };
+    const aimAt = x.cursor && x.showCursor ? x.cursor : ctrl ? { x: ctrl.pos.x + ctrl.facing.x * 14, y: ctrl.pos.y + ctrl.facing.y * 14 } : null;
+    const armed = x.armed;
+    if (ctrl && hasBall && aimAt) {
+      if (armed?.kind === 'loft') {
+        // Lofted ball: landing ring plus the arc the ball will fly.
+        const plan = loftPlan(s.ball.pos, aimAt, armed.power);
+        const a = s.ball.pos;
+        ctx.save();
+        ctx.setLineDash([0.35, 0.45]);
+        ctx.strokeStyle = 'rgba(140,220,255,.85)';
+        ctx.lineWidth = 0.12;
         ctx.beginPath();
-        ctx.arc(m.pos.x, m.pos.y, PLAYER_R + 0.35, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      if (through) {
-        // Target diamond where the ball is headed, with a run line from the receiver.
-        const tx = r.target.x;
-        const ty = r.target.y;
-        if (r.receiver >= 0) {
-          const m = s.players[r.receiver];
-          ctx.save();
-          ctx.setLineDash([0.25, 0.35]);
-          ctx.strokeStyle = 'rgba(255,214,10,.5)';
-          ctx.lineWidth = 0.1;
-          ctx.beginPath();
-          ctx.moveTo(m.pos.x, m.pos.y);
-          ctx.lineTo(tx, ty);
-          ctx.stroke();
-          ctx.restore();
+        for (let i = 0; i <= 16; i++) {
+          const u = i / 16;
+          const px = a.x + (plan.landing.x - a.x) * u;
+          const py = a.y + (plan.landing.y - a.y) * u - 4 * plan.peak * 0.55 * u * (1 - u);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
         }
-        ctx.strokeStyle = '#ffd60a';
-        ctx.lineWidth = 0.14;
-        ctx.beginPath();
-        ctx.moveTo(tx, ty - 0.75);
-        ctx.lineTo(tx + 0.75, ty);
-        ctx.lineTo(tx, ty + 0.75);
-        ctx.lineTo(tx - 0.75, ty);
-        ctx.closePath();
         ctx.stroke();
+        ctx.restore();
+        ring(plan.landing, 0.9, 'rgba(140,220,255,.95)');
+      } else if (armed?.kind === 'shot') {
+        dashed(s.ball.pos, aimAt, armed.power > 0.85 ? 'rgba(255,90,60,.9)' : 'rgba(255,214,10,.85)', 0.18);
+      } else if (x.cursor && x.showCursor) {
+        // A click would pass here: the ball rolls to the point, to a teammate near it if there is one.
+        const r = pointerPass(s, ctrl, x.cursor);
+        dashed(s.ball.pos, r.target, 'rgba(255,255,255,.55)');
+        ring(r.target, 0.45, 'rgba(255,255,255,.8)');
+        if (r.receiver >= 0) ring(s.players[r.receiver].pos, PLAYER_R + 0.35, 'rgba(255,255,255,.7)');
+      } else {
+        // Keys: who Space would pass to.
+        const r = humanPass(s, ctrl, aimAt);
+        dashed(s.ball.pos, r.target, 'rgba(255,255,255,.55)');
+        if (r.receiver >= 0) ring(s.players[r.receiver].pos, PLAYER_R + 0.35, 'rgba(255,255,255,.7)');
       }
-    }
-    // Chip preview: landing ring plus the arc the ball will fly.
-    if (ctrl && hasBall && x.cursor && x.armed?.chip && x.charge > 0) {
-      const plan = chipPlan(s.ball.pos, x.cursor, x.charge);
-      const a = s.ball.pos;
-      const peak = CHIP_Z0 + (plan.vz * plan.vz) / (2 * 9.8);
-      ctx.save();
-      ctx.setLineDash([0.35, 0.45]);
-      ctx.strokeStyle = 'rgba(140,220,255,.85)';
-      ctx.lineWidth = 0.12;
-      ctx.beginPath();
-      for (let i = 0; i <= 16; i++) {
-        const u = i / 16;
-        const px = a.x + (plan.landing.x - a.x) * u;
-        const py = a.y + (plan.landing.y - a.y) * u - 4 * peak * 0.55 * u * (1 - u);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-      ctx.restore();
-      ctx.strokeStyle = 'rgba(140,220,255,.95)';
-      ctx.lineWidth = 0.13;
-      ctx.beginPath();
-      ctx.arc(plan.landing.x, plan.landing.y, 0.9, 0, Math.PI * 2);
-      ctx.stroke();
+    } else if (ctrl && !hasBall && x.cursor && x.showCursor && s.phase === 'play') {
+      // No ball: the player a left click would switch to.
+      const pick = x.switchTo ?? pickTeammate(s, me, x.cursor);
+      if (pick >= 0 && pick !== ctrl.i) ring(s.players[pick].pos, PLAYER_R + 0.45, 'rgba(255,214,10,.9)');
     }
 
     // Sprint streaks behind anyone running flat out.

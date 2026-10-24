@@ -46,13 +46,13 @@ test('Link two tabs: host and guest play a lockstep match to full-time with no d
   const before = await readSave(host);
   const guest = await secondTab(host, problems);
 
-  await goTab(host, 'club');
+  await goTab(host, SEL.homeScreen);
   await host.locator(SEL.playLink).click();
   await host.locator(SEL.linkHost).click();
   const code = (await host.locator(SEL.linkCode).innerText()).trim();
   expect(code, 'room code shown').toMatch(/^[A-Z0-9]{4}$/);
 
-  await goTab(guest, 'club');
+  await goTab(guest, SEL.homeScreen);
   await guest.locator(SEL.playLink).click();
   await guest.locator(SEL.linkCodeInput).fill(code.toLowerCase());
   await guest.locator(SEL.linkJoin).click();
@@ -123,7 +123,7 @@ test('Link two tabs: host and guest play a lockstep match to full-time with no d
 
 test('Link two tabs: a wrong code times out with a clear message', async (t) => {
   const page = await openApp(t);
-  await goTab(page, 'club');
+  await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playLink).click();
   expect(await page.locator(SEL.linkUnsupported).count(), 'file:// tabs are supported').toBe(0);
   await page.locator(SEL.linkCodeInput).fill('ZZZZ');
@@ -134,13 +134,13 @@ test('Link two tabs: a wrong code times out with a clear message', async (t) => 
 
 test('Link two tabs: when one tab goes quiet the other shows "waiting for opponent", then the leaver is reported', async (t) => {
   const problems = [];
-  const host = await openApp(t, { prefs: { halfSeconds: 60, controls: 'mouse' } });
+  const host = await openApp(t, { prefs: { controls: 'mouse' } }); // the standard length: long enough to freeze a tab mid-match
   const guest = await secondTab(host, problems);
-  await goTab(host, 'club');
+  await goTab(host, SEL.homeScreen);
   await host.locator(SEL.playLink).click();
   await host.locator(SEL.linkHost).click();
   const code = (await host.locator(SEL.linkCode).innerText()).trim();
-  await goTab(guest, 'club');
+  await goTab(guest, SEL.homeScreen);
   await guest.locator(SEL.playLink).click();
   await guest.locator(SEL.linkCodeInput).fill(code);
   await guest.locator(SEL.linkJoin).click();

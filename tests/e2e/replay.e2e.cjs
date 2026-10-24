@@ -83,6 +83,9 @@ test('replay: a played match is recorded, listed under Recent, and the viewer dr
   await page.locator(SEL.modalClose).click();
   await page.locator(SEL.modal).waitFor({ state: 'detached' });
 
+  // Recent replays live on the Club tab, off the first view.
+  expect(await page.locator('.rp-row').count(), 'not on Home').toBe(0);
+  await goTab(page, SEL.clubScreen);
   expect(await page.locator('.rp-row').count(), 'one row under Recent replays').toBe(1);
   await page.locator('.rp-row [data-replay="watch"]').click();
   await page.locator(VIEWER).waitFor();

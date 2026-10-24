@@ -2,6 +2,7 @@
 // an API; until then the save lives in this browser only.
 
 import { isSave, type Save } from '../meta/game.ts';
+import { HALF_SECONDS } from '../sim/constants.ts';
 
 const SAVE_KEY = 'derbyday.save.v1';
 const PREFS_KEY = 'derbyday.prefs.v1';
@@ -31,6 +32,14 @@ try {
 export type ControlStyle = 'mouse' | 'keys';
 
 export interface Prefs {
+  /**
+   * Seconds per half for live matches. NOT a user setting: every match is the
+   * standard 2 × HALF_SECONDS (src/sim/constants.ts) and there is no selector.
+   * loadPrefs() fills it with HALF_SECONDS unless the stored prefs carry a
+   * TEST-ONLY override (the e2e suite stores e.g. { halfSeconds: 3 } for short
+   * matches). writePrefs() only keeps a value that differs from the standard,
+   * so a real player's prefs never hold one.
+   */
   halfSeconds: number;
   controls: ControlStyle;
   /** false while first-run setup is unfinished; missing means an older save that never saw it. */
@@ -65,22 +74,32 @@ export function clearSave(): void {
   }
 }
 
+/** The 1, 2 and 4 minute halves the old match length selector stored. Ignored now: everyone plays the standard length. */
+const LEGACY_LENGTHS = [60, 120, 240];
+
+/** A stored half length counts only as the test-only override: a positive number that the old selector could not have written. */
+function testHalfSeconds(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 3600 && !LEGACY_LENGTHS.includes(v) ? v : null;
+}
+
 export function loadPrefs(): Prefs {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? '{}') as Partial<Prefs>;
     return {
-      halfSeconds: typeof p.halfSeconds === 'number' ? p.halfSeconds : 120,
+      halfSeconds: testHalfSeconds(p.halfSeconds) ?? HALF_SECONDS,
       controls: p.controls === 'keys' ? 'keys' : 'mouse',
       ...(typeof p.onboarded === 'boolean' ? { onboarded: p.onboarded } : {}),
     };
   } catch {
-    return { halfSeconds: 120, controls: 'mouse' };
+    return { halfSeconds: HALF_SECONDS, controls: 'mouse' };
   }
 }
 
 export function writePrefs(p: Prefs): void {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    const { halfSeconds, ...rest } = p;
+    const override = halfSeconds !== HALF_SECONDS ? testHalfSeconds(halfSeconds) : null;
+    localStorage.setItem(PREFS_KEY, JSON.stringify(override === null ? rest : { ...rest, halfSeconds: override }));
   } catch {
     /* storage unavailable */
   }

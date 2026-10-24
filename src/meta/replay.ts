@@ -62,10 +62,11 @@ export function quantiseInput(i: HumanInput): HumanInput {
   if (i.cursor) o.cursor = { x: q100(i.cursor.x), y: q100(i.cursor.y) };
   if (i.dir) o.dir = { x: q100(i.dir.x), y: q100(i.dir.y) };
   if (i.pass) o.pass = true;
+  if (i.loft !== undefined) o.loft = q100(Math.min(1, Math.max(0, i.loft)));
   if (i.shoot !== undefined) o.shoot = q100(Math.min(1, Math.max(0, i.shoot)));
+  if (i.tackle) o.tackle = true;
+  if (i.select) o.select = true;
   if (i.sprint) o.sprint = true;
-  if (i.through) o.through = true;
-  if (i.chip) o.chip = true;
   if (i.switchPlayer) o.switchPlayer = true;
   return o;
 }
@@ -77,10 +78,11 @@ export function inputsEqual(a: HumanInput, b: HumanInput): boolean {
     a.dir?.x === b.dir?.x &&
     a.dir?.y === b.dir?.y &&
     a.pass === b.pass &&
+    a.loft === b.loft &&
     a.shoot === b.shoot &&
+    a.tackle === b.tackle &&
+    a.select === b.select &&
     a.sprint === b.sprint &&
-    a.through === b.through &&
-    a.chip === b.chip &&
     a.switchPlayer === b.switchPlayer &&
     !a.cursor === !b.cursor &&
     !a.dir === !b.dir
@@ -462,10 +464,12 @@ const F_SWITCH = 16;
 const F_EXT = 32;
 /** The run is longer than one tick; its length follows. */
 const F_MULTI = 64;
-const E_THROUGH = 1;
-const E_CHIP = 2;
+const E_SELECT = 1;
+const E_TACKLE = 2;
 /** The shot power byte follows the extra byte. */
 const E_SHOOT = 4;
+/** The loft hold byte follows (after the shot byte, if any). */
+const E_LOFT = 8;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
   // Cursor and axes are delta-coded against the previous run's, in whole cm.
@@ -475,9 +479,10 @@ function writeRuns(w: Writer, runs: InputRun[]) {
   let dy = 0;
   for (const { n, input: i } of runs) {
     let e = 0;
-    if (i.through) e |= E_THROUGH;
-    if (i.chip) e |= E_CHIP;
+    if (i.select) e |= E_SELECT;
+    if (i.tackle) e |= E_TACKLE;
     if (i.shoot !== undefined) e |= E_SHOOT;
+    if (i.loft !== undefined) e |= E_LOFT;
     let f = 0;
     if (i.cursor) f |= F_CURSOR;
     if (i.dir) f |= F_DIR;
@@ -489,6 +494,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
     w.byte(f);
     if (e) w.byte(e);
     if (i.shoot !== undefined) w.byte(Math.round(i.shoot * 100));
+    if (i.loft !== undefined) w.byte(Math.round(i.loft * 100));
     if (i.cursor) {
       const x = Math.round(i.cursor.x * 100);
       const y = Math.round(i.cursor.y * 100);
@@ -522,6 +528,7 @@ function readRuns(r: Reader, ticks: number): InputRun[] {
     const e = f & F_EXT ? r.byte() : 0;
     const input: HumanInput = {};
     if (e & E_SHOOT) input.shoot = r.byte() / 100;
+    if (e & E_LOFT) input.loft = r.byte() / 100;
     if (f & F_CURSOR) {
       cx += r.ivar();
       cy += r.ivar();
@@ -534,8 +541,8 @@ function readRuns(r: Reader, ticks: number): InputRun[] {
     }
     if (f & F_PASS) input.pass = true;
     if (f & F_SPRINT) input.sprint = true;
-    if (e & E_THROUGH) input.through = true;
-    if (e & E_CHIP) input.chip = true;
+    if (e & E_SELECT) input.select = true;
+    if (e & E_TACKLE) input.tackle = true;
     if (f & F_SWITCH) input.switchPlayer = true;
     const n = f & F_MULTI ? r.uvar() : 1;
     if (n < 1 || total + n > ticks) throw new Error('Replay code is damaged or cut short.');
@@ -568,9 +575,16 @@ function checksum(b: Uint8Array): number {
   return h >>> 0;
 }
 
+/**
+ * Format version, the first byte of the body. 2: the pointer controls (loft, tackle, select
+ * instead of through and chip, and a different meaning for the pointer's distance). Version 1
+ * codes were recorded against the old controls and would not play back the same.
+ */
+export const REPLAY_VERSION = 2;
+
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
-  w.byte(1);
+  w.byte(REPLAY_VERSION);
   w.ivar(r.seed | 0);
   w.uvar(Math.round(r.halfSeconds * 1000));
   w.byte(r.humanTeam + 1);
@@ -623,7 +637,9 @@ function decodeBody(code: string): Replay {
   const want = new DataView(bytes.buffer, bytes.byteOffset + bytes.length - 4, 4).getUint32(0, true);
   if (checksum(body) !== want) throw new Error('Replay code is damaged or cut short.');
   const r = new Reader(body);
-  if (r.byte() !== 1) throw new Error('Replay code is from a newer version of the game.');
+  const version = r.byte();
+  if (version < REPLAY_VERSION) throw new Error('Replay code is from an older version of the game, before the new controls, and can no longer be played back.');
+  if (version > REPLAY_VERSION) throw new Error('Replay code is from a newer version of the game.');
   const seed = r.ivar() | 0;
   const halfSeconds = r.uvar() / 1000;
   const humanTeam = (r.byte() - 1) as 0 | 1 | -1;

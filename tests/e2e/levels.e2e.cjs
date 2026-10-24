@@ -26,7 +26,7 @@ async function playShortRanked(page) {
 
 test('levels: a fresh club shows only the level-1 tabs and controls, with a level 1 XP bar', async (t) => {
   const page = await openApp(t, { level: null });
-  expect(await tabScreens(page), 'tabs').toEqual(['club', 'squad']);
+  expect(await tabScreens(page), 'tabs').toEqual(['home', 'squad', 'club']);
   expect(await page.locator(SEL.xpText).innerText(), 'header text').toBe('Level 1 · 0 / 100 XP');
   const bar = page.locator(SEL.xpBar);
   expect(await bar.getAttribute('aria-valuenow'), 'valuenow').toBe('0');
@@ -37,10 +37,14 @@ test('levels: a fresh club shows only the level-1 tabs and controls, with a leve
   // Locked controls are hidden, not disabled.
   expect(await page.locator(`${SEL.playPractice}[data-level="hard"]`).count(), 'no Practice Hard').toBe(0);
   expect(await page.locator(`${SEL.playPractice}`).count(), 'Easy and Normal').toBe(2);
-  expect(await page.locator(SEL.playLocal2p).count(), 'no Local 2P').toBe(0);
-  expect(await page.locator(SEL.playLink).count(), 'no Link two tabs').toBe(0);
-  expect(await page.locator('#replay-paste').count(), 'no replays').toBe(0);
+  // vs Player is a level-1 play mode: both ways are open.
+  expect(await page.locator(SEL.playLocal2p).count(), 'Local 2P open').toBe(1);
+  expect(await page.locator(SEL.playLink).count(), 'Link two tabs open').toBe(1);
   expect(await page.locator(SEL.playRanked).count(), 'ranked is open').toBe(1);
+  // The club level details live on the Club tab, not the first view.
+  expect(await page.locator(SEL.nextUnlock).count(), 'no teaser on Home').toBe(0);
+  await goTab(page, SEL.clubScreen);
+  expect(await page.locator('#replay-paste').count(), 'no replays').toBe(0);
   expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('Training at level 2 — 100 XP to go');
   expect(await page.locator(SEL.screen).innerText(), 'no calendar yet').notToContain('Season 1, week');
   expect(await page.locator(SEL.levelUp).count(), 'no level-up dialog').toBe(0);
@@ -49,14 +53,16 @@ test('levels: a fresh club shows only the level-1 tabs and controls, with a leve
 test('levels: the next-unlock teaser and the club level panel list what is next and later', async (t) => {
   const page = await openApp(t, { xp: 660 });
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe('Level 4 · 60 / 400 XP');
+  expect(await tabScreens(page), 'tabs at level 4').toEqual(['home', 'squad', 'transfers', 'training', 'ladder', 'club']);
+  await goTab(page, SEL.clubScreen);
   expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice Hard at level 5 — 340 XP to go');
-  expect(await tabScreens(page), 'tabs at level 4').toEqual(['club', 'squad', 'transfers', 'training', 'ladder']);
   await page.locator(`${SEL.levelPanel} summary`).click();
   const text = await page.locator(SEL.levelPanel).innerText();
   expect(text, 'unlocked row').toMatch(/Ladder[\s\S]*Unlocked/);
   expect(text, 'later row').toMatch(/League season[\s\S]*Level 8/);
   expect(text, 'perks listed').toContain('Squad of 15');
-  // The header badge jumps to the panel.
+  // The header badge jumps to the panel, from any tab.
+  await goTab(page, SEL.homeScreen);
   await page.locator(SEL.levelBadge).click();
   expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'focus on panel heading').toBe('level-title');
 });
@@ -138,8 +144,10 @@ test('levels: a training session can level up; the dialog button goes straight t
   expect(await page.locator(`${SEL.tabFor('competitions')}[aria-current]`).count(), 'on Competitions').toBe(1);
   expect(await page.locator('[data-action="comp-start-cup"]').count(), 'the cup can start').toBe(1);
   expect(await page.locator('[data-action="comp-start-season"]').count(), 'the league is still locked').toBe(0);
-  await goTab(page, 'club');
+  await goTab(page, SEL.homeScreen);
   expect(await page.locator(`${SEL.playPractice}[data-level="hard"]`).count(), 'Practice Hard now shown').toBe(1);
+  expect(await page.locator(SEL.lockedCard).count(), 'the Cup card is open, the League still locked').toBe(1);
+  expect(await page.locator(`${SEL.modeCardFor('league')}.locked`).count(), 'League locked').toBe(1);
 });
 
 test('levels: a forfeited match earns no XP', async (t) => {

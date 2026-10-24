@@ -158,39 +158,79 @@ export interface AiTeamPlan {
   cover: number;
 }
 
+
 /**
  * One tick of input from a human. Small and serialisable on purpose: this is
  * what a client would send to an authoritative server (or to the other peer
  * in lockstep, see src/net/lockstep.ts).
+ *
+ * Two schemes share the one shape; the sim tells them apart by `cursor`.
+ *
+ * Pointer scheme (`cursor` present: mouse and touch). The player runs toward
+ * the pointer and how far away the pointer is sets the speed (see
+ * src/sim/human.ts: a walk close in, a full sprint far out). The pointer is
+ * also the aim of every kick:
+ *   with the ball      `pass`    ground pass that rolls to the pointer
+ *                      `loft`    lofted ball that lands at the pointer
+ *                      `shoot`   shot toward the pointer
+ *   without the ball   `select`  switch to the teammate under the pointer,
+ *                                else the nearest one in its direction
+ *                      `tackle`  standing tackle, or a slide if the pointer is far
+ *
+ * Key scheme (`dir` present). The player runs along `dir` at full pace
+ * (`sprint` for +18%) and kicks go where they are heading. `tackle` goes for
+ * the ball and `switchPlayer` cycles to the player nearest it.
+ *
+ * Kick and switch fields are one-shot: set only on the tick the player acts.
  */
 export interface HumanInput {
-  /** Mouse mode: world-space point the controlled player runs toward and aims at. */
+  /** Pointer scheme: world-space point the controlled player runs toward and aims at. */
   cursor?: Vec;
-  /** Keyboard mode: movement axes, each -1..1. */
+  /** Key scheme: movement axes, each -1..1. */
   dir?: Vec;
-  /** With the ball: pass. Without: tackle. */
+  /** With the ball: ground pass (to the pointer; with keys, to the teammate in front). */
   pass?: boolean;
+  /** With the ball: lofted ball (high pass, cross, lob). 0..1 is how long the button was held: more height and range. */
+  loft?: number;
   /** With the ball: shoot with this power, 0..1. */
   shoot?: number;
-  /** Sprint while held: +18% top speed, drains energy. */
+  /** Without the ball: tackle toward the pointer (a slide when it is far), or for the ball with keys. */
+  tackle?: boolean;
+  /** Pointer scheme, without the ball: switch to the player under the pointer, else the nearest one in that direction. */
+  select?: boolean;
+  /** Key scheme only: sprint while held, +18% top speed, drains energy. The pointer sprints by distance instead. */
   sprint?: boolean;
-  /** With `pass`: play the ball into space ahead of the receiver instead of to feet. */
-  through?: boolean;
-  /** With `shoot`: chip it (lofted, lands near the target, range set by power). */
-  chip?: boolean;
+  /** Key scheme: switch to the player nearest the ball. */
   switchPlayer?: boolean;
 }
 
 /** Input for both teams in one tick: index 0 is the home side, 1 the away side. */
 export type TeamInputs = [HumanInput, HumanInput];
 
+/**
+ * What a player does with the ball at their feet (or, for a tackle, near it).
+ * Restarts (throw-ins, corners, free kicks) take these too: whoever takes the
+ * kick sends the same pass, loft or shoot.
+ */
 export type Action =
-  /** `through`: `target` is already led ahead of the receiver; the ball is played a touch firmer. */
-  | { kind: 'pass'; target: Vec; receiver: number; through?: boolean }
+  /**
+   * Ground pass. `speed` (m/s) is the kick speed when given, otherwise the CPU's
+   * usual pass speed for the distance. A human pass to a point sets it so the
+   * ball rolls out at the target (see groundPassPlan in kicks.ts). `receiver`
+   * is the teammate it is meant for, -1 for a pass into space; `through` plays
+   * it a touch firmer.
+   */
+  | { kind: 'pass'; target: Vec; receiver: number; through?: boolean; speed?: number }
   | { kind: 'shoot'; target: Vec; power: number }
-  /** Lofted ball that lands near `target` (or as far as `power` allows). Pass `chipPlan()` to preview. */
+  /** CPU chip: lofted, lands near `target` or as far as `power` allows. `chipPlan()` previews it. */
   | { kind: 'chip'; target: Vec; power: number }
-  | { kind: 'tackle'; target: Vec };
+  /**
+   * Human lofted ball: lands on `target`, up to the range `power` allows, and
+   * `power` (0..1) also sets how high it flies. `loftPlan()` previews it.
+   */
+  | { kind: 'loft'; target: Vec; power: number }
+  /** `slide`: a committed lunge that reaches further but leaves the tackler on the floor for a moment. */
+  | { kind: 'tackle'; target: Vec; slide?: boolean };
 
 export interface Intent {
   move: Vec;

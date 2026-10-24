@@ -131,7 +131,10 @@ export class AnimDirector {
         ev.push({ kind: 'kick', style, t0: time - ago - 0.12, dir: speed > 0.1 ? { x: b.vel.x / speed, y: b.vel.y / speed } : p.facing, power: Math.min(1, speed / 25) });
       }
       if (p.tackleCd > sn.tackleCd) {
-        ev.push({ kind: 'tackle', t0: time - (36 - Math.min(36, p.tackleCd)) / 60, failed: p.stun > 15 });
+        // A slide sets a long cooldown (70+), a standing tackle a short one (36, 50 when it fails).
+        const slide = p.tackleCd >= 60;
+        const full = slide ? (p.tackleCd >= 85 ? 90 : 70) : p.tackleCd > 40 ? 50 : 36;
+        ev.push({ kind: 'tackle', t0: time - Math.max(0, full - p.tackleCd) / 60, failed: p.stun > (slide ? 30 : 15), slide });
       } else if (p.stun > sn.stun + 3) {
         ev.push({ kind: 'knockdown', t0: time - 1 / 60 });
       }

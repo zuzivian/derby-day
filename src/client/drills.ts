@@ -158,8 +158,10 @@ export function filterInput(id: DrillId, input: HumanInput): HumanInput {
   const out: HumanInput = {};
   if (input.cursor) out.cursor = input.cursor;
   if (input.dir) out.dir = input.dir;
-  if (input.pass && (id === 'pass' || id === 'tackle')) out.pass = true;
+  if (input.pass && id === 'pass') out.pass = true;
+  if (input.loft !== undefined && id === 'pass') out.loft = input.loft;
   if (input.shoot !== undefined && id === 'shoot') out.shoot = input.shoot;
+  if (input.tackle && id === 'tackle') out.tackle = true;
   return out;
 }
 
@@ -178,7 +180,10 @@ export function checkDrill(s: MatchState, d: Drill): DrillStatus {
       if (d.marker && dist(s.players[HUMAN].pos, d.marker) < MARKER_R) return { done: true };
       return { done: false, retry: ourGoal ? 'walked-in' : null };
     case 'pass':
+      // A ground pass is counted by the sim when the receiver takes it; a lofted one is not, so
+      // also count a teammate (not the keeper) ending up with the ball the human started with.
       if (s.stats[0].passes > d.base.passes) return { done: true };
+      if (b.owner >= 0 && b.owner !== HUMAN && s.players[b.owner].team === 0 && s.players[b.owner].role !== 'GK') return { done: true };
       if (ourGoal) return { done: false, retry: 'walked-in' };
       // A pass into empty space that nobody runs onto.
       return { done: false, retry: d.looseTicks > 150 ? 'no-receiver' : null };
@@ -189,12 +194,14 @@ export function checkDrill(s: MatchState, d: Drill): DrillStatus {
     case 'tackle': {
       const h = s.players[HUMAN];
       const tried = h.tackleCd > d.lastTackleCd;
+      // A slide leaves a much longer cooldown than a standing tackle, so a jump that big was a slide.
+      const slid = h.tackleCd - d.lastTackleCd > 50;
       d.lastTackleCd = h.tackleCd;
       if (s.stats[0].tackles > d.base.tackles || b.owner === HUMAN) return { done: true };
       if (theirGoal) return { done: false, retry: 'conceded' };
       if (b.owner === 0) return { done: false, retry: 'saved' };
       if (d.looseTicks > 180) return { done: false, retry: 'lost-it' };
-      if (tried) return { done: false, retry: null, hint: dist(h.pos, s.players[CARRIER].pos) > 1.9 ? 'too-far' : 'kept-it' };
+      if (tried) return { done: false, retry: null, hint: dist(h.pos, s.players[CARRIER].pos) > (slid ? 3.1 : 1.9) ? 'too-far' : 'kept-it' };
       return { done: false, retry: null };
     }
   }
