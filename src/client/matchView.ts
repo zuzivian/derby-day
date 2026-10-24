@@ -9,6 +9,7 @@ import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
@@ -33,6 +34,10 @@ export interface MatchViewOptions extends MatchOptions {
   inputSource?: (canvas: HTMLCanvasElement, renderer: MatchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
   /** Replaces the controls line under the pitch (HTML). */
   controlsHint?: string;
+  /** Coach tips over the pitch (src/client/coach.ts). Off unless given. */
+  coach?: Omit<CoachOptions, 'mode'>;
+  /** Called as the match ends with the input mode the player settled on (mouse or keys), to remember it. */
+  onControls?: (mode: 'mouse' | 'keys') => void;
   /** Top-right HUD label. Defaults to "You vs AI" (or "P1 vs P2" with two humans). */
   modeLabel?: string;
   /** Instant replays of goals, cards and big chances at the next stoppage. Default: the stored preference (on). */
@@ -78,6 +83,8 @@ const REPLAY_SKIP_AFTER_MS = 400;
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
 export interface MatchInputSource {
   take(): HumanInput | TeamInputs;
+  /** The input scheme in use right now, when the source has one (mouse or keys); it follows whatever the player touches. */
+  mode?(): 'mouse' | 'keys';
   extras(): RenderExtras;
   dispose(): void;
 }
@@ -101,6 +108,10 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
       return null;
   }
 }
+
+const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+/** The controls line on phones and tablets: no mouse or keys to talk about. */
+const TOUCH_HINT = `<b>Touch:</b> drag on the pitch and your player runs toward your finger, faster the further it is. <b>Pass</b> passes (hold to loft) · <b>Shoot</b> shoots, or tackles without the ball · tap a player to pick him.`;
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -132,7 +143,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
@@ -146,6 +157,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (done || v === paused) return;
     paused = v;
     $('pause').hidden = !v;
+    coach?.setPaused(v);
     if (v) {
       focusBeforePause = document.activeElement as HTMLElement | null;
       $('resume').focus();
@@ -159,7 +171,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), mode: () => c.mode, extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -182,6 +194,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, mode: () => input.mode?.() ?? o.controls ?? 'mouse' }) : null;
   const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
 
   // Instant replays: never with two tabs in lockstep (versus.ts runs its own loop), only in 3D.
@@ -308,6 +321,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     done = true;
     cancelAnimationFrame(raf);
     dispose();
+    if (input.mode) o.onControls?.(input.mode());
     if (forfeited) clearLastReplay();
     else if (rec) storeReplay(rec.finish(s, Date.now() / 1000));
     else clearLastReplay(); // so the result dialog doesn't offer the previous match's replay
@@ -359,6 +373,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));
       }
     }
+    // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
+    // never the replayed one.
+    coach?.setPaused(paused || !!replay);
+    if (!replay) coach?.update(s, paused ? 0 : elapsed * 1000);
 
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
@@ -402,6 +420,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     input.dispose();
     juice.dispose();
     hud.dispose();
+    coach?.dispose();
     offCam();
     ro.disconnect();
     renderer.dispose();

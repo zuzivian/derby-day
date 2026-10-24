@@ -9,6 +9,7 @@ import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overal
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
+import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
 import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpCardHtml } from './levels.ts';
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
@@ -60,7 +61,7 @@ export const esc = (t: string | number): string =>
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
 const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
-  home: ['club'],
+  home: ['home'],
   club: ['club'],
   squad: ['squad'],
   transfers: ['transfers'],
@@ -87,8 +88,8 @@ export const PRACTICE = [
   { id: 'hard', label: 'Hard', name: 'Veterans Select', short: 'VET', quality: 72, aiSkill: 0.85, primary: '#1f2937', secondary: '#facc15' },
 ] as const;
 
-/** Easy and Normal from level 1; Hard needs its own unlock. */
-export const practiceUnlocked = (save: Save, id: string): boolean => (id === 'hard' ? isUnlocked(save, 'practice-hard') : true);
+/** Easy arrives at level 2, Normal at 4 and Hard at 5. */
+export const practiceUnlocked = (save: Save, id: string): boolean => isUnlocked(save, id === 'hard' ? 'practice-hard' : id === 'normal' ? 'practice-normal' : 'practice');
 
 function rankOf(save: Save): number {
   return ladderTable(save).findIndex((r) => r.you) + 1;
@@ -200,14 +201,22 @@ export function clubScreen(app: App): string {
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
-        ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
         ${reviewButton(app)}
-        <button class="btn small" data-action="replay-tutorial">Replay tutorial</button>
+        ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
       </div>
       ${identityControls(s)}
+      <form class="rename-form" data-form="rename" novalidate>
+        <label for="club-rename">Rename your club</label>
+        <div class="rename-row">
+          <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
+          <button class="btn small" type="submit">Rename</button>
+          ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
+        </div>
+        <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
+      </form>
       <p class="muted small">Saved in this browser only.</p>
     </article>
 
@@ -445,8 +454,8 @@ function resultModal(app: App): string {
   const chips = sum
     ? [
         r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
-        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`) : '',
-        sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`) : '',
+        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : 'banked for Transfers') : '',
+        sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : 'banked for Training') : '',
       ].filter(Boolean)
     : [];
   const dev = sum?.developments ?? [];

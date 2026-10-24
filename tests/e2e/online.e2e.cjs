@@ -264,3 +264,30 @@ test('Online: a hostile guest cannot inject markup or script into the host page'
     relay.stop();
   }
 });
+
+test('Online: a brand-new player who opens an invite link goes straight into the match', async (t) => {
+  const relay = await startRelay();
+  try {
+    const query = `relay=${encodeURIComponent(`ws://127.0.0.1:${relay.port}/ws`)}`;
+    const host = await openApp(t, { prefs: { controls: 'mouse' }, query, renderer: '2d' });
+    await goTab(host, SEL.homeScreen);
+    await host.locator(SEL.playOnline).click();
+    await host.locator(SEL.onlineHost).click();
+    await host.locator(SEL.onlineCode).waitFor({ state: 'visible', timeout: 10_000 });
+    const link = await host.locator(SEL.onlineLink).inputValue();
+
+    // No save, no welcome seen, club level 1: the invite still works, with no first-run screen in the way.
+    const fresh = await t.newPage({ viewport: { width: 390, height: 844 } });
+    await fresh.goto(`${link}&renderer=2d`);
+    await Promise.all([host.waitForSelector(SEL.netMatch, { timeout: 20_000 }), fresh.waitForSelector(SEL.netMatch, { timeout: 20_000 })]);
+    expect(await fresh.locator(SEL.netMatch).getAttribute('data-side'), 'the newcomer is the away side').toBe('1');
+    // The welcome is still owed for their next visit.
+    const prefs = await fresh.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}'), 'derbyday.prefs.v1');
+    expect(prefs.onboarded, 'first-run flow still pending').toBe(false);
+    await fresh.keyboard.press('Escape');
+    await fresh.locator('#net-leave').click();
+    await host.locator(SEL.netStop).waitFor({ state: 'visible', timeout: 5000 });
+  } finally {
+    relay.stop();
+  }
+});
