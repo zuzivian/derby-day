@@ -92,6 +92,8 @@ Goal: two people, two browsers, one fair match.
 
 **Exit criteria:** two players on different continents finish a match with no desync; P95 input-to-screen latency under 120 ms within a region; a disconnect pauses for 20 s and then forfeits cleanly.
 
+**Status (October 2026): the online foundation is built, not yet deployed.** A WebSocket relay (`server/`, Bun, no dependencies) pairs two browsers by room code or invite link and forwards lockstep messages; the client transport reconnects and resumes its seat; a disconnect pauses with a 20 s countdown and then ends the match as an abandoned friendly (no rewards either way). Proven by unit tests (relay core with a fake clock; transport through the core with dropped sockets; real sockets against `Bun.serve`) and an e2e test that pairs two browser contexts through a local relay, drops a socket mid-match, compares every 60-tick state hash, and crashes one page to see the countdown and the abandoned result. `server/verify.ts` re-simulates a replay code and catches an edited score or a tampered input log (Phase 2's "server rejects tampered results", minus the server endpoint). Still to do for the exit criteria: deploy a relay (the owner's choice of host, see [ONLINE.md](ONLINE.md#going-live-what-the-owner-needs-to-do)), measure real cross-region latency and P95 input-to-screen, cross-browser determinism, and server authority. Online results are not trusted for Elo until a server owns the match setup and re-simulates. Details: [docs/ONLINE.md](ONLINE.md).
+
 ### Multiplayer spike (October 2026)
 
 Two humans can now play one match, in two ways, from the **vs Player** card on Home (open from club level 1):
@@ -120,7 +122,7 @@ How it works: `MatchState` has per-team control (`humans`, `controlled`), and `s
 **What is not proven yet**
 
 - **Cross-browser float determinism.** Both tabs are the same engine (Chromium V8 in the test). Chrome against Firefox or Safari, or x86 against ARM, has not been run. The desync detector is the tool for that test: same seed, same input log, two browsers, compare the hashes every 60 ticks. The sim already avoids `Math.hypot`; `Math.sin`/`Math.cos` (in `rotate`), `Math.atan2`, `Math.exp`, `Math.log` and `Math.pow` (CPU shot and trajectory maths) are the remaining suspects.
-- **A real network.** `BroadcastChannel` is same-browser, same-origin only; the latency table above is simulated. No NAT, no server relay, no WebSocket transport yet, and no reconnect: a tab that closes sends "bye", but a crashed or frozen tab just leaves the other waiting.
+- **A real network.** `BroadcastChannel` is same-browser, same-origin only; the latency table above is simulated. *Update:* the WebSocket relay, reconnect and the 20 s disconnect countdown now exist (Phase 3 status above, [ONLINE.md](ONLINE.md)); a crashed or frozen tab no longer leaves the other waiting forever. Real-network latency still needs a deployed relay to measure.
 - **Server authority.** Either peer could send any input it likes, and both trust the host's team setups. A server running `src/sim` with the same lockstep inputs (or as the rollback authority) is still Phase 3 work.
 - **Feel with humans.** Nobody has yet played two-tab or hot-seat matches and said whether 67 ms feels fine. Hot-seat keyboards may also ghost when both players press several keys at once.
 - **Embedded viewers.** A sandboxed frame (opaque origin) can't reach other tabs; the lobby detects that and says to open `dist/index.html` directly. Linked and hot-seat matches are not recorded as replays.

@@ -59,7 +59,7 @@ export class BroadcastTransport<M> implements Transport<M> {
       const env = e.data;
       if (!env || typeof env !== 'object' || env.from === this.id) return;
       if (this.peer && env.from !== this.peer) return;
-      this.listeners.emit(env.m);
+      if (env.m && typeof env.m === 'object') this.listeners.emit(env.m);
     };
   }
 

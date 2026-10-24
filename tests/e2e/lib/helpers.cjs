@@ -69,6 +69,15 @@ const SEL = {
   netMatch: '#net-match',
   netWait: '#net-wait',
   netStop: '#net-stop',
+  // Online (versus.ts, mountOnline)
+  playOnline: '[data-action="play-online"]',
+  onlineLobby: '#online-lobby',
+  onlineHost: '#online-host',
+  onlineCode: '#online-code',
+  onlineLink: '#online-link',
+  onlineCodeInput: '#online-code-input',
+  onlineJoin: '#online-join',
+  onlineStatus: '#online-status',
   resultNote: '.modal .result-note',
   // Match
   pitch: '#pitch',
@@ -141,7 +150,7 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -151,7 +160,9 @@ async function openApp(t, opts = {}) {
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
   // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
   if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
-  await page.goto(renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL);
+  // query: extra page parameters, e.g. 'relay=ws://127.0.0.1:8787/ws' for online tests.
+  const base = renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL;
+  await page.goto(query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   if (prefs || mutateSave) {

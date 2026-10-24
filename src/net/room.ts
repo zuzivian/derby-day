@@ -32,8 +32,9 @@ export type RoomMsg =
 export type WireMsg = RoomMsg | LockstepMsg;
 
 const ROOM_KINDS = new Set(['join', 'start', 'ready']);
-export const isRoomMsg = (m: WireMsg): m is RoomMsg => ROOM_KINDS.has(m.t);
-export const isLockstepMsg = (m: WireMsg): m is LockstepMsg => !ROOM_KINDS.has(m.t);
+// Null-safe: these see whatever the peer sent. Lockstep validates its own messages further.
+export const isRoomMsg = (m: WireMsg): m is RoomMsg => !!m && typeof m === 'object' && ROOM_KINDS.has(m.t);
+export const isLockstepMsg = (m: WireMsg): m is LockstepMsg => !!m && typeof m === 'object' && !ROOM_KINDS.has(m.t);
 
 /** Both peers call this with the same StartInfo; the copy guarantees nothing is shared with the message. */
 export function matchFromStart(st: StartInfo): MatchState {

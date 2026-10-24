@@ -21,12 +21,14 @@
 // determinism bug, or floating point that differs between browsers); both
 // sides stop and report the tick.
 //
-// Pure TypeScript: no DOM, no clock unless one is passed in for ping stats.
+// Pure TypeScript: no DOM, no clock unless one is passed in (for ping stats and
+// for noticing a silent peer; the clock never affects the sim).
 
 import { fingerprint, step } from '../sim/match.ts';
 import { hashString } from '../sim/rng.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
 import type { Transport } from './transport.ts';
+import { cleanInput, cleanLockstepMsg } from './validate.ts';
 
 export type LockstepMsg =
   /** Inputs for ticks from, from+1, ...; ack = highest tick of the receiver's inputs the sender has, contiguously. */
@@ -77,6 +79,8 @@ export class Lockstep {
   rttMs = 0;
   /** Number of state hashes that matched. */
   checksPassed = 0;
+  /** now() when anything last arrived from the peer (for disconnect detection, see presence.ts). */
+  lastHeardAt: number;
   onDesync?: (d: Desync) => void;
   onPeerLeft?: () => void;
 
@@ -103,13 +107,14 @@ export class Lockstep {
     this.transport = o.transport;
     this.checkEvery = o.checkEvery ?? 60;
     this.now = o.now ?? (() => 0);
+    this.lastHeardAt = this.now();
     const t0 = this.s.tick;
     for (let t = t0 + 1; t <= t0 + this.delay; t++) {
       this.local.set(t, {});
       this.remote.set(t, {});
     }
     this.sampledTo = this.remoteTo = this.peerAck = t0 + this.delay;
-    this.unsubscribe = this.transport.onMessage((m) => this.receive(m));
+    this.unsubscribe = this.transport.onMessage((m) => this.receive(m as unknown));
   }
 
   /** True while the match can still move: no desync, peer still here, not full-time. */
@@ -127,7 +132,8 @@ export class Lockstep {
     const t = this.s.tick + 1;
     if (this.sampledTo < t + this.delay) {
       this.sampledTo = t + this.delay;
-      this.local.set(this.sampledTo, sample());
+      // Cleaned like the peer's inputs are, so both sides apply exactly the same values.
+      this.local.set(this.sampledTo, cleanInput(sample()));
       this.flush();
       if (this.sampledTo % 30 === 0) this.transport.send({ t: 'ping', n: ++this.pingN, at: this.now() });
     }
@@ -171,20 +177,33 @@ export class Lockstep {
     this.transport.send({ t: 'in', from, inputs, ack: this.remoteTo });
   }
 
-  private receive(m: LockstepMsg): void {
+  /** True when the next tick is waiting on the peer's input. */
+  get stalled(): boolean {
+    return this.running && !this.remote.has(this.s.tick + 1);
+  }
+
+  /** Anything from the peer. Malformed messages and inputs for ticks it can't legitimately be at are ignored. */
+  private receive(raw: unknown): void {
+    const m = cleanLockstepMsg(raw);
+    if (!m) return;
+    this.lastHeardAt = this.now();
     switch (m.t) {
       case 'in': {
+        // The peer is never more than `delay` ticks ahead of us, and schedules `delay` ahead of itself.
+        const horizon = this.s.tick + 2 * this.delay + RESEND_CAP;
         for (let i = 0; i < m.inputs.length; i++) {
           const t = m.from + i;
+          if (t > horizon) break;
           if (t > this.remoteTo && !this.remote.has(t)) this.remote.set(t, m.inputs[i]);
         }
         while (this.remote.has(this.remoteTo + 1)) this.remoteTo++;
-        if (m.ack > this.peerAck) this.peerAck = m.ack;
+        if (m.ack > this.peerAck) this.peerAck = Math.min(m.ack, this.sampledTo);
         // Inputs the peer has, at or before what we've simulated, are no longer needed.
         for (const t of this.local.keys()) if (t <= Math.min(this.peerAck, this.s.tick)) this.local.delete(t);
         return;
       }
       case 'fp':
+        if (Math.abs(m.tick - this.s.tick) > 4 * RESEND_CAP) return; // nowhere near us: junk, don't store it
         this.theirFp.set(m.tick, m.fp);
         this.compare(m.tick);
         return;
@@ -192,7 +211,10 @@ export class Lockstep {
         this.transport.send({ t: 'pong', n: m.n, at: m.at });
         return;
       case 'pong': {
-        const rtt = Math.max(0, this.now() - m.at);
+        // Only answers to pings we sent, with a believable round trip (a forged `at` can't skew the stats).
+        if (m.n < 1 || m.n > this.pingN) return;
+        const rtt = this.now() - m.at;
+        if (!(rtt >= 0 && rtt <= 60_000)) return;
         this.rttMs = this.rttMs ? this.rttMs * 0.8 + rtt * 0.2 : rtt;
         return;
       }
