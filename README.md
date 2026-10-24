@@ -33,8 +33,10 @@ The dotted line shows where a click would pass right now; hold Ctrl/Cmd and a ye
 
 ## Playing the CPU
 
-- **Ranked** (Club tab): one match against a ladder club near your Elo. Moves Elo.
-- **Practice** (Club tab): Easy, Normal or Hard CPU. Nothing recorded but a training session.
+Every match is the same length: 2 × 3 minutes (`HALF_SECONDS` in `src/sim/constants.ts`). There is no length setting; `prefs.halfSeconds` in `src/client/store.ts` is only a hidden override the e2e tests use for short matches.
+
+- **Ranked** (Home, **Kick off**): one match against a ladder club near your Elo. Moves Elo.
+- **Practice** (Home, Practice card): Easy, Normal or Hard CPU. Nothing recorded but a training session.
 - **Cup** (Competitions tab): 8-club knockout, you plus the seven ladder clubs nearest your Elo, seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw you play goes to a live penalty shootout (best of five, then sudden death): as taker, aim with the mouse, hold the left button for power and release (too hard skies it, corners are riskier); as keeper, read the run-up and click left, middle or right to dive. Arrow keys and Space work too, and leaving counts as a loss. Ties between two CPU clubs use a seeded roll weighted by shooting and goalkeeping. Prize money for every round reached; a win goes in the trophy cabinet.
 - **League** (Competitions tab): the same 8 clubs, single round robin over 7 matchdays, 3/1/0 points, then goal difference, then goals scored. Prize money by finishing place; the top two are "promoted".
 
@@ -42,17 +44,21 @@ You play your own cup ties and league fixtures live. The other matches in the ro
 
 CPU difficulty is `TeamSetup.aiSkill` (0..1). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
 
-Every finished match leaves a replay: the match options plus the per-tick input log (run-length encoded, cursor to 1 cm), which the deterministic sim re-runs exactly. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club screen, and **Copy replay code** / **Paste replay code** share one as a short `OVR1.…` string. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
+Every finished match leaves a replay: the match options plus the per-tick input log (run-length encoded, cursor to 1 cm), which the deterministic sim re-runs exactly. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club tab, and **Copy replay code** / **Paste replay code** share one as a short `OVR1.…` string. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
 
-A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news runs the drills again.
+A first visit runs a short setup: name your club, pick mouse or keyboard, then four drills on a training ground (run, pass, shoot, tackle). Every step can be skipped, and **Replay tutorial** in Club news (Club tab) runs the drills again.
+
+## Home
+
+The first screen does one job. The hero is the next ranked match against the CPU: both crests, Elo numbers, your last five results as W/D/L chips (and a small Elo sparkline once there is history), a win-chance gauge and one big **Kick off**. Under it sit the play-mode cards: **vs Player**, **Practice** (pick the CPU difficulty, each button starts a match) and **Cup** and **League**, shown with a padlock and their level until they open. The strip at the top holds the club, its level and XP bar, and gains training sessions (pips), money and the ladder position as those features unlock. News, replays, the club level panel, the tutorial and reset are on the **Club** tab. Code: `src/client/home.ts`; the strip is `statusStrip` in `src/client/ui.ts`.
 
 ## Club levels
 
-The club earns experience and opens up as it levels (1 to 99; clearing level L takes 100 × L XP). A new club has the Club screen, the Squad, ranked matches and Easy and Normal practice; Training arrives at level 2, Transfers at 3, the Ladder at 4, the Cup (and Practice Hard) at 5, replays at 6, Local 2P at 7, the League at 8, the season calendar and academy at 10 and Link two tabs at 12, then small perks up to 99. Matches pay XP (win 120, draw 80, loss 50, +10 a goal, +20 a clean sheet; practice 30 to 60), so do training sessions (+5), cup and league finishes and first-time milestones. Forfeits pay nothing. The header shows the level and XP bar; the Club level panel on the Club screen lists every unlock. Older saves get XP back from their match history and keep anything they already use. The full tables and pacing are under "Club levels" in the roadmap; the rules are in `src/meta/levels.ts`.
+The club earns experience and opens up as it levels (1 to 99; clearing level L takes 100 × L XP). A new club has Home, the Club tab, the Squad, ranked matches, Easy and Normal practice and both two-human modes (Local 2P and Link two tabs); Training arrives at level 2, Transfers at 3, the Ladder at 4, the Cup (and Practice Hard) at 5, replays at 6, the League at 8 and the season calendar and academy at 10, then small perks up to 99. Matches pay XP (win 120, draw 80, loss 50, +10 a goal, +20 a clean sheet; practice 30 to 60), so do training sessions (+5), cup and league finishes and first-time milestones. Forfeits pay nothing. The header shows the level and XP bar; the Club level panel on the Club tab lists every unlock. Older saves get XP back from their match history and keep anything they already use. The full tables and pacing are under "Club levels" in the roadmap; the rules are in `src/meta/levels.ts`.
 
 ## Two players
 
-Both are on the Club tab under **Two humans, no Elo** (Local 2P from club level 7, Link two tabs from level 12). Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
+Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two tabs** is Link two tabs), open from club level 1. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
 
 - **Local 2P:** hot-seat on one keyboard, your club against a ladder club you pick.
 

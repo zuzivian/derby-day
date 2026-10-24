@@ -21,6 +21,7 @@ import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
+import { homeScreen } from './home.ts';
 import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
@@ -34,7 +35,7 @@ function boot(save: Save): App {
   ensureLevelFields(save); // older saves get retro XP and keep what they already use
   return {
     save,
-    screen: 'club',
+    screen: 'home',
     nextOpp: pickOpponent(save),
     trainee: null,
     marketRole: 'ALL',
@@ -79,6 +80,7 @@ function persist() {
 function render() {
   if (takeover) return;
   const screens: Record<Screen, (a: App) => string> = {
+    home: homeScreen,
     club: clubScreen,
     squad: squadScreen,
     transfers: transfersScreen,
@@ -87,7 +89,7 @@ function render() {
     competitions: competitionsScreen,
   };
   // A tab can only be open once it is unlocked (club level).
-  if (!screenUnlocked(app.save, app.screen)) app.screen = 'club';
+  if (!screenUnlocked(app.save, app.screen)) app.screen = 'home';
   setReplaySlots(replaySlots(app.save));
   const hadResult = !!root.querySelector('#result-title');
   const hadReview = !!root.querySelector('#review-title');
@@ -105,8 +107,10 @@ function render() {
   else restoreFocus(root, key, '#main');
 }
 
-function focusMain() {
-  root.querySelector<HTMLElement>('#main')?.focus();
+/** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
+function focusMain(keepScroll = false) {
+  root.querySelector<HTMLElement>('#main')?.focus({ preventScroll: keepScroll });
+  if (keepScroll) window.scrollTo({ top: 0 });
 }
 
 function startOnboarding() {
@@ -123,9 +127,9 @@ function startOnboarding() {
       takeover = false;
       app.prefs.onboarded = true;
       writePrefs(app.prefs);
-      app.screen = 'club';
+      app.screen = 'home';
       render();
-      if (!root.querySelector('.modal')) focusMain();
+      if (!root.querySelector('.modal')) focusMain(true);
     },
   });
 }
@@ -205,7 +209,7 @@ function playLive(
     seed,
     home,
     away,
-    halfSeconds: app.prefs.halfSeconds,
+    halfSeconds: app.prefs.halfSeconds, // the standard HALF_SECONDS, or a test-only override (store.ts)
     humanTeam: 0,
     crests: [s.club.crest, crest],
     label,
@@ -265,7 +269,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
       stop();
       takeover = false;
       app.result = result;
-      app.screen = 'club';
+      app.screen = 'home';
       if (!result) pendingFocus = matchOrigin;
       render();
     },
@@ -299,7 +303,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   };
   if (ranked) app.nextOpp = pickOpponent(s);
   persist();
-  app.screen = 'club';
+  app.screen = 'home';
   render();
 }
 
@@ -335,6 +339,14 @@ root.addEventListener('click', (e) => {
       app.screen = el.dataset.screen as Screen;
       pendingFocus = focusKeyOf(el, root);
       break;
+    case 'go': {
+      // A home mode card that opens another screen (Cup, League); focus goes to that tab.
+      const to = el.dataset.screen as Screen;
+      if (!screenUnlocked(s, to)) return;
+      app.screen = to;
+      pendingFocus = { elId: `tab-${to}`, data: {}, index: 0 };
+      break;
+    }
     case 'level-open':
       app.screen = 'club';
       pendingFocus = { elId: 'level-title', data: {}, index: 0 };
@@ -416,7 +428,7 @@ root.addEventListener('click', (e) => {
       app = boot(newGame(freshSeed()));
       app.prefs.onboarded = true;
       persist();
-      pendingFocus = keyFor({ action: 'reset' });
+      pendingFocus = keyFor({ action: 'play-ranked' });
       toast(`${app.save.club.name} founded.`);
       break;
     case 'reset-cancel':
@@ -437,9 +449,6 @@ root.addEventListener('change', (e) => {
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
     persist();
     render();
-  } else if (el.dataset.change === 'half') {
-    app.prefs.halfSeconds = Number(el.value);
-    writePrefs(app.prefs);
   } else if (el.dataset.change === 'crest') {
     if (setCrest(app.save, el.value as CrestPattern)) persist();
     render();
