@@ -674,7 +674,8 @@ export class Renderer3D implements MatchRenderer {
     if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
     if (t0 < this.reframeUntil) this.cutCount++;
     this.longViewOn = !!lv;
-    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
+    const camName = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
+    if (this.canvas.dataset.camera !== camName) this.canvas.dataset.camera = camName;
     const rs = this.replayShot;
     this.cam.update(
       dt,
@@ -787,7 +788,7 @@ export class Renderer3D implements MatchRenderer {
         off = Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
       }
       if (!off) {
-        if (el) el.hidden = true;
+        if (el && !el.hidden) el.hidden = true;
         continue;
       }
       if (!el) {

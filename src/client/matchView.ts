@@ -304,6 +304,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   };
   window.addEventListener('keydown', onReplayKey, true);
 
+  // The score bar is written only when it changes: a write every frame costs a style and layout pass.
+  const [sbH, sbA, sbMin, sbPhase] = ['sb-h', 'sb-a', 'sb-min', 'sb-phase'].map($);
+  const setText = (el: HTMLElement, v: string) => {
+    if (el.textContent !== v) el.textContent = v;
+  };
+
   let raf = 0;
   let last = performance.now();
   let acc = 0;
@@ -380,10 +386,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     coach?.setPaused(paused || !!replay);
     if (!replay) coach?.update(s, paused ? 0 : elapsed * 1000);
 
-    $('sb-h').textContent = String(s.score[0]);
-    $('sb-a').textContent = String(s.score[1]);
-    $('sb-min').textContent = `${matchMinute(s)}'`;
-    $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`;
+    setText(sbH, String(s.score[0]));
+    setText(sbA, String(s.score[1]));
+    setText(sbMin, `${matchMinute(s)}'`);
+    setText(sbPhase, s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`);
 
     // Referee's calls: offside, fouls, cards, penalties, set pieces, as big HUD words (goals have their own below).
     while (lastEvent < s.events.length) {

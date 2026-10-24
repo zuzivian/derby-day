@@ -161,3 +161,46 @@ for (const quality of ['low', 'high']) test(
   },
   { timeoutMs: 150_000 },
 );
+
+for (const renderer of ['3d', '2d']) test(
+  `Perf: in open play the ${renderer} match screen leaves the score bar and the canvas attributes alone (no per-frame DOM writes)`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer, e2eHook: true });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    await page.waitForTimeout(1000);
+    const r = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const root = document.querySelector('.match');
+          const by = {};
+          const ob = new MutationObserver((list) => {
+            for (const m of list) {
+              const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+              const k = `${m.type}:${el?.id ? '#' + el.id : el?.className || el?.tagName}${m.attributeName ? '[' + m.attributeName + ']' : ''}`;
+              by[k] = (by[k] || 0) + 1;
+            }
+          });
+          ob.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+          let frames = 0;
+          const t0 = window.__derbyMatch.tick;
+          const f = () => {
+            if (++frames < 120) return requestAnimationFrame(f);
+            ob.disconnect();
+            res({ by, ticks: window.__derbyMatch.tick - t0 });
+          };
+          requestAnimationFrame(f);
+        }),
+    );
+    const total = Object.values(r.by).reduce((a, b) => a + b, 0);
+    console.log(`      120 frames (${r.ticks} ticks): ${total} mutations ${JSON.stringify(r.by)}`);
+    const n = (k) => Object.entries(r.by).filter(([key]) => key.includes(k)).reduce((a, [, v]) => a + v, 0);
+    // The score and the phase did not change; the minute changes once a match-minute (every 2 s of a 3-minute half).
+    for (const id of ['#sb-h', '#sb-a', '#sb-phase']) expect(n(id), `${id} is not rewritten`).toBe(0);
+    expect(n('#sb-min'), '#sb-min only when the minute changes').toBeLessThanOrEqual(4);
+    expect(n('#pitch[data-camera]'), '#pitch[data-camera] only when the camera changes').toBeLessThanOrEqual(4);
+  },
+  { timeoutMs: 120_000 },
+);
