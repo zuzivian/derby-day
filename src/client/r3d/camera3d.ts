@@ -9,7 +9,7 @@
 // yaw never changes within a mode, so nothing spins.
 
 import { BIG_PITCH, HALF_H, HALF_W, clamp01, lerp } from './space.ts';
-import { PerspectiveCamera, Vector3 } from './three.ts';
+import { PerspectiveCamera, Plane, Raycaster, Vector3, type Vector2 } from './three.ts';
 
 export type CameraMode = 'broadcast' | 'end';
 
@@ -28,8 +28,11 @@ export interface CameraFocus {
   close: { x: number; z: number } | null;
   /** The human's attack direction, for the end camera. */
   humanDir: 1 | -1;
-  /** Elevated long view centred here (scene x/z), at least this wide: goal kicks, the keeper's ball. */
-  long?: { x: number; z: number; width: number } | null;
+  /**
+   * Elevated long view (goal kicks, own-half free kicks, the keeper's ball): these scene points must
+   * all be in shot, the ball among them (fitLong).
+   */
+  long?: { points: { x: number; z: number }[]; corner?: boolean } | null;
   /** An instant-replay shot: 'low' from the side near pitch level, 'goal' from behind the goal at scene x = goalX. */
   replay?: { kind: 'low' | 'goal'; goalX: number } | null;
 }
@@ -47,11 +50,72 @@ export const BROADCAST_ELEV = 33;
 export const ZOOM_MIN = 0.6;
 export const ZOOM_MAX = 1.45;
 export const ZOOM_STEP = 1.12;
-/** Long view: elevated, wide, showing about three quarters of the pitch (research brief §5). */
-export const LONG_WIDTH = 90;
-/** The long view on the narrowest screens is still at least this wide. */
+/** The end camera's long view is at least this wide. */
 export const LONG_MIN = 70;
+/** Long view tilt, degrees down: steeper than the broadcast view, so a wide frame keeps its depth. */
 export const LONG_ELEV = 46;
+
+/** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
+const VFOV = 40;
+
+/** On upright screens the long view only needs this far either side of the ball across the pitch, m. */
+export const NARROW_BAND = 20;
+
+/** The long view keeps every point it must show at least this far inside the frame (NDC, 0.88 = 12% in). */
+export const LONG_MARGIN = 0.88;
+
+const fitCam = new PerspectiveCamera(VFOV, 1, 0.5, 2000);
+const fitV = new Vector3();
+const fitRay = new Raycaster();
+const fitGround = new Plane(new Vector3(0, 1, 0), 0);
+
+/** Place a camera the way MatchCamera.update does for the broadcast view. */
+function placeBroadcast(cam: PerspectiveCamera, x: number, z: number, width: number, elevDeg: number, aspect: number): void {
+  cam.aspect = aspect;
+  cam.fov = VFOV;
+  const vfov = (VFOV * Math.PI) / 180;
+  const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
+  const dist = width / 2 / Math.tan(hfov / 2);
+  const e = (elevDeg * Math.PI) / 180;
+  cam.position.set(x, Math.sin(e) * dist, z + Math.cos(e) * dist);
+  cam.lookAt(x, 0, z);
+  cam.updateProjectionMatrix();
+  cam.updateMatrixWorld();
+}
+
+/**
+ * The smallest broadcast frame, at this tilt and aspect, that shows every point at least
+ * LONG_MARGIN inside its edges. Returns the camera's target and width. Points are scene x/z on the
+ * ground. Used for the long view: the ball, the taker and his teammates up to past halfway.
+ */
+export function fitLong(points: { x: number; z: number }[], aspect: number, elevDeg = LONG_ELEV, margin = LONG_MARGIN): { x: number; z: number; width: number } {
+  let x = points.reduce((a, p) => a + p.x, 0) / points.length;
+  let z = points.reduce((a, p) => a + p.z, 0) / points.length;
+  let width = 40;
+  for (let k = 0; k < 60; k++) {
+    // Re-centre on the points' projected box a few times, then check they fit.
+    let box = { x0: 0, x1: 0, y0: 0, y1: 0 };
+    for (let it = 0; it < 4; it++) {
+      placeBroadcast(fitCam, x, z, width, elevDeg, aspect);
+      box = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+      for (const p of points) {
+        fitV.set(p.x, 0, p.z).project(fitCam);
+        box.x0 = Math.min(box.x0, fitV.x);
+        box.x1 = Math.max(box.x1, fitV.x);
+        box.y0 = Math.min(box.y0, fitV.y);
+        box.y1 = Math.max(box.y1, fitV.y);
+      }
+      // Move the target by the ground offset between the screen centre and the box centre.
+      fitRay.setFromCamera({ x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 } as Vector2, fitCam);
+      if (!fitRay.ray.intersectPlane(fitGround, fitV)) break;
+      x = fitV.x;
+      z = fitV.z;
+    }
+    if (box.x0 >= -margin && box.x1 <= margin && box.y0 >= -margin && box.y1 <= margin) break;
+    width *= 1.04;
+  }
+  return { x, z, width };
+}
 
 export const clampZoom = (z: number): number => (Number.isFinite(z) ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)) : 1);
 
@@ -92,8 +156,6 @@ class Spring {
   }
 }
 
-/** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
-const VFOV = 40;
 
 export class MatchCamera {
   readonly camera = new PerspectiveCamera(VFOV, 16 / 10, 0.5, 2000);
@@ -154,7 +216,9 @@ export class MatchCamera {
       const long = clamp01((Math.hypot(f.vx, f.vz) - 16) / 10);
       const kick = f.phase === 'kickoff' ? 0.1 : 0;
       width = base * (1 + (reduced ? 0.5 : 1) * (0.14 * Math.max(air, long * 0.7) + kick));
-      elev = this.cinematic ? 20 : BROADCAST_ELEV;
+      // Taller-than-wide screens (phones upright) look more steeply down, so the extra height shows
+      // pitch rather than sky and stand: 33° at 1:1 and wider, about 45° at 3:5.
+      elev = this.cinematic ? 20 : BROADCAST_ELEV + Math.max(0, Math.min(14, (1 - aspect) * 30));
       if (this.cinematic) width *= 0.85;
       // Dead zone: follow the focus only once it leaves a box round the anchor.
       const fx = f.x + this.leadX.x;
@@ -180,26 +244,29 @@ export class MatchCamera {
     } else {
       const d = f.humanDir;
       width = (BIG_PITCH ? 34 : 26) * narrow * this.zoom * (1 + 0.15 * clamp01((f.air - 1) / 3));
-      elev = 30;
-      tx = f.x + d * 9 + this.leadX.x * 0.5;
+      // Steeper and with less look-ahead than before (30°, 9 m): the man on the ball sits about two
+      // thirds of the way down the frame, with room behind him for a back pass.
+      elev = 37;
+      tx = f.x + d * 4 + this.leadX.x * 0.4;
       tz = f.z * 0.9 + this.leadZ.x * 0.5;
       tx = Math.max(-HALF_W + 4, Math.min(HALF_W - 4, tx));
       tz = Math.max(-HALF_H + 3, Math.min(HALF_H - 3, tz));
     }
     const lv = f.long;
-    if (lv && !close) {
-      // Long view: up and out, so the player can pick out teammates up to and beyond halfway.
-      // Never narrowed below LONG_MIN on a phone: the point is to see past halfway.
-      width = Math.max(width, Math.max(LONG_MIN, lv.width * narrow));
-      elev = this.mode === 'broadcast' ? LONG_ELEV : 40;
+    if (lv && !close && lv.points.length) {
+      // Long view: up and out, framed so the ball, the taker and his teammates up to past halfway
+      // are all in shot (fitLong), whatever the spot. The end camera keeps its own framing, wider.
       if (this.mode === 'broadcast') {
-        tx = lv.x;
-        tz = lv.z - width * 0.12;
-        const edge = Math.max(0, HALF_W - width * 0.3);
-        tx = Math.max(-edge, Math.min(edge, tx));
+        elev = LONG_ELEV;
+        const fit = this.longFit(lv.points, aspect, !lv.corner);
+        width = fit.width;
+        tx = fit.x;
+        tz = fit.z;
       } else {
-        tx = lv.x;
-        tz = lv.z;
+        elev = 40;
+        width = Math.max(width, LONG_MIN);
+        tx = lv.points[0].x + f.humanDir * 12;
+        tz = lv.points[0].z * 0.6;
       }
       this.anchorX = f.x;
       this.anchorZ = f.z;
@@ -299,6 +366,26 @@ export class MatchCamera {
     cam.updateMatrixWorld();
     // The next broadcast frame starts from scratch rather than springing from the replay's framing.
     this.snapped = false;
+  }
+
+  private fitKey = '';
+  private fit = { x: 0, z: 0, width: 60 };
+
+  /** fitLong, cached while the points and the aspect stay the same (a set piece being lined up). */
+  private longFit(points: { x: number; z: number }[], aspect: number, band: boolean): { x: number; z: number; width: number } {
+    // Upright phones: fitting touchline to touchline as well left the frame mostly stand. Keep the
+    // depth to a band round the ball there; the width still runs past halfway. (Not for corners,
+    // which frame the whole box.)
+    if (band && aspect < 1 && points.length) {
+      const b = points[0];
+      points = points.map((p) => ({ x: p.x, z: Math.max(b.z - NARROW_BAND, Math.min(b.z + NARROW_BAND, p.z)) }));
+    }
+    const key = `${aspect.toFixed(3)}|${points.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
+    if (key !== this.fitKey) {
+      this.fitKey = key;
+      this.fit = fitLong(points, aspect);
+    }
+    return this.fit;
   }
 
   /** The replay shot on screen last frame, or null: a different one (or none) is a cut. */
