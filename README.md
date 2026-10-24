@@ -96,7 +96,7 @@ The club earns experience and opens up as it levels (1 to 99; clearing level L t
 
 ## Two players
 
-Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two tabs** is Link two tabs), open from club level 1. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
+Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two tabs** is Link two tabs, and **Online** when a relay is configured), open from club level 1. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
 
 - **Local 2P:** hot-seat on one keyboard, your club against a ladder club you pick.
 
@@ -111,6 +111,7 @@ Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two ta
   | Pause | Esc or P | Esc or P |
 
 - **Link two tabs:** open `dist/index.html` in two tabs or windows of the same browser. Your club can only be played in one tab (the second shows "Derby Day is open in another tab"), so in the second tab choose **Use as a guest tab**: it plays Link matches but saves nothing. In one, **Host a match** and read out the 4-letter code; in the other, type it and **Join**. Each tab plays its own side with the normal controls. The tabs run the same match in deterministic lockstep over `BroadcastChannel` (no server) with a 4-tick (67 ms) input delay, exchange only inputs, and compare a state hash every second; a mismatch stops both with "Desync at tick N". Sandboxed viewers (such as some artifact hosts) block tabs from talking; the lobby says so. See "Multiplayer spike" in the roadmap for what this proves.
+- **Online:** two browsers anywhere, over a small WebSocket relay (`server/`). **Create a match** shows a 6-letter code and an invite link (`https://derby.natwong.dev/?join=CODE`); the friend opens the link and is in. Same lockstep match as two tabs. A dropped connection reconnects and resumes the seat; while the opponent is gone the match pauses with "Opponent disconnected, waiting 20 s", then ends as an abandoned friendly. The button only appears when the build has a relay URL (`DERBY_RELAY_URL`, empty by default) or a local page has `?relay=ws://...` (ignored on the real site). Run one locally with `bun server/bun.ts` and open `dist/index.html?relay=ws://localhost:8787/ws`. Architecture, limits, threat model and deploy steps: [docs/ONLINE.md](docs/ONLINE.md). To deploy the relay on Fly.io, fill in the two placeholders in `fly.toml` and follow [Deploy on Fly.io](docs/ONLINE.md#deploy-on-flyio).
 
 ## Saves, backups and going live
 
@@ -123,12 +124,16 @@ src/sim/      Deterministic match engine. Pure TS, no DOM, fixed 60 Hz, seeded R
               step(state, input) is the only way time moves.
 src/meta/     Club layer: name generators, players and attributes, Elo, market, training, ladder.
 src/net/      Netcode, pure TS: lockstep with input delay and desync detection, a two-method
-              Transport, BroadcastChannel and seeded in-memory (latency, jitter, loss) transports.
+              Transport, BroadcastChannel, WebSocket (relay, reconnect) and seeded in-memory (latency,
+              jitter, loss) transports, the relay protocol, disconnect detection, relay config.
 src/client/   Browser: match renderers (renderer.ts picks 3D or 2D; r3d/ is the three.js view, render.ts
               the 2D canvas), HUD, input, match loop, management screens, local save. boot.ts is the
               entry (crash handler, one-tab guard, then main.ts); store.ts, backup.ts, settings.ts,
               tabguard.ts, errors.ts, telemetry.ts and pwa.ts keep the live site safe (docs/OPS.md).
 static/       Copied into dist/ as they are: icons, manifest, robots.txt, 404, share image, sw.js.
+server/       The online relay: relay-core.ts (pure room/seat state machine with every limit),
+              bun.ts (Bun.serve adapter, GET /health), Dockerfile, cloudflare.ts (untested),
+              verify.ts (re-simulate a replay code and check its claims). See docs/ONLINE.md.
 vendor/three/ three.js r186 (MIT), bundled into the build.
 scripts/      build.ts (bundle and inline into one HTML file), size-budget.ts (page size guard),
               perf-probe.cjs (first paint and time-to-interactive at 4x CPU), make-assets.cjs

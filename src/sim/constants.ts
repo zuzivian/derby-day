@@ -13,8 +13,9 @@
  *   2  eleven-a-side, full pitch, Laws 8, 11, 12, 13-17 (restarts, offside, fouls, cards)
  *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
  *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
+ *   4  Law 12: opponents standing close can't touch the keeper's release
  */
-export const SIM_VERSION = 3;
+export const SIM_VERSION = 4;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;

@@ -73,6 +73,7 @@ Environment Variables (Production only), then redeploy. They are baked into the 
 | --- | --- |
 | `DERBY_TELEMETRY_URL` | Anonymous usage counts (below) are POSTed here with `navigator.sendBeacon`. |
 | `DERBY_ERROR_URL` | Crash details (the same text as "Copy error details") are POSTed here, at most 3 a page load, never the same message twice. |
+| `DERBY_RELAY_URL` | Turns the Online button on (see "Online relay" below). Its origin is added to the page's CSP `connect-src` automatically. |
 | `DERBY_BUILD_ID` | Optional. Defaults to the commit (`VERCEL_GIT_COMMIT_SHA` on Vercel, else `git rev-parse`), else a timestamp. |
 
 Both endpoints receive `Content-Type: text/plain` (a "simple" request, so no CORS preflight) with a JSON body.
@@ -207,3 +208,18 @@ Before telling people:
 - [ ] Know your rollback (above) and who can press it.
 - [ ] Custom domain: DNS for `derby.natwong.dev` points at Vercel, HTTPS is green (service workers need HTTPS).
 - [ ] Expect: saves are per browser (no accounts yet), so tell players to use Back up if they care about a club.
+
+## Online relay (Vercel switch and the separate service)
+
+(From the online stream.)
+
+### The game side (Vercel)
+
+- Deploys from `main` to `derby.natwong.dev` (`vercel.json`: install Bun, `bun run build`, serve `dist/`). Only `dist/` is deployed, so files such as `fly.toml` and `server/` are never served.
+- **`DERBY_RELAY_URL` is what turns online play on.** It is read when Vercel builds the game (`scripts/build.ts`). While it is empty (the default), nobody sees the **Online** button and invite links do nothing. Set it in Vercel under project settings → Environment Variables, e.g. `wss://relay.derby.natwong.dev/ws`, then redeploy. Clearing it and redeploying switches online play off again without touching the relay.
+
+### The relay service
+
+- A small Bun WebSocket server in `server/`, deployed on its own because Vercel can't hold WebSockets open. The recommended host is Fly.io, with `fly.toml` in the repo root. Steps, logs, redeploys, cost and rollback: [ONLINE.md, "Deploy on Fly.io"](ONLINE.md#deploy-on-flyio).
+- Health: `GET https://<relay>/health` answers `{"ok":true,...}` with room and socket counts.
+- A relay restart or redeploy ends the online matches in progress. Friendlies record nothing, so nothing is lost.

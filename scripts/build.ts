@@ -29,13 +29,13 @@ function buildId(): string {
 
 const sha256 = (text: string): string => `'sha256-${createHash('sha256').update(text).digest('base64')}'`;
 
-/** Origins crash reports and telemetry may be sent to (connect-src). A relative URL is the page's own origin. */
+/** Origins crash reports, telemetry and the online relay (a WebSocket) may talk to (connect-src). A relative URL is the page's own origin. */
 function connectOrigins(): string {
   const out = new Set<string>();
-  for (const v of [process.env.DERBY_ERROR_URL, process.env.DERBY_TELEMETRY_URL]) {
+  for (const v of [process.env.DERBY_ERROR_URL, process.env.DERBY_TELEMETRY_URL, process.env.DERBY_RELAY_URL]) {
     if (!v) continue;
     try {
-      if (/^https?:\/\//i.test(v)) out.add(new URL(v).origin);
+      if (/^(https?|wss?):\/\//i.test(v)) out.add(new URL(v).origin);
     } catch {
       /* not a URL: nothing to allow */
     }
@@ -112,6 +112,8 @@ async function build(): Promise<void> {
       __BUILD_ID__: JSON.stringify(id),
       __ERROR_URL__: JSON.stringify(process.env.DERBY_ERROR_URL ?? ''),
       __TELEMETRY_URL__: JSON.stringify(process.env.DERBY_TELEMETRY_URL ?? ''),
+      // DERBY_RELAY_URL (e.g. wss://relay.derby.natwong.dev/ws) turns on Online friendlies; see docs/ONLINE.md.
+      __DERBY_RELAY_URL__: JSON.stringify(process.env.DERBY_RELAY_URL ?? ''),
     },
   });
   if (!out.success) {
