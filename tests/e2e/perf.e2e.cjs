@@ -257,3 +257,25 @@ test(
   },
   { timeoutMs: 120_000 },
 );
+
+for (const [renderer, query] of [['3d', 'quality=high'], ['2d', '']]) test(
+  `Perf: the ${renderer} pitch's drawing buffer follows a devicePixelRatio change mid-match (new screen, browser zoom)`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer, e2eHook: true, query: query || undefined });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== renderer) return;
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const buf = () => page.evaluate(() => { const c = document.querySelector('#pitch'); return { w: c.width, css: c.getBoundingClientRect().width, dpr: devicePixelRatio }; });
+    const one = await buf();
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
+    await page.waitForFunction(() => devicePixelRatio === 2);
+    await page.waitForTimeout(1200);
+    const two = await buf();
+    expect(two.css, 'same CSS size').toBe(one.css);
+    expect(two.w / one.w, `buffer ${one.w} → ${two.w} px doubles with the ratio`).toBeGreaterThan(1.9);
+  },
+  { timeoutMs: 120_000 },
+);

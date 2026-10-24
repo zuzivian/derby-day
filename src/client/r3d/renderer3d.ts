@@ -13,6 +13,7 @@ import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
+import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
 import {
   ACESFilmicToneMapping,
   CanvasTexture,
@@ -229,8 +230,15 @@ export class Renderer3D implements MatchRenderer {
     const hi = opts.quality === 'high';
     this.gl = new WebGLRenderer({ canvas, antialias: hi, powerPreference: 'high-performance', stencil: false });
     // Software rendering (low): no shadow maps, and a slightly reduced resolution.
-    this.pixelRatio = hi ? Math.min(2, window.devicePixelRatio || 1) : Math.min(1, window.devicePixelRatio || 1) * 0.8;
+    this.pixelRatio = this.basePixelRatio();
     this.gl.setPixelRatio(this.pixelRatio);
+    // A new screen or browser zoom: re-pick the ratio, so the pitch stays sharp (or stops overdrawing).
+    this.dpr = watchPixelRatio(() => {
+      this.pixelRatio = Math.min(this.basePixelRatio(), this.pixelCap);
+      this.gl.setPixelRatio(this.pixelRatio);
+      this.resize();
+    });
+    this.cleanup.push(() => this.dpr.dispose());
     this.gl.outputColorSpace = SRGBColorSpace;
     this.gl.toneMapping = ACESFilmicToneMapping;
     this.gl.toneMappingExposure = 1.05;
@@ -300,6 +308,16 @@ export class Renderer3D implements MatchRenderer {
   }
 
   private prefMode: CameraMode = 'broadcast';
+
+  /** Software rendering (low): a slightly reduced resolution. */
+  private basePixelRatio(): number {
+    const dpr = window.devicePixelRatio || 1;
+    return this.opts.quality === 'high' ? Math.min(2, dpr) : Math.min(1, dpr) * 0.8;
+  }
+
+  private dpr: PixelRatioWatch;
+  /** The most the slow-machine step-down allows (Infinity until it steps). */
+  private pixelCap = Infinity;
 
   get cameraMode(): CameraMode {
     return this.prefMode;
@@ -462,6 +480,7 @@ export class Renderer3D implements MatchRenderer {
 
   draw(s: MatchState, x: RenderExtras): void {
     if (this.lost) return;
+    this.dpr.check();
     const t0 = performance.now();
     this.build(s);
     const now = t0 / 1000;
@@ -748,6 +767,7 @@ export class Renderer3D implements MatchRenderer {
       const avg = this.frameTimes.reduce((a, b2) => a + b2, 0) / this.frameTimes.length;
       if (this.frameTimes.length >= 120 && avg > 30 && this.pixelRatio > 1) {
         this.pixelRatio = Math.max(1, this.pixelRatio - 0.5);
+        this.pixelCap = this.pixelRatio;
         this.gl.setPixelRatio(this.pixelRatio);
         this.resize();
         this.frameTimes = [];

@@ -1,5 +1,6 @@
 // Canvas renderer for a match. Reads state, never writes it.
 
+import { watchPixelRatio, type PixelRatioWatch } from './dpr.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
 import { humanPass, loftPlan, pointerPass } from '../sim/kicks.ts';
@@ -42,8 +43,11 @@ export class PitchRenderer {
   private ballSpin = 0;
   private trail: Vec[] = [];
 
+  private dpr: PixelRatioWatch;
+
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
+    this.dpr = watchPixelRatio(() => this.resize());
   }
 
   resize(): void {
@@ -69,10 +73,12 @@ export class PitchRenderer {
   }
 
   dispose(): void {
+    this.dpr.dispose();
     this.trail = [];
   }
 
   draw(s: MatchState, x: RenderExtras): void {
+    this.dpr.check();
     const { ctx, k } = this;
     ctx.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
     this.drawPitch();
