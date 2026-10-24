@@ -173,6 +173,24 @@ async function openApp(t, opts = {}) {
   return page;
 }
 
+/**
+ * The player's next visit: a new page in the same browser context, at the app's URL, returned ready for use. The old
+ * page stays open on purpose. Use this instead of page.reload() to check what survived a visit: Chromium drops
+ * localStorage when the page that wrote it unloads, now and then, even for a static page that only writes a key.
+ * Measured on such a page, 40 runs each: a second page with the old one left open lost 0 (at 6 s and at 15 s);
+ * page.reload() 3 (at 15 s); close then reopen 13 and 8; a real on-disk profile closed and relaunched 1.
+ * The new page sets window.__e2eSkipTabGuard so a one-club-per-browser guard does not block it while the old page is open;
+ * it is a different flag from __e2e, so tests of that guard (which set __e2e) still meet it.
+ */
+async function nextVisit(page) {
+  const next = await page.context().newPage();
+  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await next.addInitScript(() => { window.__e2e = true; window.__e2eSkipTabGuard = true; });
+  await next.goto(APP_URL);
+  await next.waitForSelector(SEL.app + ' *');
+  return next;
+}
+
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
   await page.waitForSelector(`${SEL.tabFor(screen)}[aria-current]`).catch(() => {});
@@ -195,4 +213,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { nextVisit, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
