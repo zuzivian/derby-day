@@ -279,7 +279,7 @@ test('onboarding: until level 3 Kick off is a warm-up friendly that earns XP and
   expect(save.club.elo, 'Elo untouched').toBe(1000);
   expect(save.xp, 'earned XP').toBeGreaterThanOrEqual(120 + 50);
   // The result dialog does not talk about prize money or sessions it cannot use yet.
-  const rewards = await page.locator('.rewards').innerText();
+  const rewards = await page.locator('.rs-rewards').innerText();
   expect(rewards, 'prize money is banked').toMatch(/banked for Training/);
   await page.locator(SEL.modalClose).click();
 });
