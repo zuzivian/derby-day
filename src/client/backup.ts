@@ -3,6 +3,8 @@
 
 import { isSave, type Save } from '../meta/game.ts';
 import { levelForXp } from '../meta/levels.ts';
+import { ATTR_KEYS } from '../meta/player.ts';
+import { CREST_PATTERNS, STYLE_KEYS } from '../meta/names.ts';
 
 const FORMAT = 1;
 const CODE_PREFIX = 'DD1.';
@@ -94,14 +96,62 @@ export async function parseBackup(input: string): Promise<ParsedBackup> {
   };
 }
 
+const MAX_SEED = 2 ** 53;
+const ROLES = ['GK', 'DEF', 'MID', 'FWD'];
+const COLOR = /^#[0-9a-fA-F]{6}$/;
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const isStr = (v: unknown, max = 80): v is string => typeof v === 'string' && v.length > 0 && v.length <= max;
+/** A finite number in [lo, hi]. */
+const num = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+
+function goodPlayer(p: unknown): boolean {
+  if (!isObj(p) || !isStr(p.id, 40) || !isStr(p.first) || !isStr(p.last)) return false;
+  if (!STYLE_KEYS.includes(p.style as never) || !ROLES.includes(p.role as string)) return false;
+  if (!num(p.age, 10, 70) || !num(p.potential, 0, 100) || !num(p.number, 0, 999)) return false;
+  if (p.scout !== undefined && !num(p.scout, 0, 1000)) return false;
+  return isObj(p.attrs) && ATTR_KEYS.every((k) => num((p.attrs as Record<string, unknown>)[k], 0, 100));
+}
+
+function goodIdentity(c: Record<string, unknown>): boolean {
+  return isStr(c.id, 40) && isStr(c.name) && isStr(c.short, 12) && COLOR.test(String(c.primary)) && COLOR.test(String(c.secondary)) && CREST_PATTERNS.includes(c.crest as never);
+}
+
+function goodRecord(c: Record<string, unknown>): boolean {
+  return (['played', 'won', 'drawn', 'lost', 'gf', 'ga'] as const).every((k) => num(c[k], 0, 1e6)) && num(c.elo, 0, 10_000);
+}
+
+/**
+ * The shape the game relies on, field by field. isSave() only checks the top level, and a club whose squad or
+ * ladder is subtly wrong passes it and then crashes every boot, so an import has to get through this first
+ * (and through dryRunBoot() in dryrun.ts).
+ */
+export function deepCheck(s: Save): string | null {
+  if (!num(s.seed, -MAX_SEED, MAX_SEED) || !isObj(s.rng) || !num((s.rng as { s: unknown }).s, -MAX_SEED, MAX_SEED)) return 'club seed';
+  const c = s.club as unknown as Record<string, unknown>;
+  if (!isObj(c) || !goodIdentity(c) || !goodRecord(c)) return 'club';
+  if (!num(s.budget, -1e12, 1e12) || !num(s.trainingPoints, 0, 1e9)) return 'budget';
+  if (!Array.isArray(s.squad) || s.squad.length < 1 || s.squad.length > 60 || !s.squad.every(goodPlayer)) return 'squad';
+  const ids = new Set(s.squad.map((p) => p.id));
+  if (ids.size !== s.squad.length) return 'squad ids';
+  if (!Array.isArray(s.market) || s.market.length > 200 || !s.market.every(goodPlayer)) return 'transfer market';
+  if (!Array.isArray(s.lineup) || s.lineup.length > 11 || !s.lineup.every((id) => typeof id === 'string' && ids.has(id)) || new Set(s.lineup).size !== s.lineup.length) return 'lineup';
+  if (!Array.isArray(s.ladder) || s.ladder.length < 1 || s.ladder.length > 100) return 'ladder';
+  for (const l of s.ladder as unknown as Record<string, unknown>[]) {
+    if (!isObj(l) || !goodIdentity(l) || !goodRecord(l) || !num(l.seed, -MAX_SEED, MAX_SEED) || !num(l.quality, 0, 100)) return 'ladder';
+    if (l.era !== undefined && !num(l.era, 0, 1e4)) return 'ladder';
+  }
+  if (!Array.isArray(s.eloHistory) || s.eloHistory.length > 20_000 || !s.eloHistory.every((n) => num(n, 0, 10_000))) return 'elo history';
+  if (!Array.isArray(s.history) || s.history.length > 20_000) return 'match history';
+  for (const m of s.history as unknown as Record<string, unknown>[]) {
+    if (!isObj(m) || typeof m.opponent !== 'string' || typeof m.opponentShort !== 'string' || !num(m.goalsFor, 0, 1000) || !num(m.goalsAgainst, 0, 1000) || !num(m.eloBefore, 0, 10_000) || !num(m.eloAfter, 0, 10_000) || !Array.isArray(m.scorers)) return 'match history';
+  }
+  if (!Array.isArray(s.news) || s.news.length > 5000 || !s.news.every((n) => typeof n === 'string')) return 'news';
+  if (s.xp !== undefined && !num(s.xp, 0, 1e9)) return 'experience';
+  if (s.formation !== undefined && typeof s.formation !== 'string') return 'formation';
+  return null;
+}
+
 /** What isSave() leaves loose and the game would trip over later. */
 function sane(s: Save): boolean {
-  const c = s.club;
-  return (
-    typeof c.name === 'string' && c.name.length > 0 && c.name.length <= 80 &&
-    typeof c.elo === 'number' && Number.isFinite(c.elo) &&
-    typeof c.played === 'number' && Number.isFinite(c.played) &&
-    s.squad.length > 0 && s.squad.length <= 60 && Array.isArray(s.lineup) && Array.isArray(s.market) && Array.isArray(s.history) &&
-    typeof s.budget === 'number' && Number.isFinite(s.budget)
-  );
+  return deepCheck(s) === null;
 }

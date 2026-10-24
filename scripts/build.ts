@@ -9,6 +9,7 @@
 //   DERBY_BUILD_ID        build id for crash details and the offline cache (default: Vercel's commit, else git's, else a timestamp)
 
 import { watch } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -26,10 +27,52 @@ function buildId(): string {
   return sha || `t${Date.now().toString(36)}`;
 }
 
+const sha256 = (text: string): string => `'sha256-${createHash('sha256').update(text).digest('base64')}'`;
+
+/** Origins crash reports and telemetry may be sent to (connect-src). A relative URL is the page's own origin. */
+function connectOrigins(): string {
+  const out = new Set<string>();
+  for (const v of [process.env.DERBY_ERROR_URL, process.env.DERBY_TELEMETRY_URL]) {
+    if (!v) continue;
+    try {
+      if (/^https?:\/\//i.test(v)) out.add(new URL(v).origin);
+    } catch {
+      /* not a URL: nothing to allow */
+    }
+  }
+  return [...out].join(' ');
+}
+
+/**
+ * Content-Security-Policy for the standalone page (a <meta>, so it travels with the file; the artifact
+ * fragment has none because its host sets its own). The one inline script is allowed by its hash, so
+ * injected script cannot run. Styles allow 'unsafe-inline' because fx.ts and versus.ts add <style> elements
+ * at run time and the templates use style="" attributes; style injection is a far smaller risk than script.
+ * frame-ancestors cannot be set from a <meta>: vercel.json sends it as a header.
+ */
+function csp(js: string): string {
+  return [
+    `default-src 'self'`,
+    `script-src ${sha256(js)}`,
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `font-src https://fonts.gstatic.com`,
+    `img-src 'self' data: blob:`,
+    `media-src 'self' data: blob:`,
+    `connect-src 'self' ${connectOrigins()}`.trim(),
+    `worker-src 'self' blob:`,
+    `manifest-src 'self'`,
+    `object-src 'none'`,
+    `base-uri 'none'`,
+    `form-action 'none'`,
+  ].join('; ');
+}
+
 /** Extra <head> for the standalone page: install, share and search metadata. Not in the artifact fragment. */
-function headMeta(): string {
+function headMeta(js: string): string {
   const esc = (t: string) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
   return [
+    `<meta http-equiv="Content-Security-Policy" content="${esc(csp(js))}">`,
+    `<title>Derby Day</title>`,
     `<meta name="description" content="${esc(DESCRIPTION)}">`,
     `<link rel="canonical" href="${SITE}">`,
     `<meta name="theme-color" content="#e9eeec" media="(prefers-color-scheme: light)">`,
@@ -81,7 +124,12 @@ async function build(): Promise<void> {
   const fragment = (await readFile(`${root}src/client/page.html`, 'utf8'))
     .replace('/*__CSS__*/', () => css)
     .replace('/*__JS__*/', () => js);
-  const full = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${headMeta()}\n</head>\n<body>\n${fragment}\n</body>\n</html>\n`;
+  // The title and description live in <head> on the standalone page; the artifact keeps them in its fragment.
+  const bodyFragment = fragment
+    .replace(/<title>[^<]*<\/title>\n?/, '')
+    .replace(/<meta name="description"[^>]*>\n?/, '')
+    .replace(/<meta name="claude:viewport-fit-sides"[^>]*>\n?/, '');
+  const full = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n${headMeta(js)}\n</head>\n<body>\n${bodyFragment}\n</body>\n</html>\n`;
   await mkdir(dist, { recursive: true });
   await writeFile(`${dist}/index.html`, full);
   // The artifact host supplies its own document skeleton.

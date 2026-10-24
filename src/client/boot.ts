@@ -5,11 +5,34 @@ import { installErrorHandlers } from './errors.ts';
 import { showToast } from './a11y.ts';
 import { showGuardScreen } from './guardView.ts';
 import { registerServiceWorker } from './pwa.ts';
-import { setSaveGuest } from './store.ts';
+import { lastWriteFailed, previousClub, restorePrevious, setSaveGuest } from './store.ts';
+import { SAVE_VERSION } from '../meta/game.ts';
 import { claim } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
 
-installErrorHandlers();
+/** The web-font sheet is linked as media=print so it cannot block first paint; switch it on once it has loaded. */
+function enableWebFonts(): void {
+  try {
+    const link = document.getElementById('gfonts') as HTMLLinkElement | null;
+    if (!link) return;
+    const on = () => {
+      link.media = 'all';
+    };
+    if (link.sheet) on();
+    else link.addEventListener('load', on, { once: true });
+  } catch {
+    /* system fonts it is */
+  }
+}
+enableWebFonts();
+
+installErrorHandlers({
+  unsaved: lastWriteFailed,
+  recover: () => {
+    const prev = previousClub();
+    return prev ? { name: prev.name, run: () => restorePrevious() && location.reload() } : null;
+  },
+});
 
 let started = false;
 let removeGuard: (() => void) | null = null;
@@ -17,7 +40,11 @@ let removeGuard: (() => void) | null = null;
 function startGame(): void {
   if (started) return;
   started = true;
-  telemetry.track({ name: 'app_open' });
+  try {
+    telemetry.track({ name: 'app_open' });
+  } catch {
+    /* analytics must never stop the game */
+  }
   void import('./main.ts');
   registerServiceWorker(() => {
     // The page keeps running; the next load is the new version. Do not interrupt a match with the notice.
@@ -29,7 +56,7 @@ function startGame(): void {
   });
 }
 
-function guard(reason: 'other-tab' | 'taken'): void {
+function guard(reason: 'other-tab' | 'taken' | 'newer'): void {
   removeGuard?.();
   removeGuard = showGuardScreen({
     reason,
@@ -43,13 +70,26 @@ function guard(reason: 'other-tab' | 'taken'): void {
   });
 }
 
+/** Cheap check (no JSON parse): the stored save starts {"version":N and N is above what this page understands. */
+function newerSave(): boolean {
+  try {
+    const m = /^\{\s*"version"\s*:\s*(\d+)/.exec((localStorage.getItem('derbyday.save.v1') ?? '').slice(0, 40));
+    return !!m && Number(m[1]) > SAVE_VERSION;
+  } catch {
+    return false;
+  }
+}
+
 void claim({
   onLost: () => {
     setSaveGuest(true);
     guard('taken');
   },
 }).then((owned) => {
-  if (owned) startGame();
+  if (owned && newerSave()) {
+    setSaveGuest(true);
+    guard('newer');
+  } else if (owned) startGame();
   else {
     setSaveGuest(true);
     guard('other-tab');

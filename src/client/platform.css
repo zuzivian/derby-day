@@ -17,6 +17,5 @@
 .bk-found { padding: 10px 12px; border: 1px solid var(--line, #cbd4d1); border-radius: 8px; background: var(--bg, #e9eeec); }
 .bk-bad { color: var(--bad, #b8322a); font-weight: 600; }
 #bk-code-out { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
-.visually-hidden:focus + * { outline: 2px solid var(--focus, #c22d20); }
 .guard { width: 100%; display: grid; place-items: center; }
 #crash-title:focus, #guard-title:focus, .settings-card h2:focus { outline: none; }

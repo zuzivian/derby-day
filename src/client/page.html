@@ -3,8 +3,8 @@
 <meta name="description" content="Run a football club and play its matches yourself, mouse-first, in the browser.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Web fonts never block the first paint: the sheet loads as print (not render-blocking) and is switched on when it arrives. The system fonts in styles.css are the fallback. -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;800;900&family=Permanent+Marker&display=swap" media="print" onload="this.media='all'">
+<!-- Web fonts never block the first paint: the sheet loads as print (not render-blocking) and boot.ts switches it on when it arrives. The system fonts in styles.css are the fallback. -->
+<link id="gfonts" rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Big+Shoulders+Display:wght@700;800;900&family=Permanent+Marker&display=swap" media="print">
 <style>/*__CSS__*/</style>
 <div id="app"></div>
 <script type="module">/*__JS__*/</script>

@@ -40,15 +40,29 @@ on a bad connection gets the cached one after 4 s. Each deploy has a new build i
 sees "Derby Day updated. Reload to get the latest version." (not during a match); their running page is never
 swapped underneath them.
 
+### Security headers
+
+`vercel.json` sends `Strict-Transport-Security` (1 year, no preload), `X-Content-Type-Options`, `Referrer-Policy`,
+`Permissions-Policy`, `X-Frame-Options: SAMEORIGIN` and `Content-Security-Policy: frame-ancestors 'self'`. The build also
+puts a full CSP in a `<meta>` on `dist/index.html` (not in the artifact build, whose host sets its own): `script-src` is the
+SHA-256 of the single inline script, so injected script cannot run; `connect-src` is `'self'` plus the origins of
+`DERBY_ERROR_URL` / `DERBY_TELEMETRY_URL` when they are absolute URLs; styles allow `'unsafe-inline'` because `fx.ts` and
+`versus.ts` add `<style>` elements at run time. Vercel's preview toolbar injects its own script, which the CSP blocks on
+preview deployments only (a console message; production is unaffected).
+
 ### Rolling back
 
 1. Vercel dashboard → the project → Deployments → find the last good production deploy → **Promote to
    Production** (instant, no rebuild). Or `git revert <bad merge> && git push` to `main`.
 2. Players on the bad version get the good one on their next load (the page is network-first). Players
    who left a tab open from the bad version see the "updated" notice.
-3. Saves are not affected by a rollback: they live in the player's browser. If the bad version wrote a save
-   the old version cannot read, the old version restores the previous good save from the backup key
-   (`derbyday.save.v1.bak`) and tells the player.
+3. Saves are not affected by a rollback: they live in the player's browser. An older build **never overwrites
+   or "repairs" a save written by a newer one**: a save whose version is above what the page understands is
+   left byte for byte alone, and the page shows "Your club needs a newer version" with a Reload button. So a
+   change to `SAVE_VERSION` is a one-way door for players who already loaded it: ship a migration in the new
+   build (keep reading the old format) rather than relying on rollback. A save that is merely unreadable
+   (damaged) is replaced by the rolling backup (`derbyday.save.v1.bak`) with a message; if there is no
+   backup, the unreadable text is kept as `derbyday.save.v1.corrupt` and a new club starts.
 
 ## Build-time switches (env vars)
 
@@ -130,9 +144,16 @@ system-font fallbacks without them.
   `derbyday.save.v1.bak`. A save that fails validation on load is replaced by the backup (the unreadable text
   is kept as `derbyday.save.v1.corrupt` for support) and the player is told. A full disk (quota) or blocked
   storage shows a toast on every failed save; a full disk first gives up the backup to make room.
+- **Guest tabs and imports.** A guest tab (read-only second tab) cannot restore a backup, and its writes, telemetry and
+  crash recovery are all off. Two tabs opened in the same instant settle within about 120 ms: the one whose lease write
+  landed last keeps the club.
 - **Back up your club** (Club tab → Back up or restore): downloads `derby-day-<club>-<date>.json`, or shows a
-  copyable code (`DD1.` + gzip, base64url). Restore previews the club's name, level and record, says what
-  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone by hand.
+  copyable code (`DD1.` + gzip, base64url). Restore checks every field of the backup (players, lineup, ladder, colours, number ranges) and dry-runs the game's boot
+  and every screen on it before offering the confirm button, previews the club's name, level and record, says what
+  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone from the same dialog ("Swap back to …"). If a club ever crashes the game right
+  at start-up, the crash panel offers "Restore my previous club" from that copy or the rolling backup. A full disk
+  gives up the safety copies (unreadable-save copy, pre-import copy, rolling backup, in that order) before it gives up
+  on the save.
 
 ## Crash safety
 

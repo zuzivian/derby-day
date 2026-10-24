@@ -5,6 +5,7 @@
 // Privacy note: docs/OPS.md.
 
 import { TELEMETRY_URL } from './build-config.ts';
+import { isSaveGuest } from './store.ts';
 
 export type TelemetryEvent =
   | { name: 'app_open' }
@@ -29,6 +30,8 @@ export interface TelemetryDeps {
   send: (url: string, body: string) => boolean;
   now: () => number;
   random: () => string;
+  /** True in a guest tab (read-only second tab): it is not a player session, so nothing is counted. */
+  suspended?: () => boolean;
   /** Called to arrange flushes (default: timers and page-hide listeners). */
   schedule?: (flush: () => void) => void;
 }
@@ -68,7 +71,7 @@ export function createTelemetry(d: TelemetryDeps): Telemetry {
   };
   const optedOut = () => get(OFF_KEY) === '1';
   const compiledIn = !!d.url && !d.dnt && !d.gpc;
-  const on = () => compiledIn && !optedOut();
+  const on = () => compiledIn && !optedOut() && !d.suspended?.();
   let queue: Stored[] = [];
   let lastLevel = -1;
   /** The last send failed: wait for the next timed flush instead of retrying on every event. */
@@ -161,6 +164,7 @@ function browserDeps(): TelemetryDeps {
       }
     },
     now: () => Date.now(),
+    suspended: isSaveGuest,
     random: () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36)),
     schedule: (flush) => {
       setInterval(flush, 15000);

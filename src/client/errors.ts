@@ -59,6 +59,17 @@ function beacon(url: string, body: string): boolean {
   }
 }
 
+export interface CrashHooks {
+  /** True when the last save attempt failed, so the panel must not say the club is safe. */
+  unsaved?: () => boolean;
+  /** An earlier club that can be swapped back in (shown when the crash happens right at start-up). */
+  recover?: () => { name: string; run: () => void } | null;
+}
+let hooks: CrashHooks = {};
+const loadedAt = typeof performance === 'undefined' ? 0 : performance.now();
+/** A crash this soon after the page loaded is a boot crash: the club itself may be what the game cannot open. */
+const BOOT_WINDOW_MS = 15000;
+
 let shown = false;
 const seen: CrashDetails[] = [];
 
@@ -78,7 +89,14 @@ function panel(): void {
     h.tabIndex = -1;
     h.textContent = 'Something went wrong';
     const p = document.createElement('p');
-    p.textContent = 'Derby Day hit a problem and stopped. Your club is saved. Reloading usually fixes it.';
+    let unsaved = false;
+    try {
+      unsaved = !!hooks.unsaved?.();
+    } catch {
+      /* unknown: say nothing reassuring */
+      unsaved = true;
+    }
+    p.textContent = `Derby Day hit a problem and stopped. ${unsaved ? 'Your latest progress may not be saved.' : 'Your club was saved as you played.'} Reloading usually fixes it.`;
     const row = document.createElement('div');
     row.className = 'crash-actions';
     const reload = document.createElement('button');
@@ -111,6 +129,20 @@ function panel(): void {
       }
     });
     row.append(reload, copy);
+    try {
+      const rec = performance.now() - loadedAt < BOOT_WINDOW_MS ? hooks.recover?.() : null;
+      if (rec) {
+        const undo = document.createElement('button');
+        undo.type = 'button';
+        undo.className = 'btn';
+        undo.id = 'crash-restore';
+        undo.textContent = `Restore my previous club (${rec.name})`;
+        undo.addEventListener('click', () => rec.run());
+        row.append(undo);
+      }
+    } catch {
+      /* the panel still works without it */
+    }
     box.append(h, p, row, note);
     el.appendChild(box);
     document.body.appendChild(el);
@@ -139,7 +171,8 @@ function handle(reason: unknown, source: CrashDetails['source']): void {
 
 let installed = false;
 /** Install the global handlers once. Call before anything else runs. */
-export function installErrorHandlers(): void {
+export function installErrorHandlers(h: CrashHooks = {}): void {
+  hooks = h;
   if (installed || typeof window === 'undefined') return;
   installed = true;
   window.addEventListener('error', (e) => {

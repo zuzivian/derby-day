@@ -19,7 +19,7 @@ import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountOnboarding } from './onboarding.ts';
-import { clearSave, loadPrefs, loadSaveChecked, writePrefs, writeSaveResult } from './store.ts';
+import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { setBusyProbe } from './tabguard.ts';
 import { openSettings } from './settings.ts';
 import { telemetry } from './telemetry.ts';
@@ -56,9 +56,11 @@ initLiveRegions();
 initReplayUi(root);
 const loaded = loadSaveChecked();
 const existing = loaded.save;
+// A save from a newer build is never touched: this tab runs read-only until the page is reloaded onto the new build.
+if (loaded.newer) setSaveGuest(true);
 let app = boot(existing ?? newGame(freshSeed()));
 // First run (no save) gets setup; an older save that predates setup skips it.
-if (!existing) app.prefs.onboarded = false;
+if (!existing && !loaded.newer) app.prefs.onboarded = false;
 else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
 writePrefs(app.prefs);
 let saved = writeSaveResult(app.save) !== 'blocked';
@@ -524,5 +526,6 @@ document.addEventListener('keydown', (e) => {
 if (app.prefs.onboarded === false) startOnboarding();
 else render();
 if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
-else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. A backup file can bring the old one back (Club > Back up).', false);
+else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
+else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
 else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

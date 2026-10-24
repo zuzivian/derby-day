@@ -31,6 +31,7 @@ const store = await import('../src/client/store.ts');
 const backup = await import('../src/client/backup.ts');
 const errors = await import('../src/client/errors.ts');
 const tele = await import('../src/client/telemetry.ts');
+const dry = await import('../src/client/dryrun.ts');
 
 const KEY = 'derbyday.save.v1';
 const BAK = `${KEY}.bak`;
@@ -75,9 +76,10 @@ describe('save safety', () => {
   });
 
   test('corrupt save with no backup reports lost, and nothing stored reports nothing', () => {
-    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: false });
+    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: false, newer: false });
     mem.setItem(KEY, 'garbage');
-    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: true });
+    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: true, newer: false });
+    expect(mem.getItem(`${KEY}.corrupt`)).toBe('garbage'); // never destroyed by the next write
   });
 
   test('a save of the wrong shape is rejected like a corrupt one', () => {
@@ -119,14 +121,65 @@ describe('save safety', () => {
     expect(store.writeSave(newGame(2))).toBe(true);
     store.clearSave();
     expect(mem.getItem(KEY)).toBe(before);
-    expect(store.replaceSave(newGame(3))).toBe('ok'); // import is the owner's explicit act
+    expect(store.replaceSave(newGame(3))).toBe('guest'); // import is the owner tab's act, not a guest's
   });
 
   test('clearSave removes the backup too, so a new club does not resurrect the old one', () => {
     store.writeSaveResult(newGame(1));
     store.writeSaveResult(newGame(2));
     store.clearSave();
-    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: false });
+    expect(store.loadSaveChecked()).toEqual({ save: null, restored: false, lost: false, newer: false });
+  });
+
+  test('a save from a newer build is reported, left byte for byte alone, and never replaced by the backup', () => {
+    const a = newGame(1);
+    store.writeSaveResult(a);
+    const newer = JSON.stringify({ ...newGame(2), version: 99, shiny: true });
+    mem.setItem(KEY, newer);
+    const r = store.loadSaveChecked();
+    expect(r).toEqual({ save: null, restored: false, lost: false, newer: true });
+    expect(mem.getItem(KEY)).toBe(newer);
+    store.setSaveGuest(true); // what main.ts does for it
+    expect(store.writeSaveResult(newGame(3))).toBe('guest');
+    expect(mem.getItem(KEY)).toBe(newer);
+  });
+
+  test('a guest tab cannot import over the owner', () => {
+    store.writeSaveResult(newGame(1));
+    const before = mem.getItem(KEY);
+    store.setSaveGuest(true);
+    expect(store.replaceSave(newGame(2))).toBe('guest');
+    expect(mem.getItem(KEY)).toBe(before);
+    expect(store.restorePrevious()).toBe(false);
+    expect(store.previousClub()).toBeNull();
+  });
+
+  test('restorePrevious swaps the earlier club back in, and can be undone again', () => {
+    const old = newGame(1);
+    const incoming = newGame(2);
+    store.writeSaveResult(old);
+    store.replaceSave(incoming);
+    expect(store.previousClub()!.name).toBe(old.club.name);
+    expect(store.restorePrevious()).toBe(true);
+    expect(store.loadSave()!.club.name).toBe(old.club.name);
+    expect(store.previousClub()!.name).toBe(incoming.club.name);
+    expect(store.restorePrevious()).toBe(true);
+    expect(store.loadSave()!.club.name).toBe(incoming.club.name);
+  });
+
+  test('a full disk gives up safety copies, in order, before it gives up on the save', () => {
+    const a = newGame(1);
+    const size = JSON.stringify(a).length;
+    store.writeSaveResult(a);
+    store.replaceSave(newGame(2));
+    mem.setItem(`${KEY}.corrupt`, 'x'.repeat(size));
+    mem.quota = Math.round(size * 2.4);
+    expect(store.writeSaveResult({ ...a, budget: a.budget + 5 })).toBe('ok');
+    expect(mem.getItem(`${KEY}.corrupt`)).toBeNull();
+    expect(store.lastWriteFailed()).toBe(false);
+    mem.quota = 100;
+    expect(store.writeSaveResult(newGame(3))).toBe('quota');
+    expect(store.lastWriteFailed()).toBe(true);
   });
 });
 
@@ -196,6 +249,53 @@ describe('backup export and import', () => {
     store.writeSaveResult(incoming);
     store.writeSaveResult({ ...incoming, budget: incoming.budget + 1 });
     expect(JSON.parse(mem.getItem(`${KEY}.pre-import`)!).club.name).toBe(old.club.name);
+  });
+});
+
+describe('damaged backups are refused before they can brick the club', () => {
+  const good = () => JSON.parse(JSON.stringify(newGame(21)));
+  const mutations: [string, (s: any) => void][] = [
+    ['squad entry with no fields', (s) => (s.squad[0] = { foo: 1 })],
+    ['player with no attrs', (s) => delete s.squad[3].attrs],
+    ['player attr out of range', (s) => (s.squad[2].attrs.pace = 1e9)],
+    ['player attr missing goalkeeping', (s) => delete s.squad[2].attrs.goalkeeping],
+    ['unknown role', (s) => (s.squad[1].role = 'WIZ')],
+    ['colours null', (s) => (s.club.primary = null)],
+    ['colour not a colour', (s) => (s.club.secondary = 'red')],
+    ['ladder of numbers', (s) => (s.ladder = [1, 2])],
+    ['ladder club without colours', (s) => delete s.ladder[0].primary],
+    ['lineup ids not in the squad', (s) => (s.lineup = ['nope'])],
+    ['lineup longer than a team', (s) => (s.lineup = s.squad.map((p: any) => p.id).slice(0, 14))],
+    ['elo 1e308', (s) => (s.club.elo = 1e308)],
+    ['budget 1e308', (s) => (s.budget = 1e308)],
+    ['negative games played', (s) => (s.club.played = -4)],
+    ['huge history', (s) => (s.history = new Array(30000).fill({}))],
+    ['rng not a number', (s) => (s.rng = { s: 'x' })],
+    ['squad ids repeat', (s) => (s.squad[1].id = s.squad[0].id)],
+  ];
+  for (const [name, mutate] of mutations) {
+    test(name, async () => {
+      const s = good();
+      mutate(s);
+      const r = await backup.parseBackup(JSON.stringify(s));
+      expect(r.ok).toBe(false);
+    });
+  }
+
+  test('a healthy club passes both the field check and the boot dry run, and the dry run does not touch it', async () => {
+    const s = good();
+    const r = await backup.parseBackup(JSON.stringify(s));
+    expect(r.ok).toBe(true);
+    const before = JSON.stringify(s);
+    expect(dry.dryRunBoot(s)).toBeNull();
+    expect(JSON.stringify(s)).toBe(before);
+  });
+
+  test('the dry run catches a club the field check lets through but the game cannot open', () => {
+    const s = good();
+    s.ladder[0].quality = 'high'; // a shape isSave() does not look at
+    s.squad[0].attrs = null; // what "Cannot read goalkeeping" looked like
+    expect(dry.dryRunBoot(s)).not.toBeNull();
   });
 });
 
@@ -276,6 +376,20 @@ describe('telemetry', () => {
       expect(s.sent).toHaveLength(0);
       expect(s.store.length).toBe(0);
     }
+  });
+
+  test('a guest tab counts nothing', () => {
+    let guest = true;
+    const s = make({ suspended: () => guest });
+    s.t.track({ name: 'app_open' });
+    s.t.track({ name: 'match_start', kind: 'Ranked', controls: 'mouse' });
+    s.t.flush();
+    expect(s.sent).toHaveLength(0);
+    expect(s.store.length).toBe(0); // no install id, no seen-state
+    guest = false;
+    s.t.track({ name: 'app_open' });
+    s.t.flush();
+    expect(names(s)).toEqual(['app_open']);
   });
 
   test('the player can opt out, and opting out drops what is queued', () => {

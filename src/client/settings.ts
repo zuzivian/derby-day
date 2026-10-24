@@ -3,7 +3,8 @@
 // #app, so the game's re-renders never wipe it half way through.
 
 import { parseBackup, backupCode, backupFilename, backupJson, type BackupPreview } from './backup.ts';
-import { replaceSave, type WriteResult } from './store.ts';
+import { dryRunBoot } from './dryrun.ts';
+import { isSaveGuest, previousClub, replaceSave, restorePrevious, type WriteResult } from './store.ts';
 import type { Save } from '../meta/game.ts';
 import { showToast } from './a11y.ts';
 import { telemetry } from './telemetry.ts';
@@ -17,7 +18,7 @@ export interface SettingsHooks {
 }
 
 const failText = (r: WriteResult): string =>
-  r === 'quota' ? 'This browser has no room left to store the club. Free some space and try again.' : 'This browser blocked storage, so the backup could not be restored.';
+  r === 'quota' ? 'This browser has no room left to store the club. Free some space and try again.' : r === 'guest' ? 'This tab is not the one that owns your club. Restore from the tab that does.' : 'This browser blocked storage, so the backup could not be restored.';
 
 export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): void {
   if (document.getElementById('settings-dialog')) return;
@@ -28,6 +29,8 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
   wrap.setAttribute('aria-modal', 'true');
   wrap.setAttribute('aria-labelledby', 'settings-title');
   const save = hooks.getSave();
+  const guestTab = isSaveGuest();
+  const prev = previousClub();
   wrap.innerHTML = `
   <div class="modal-card settings-card">
     <h2 id="settings-title" tabindex="-1">Back up your club</h2>
@@ -41,10 +44,13 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       <button class="btn small" id="bk-copy">Copy code</button>
     </div>
     <h3 class="eyebrow">Restore a backup</h3>
-    <label class="btn" for="bk-file">Choose a backup file…</label>
-    <input type="file" id="bk-file" accept=".json,application/json,text/plain" class="visually-hidden">
+    ${guestTab
+      ? '<p class="muted">This is a guest tab, so it cannot change your club. Open this dialog in the tab that owns the club to restore a backup.</p>'
+      : `<button class="btn" id="bk-choose" type="button">Choose a backup file…</button>
+    <input type="file" id="bk-file" accept=".json,application/json,text/plain" hidden tabindex="-1">
     <textarea id="bk-paste" rows="2" placeholder="…or paste a backup code here" aria-label="Paste a backup code"></textarea>
     <div id="bk-preview" role="status" aria-live="polite"></div>
+    ${prev ? `<div class="bk-prev"><p class="muted small">A safety copy of an earlier club is kept: <strong>${esc(prev.name)}</strong> (${prev.played} played).</p><button class="btn small" id="bk-undo" type="button">Swap back to ${esc(prev.name)}</button></div>` : ''}`}
     ${telemetry.enabled ? `<h3 class="eyebrow">Privacy</h3><label class="check"><input type="checkbox" id="tl-off"${telemetry.optedOut() ? ' checked' : ''}> Don't send anonymous usage counts</label>` : ''}
     <div class="settings-foot"><button class="btn ghost" id="settings-close">Close</button></div>
   </div>`;
@@ -63,7 +69,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       e.stopPropagation();
       close();
     } else if (e.key === 'Tab') {
-      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden]),label.btn')].filter((x) => x.offsetParent !== null || x.tagName === 'INPUT');
+      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden])')].filter((x) => x.offsetParent !== null);
       if (!f.length) return;
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
@@ -110,11 +116,16 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     }
   });
 
-  const preview = $('bk-preview');
+  const preview = guestTab ? document.createElement('div') : $('bk-preview');
   const show = async (text: string) => {
     const r = await parseBackup(text);
     if (!r.ok) {
       preview.innerHTML = `<p class="bk-bad" role="alert">${esc(r.reason)}</p>`;
+      return;
+    }
+    const broken = dryRunBoot(r.save);
+    if (broken) {
+      preview.innerHTML = '<p class="bk-bad" role="alert">This backup is damaged in a way that would stop the game from opening, so it was not used. Your club is untouched.</p>';
       return;
     }
     const p: BackupPreview = r.preview;
@@ -134,6 +145,20 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       hooks.onImported();
     });
   };
+  if (guestTab) {
+    $('tl-off')?.addEventListener('change', (e) => telemetry.setOptOut((e.target as HTMLInputElement).checked));
+    return;
+  }
+  $('bk-choose').addEventListener('click', () => $<HTMLInputElement>('bk-file').click());
+  $('bk-undo')?.addEventListener('click', () => {
+    if (!restorePrevious()) {
+      preview.innerHTML = '<p class="bk-bad" role="alert">The earlier club could not be restored.</p>';
+      return;
+    }
+    wrap.remove();
+    document.removeEventListener('keydown', onKey, true);
+    hooks.onImported();
+  });
   $<HTMLInputElement>('bk-file').addEventListener('change', async (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;

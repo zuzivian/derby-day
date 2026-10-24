@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SAVE_KEY, SEL, openApp, goTab, readSave, skipOnboarding, startRanked } = require('./lib/helpers.cjs');
+const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, goTab, readSave, skipOnboarding, startRanked } = require('./lib/helpers.cjs');
 
 const DIST = path.resolve(__dirname, '..', '..', 'dist');
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
@@ -239,7 +239,17 @@ test('built files: share metadata, manifest and icons, robots, 404, and an artif
   for (const needle of ['rel="canonical" href="https://derby.natwong.dev/"', 'property="og:image" content="https://derby.natwong.dev/og.png"', 'name="twitter:card" content="summary_large_image"', 'rel="manifest"', 'rel="apple-touch-icon"', 'name="theme-color"', 'property="og:title"']) {
     expect(html, needle).toContain(needle);
   }
-  expect(html, 'web fonts do not block first paint').toMatch(/fonts\.googleapis\.com[^>]*media="print"[^>]*onload=/);
+  expect(html, 'web fonts do not block first paint').toMatch(/<link id="gfonts"[^>]*fonts\.googleapis\.com[^>]*media="print">/);
+  expect(html.match(/<title>/g).length, 'one title').toBe(1);
+  expect(html.match(/name="description"/g).length, 'one description').toBe(1);
+  expect(html.slice(0, html.indexOf('</head>')), 'title and description are in <head>').toContain('<title>Derby Day</title>');
+  // The CSP allows exactly the one inline script, by hash, and no inline event handlers are left to need 'unsafe-hashes'.
+  const script = html.match(/<script type="module">([\s\S]*?)<\/script>/)[1];
+  const hash = require('node:crypto').createHash('sha256').update(script).digest('base64');
+  expect(html, 'CSP hash matches the inline script').toContain(`script-src 'sha256-${hash}'`);
+  expect(html, 'CSP object rule').toContain("object-src 'none'");
+  expect(html.match(/<script/g).length, 'only one script tag').toBe(1);
+  expect(/\son(load|click|error)=/.test(html.slice(0, html.indexOf('<script'))), 'no inline handlers in the page markup').toBe(false);
   expect(html, 'font display swap').toContain('display=swap');
   const art = read('derby-day.artifact.html');
   expect(art, 'artifact has no manifest link').notToContain('rel="manifest"');
@@ -255,6 +265,8 @@ test('built files: share metadata, manifest and icons, robots, 404, and an artif
   expect(read('404.html'), '404 page').toContain('Back to Derby Day');
   expect(read('sw.js'), 'sw build id substituted').notToContain('__BUILD_ID__');
   const vercel = JSON.parse(fs.readFileSync(path.join(DIST, '..', 'vercel.json'), 'utf8'));
+  expect(JSON.stringify(vercel.headers[0].headers), 'HSTS header').toContain('Strict-Transport-Security');
+  expect(JSON.stringify(vercel.headers[0].headers), 'frame-ancestors').toContain("frame-ancestors 'self'");
   const sw = vercel.headers.find((h) => h.source === '/sw.js');
   expect(JSON.stringify(sw.headers), 'sw.js is never cached').toContain('no-cache');
 });
@@ -328,6 +340,15 @@ test('offline: the page opens with no network after one visit, and a new deploy 
     expect((await readSave(page)).club.name, 'same club offline').toBe(name);
     expect(await page.title(), 'title offline').toMatch(/derby day/i);
     await page.context().setOffline(false);
+    // Visiting another address (the share image) must not become the cached page.
+    await page.goto(origin + '/og.png');
+    await page.goto(origin + '/');
+    await page.waitForSelector(SEL.tab);
+    await page.context().setOffline(true);
+    await page.reload();
+    await page.waitForSelector(SEL.tab);
+    expect(await page.evaluate(() => document.contentType), 'offline reload is still the game, not an image').toBe('text/html');
+    await page.context().setOffline(false);
     // A new deploy: the worker updates itself, drops the old cache and the page says so.
     state.build = 'new2';
     await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
@@ -342,7 +363,106 @@ test('offline: the page opens with no network after one visit, and a new deploy 
   }
 });
 
-test('the artifact build runs without a service worker and without errors', async (t) => {
+test('a guest tab cannot restore a backup over the owner, and a damaged backup is refused in the owner tab', async (t) => {
+  const problems = [];
+  const a = await openApp(t);
+  const name = (await readSave(a)).club.name;
+  const b = await secondTab(a, problems);
+  await b.locator('#guard-guest').click();
+  await b.waitForSelector(SEL.tab);
+  await goTab(b, SEL.clubScreen);
+  await b.locator('[data-action="open-backup"]').click();
+  await b.waitForSelector('#settings-title');
+  expect(await b.locator('#bk-choose').count(), 'no restore controls in a guest tab').toBe(0);
+  expect(await b.locator('#settings-dialog').innerText(), 'says why').toMatch(/guest tab/i);
+  // Owner tab: a backup whose squad is junk never reaches the confirm button.
+  await goTab(a, SEL.clubScreen);
+  await a.locator('[data-action="open-backup"]').click();
+  const bad = await a.evaluate((k) => {
+    const s = JSON.parse(localStorage.getItem(k));
+    s.squad[0] = { foo: 1 };
+    return JSON.stringify(s);
+  }, SAVE_KEY);
+  await a.locator('#bk-paste').fill(bad);
+  await a.waitForSelector('.bk-bad');
+  expect(await a.locator('#bk-confirm').count(), 'no confirm for a damaged backup').toBe(0);
+  expect((await readSave(a)).club.name, 'club untouched').toBe(name);
+  expect(problems, 'errors').toEqual([]);
+});
+
+test('a club the game cannot open offers to restore the previous one, and a newer-version save is left alone', async (t) => {
+  const page = await openApp(t);
+  const good = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+  const goodName = JSON.parse(good).club.name;
+  // A save that passes isSave() but crashes the game at boot, with an earlier club kept as the safety copy.
+  const broken = await page.evaluate((k) => {
+    const s = JSON.parse(localStorage.getItem(k));
+    s.club.name = 'Broken FC';
+    s.squad[0] = { foo: 1 };
+    return JSON.stringify(s);
+  }, SAVE_KEY);
+  // The crash panel is a normal "page error" to the runner: this test expects it, so it uses a context whose errors it ignores.
+  const crashed = await t.browser.newContext();
+  const p2 = await crashed.newPage();
+  await p2.route(FONT_HOST, (r) => r.abort());
+  await p2.goto(APP_URL);
+  await p2.evaluate(([k, g, b, pk]) => {
+    localStorage.setItem(pk, JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true }));
+    localStorage.setItem(k + '.pre-import', g);
+    localStorage.setItem(k, b);
+  }, [SAVE_KEY, good, broken, PREFS_KEY]);
+  await p2.reload();
+  await p2.waitForSelector('#crash-panel');
+  expect(await p2.locator('#crash-panel').innerText(), 'no false reassurance beyond what is true').toMatch(/something went wrong/i);
+  await p2.locator('#crash-restore').click();
+  await p2.waitForSelector(SEL.tab, { timeout: 15_000 });
+  expect((await readSave(p2)).club.name, 'previous club is back').toBe(goodName);
+  // A save from a newer build: a notice, no game, and the stored text is never touched.
+  const newer = JSON.stringify({ version: 99, mystery: 'from the future' });
+  await p2.evaluate(([k, v]) => localStorage.setItem(k, v), [SAVE_KEY, newer]);
+  await p2.reload();
+  await p2.waitForSelector('#guard-title');
+  expect(await p2.locator('#guard-title').textContent(), 'newer version notice').toMatch(/newer version/i);
+  await p2.waitForTimeout(500);
+  expect(await p2.evaluate((k) => localStorage.getItem(k), SAVE_KEY), 'stored save untouched').toBe(newer);
+  await crashed.close();
+});
+
+test('two tabs opened at the same instant: exactly one gets the club', async (t) => {
+  const first = await t.newPage();
+  const ctx = first.context();
+  const second = await ctx.newPage();
+  await Promise.all([first.goto(APP_URL), second.goto(APP_URL)]);
+  await first.waitForTimeout(1500);
+  const guards = (await first.locator('#guard-title').count()) + (await second.locator('#guard-title').count());
+  const games = (await first.locator('#app > *').count() ? 1 : 0) + (await second.locator('#app > *').count() ? 1 : 0);
+  expect(guards, 'one tab parked').toBe(1);
+  expect(games >= 1, 'one tab plays').toBe(true);
+});
+
+test('the artifact build runs inside a sandboxed cross-origin iframe on http: no crash panel, no errors', async (t) => {
+  // file:// hides the problem: in a sandboxed frame even reading navigator.serviceWorker throws SecurityError.
+  const state = { build: 'art', marker: '', hits: {} };
+  const { server, origin } = await serveDist(state);
+  const outer = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><body style="margin:0"><iframe id="g" sandbox="allow-scripts" src="${origin}/derby-day.artifact.html" style="width:100vw;height:100vh;border:0"></iframe>`);
+  });
+  await new Promise((r) => outer.listen(0, '127.0.0.1', r));
+  try {
+    const page = await t.newPage();
+    await page.goto(`http://127.0.0.1:${outer.address().port}/`);
+    const frame = page.frameLocator('#g');
+    await frame.locator('#app *').first().waitFor();
+    await page.waitForTimeout(800);
+    expect(await frame.locator('#crash-panel').count(), 'no crash panel').toBe(0);
+    expect(await frame.locator('#app').innerText().then((x) => x.length), 'game drew something').toBeGreaterThan(20);
+  } finally {
+    server.close();
+    outer.close();
+  }
+});
+
+test('the artifact build on file:// runs without a service worker and without errors', async (t) => {
   const page = await t.newPage();
   await page.addInitScript(() => {
     window.__sw = 0;

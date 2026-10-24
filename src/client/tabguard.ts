@@ -15,6 +15,8 @@ export const HEARTBEAT_MS = 2000;
 export const STALE_MS = 7000;
 /** How long a taker waits for the owner to answer before treating it as gone. */
 const ASK_MS = 1500;
+/** After claiming, how long until the tab double-checks that no other tab claimed at the same moment. */
+const RACE_CHECK_MS = 120;
 
 type Msg = { type: 'ask' | 'yield' | 'busy'; from: string; to?: string };
 interface Lease {
@@ -99,18 +101,32 @@ function listen(): void {
   }
 }
 
+/** Another tab holds a fresh lease while this one believed it owned the club (it was frozen, or two tabs raced). */
+const lostTo = (): boolean => {
+  const l = readLease();
+  return !!l && l.id !== me && fresh(l);
+};
+
 function start(): void {
   owner = true;
   writeLease();
   clearInterval(beat);
   beat = setInterval(() => {
-    const l = readLease();
-    // Someone else wrote the lease (a crash-recovery takeover while we were frozen): step aside.
-    if (l && l.id !== me && fresh(l)) {
+    if (lostTo()) {
+      // A match in progress finishes and saves its result first; only then does this tab step aside.
+      if (busyProbe()) return;
       release();
       hooks?.onLost();
     } else writeLease();
   }, HEARTBEAT_MS);
+  // Two tabs opened in the same instant can both read "no lease" and both write one. The last write wins,
+  // so a short while later exactly one of them still finds its own id there; the other steps aside.
+  setTimeout(() => {
+    if (owner && lostTo() && !busyProbe()) {
+      release();
+      hooks?.onLost();
+    }
+  }, RACE_CHECK_MS);
 }
 
 function release(): void {

@@ -4,7 +4,7 @@ import { takeWhenFree } from './tabguard.ts';
 
 export interface GuardViewOptions {
   /** Why the screen is up: never claimed the club at boot, or lost it to another tab. */
-  reason: 'other-tab' | 'taken';
+  reason: 'other-tab' | 'taken' | 'newer';
   /** This tab took the club: reload to read the save fresh. */
   onTaken: () => void;
   /** Open the game read-only in this tab (Link play's second tab). */
@@ -19,6 +19,22 @@ export function showGuardScreen(o: GuardViewOptions): () => void {
   document.body.appendChild(root);
   const appEl = document.getElementById('app');
   if (appEl) appEl.inert = true;
+  if (o.reason === 'newer') {
+    root.innerHTML = `
+  <div class="guard" role="alertdialog" aria-modal="true" aria-labelledby="guard-title">
+    <div class="guard-card">
+      <h1 id="guard-title" tabindex="-1">Your club needs a newer version</h1>
+      <p>This club was saved by a newer version of Derby Day than the one this page is running. Nothing has been changed. Reload to get the latest version.</p>
+      <div class="guard-actions"><button class="btn primary" id="guard-reload">Reload</button></div>
+    </div>
+  </div>`;
+    root.querySelector<HTMLElement>('#guard-title')?.focus();
+    root.querySelector('#guard-reload')?.addEventListener('click', () => location.reload());
+    return () => {
+      root.remove();
+      if (appEl) appEl.inert = false;
+    };
+  }
   root.innerHTML = `
   <div class="guard" role="alertdialog" aria-modal="true" aria-labelledby="guard-title">
     <div class="guard-card">

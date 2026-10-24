@@ -27,12 +27,16 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-function networkFirst(request) {
+/** Only the game page itself is ever stored as '/': never /og.png, /404, or any other address someone navigates to. */
+const isPage = (url) => url.pathname === '/' || url.pathname === '/index.html';
+const isHtml = (res) => /text\/html/i.test(res.headers.get('content-type') || '');
+
+function networkFirst(request, cacheable) {
   return new Promise((resolve) => {
     let settled = false;
     const fromCache = () => caches.match('/', { ignoreSearch: true }).then((r) => r || Response.error());
     const timer = setTimeout(() => {
-      if (settled) return;
+      if (settled || !cacheable) return;
       fromCache().then((r) => {
         if (!settled && r && r.type !== 'error') {
           settled = true;
@@ -42,7 +46,7 @@ function networkFirst(request) {
     }, NETWORK_TIMEOUT_MS);
     fetch(request)
       .then((res) => {
-        if (res.ok) {
+        if (cacheable && res.ok && isHtml(res)) {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('/', copy));
         }
@@ -76,6 +80,6 @@ self.addEventListener('fetch', (event) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin || url.pathname === '/sw.js') return;
-  if (req.mode === 'navigate') event.respondWith(networkFirst(req));
+  if (req.mode === 'navigate') event.respondWith(networkFirst(req, isPage(url)));
   else if (SHELL.includes(url.pathname)) event.respondWith(staleWhileRevalidate(req));
 });
