@@ -812,11 +812,40 @@ export class Renderer3D implements MatchRenderer {
     }
   }
 
+  /**
+   * three.js keeps a few module-level singletons that every renderer uploads: the Sprite quad
+   * geometry and the DFG lookup texture of the standard material. Each WebGLRenderer hangs a dispose
+   * listener on them that closes over its GL context, so after a match they would pin that context,
+   * its canvas, the detached match DOM and every closure on it (about 3 MB of heap and 10-20 MB of
+   * canvas backing per match). Disposing every geometry and every texture uniform the scene uses,
+   * singletons included, fires those listeners and removes them. A singleton is re-uploaded by the
+   * next renderer that draws it, so this is safe with another renderer alive.
+   */
+  private releaseShared(): void {
+    const geos = new Set<{ dispose(): void }>();
+    const textures = new Set<{ dispose(): void }>();
+    this.scene.traverse((o) => {
+      const m = o as Mesh;
+      if (m.geometry) geos.add(m.geometry);
+      const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mat of mats) {
+        const uniforms = (this.gl.properties.get(mat) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+        for (const u of Object.values(uniforms ?? {})) {
+          const v = u?.value as { isTexture?: boolean; dispose(): void } | null;
+          if (v && v.isTexture) textures.add(v);
+        }
+      }
+    });
+    for (const g of geos) g.dispose();
+    for (const t of textures) t.dispose();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.lost = true;
     for (const c of this.cleanup) c();
+    this.releaseShared();
     for (const p of this.players) p.dispose();
     this.referee?.dispose();
     this.kit.dispose();
