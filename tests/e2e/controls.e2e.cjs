@@ -273,9 +273,12 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       }
       return opp.i;
     }, gap);
+  // Wait for the challenge itself rather than a fixed time: under load (software 3D on a busy runner)
+  // 250 ms of wall time can pass before the sim has stepped the click at all (CI saw 0 once).
+  const challenged = () => page.waitForFunction(() => window.__cd > 0, null, { timeout: 15_000, polling: 20 }).then(() => page.waitForTimeout(100));
   await setup(1.3);
   await click(page, { x: 31.5, y: 20 }, 'right');
-  await page.waitForTimeout(250);
+  await challenged();
   const stand = await page.evaluate(() => window.__cd);
   // A standing tackle sets a 36-tick cooldown, or 50 if it fails (it wins at most 88% of the
   // time), so accept either outcome; a slide is 70 or 90, which is what tells the two apart.
@@ -283,7 +286,7 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
   expect(stand, 'standing tackle cooldown (won or lost), shorter than any slide').toBeLessThan(55);
   const opp = await setup(2.6);
   await click(page, { x: 36, y: 20 }, 'right');
-  await page.waitForTimeout(250);
+  await challenged();
   expect(await page.evaluate(() => window.__cd), 'a far pointer slides: a longer recovery').toBeGreaterThan(60);
   void opp;
 });
