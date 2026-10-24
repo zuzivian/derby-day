@@ -40,6 +40,7 @@
 import {
   AIR_DRAG,
   BOX_DEPTH,
+  mentalityOf,
   BOX_W,
   GOAL_BOTTOM,
   GOAL_TOP,
@@ -52,6 +53,8 @@ import {
   REACH_Z,
   RETREAT,
   SPRINT_MULT,
+  type Mentality,
+  type SubRole,
 } from './constants.ts';
 import {
   attackDir,
@@ -102,6 +105,119 @@ const GOAL_HALF = (GOAL_BOTTOM - GOAL_TOP) / 2;
 const SHOOT_XG = 0.011;
 /** A metre in team-x units. */
 const M = 1 / PITCH_W;
+
+// ---------------------------------------------------------------------------
+// Tactics. A team's mentality (TeamSetup.mentality) is a set of knobs on the
+// behaviour below. Balanced is the CPU as it played before mentalities
+// existed; the others move every knob one way or the other. Distances along
+// the pitch are in team-x units (0 own goal line .. 1 theirs, 0.01 is about
+// a metre). scripts/tactics-probe.ts measures what each one does.
+
+export interface Tactic {
+  /** Out of possession, how far the back line sits behind the ball (unpressured; 0.05 less when the carrier is pressed). */
+  lineGap: number;
+  /** ...and the band it holds in: never deeper than lineMin, never higher than lineMax. */
+  lineMin: number;
+  lineMax: number;
+  /** Near our own box the line holds at this height (the edge of the area) rather than dropping onto the keeper. */
+  boxHold: number;
+  /** In possession: the back line sits attGap behind the ball, between attMin and attMax. */
+  attGap: number;
+  attMin: number;
+  attMax: number;
+  /** Out of possession: width of the block (1 = the formation's width), pull toward the ball side, and how far midfield and attack stand ahead of the line (1 = normal). */
+  defWidth: number;
+  squeeze: number;
+  defDepth: number;
+  /** In possession: width and how far ahead of the line the shape pushes. */
+  attWidth: number;
+  attDepth: number;
+  /** The chaser goes in on the carrier when the ball is within pressUpTo of our goal line (1 = anywhere), or when the carrier comes within pressNear metres; otherwise he holds off goal-side. */
+  pressUpTo: number;
+  pressNear: number;
+  /** Extra players who press with the chaser (cutting passing lanes, doubling up) once the ball is beyond extraFrom (our team-x). */
+  extra: number;
+  extraFrom: number;
+  /** Counter-press: for this many ticks after losing the ball, counterN more players hunt it and the line holds up. */
+  counter: number;
+  counterN: number;
+  /** The ball-side full-back overlaps once the ball is beyond fbUp (above 1: never); farFbUp pushes the far one on too instead of tucking in. */
+  fbUp: number;
+  farFbUp: boolean;
+  /** Wing-backs in possession: 0 hold the line, 1 the ball-side one goes, 2 both give width high up. */
+  wbUp: 0 | 1 | 2;
+  /** Who gets into the box for a cross and runs in behind: 0 strikers, 1 and wingers, 2 and central midfielders, 3 and attacking and wide midfielders. */
+  boxRunners: 0 | 1 | 2 | 3;
+  /** Pass choice: weight on how far forward a pass goes against how safe it is (1 = normal). */
+  risk: number;
+  /** Carrier decision interval (below 1 is quicker), how fast patience runs out, how much he likes to carry it. */
+  tempo: number;
+  urgency: number;
+  carry: number;
+  /** Readiness to clear it long when pressed deep in our half (added to the pass score below which he clears). */
+  clear: number;
+  /** Direct play: the chance, on each decision in our own half, of hitting a long ball up to a forward instead of building up. */
+  direct: number;
+  /** Tackling: chance multiplier and extra reach (m). Keener tackling wins it higher and gives away more fouls. */
+  tackle: number;
+  reach: number;
+  /** Teammates who come to offer the carrier a short pass, and how far from him (m). */
+  supporters: number;
+  supportR: number;
+  /** Throttle when jogging back into shape from far away. */
+  recover: number;
+}
+
+export const TACTICS: Record<Mentality, Tactic> = {
+  park: {
+    lineGap: 0.27, lineMin: 0.06, lineMax: 0.2, boxHold: 0.13, attGap: 0.4, attMin: 0.1, attMax: 0.3,
+    defWidth: 0.64, squeeze: 0.26, defDepth: 0.66, attWidth: 1, attDepth: 0.78,
+    pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
+    risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
+    supporters: 2, supportR: 11, recover: 0.95,
+  },
+  defensive: {
+    lineGap: 0.25, lineMin: 0.05, lineMax: 0.32, boxHold: 0.15, attGap: 0.34, attMin: 0.12, attMax: 0.42,
+    defWidth: 0.74, squeeze: 0.28, defDepth: 0.84, attWidth: 1.04, attDepth: 0.9,
+    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 1,
+    risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.3, tackle: 0.95, reach: 0,
+    supporters: 2, supportR: 10, recover: 0.85,
+  },
+  balanced: {
+    lineGap: 0.24, lineMin: 0.05, lineMax: 0.42, boxHold: 0.15, attGap: 0.3, attMin: 0.14, attMax: 0.52,
+    defWidth: 0.8, squeeze: 0.3, defDepth: 1, attWidth: 1.08, attDepth: 1,
+    pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
+    risk: 1, tempo: 1, urgency: 1, carry: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
+    supporters: 3, supportR: 10, recover: 0.7,
+  },
+  attacking: {
+    lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
+    defWidth: 0.84, squeeze: 0.32, defDepth: 1, attWidth: 1.12, attDepth: 1.08,
+    pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, counter: 90, counterN: 1,
+    fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
+    risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
+    supporters: 3, supportR: 10, recover: 0.75,
+  },
+  press: {
+    lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
+    defWidth: 0.8, squeeze: 0.4, defDepth: 0.82, attWidth: 1.1, attDepth: 1.02,
+    pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, counter: 180, counterN: 2,
+    fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
+    risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.3, reach: 0.25,
+    supporters: 3, supportR: 9, recover: 0.9,
+  },
+};
+
+export const tacticOf = (s: MatchState, team: 0 | 1): Tactic => TACTICS[mentalityOf(s.teams[team].mentality)];
+
+/** Where each sub-role stands in the formations it was tuned on; a slot higher or deeper than this shifts the player with it (a 4-2-3-1's wingers drop deeper than a 4-3-3's). */
+const CANON_X: Record<SubRole, number> = { GK: 0.02, CB: 0.18, FB: 0.2, WB: 0.22, DM: 0.34, CM: 0.41, AM: 0.49, WM: 0.4, W: 0.58, ST: 0.59 };
+/** Box runners at each tactic level (Tactic.boxRunners). */
+const RUNNERS: SubRole[][] = [['ST'], ['ST', 'W'], ['ST', 'W', 'CM'], ['ST', 'W', 'CM', 'AM', 'WM']];
+const runsIntoBox = (k: Tactic, sub: SubRole): boolean => RUNNERS[k.boxRunners].includes(sub);
 
 function seek(p: MatchPlayer, target: Vec, arrive = 2.5, cap = 1): Intent {
   const d = sub(target, p.pos);
@@ -261,8 +377,30 @@ function keepsOut(s: MatchState, m: MatchPlayer): boolean {
   return !!w && w.team === m.team && w.players.includes(m.i) && s.ball.receiver !== m.i && offsideAware(s, m);
 }
 
+/** Orderings of up to three supporters, for matching them to the angles they offer. */
+const PERMS: number[][][] = [[[]], [[0]], [[0, 1], [1, 0]], [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]];
+
+/**
+ * The angles (radians from straight at their goal) at which supporters offer
+ * the carrier at `c` a short pass: the two forward diagonals and a ball back
+ * inside, which with the carrier make the triangles a passing side plays in.
+ * Near a touchline the outside angle is off the pitch, so the angles swing
+ * inside: down the line, inside, and back inside. In the final third they
+ * open out for lay-offs and cut-backs.
+ */
+function supportSlots(team: 0 | 1, c: Vec, n: number): number[] {
+  const dir = attackDir(team);
+  // The rotation sign that turns "straight ahead" toward the middle of the pitch.
+  const inSign = (MID_Y - c.y) * dir >= 0 ? 1 : -1;
+  if (n <= 0) return [];
+  if (Math.min(c.y, PITCH_H - c.y) < 11) return [[1 * inSign], [0.3 * inSign, 1.3 * inSign], [0.25 * inSign, 1.15 * inSign, 2.35 * inSign]][Math.min(n, 3) - 1];
+  const a = teamX(team, c.x) > 0.78 ? 1.15 : 0.8;
+  return [[0.9 * inSign], [-a, a], [-a, a, (Math.PI - 0.75) * inSign]][Math.min(n, 3) - 1];
+}
+
 function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const skill = skillOf(s, team);
+  const k = tacticOf(s, team);
   const lag = reactionLag(skill);
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
@@ -318,19 +456,98 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     focus = fi ? fi.pt : seen;
   }
 
-  // The back line. Defending, it sits about 20 m behind the ball, a little
-  // deeper when nobody is pressing the carrier (so there is less space in
-  // behind), and steps up as the ball goes back: that is the offside trap.
+  // Counter-press: the moment the ball is lost, a pressing side hunts it.
+  const prev = s.aiPlans?.[team];
+  const lostAt = prev && prev.attacking && !attacking ? s.tick : prev?.lostAt ?? -1e6;
+  const counterOn = !attacking && k.counter > 0 && s.tick - lostAt < k.counter;
+
+  // The back line. Defending, it sits about 20 m behind the ball (Balanced),
+  // a little deeper when nobody is pressing the carrier (so there is less
+  // space in behind), and steps up as the ball goes back: that is the
+  // offside trap. The mentality sets the gap and how high or deep it may go.
   const bx = teamX(team, focus.x);
   let line: number;
-  if (attacking) line = clamp(bx - 0.3, 0.14, 0.52);
+  if (attacking) line = clamp(bx - k.attGap, k.attMin, k.attMax);
   else {
-    line = bx - (owner && !pressured ? 0.24 : 0.19) - (1 - skill) * 0.03;
+    line = bx - (owner && !pressured && !counterOn ? k.lineGap : k.lineGap - 0.05) - (1 - skill) * 0.03;
     // Near our box the line holds at its edge rather than dropping onto the keeper.
-    line = Math.max(line, Math.min(0.15, bx - 0.04));
-    line = clamp(Math.min(line, bx - 0.03), 0.05, 0.42);
+    line = Math.max(line, Math.min(k.boxHold, bx - 0.04));
+    line = clamp(Math.min(line, bx - 0.03), Math.min(k.lineMin, Math.max(0.05, bx - 0.03)), k.lineMax);
   }
   const oppLine = Math.max(secondLastOpponentX(s, team), teamX(team, b.pos.x), 0.5);
+
+  // Pressing: whether the chaser goes in, and who presses with him.
+  let engage = true;
+  const pressers: number[] = [];
+  const pressLane: number[] = [];
+  if (owner && !attacking) {
+    const ch = chaser >= 0 ? s.players[chaser] : null;
+    engage = counterOn || bx <= k.pressUpTo || (!!ch && dist(ch.pos, owner.pos) < k.pressNear);
+    const extra = Math.min(3, (bx > k.extraFrom ? k.extra : 0) + (counterOn ? k.counterN : 0));
+    if (extra > 0) {
+      const near = mates
+        .filter((m) => m.i !== chaser && m.i !== human && dist(m.pos, owner.pos) < 24)
+        .sort((x, y) => dist(x.pos, owner.pos) - dist(y.pos, owner.pos))
+        .slice(0, extra);
+      // The carrier's nearest options, whose passing lanes the pressers cut.
+      const lanes = s.players
+        .filter((o) => o.team !== team && !o.sentOff && o.i !== owner.i && o.role !== 'GK')
+        .sort((x, y) => dist(x.pos, owner.pos) - dist(y.pos, owner.pos))
+        .slice(0, 3);
+      const taken = new Set<number>();
+      near.forEach((m, j) => {
+        let lane = -1;
+        // The last of three pressers doubles up on the carrier.
+        if (!(extra === 3 && j === 2)) {
+          let bestD = Infinity;
+          for (const o of lanes) {
+            if (taken.has(o.i)) continue;
+            const d = dist(m.pos, scale(add(owner.pos, o.pos), 0.5));
+            if (d < bestD) {
+              bestD = d;
+              lane = o.i;
+            }
+          }
+          if (lane >= 0) taken.add(lane);
+        }
+        pressers.push(m.i);
+        pressLane.push(lane);
+      });
+    }
+  }
+
+  // Support: the nearest teammates offer the carrier (or the man a pass is
+  // going to) short passes at different angles, so there is always a triangle.
+  const support: number[] = [];
+  const supportAng: number[] = [];
+  if (attacking) {
+    const center = owner && owner.team === team ? owner : b.receiver >= 0 && s.players[b.receiver].team === team ? s.players[b.receiver] : null;
+    if (center) {
+      const cpos = owner ? owner.pos : focus;
+      const cx = teamX(team, cpos.x);
+      const near = mates
+        .filter((m) => m.i !== center.i && m.i !== human && !keepsOut(s, m) && !(m.sub === 'CB' && cx > line + 0.3) && dist(m.pos, cpos) < 30)
+        .sort((x, y) => dist(x.pos, cpos) - dist(y.pos, cpos))
+        .slice(0, k.supporters);
+      const angs = supportSlots(team, cpos, near.length);
+      const fwd = { x: attackDir(team), y: 0 };
+      const spots = angs.map((a) => add(cpos, scale(rotate(fwd, a), k.supportR)));
+      let bestPerm = PERMS[near.length][0];
+      let bestCost = Infinity;
+      for (const perm of PERMS[near.length]) {
+        let cost = 0;
+        for (let j = 0; j < near.length; j++) cost += dist(near[j].pos, spots[perm[j]]);
+        if (cost < bestCost) {
+          bestCost = cost;
+          bestPerm = perm;
+        }
+      }
+      near.forEach((m, j) => {
+        support.push(m.i);
+        supportAng.push(angs[bestPerm[j]]);
+      });
+    }
+  }
 
   let cover = -1;
   if (!attacking) {
@@ -340,16 +557,16 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     const attackers = s.players
       .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(team, o.pos.x) < 0.42 + 0.2 * skill)
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
-    const free = mates.filter((m) => m.i !== chaser && m.i !== human);
+    const free = mates.filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
     const radius = 13 + 7 * skill;
     for (const a of attackers) {
       let best: MatchPlayer | null = null;
       let bestCost = radius;
-      for (let k = 0; k < free.length; k++) {
-        const d = free[k];
+      for (let j = 0; j < free.length; j++) {
+        const d = free[j];
         if (mark[d.i] >= 0) continue;
-        const cost = dist(zone[k], a.pos) * 0.55 + dist(d.pos, a.pos) * 0.45;
+        const cost = dist(zone[j], a.pos) * 0.55 + dist(d.pos, a.pos) * 0.45;
         if (cost < bestCost) {
           bestCost = cost;
           best = d;
@@ -368,25 +585,31 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       }
     }
   }
-  const prev = s.aiPlans?.[team];
   const possSince = attacking && prev && prev.attacking ? prev.possSince : s.tick;
-  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince };
+  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince, engage, pressers, pressLane, lostAt, support, supportAng };
 }
 
 /**
  * Where a player belongs in the team's shape, given the ball (`focus`), the
- * height of our back line and the opponents' (for staying onside).
+ * height of our back line and the opponents' (for staying onside). Each
+ * sub-role has its place relative to the line; the formation slot shifts it
+ * higher or deeper, and the mentality sets how wide and how stretched the
+ * shape is and how far the full-backs and wing-backs go.
  */
 function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: Vec, line: number, oppLine: number): Vec {
   const slot = slotOf(s, p);
+  const k = tacticOf(s, p.team);
   const bx = teamX(p.team, focus.x);
   const by = focus.y / PITCH_H;
   const side = slot.y < 0.5 ? -1 : 1;
   const ballSide = (by < 0.5 ? -1 : 1) === side;
   const L = line;
   // Across the pitch the block shifts toward the ball; narrower out of possession.
-  const width = attacking ? 1.08 : 0.8;
-  const squeeze = attacking ? 0.16 : 0.3;
+  const width = attacking ? k.attWidth : k.defWidth;
+  const squeeze = attacking ? 0.16 : k.squeeze;
+  const depth = attacking ? k.attDepth : k.defDepth;
+  // This formation's slot against where the sub-role usually stands.
+  const adj = (slot.x - CANON_X[p.sub]) * (attacking ? 1.1 : 0.9);
   let ny = (0.5 + (slot.y - 0.5) * width) * (1 - squeeze) + by * squeeze;
   let nx: number;
   switch (p.sub) {
@@ -397,37 +620,56 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
       ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.5 : 0.85) + (by - 0.5) * 0.25;
       break;
     case 'FB':
-      if (attacking && ballSide && bx > 0.4) {
+      if (attacking && ballSide && bx > k.fbUp) {
         // Overlap: up the touchline beyond the wide man.
         nx = clamp(bx + 0.05, L + 0.05, 0.84);
         ny = side < 0 ? 0.05 : 0.95;
       } else if (attacking && !ballSide) {
-        // The far full-back tucks in as rest defence.
-        nx = L + 0.02;
-        ny = 0.5 + side * 0.27;
+        // The far full-back tucks in as rest defence, or pushes on in an attacking side.
+        nx = L + (k.farFbUp ? 0.12 : 0.02);
+        ny = 0.5 + side * (k.farFbUp ? 0.36 : 0.27);
       } else {
         nx = L + (attacking ? 0.04 : 0);
         ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.05 : 0.82) + (by - 0.5) * 0.3;
       }
       break;
+    case 'WB':
+      // The width of a back three: high and wide with the ball, back into a five without it.
+      if (attacking && (k.wbUp === 2 || (k.wbUp === 1 && ballSide))) {
+        nx = clamp(Math.max(bx - 0.04, L + 0.22 + adj), L + 0.1, 0.84);
+        ny = side < 0 ? 0.04 : 0.96;
+      } else if (attacking) {
+        nx = L + 0.05;
+        ny = 0.5 + side * 0.36;
+      } else {
+        // On the ball side, or with the ball near our goal, he drops into the back five.
+        nx = ballSide || bx < 0.4 ? L + 0.01 : L + Math.max(0, adj) * 0.6;
+        ny = 0.5 + (slot.y - 0.5) * 0.88 + (by - 0.5) * 0.28;
+      }
+      break;
     case 'DM':
-      nx = L + (attacking ? 0.12 : 0.1);
+      nx = L + (attacking ? 0.12 : 0.1) * depth + adj;
       ny = 0.5 + (by - 0.5) * 0.35 + (slot.y - 0.5) * 0.5;
       break;
     case 'CM':
-      nx = L + (attacking ? 0.25 : 0.19);
+      nx = L + (attacking ? 0.25 : 0.19) * depth + adj;
+      break;
+    case 'AM':
+      // Between the lines, drifting to the ball side.
+      nx = L + (attacking ? 0.36 : 0.28) * depth + adj;
+      ny = 0.5 + (by - 0.5) * (attacking ? 0.3 : 0.4) + (slot.y - 0.5) * 0.6;
       break;
     case 'WM':
-      nx = L + (attacking ? 0.32 : 0.21);
+      nx = L + (attacking ? 0.32 : 0.21) * depth + adj;
       if (attacking) ny = side < 0 ? (ballSide ? 0.06 : 0.16) : ballSide ? 0.94 : 0.84;
       break;
     case 'W':
-      nx = L + (attacking ? 0.42 : 0.36);
+      nx = L + (attacking ? 0.42 : 0.36) * depth + adj;
       if (attacking) ny = side < 0 ? 0.07 : 0.93;
       break;
     case 'ST':
     default:
-      nx = L + (attacking ? 0.46 : 0.4) + (slot.y > 0.5 ? 0.02 : 0);
+      nx = L + (attacking ? 0.46 : 0.4) * depth + adj + (slot.y > 0.5 ? 0.02 : 0);
       if (!attacking) ny = 0.5 + (slot.y - 0.5) * 0.9 + (by - 0.5) * 0.35;
       break;
   }
@@ -467,10 +709,10 @@ export function passSpeed(d: number, passing: number): number {
   return clamp(8.5 + d * 0.36, 9.5, 22) * (0.9 + 0.2 * passing);
 }
 
-/** 0..1: how long this side has had the ball. Patience runs out after a few seconds of keeping it. */
+/** 0..1: how long this side has had the ball. Patience runs out after a few seconds of keeping it (sooner for an attacking side). */
 function urgency(s: MatchState, team: 0 | 1): number {
   const plan = s.aiPlans?.[team];
-  return plan && plan.attacking ? clamp((s.tick - plan.possSince - 90) / 300, 0, 1) : 0;
+  return plan && plan.attacking ? clamp(((s.tick - plan.possSince) * tacticOf(s, team).urgency - 90) / 300, 0, 1) : 0;
 }
 
 /**
@@ -514,8 +756,10 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
   const gain = (tx - teamX(team, from.x)) * PITCH_W;
   const dGoal = dist(target, oppGoal(team));
   const urge = urgency(s, team);
-  let score = gain * (0.14 + 0.06 * urge) + tx * 1.3 + (dGoal < 26 ? (26 - dGoal) * (0.14 + 0.06 * urge) : 0);
-  score += (clamp(laneM, -0.6, 0.4) * 3 + clamp(arriveM, -0.6, 0.5) * 2) * (1 - 0.5 * urge) - d * 0.018;
+  // Risk: an attacking side weighs how far forward a pass goes more, and how safe it is less.
+  const risk = tacticOf(s, team).risk;
+  let score = (gain * (0.14 + 0.06 * urge) + (dGoal < 26 ? (26 - dGoal) * (0.14 + 0.06 * urge) : 0)) * risk + tx * 1.3;
+  score += (clamp(laneM, -0.6, 0.4) * 3 + clamp(arriveM, -0.6, 0.5) * 2) * (1 - 0.5 * urge) * (2 - risk) - d * 0.018;
   // Into the box is what it's all about.
   if (tx > 0.82 && Math.abs(target.y - MID_Y) < BOX_W / 2) score += 0.8 + 1.2 * urge;
   if (m.role === 'GK') score -= laneM > 0.6 && arriveM > 0.5 ? 1.2 : 4;
@@ -526,7 +770,7 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
   // Off the pitch is a throw to them.
   if (target.y < 1 || target.y > PITCH_H - 1 || target.x < 1 || target.x > PITCH_W - 1) score -= 2;
   // Only when the runner clearly wins the race; a through ball that is merely possible is a giveaway.
-  if (through && arriveM < 0.1) score -= 2;
+  if (through && arriveM < 0.1 * (2 - risk)) score -= 2;
   // Law 11: a pass to a player in an offside position is a free kick to them.
   if (inOffsidePosition(s, m, from.x) && offsideAware(s, p)) score -= 8;
   // Switch of play: a long lateral ball out of a crowded side.
@@ -552,9 +796,41 @@ function cpuThroughTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
   return clampToPitch(add(m.pos, scale(run, lead)), 1.5);
 }
 
+/**
+ * A ball over the top into the space behind a high line, for a forward on the
+ * shoulder of the last defender: what a pressing side's high line risks.
+ * Scored on the race to where it comes down (defenders still facing upfield
+ * have to turn first); null when the line isn't high or the race isn't on.
+ */
+function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: number): PassOption | null {
+  const team = p.team;
+  if (oppLine > 0.74 || !(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) return null;
+  const px = teamX(team, s.ball.pos.x);
+  const mx = teamX(team, m.pos.x);
+  if (oppLine - px < 0.12 || mx < oppLine - 0.07 || inOffsidePosition(s, m, s.ball.pos.x)) return null;
+  const tx = Math.min(0.9, oppLine + 0.11);
+  const target = clampToPitch(fromTeam(team, tx, (m.pos.y + (MID_Y - m.pos.y) * 0.3) / PITCH_H), 4);
+  const d = dist(s.ball.pos, target);
+  if (d < 18 || d > 48) return null;
+  // It comes down, and has to be brought under control.
+  const tBall = chipPlan(s.ball.pos, target, chipPowerFor(d)).flight + 0.25;
+  const tRun = Math.max(0, dist(m.pos, target) - 1) / (runSpeed(m) * SPRINT_MULT) + 0.2;
+  let tDef = Infinity;
+  for (const o of s.players) {
+    if (o.team === team || o.sentOff || o.stun > 20) continue;
+    const keeper = o.role === 'GK' && inOwnBox(o.team, target);
+    const turn = !keeper && teamX(team, o.pos.x) < tx ? 0.35 : 0;
+    tDef = Math.min(tDef, Math.max(0, dist(o.pos, target) - (keeper ? 1.6 : 0.9)) / (runSpeed(o) * SPRINT_MULT * 0.97) + 0.2 + turn);
+  }
+  const margin = tDef - Math.max(tRun, tBall);
+  if (margin < 0.15) return null;
+  return { receiver: m, target, score: 1.5 + clamp(margin, 0, 1) * 2.5 + (tx - px) * PITCH_W * 0.05, through: true, lofted: true };
+}
+
 export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOption | null {
   let best: PassOption | null = null;
   const dir = attackDir(p.team);
+  const oppLine = secondLastOpponentX(s, p.team);
   const consider = (m: MatchPlayer, target: Vec, through: boolean) => {
     const sc = evalPass(s, p, m, target, through);
     if (sc === -Infinity) return;
@@ -569,6 +845,11 @@ export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOp
     // Through ball into space ahead of a runner, or ahead of a forward who is level or beyond.
     const fwdSpeed = m.vel.x * dir;
     const mx = teamX(p.team, m.pos.x);
+    const behind = inBehindOption(s, p, m, oppLine);
+    if (behind) {
+      const score = behind.score + (noise > 0 ? gauss(s.rng) * noise : 0);
+      if (!best || score > best.score) best = { ...behind, score };
+    }
     if (px > 0.8 || !(fwdSpeed > 1.5 || mx > px + 0.06)) continue;
     consider(m, cpuThroughTarget(s.ball.pos, m, p.attrs.passing), true);
   }
@@ -605,6 +886,31 @@ export function resolvePassTarget(s: MatchState, p: MatchPlayer, aim: Vec): { ta
 
 /** Chip power that lands a ball at distance d (inverse of kicks.chipRange). */
 const chipPowerFor = (d: number): number => clamp((d - 6) / 44 + 0.03, 0.05, 1);
+
+/**
+ * Direct play: a long ball over the top to the forward with the most room
+ * around him, at least 20 m further up. Null when nobody is up there.
+ */
+function bestLongBall(s: MatchState, p: MatchPlayer, noise: number): PassOption | null {
+  const team = p.team;
+  const px = teamX(team, s.ball.pos.x);
+  let best: PassOption | null = null;
+  for (const m of s.players) {
+    if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK' || m.stun > 0) continue;
+    if (!(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) continue;
+    const mx = teamX(team, m.pos.x);
+    const d = dist(s.ball.pos, m.pos);
+    if (mx < px + 0.19 || d > 48) continue;
+    if (inOffsidePosition(s, m, s.ball.pos.x) && offsideAware(s, p)) continue;
+    // Drop it a few metres in front of him, toward their goal.
+    const target = clampToPitch(add(m.pos, scale(norm(sub(oppGoal(team), m.pos)), 2.5)), 3);
+    let room = 8;
+    for (const o of s.players) if (o.team !== team && !o.sentOff) room = Math.min(room, dist(o.pos, target));
+    const score = room * 0.5 + mx * 2 + gauss(s.rng) * noise;
+    if (!best || score > best.score) best = { receiver: m, target, score, through: false, lofted: true };
+  }
+  return best && best.score > 2.6 ? best : null;
+}
 
 /**
  * A cross from a wide area: lofted to the attacker in the box with the most
@@ -732,6 +1038,7 @@ function clearance(s: MatchState, p: MatchPlayer, far: number): Action {
 function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
   const mem = memOf(s, p);
   const skill = skillOf(s, p.team);
+  const k = tacticOf(s, p.team);
   const goal = oppGoal(p.team);
   const dir = attackDir(p.team);
   const px = teamX(p.team, p.pos.x);
@@ -754,7 +1061,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
   if (nearLine && p.aiTimer > 3) p.aiTimer = 3;
 
   if (p.aiTimer <= 0) {
-    p.aiTimer = decisionInterval(s, p);
+    p.aiTimer = Math.max(2, Math.round(decisionInterval(s, p) * k.tempo));
     const noise = 0.15 + 0.4 * (1 - skill) * (1 - skill);
     let shot = evalShot(s, p);
     const chipShot = skill > 0.3 && p.attrs.shooting > 0.5 ? evalChip(s, p) : null;
@@ -785,7 +1092,13 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
       if (d < 9 && to.x * dir > -0.5) clear = Math.min(clear, d);
     }
     // Carrying is worth most through midfield; near the box the line is set and the ball should move.
-    const carryScore = clamp((clear - 2.5) / 4, 0, 1) * (3 + 2 * clamp((px - 0.45) * 4, 0, 1)) * (px > 0.7 ? 0.45 : 1);
+    const carryScore = clamp((clear - 2.5) / 4, 0, 1) * (3 + 2 * clamp((px - 0.45) * 4, 0, 1)) * (px > 0.7 ? 0.45 : 1) * k.carry;
+
+    // A deep side doesn't build up through its own half: it goes long early.
+    if (k.direct > 0 && px < 0.5 && passScore < 3 && chance(s.rng, k.direct)) {
+      const long = bestLongBall(s, p, noise);
+      if (long) return passIntent(s, p, long, skill);
+    }
 
     if (opt) {
       const underPressure = pressure < 2.3 && passScore > -0.4;
@@ -821,8 +1134,8 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
       const out = behind ? { x: ownGoal(p.team).x - dir * 4, y: p.pos.y < MID_Y ? p.pos.y - 3 : p.pos.y + 3 } : { x: p.pos.x + dir * 6, y: p.pos.y < MID_Y ? -4 : PITCH_H + 4 };
       return { move: p.facing, throttle: 0.5, action: { kind: 'shoot', target: out, power: 0.5 } };
     }
-    // In trouble deep in our half: clear it.
-    if (px < 0.25 && pressure < 2.2 && passScore < -0.6) {
+    // In trouble deep in our half: clear it (a deep-lying side clears sooner, an attacking one plays out).
+    if (px < 0.25 + Math.max(0, k.clear) * 0.1 && pressure < 2.2 + k.clear && passScore < -0.6 + k.clear) {
       return { move: p.facing, throttle: 0.6, action: clearance(s, p, range(s.rng, 40, 55)) };
     }
   }
@@ -841,7 +1154,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
 
   // Carry toward goal, steering around opponents ahead. A wide man goes down
   // the line toward the byline, to cross.
-  const flank = (p.sub === 'WM' || p.sub === 'W' || p.sub === 'FB') && Math.abs(p.pos.y - MID_Y) > BOX_W / 2 - 4 && px > 0.5 && px < 0.9;
+  const flank = (p.sub === 'WM' || p.sub === 'W' || p.sub === 'FB' || p.sub === 'WB') && Math.abs(p.pos.y - MID_Y) > BOX_W / 2 - 4 && px > 0.5 && px < 0.9;
   let desired = flank ? norm({ x: dir, y: (p.pos.y < MID_Y ? 1 : -1) * 0.12 }) : norm(sub(goal, p.pos));
   const look = 4 + 2 * skill;
   for (const o of s.players) {
@@ -907,7 +1220,7 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
         const target = leadTarget(p.pos, m, p.attrs.passing);
         let sc = evalPass(s, p, m, target, false);
         if (sc === -Infinity) continue;
-        sc += (m.sub === 'FB' ? 1.3 : m.role === 'DEF' ? 0.9 : m.role === 'MID' ? 0.4 : 0) + gauss(s.rng) * (1 - skill) * 0.8;
+        sc += (m.sub === 'FB' || m.sub === 'WB' ? 1.3 : m.role === 'DEF' ? 0.9 : m.role === 'MID' ? 0.4 : 0) + gauss(s.rng) * (1 - skill) * 0.8;
         if (!best || sc > best.score) best = { receiver: m, target, score: sc, through: false };
       }
       if (best && best.score > -0.2) return passIntent(s, p, best, skill);
@@ -980,11 +1293,72 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
 // ---------------------------------------------------------------------------
 // Off the ball, team in possession
 
+/**
+ * A supporter's spot: a short, open pass from the carrier at the angle the
+ * plan gave him (a forward diagonal or a ball back inside). He looks around
+ * that angle at a few distances and takes the spot with the clearest lane
+ * (not hidden behind an opponent), the most room and the least company, and
+ * moves again a few times a second as the lanes close: that is the movement
+ * that keeps a passing side's triangles open.
+ */
+function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, j: number): Vec {
+  const team = p.team;
+  const k = tacticOf(s, team);
+  const skill = skillOf(s, team);
+  const fwd = { x: attackDir(team), y: 0 };
+  // Where the ball will be: the carrier a moment from now, or where the pass is going.
+  const c = carrier ? clampToPitch(add(carrier.pos, scale(carrier.vel, 0.3)), 0.5) : plan.focus;
+  const cx = teamX(team, c.x);
+  const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
+  const base = plan.supportAng![j];
+  const noise = 0.1 + 0.6 * (1 - skill);
+  let best = c;
+  let bestScore = -Infinity;
+  for (const da of [-0.4, 0, 0.4]) {
+    for (const rf of [0.7, 1, 1.35]) {
+      let cand = clampToPitch(add(c, scale(rotate(fwd, base + da), k.supportR * rf)), 2);
+      if (teamX(team, cand.x) > onsideX) cand = fromTeam(team, onsideX, cand.y / PITCH_H);
+      // Never a square ball across our own six-yard box.
+      if (teamX(team, cand.x) < 0.1 && cx < 0.3) cand = fromTeam(team, 0.1, cand.y / PITCH_H);
+      let lane = 5;
+      let space = 8;
+      for (const o of s.players) {
+        if (o.team === team || o.sentOff) continue;
+        lane = Math.min(lane, distToSegment(o.pos, c, cand));
+        space = Math.min(space, dist(o.pos, cand));
+      }
+      let score = Math.min(lane, 4) * 1.1 + space * 0.35 - (lane < 1.6 ? 3 : 0);
+      for (const m of s.players) {
+        if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK' || m.i === carrier?.i) continue;
+        const spot = m.ai?.target && m.ai.attacking ? m.ai.target : m.pos;
+        const d = dist(cand, spot);
+        if (d < 7) score -= (7 - d) * 0.45;
+      }
+      const dc = dist(cand, c);
+      if (dc < 5) score -= (5 - dc) * 0.8;
+      score += (teamX(team, cand.x) - cx) * PITCH_W * 0.035 - dist(p.pos, cand) * 0.05 + gauss(s.rng) * noise;
+      if (score > bestScore) {
+        bestScore = score;
+        best = cand;
+      }
+    }
+  }
+  return best;
+}
+
 function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec {
   const mem = memOf(s, p);
-  if (mem.target && mem.attacking && mem.retarget-- > 0) return mem.target;
+  const sj = plan.support ? plan.support.indexOf(p.i) : -1;
+  // A supporter re-reads the lanes every few ticks; everyone else holds a target longer.
+  if (mem.target && mem.attacking && mem.retarget-- > 0 && !(sj >= 0 && mem.retarget > 12)) return mem.target;
   const skill = skillOf(s, p.team);
+  const k = tacticOf(s, p.team);
   mem.attacking = true;
+  if (sj >= 0) {
+    mem.retarget = Math.round(7 + 6 * (1 - skill) + next(s.rng) * 4);
+    mem.target = supportSpot(s, p, plan, carrier, sj);
+    return mem.target;
+  }
   mem.retarget = Math.round(14 + 22 * (1 - skill) + next(s.rng) * 10);
 
   const team = p.team;
@@ -995,16 +1369,18 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   const fwd = { x: dir, y: 0 };
   const cands: Vec[] = [anchor, add(anchor, { x: dir * 5, y: 0 }), add(anchor, { x: 0, y: 6 }), add(anchor, { x: 0, y: -6 })];
   const sub_ = p.sub;
-  const forward = sub_ === 'ST' || sub_ === 'W' || sub_ === 'WM' || sub_ === 'CM';
+  const forward = sub_ === 'ST' || sub_ === 'W' || sub_ === 'WM' || sub_ === 'CM' || sub_ === 'AM';
+  // Who commits forward is the mentality's call: a low block keeps everyone but the strikers back.
+  const runner = runsIntoBox(k, sub_);
   // How far forward a runner may stand and still be onside.
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
 
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
-  if (carrier && (sub_ === 'ST' || sub_ === 'W') && fx > 0.4 && fx < 0.82 && teamX(team, p.pos.x) > onsideX - 0.06) {
+  if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(team, p.pos.x) > onsideX - 0.06) {
     let free = Infinity;
     for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
-    if (free > 3 && chance(s.rng, 0.45 + 0.3 * skill)) {
+    if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
       mem.retarget = Math.round(40 + 20 * next(s.rng));
       const y = clamp(p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 6, PITCH_H - 6);
       mem.target = fromTeam(team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
@@ -1018,7 +1394,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     cands.push(fromTeam(team, onsideX, clamp((focus.y + (anchor.y < focus.y ? -10 : 10)) / PITCH_H, 0.08, 0.92)));
   }
   // Ball wide in the final third: get into the box for the cross.
-  if (fx > 0.7 && Math.abs(focus.y - MID_Y) > 12 && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'CM')) {
+  if (fx > 0.7 && Math.abs(focus.y - MID_Y) > 12 && runner) {
     const near = focus.y < MID_Y ? -1 : 1;
     cands.push(fromTeam(team, Math.min(0.95, onsideX), (MID_Y + near * 3) / PITCH_H));
     cands.push(fromTeam(team, Math.min(0.93, onsideX), (MID_Y - near * 4) / PITCH_H));
@@ -1033,7 +1409,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   }
 
   const oppG = oppGoal(team);
-  const roleW = forward ? (sub_ === 'ST' ? 1.2 : 1) : sub_ === 'DM' ? 0.5 : 0.4;
+  const roleW = (forward ? (sub_ === 'ST' ? 1.2 : sub_ === 'AM' ? 1.1 : 1) : sub_ === 'DM' ? 0.5 : sub_ === 'WB' ? 0.6 : 0.4) * (runner || !forward ? 1 : 0.5);
   const noise = 0.15 + 0.9 * (1 - skill);
   let best = anchor;
   let bestScore = -Infinity;
@@ -1052,7 +1428,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     const cx = teamX(team, c.x);
     let score = space * 0.3 + lane * 0.4 - (lane < 1.2 ? 2 : 0) + cx * PITCH_W * 0.05 * roleW;
     const dG = dist(c, oppG);
-    if (forward && dG < 20) score += (20 - dG) * 0.06;
+    if (forward && runner && dG < 20) score += (20 - dG) * 0.06;
     for (const m of s.players) {
       if (m.team !== team || m.i === p.i || m.role === 'GK' || m.sentOff) continue;
       const spot = m.i === carrier?.i ? focus : m.ai?.target && m.ai.attacking ? m.ai.target : m.pos;
@@ -1061,7 +1437,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     }
     const dF = dist(c, focus);
     if (dF > 35) score -= (dF - 35) * 0.12;
-    score -= dist(p.pos, c) * 0.04 + dist(anchor, c) * (p.role === 'DEF' ? 0.12 : sub_ === 'DM' ? 0.09 : 0.04);
+    score -= dist(p.pos, c) * 0.04 + dist(anchor, c) * (p.role === 'DEF' ? 0.12 : sub_ === 'DM' ? 0.09 : 0.04) * (runner || p.role === 'DEF' ? 1 : 2);
     score += gauss(s.rng) * noise;
     if (score > bestScore) {
       bestScore = score;
@@ -1075,26 +1451,57 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
 // ---------------------------------------------------------------------------
 // Off the ball, defending
 
+/** A tackle on the carrier if he is in range and the moment is right. Keen (pressing) sides go in sooner. */
+function tryTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, skill: number, k: Tactic): Intent | null {
+  const d = dist(p.pos, owner.pos);
+  // Good defenders wait until they're in range; poor ones lunge early.
+  const range_ = 1.45 + 0.5 * (1 - skill) + k.reach;
+  if (d < range_ && p.tackleCd === 0 && p.aiTimer <= 0 && !s.ball.inHands) {
+    p.aiTimer = decisionInterval(s, p);
+    if (chance(s.rng, clamp((0.35 + 0.35 * p.attrs.defending + 0.15 * skill) * k.tackle, 0, 0.95))) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
+  }
+  return null;
+}
+
 function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: MatchPlayer | null): Intent {
   const mem = memOf(s, p);
   mem.attacking = false;
   mem.target = null;
   const skill = skillOf(s, p.team);
+  const k = tacticOf(s, p.team);
   const lag = reactionLag(skill);
   const own = ownGoal(p.team);
   const cap = 0.82 + 0.18 * skill;
 
   if (owner && p.i === plan.chaser) {
     const seen = sub(owner.pos, scale(owner.vel, lag));
-    const cut = add(add(seen, scale(owner.vel, 0.25)), scale(norm(sub(own, seen)), 0.8));
     const d = dist(p.pos, owner.pos);
-    // Good defenders wait until they're in range; poor ones lunge early.
-    const range_ = 1.45 + 0.5 * (1 - skill);
-    if (d < range_ && p.tackleCd === 0 && p.aiTimer <= 0 && !s.ball.inHands) {
-      p.aiTimer = decisionInterval(s, p);
-      if (chance(s.rng, 0.35 + 0.35 * p.attrs.defending + 0.15 * skill)) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
+    if (plan.engage === false) {
+      // A low block: hold off a few metres goal-side and show him wide; go in once he comes close.
+      const hold = add(seen, scale(norm(add(sub(own, seen), scale(owner.vel, -0.3))), 4.5));
+      return seek(p, clampToPitch(hold, 0.8), 1.5, cap);
     }
-    return { ...seek(p, cut, 1), sprint: sprintOk(s, p, d > 2.5 && teamX(p.team, owner.pos.x) < 0.5) };
+    const cut = add(add(seen, scale(owner.vel, 0.25)), scale(norm(sub(own, seen)), 0.8));
+    const tackle = tryTackle(s, p, owner, skill, k);
+    if (tackle) return tackle;
+    // A pressing side sprints at the ball wherever it is.
+    return { ...seek(p, cut, 1), sprint: sprintOk(s, p, d > 2.5 && (teamX(p.team, owner.pos.x) < 0.5 || k.extra >= 2)) };
+  }
+
+  // Pressing with the chaser: cut a passing lane, or close the carrier down from the other side.
+  const pj = owner && plan.pressers ? plan.pressers.indexOf(p.i) : -1;
+  if (owner && pj >= 0) {
+    const seen = sub(owner.pos, scale(owner.vel, lag));
+    const lane = plan.pressLane![pj];
+    let spot: Vec;
+    if (lane >= 0) spot = add(seen, scale(sub(s.players[lane].pos, seen), 0.42));
+    else {
+      const ch = plan.chaser >= 0 ? s.players[plan.chaser] : null;
+      spot = add(seen, scale(norm(ch ? sub(seen, ch.pos) : sub(seen, own)), 1.3));
+    }
+    const tackle = tryTackle(s, p, owner, skill, k);
+    if (tackle) return tackle;
+    return { ...seek(p, clampToPitch(spot, 0.8), 1, 1), sprint: sprintOk(s, p, dist(p.pos, spot) > 3) };
   }
 
   const bx = teamX(p.team, plan.focus.x);
@@ -1127,8 +1534,9 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     return seek(p, fromTeam(p.team, nx, clamp(spot.y / PITCH_H, 0.2, 0.8)), 2, cap);
   }
   // Getting back into shape is a jog, not a sprint: that is where counter-attacks find room.
+  // A deep or pressing side gets back quicker.
   const home = shapeTarget(s, p, false, plan.focus, plan.line, plan.oppLine);
-  return seek(p, home, 3, (dist(home, p.pos) > 10 ? 0.7 : 0.9) * cap);
+  return seek(p, home, 3, (dist(home, p.pos) > 10 ? k.recover : 0.9) * cap);
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,7 +1546,7 @@ const fromOpp = (team: 0 | 1, metresFromGoalLine: number, y: number): Vec => ({ 
 
 /** Players ranked for attacking a ball in the box: centre-backs and strikers first. */
 function aerialRank(p: MatchPlayer): number {
-  const base = p.sub === 'CB' ? 3 : p.sub === 'ST' ? 2.8 : p.sub === 'CM' ? 1.4 : p.sub === 'W' || p.sub === 'WM' ? 1.1 : p.sub === 'DM' ? 0.9 : 0.4;
+  const base = p.sub === 'CB' ? 3 : p.sub === 'ST' ? 2.8 : p.sub === 'CM' ? 1.4 : p.sub === 'AM' ? 1.25 : p.sub === 'W' || p.sub === 'WM' ? 1.1 : p.sub === 'DM' ? 0.9 : p.sub === 'WB' ? 0.5 : 0.4;
   return base + p.attrs.shooting * 0.5 + p.attrs.defending * 0.3;
 }
 
@@ -1169,7 +1577,7 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
   if (!t[gk.i]) t[gk.i] = { x: ownGoal(def).x + attackDir(def) * 0.6, y: MID_Y + near * 0.8 };
   const theirs = s.players.filter((p) => p.team === def && !p.sentOff && p.i !== gk.i && !t[p.i]);
   const used = new Set<number>();
-  const postMan = theirs.filter((p) => p.sub === 'FB').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot))[0];
+  const postMan = theirs.filter((p) => p.sub === 'FB' || p.sub === 'WB').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot))[0];
   if (postMan && r.kind === 'corner') {
     t[postMan.i] = { x: ownGoal(def).x + attackDir(def) * 0.5, y: MID_Y + near * (GOAL_W / 2 - 0.3) };
     used.add(postMan.i);
@@ -1269,7 +1677,7 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
         if (p.team !== att || p.sentOff || p.i === r.taker) continue;
         const sl = slotOf(s, p);
         if (p.sub === 'CB') t[p.i] = fromTeam(att, 0.11, sl.y < 0.5 ? 0.26 : 0.74);
-        else if (p.sub === 'FB') t[p.i] = fromTeam(att, 0.22, sl.y < 0.5 ? 0.05 : 0.95);
+        else if (p.sub === 'FB' || p.sub === 'WB') t[p.i] = fromTeam(att, 0.22, sl.y < 0.5 ? 0.05 : 0.95);
         else if (p.sub === 'DM') t[p.i] = fromTeam(att, 0.25, 0.5);
       }
       // Opponents push up, but outside the area.

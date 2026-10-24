@@ -1,4 +1,4 @@
-import type { FormationId, Role, SubRole } from './constants.ts';
+import type { FormationId, Mentality, Role, SubRole } from './constants.ts';
 import type { Rng } from './rng.ts';
 import type { Vec } from './vec.ts';
 
@@ -32,6 +32,8 @@ export interface TeamSetup {
   aiSkill: number;
   /** Default '4-4-2'. */
   formation?: FormationId;
+  /** How aggressively the CPU players of this side defend, press and attack (TACTICS in ai.ts). Absent means 'balanced'. */
+  mentality?: Mentality;
 }
 
 export interface MatchPlayer {
@@ -326,6 +328,17 @@ export interface AiTeamPlan {
   oppLine: number;
   /** Tick this spell of possession began (attacking), for urgency: a side that has kept it a while takes more risks. */
   possSince: number;
+  // Tactics (mentality, see TACTICS in ai.ts). Optional so plans from before them still read.
+  /** Defending: does the chaser go in on the carrier (true) or hold off goal-side and wait (false, a low block)? */
+  engage?: boolean;
+  /** Defending: players who press with the chaser, and for each the opponent whose passing lane he cuts (-1: closes the carrier down). */
+  pressers?: number[];
+  pressLane?: number[];
+  /** Tick this team last lost the ball, for the counter-press. */
+  lostAt?: number;
+  /** Attacking: the teammates offering the carrier a short pass, and for each the angle he offers it at (radians from straight ahead). */
+  support?: number[];
+  supportAng?: number[];
 }
 
 

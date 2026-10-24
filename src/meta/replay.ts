@@ -6,7 +6,7 @@
 // The only places this file touches the sim are createMatch(), step() and
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
-import { FORMATION_IDS, HALF_SECONDS, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, HALF_SECONDS, mentalityOf, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Mentality, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
 
@@ -443,13 +443,20 @@ function readColour(r: Reader): string {
   return r.str();
 }
 
+/**
+ * The formation byte (format 3): the formation's index in FORMATION_IDS in the
+ * low four bits, the mentality in the high four, as its code here (0 is
+ * Balanced, so format-3 codes from before mentalities read as Balanced).
+ */
+const MENTALITY_CODES: Mentality[] = ['balanced', 'park', 'defensive', 'attacking', 'press'];
+
 function writeTeam(w: Writer, t: TeamSetup) {
   w.str(t.name);
   w.str(t.short);
   writeColour(w, t.primary);
   writeColour(w, t.secondary);
   w.num(t.aiSkill);
-  w.byte(Math.max(0, FORMATION_IDS.indexOf(t.formation ?? '4-4-2')));
+  w.byte(Math.max(0, FORMATION_IDS.indexOf(t.formation ?? '4-4-2')) | (MENTALITY_CODES.indexOf(mentalityOf(t.mentality)) << 4));
   w.uvar(t.players.length);
   for (const p of t.players) {
     w.str(p.id);
@@ -467,8 +474,10 @@ function readTeam(r: Reader, withFormation: boolean): TeamSetup {
   const primary = readColour(r);
   const secondary = readColour(r);
   const aiSkill = r.num();
-  const formation = withFormation ? FORMATION_IDS[r.byte()] : undefined;
-  if (withFormation && !formation) throw new Error('Replay code is damaged or cut short.');
+  const shape = withFormation ? r.byte() : 0;
+  const formation = withFormation ? FORMATION_IDS[shape & 15] : undefined;
+  const mentality = MENTALITY_CODES[shape >> 4];
+  if ((withFormation && !formation) || !mentality) throw new Error('Replay code is damaged or cut short.');
   const count = r.uvar();
   if (count < 1 || count > TEAM_SIZE) throw new Error('Replay code has the wrong squad size.');
   const players: PlayerSetup[] = [];
@@ -482,7 +491,10 @@ function readTeam(r: Reader, withFormation: boolean): TeamSetup {
     for (const k of ATTRS) attrs[k] = r.num();
     players.push({ id, name: pname, number, role, attrs });
   }
-  return formation ? { name, short, primary, secondary, players, aiSkill, formation } : { name, short, primary, secondary, players, aiSkill };
+  const team: TeamSetup = formation ? { name, short, primary, secondary, players, aiSkill, formation } : { name, short, primary, secondary, players, aiSkill };
+  // Balanced is left off, as toTeamSetup does.
+  if (mentality !== 'balanced') team.mentality = mentality;
+  return team;
 }
 
 // Run flags. A tick that only moves the pointer is one flag byte plus two

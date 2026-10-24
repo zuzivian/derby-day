@@ -1,4 +1,4 @@
-import { formationOf, TEAM_SIZE, type FormationId, type Role } from '../sim/constants.ts';
+import { formationOf, mentalityOf, TEAM_SIZE, type FormationId, type Mentality, type Role } from '../sim/constants.ts';
 import { hashString, int, makeRng, next, pick, range, type Rng } from '../sim/rng.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import { START_ELO } from './elo.ts';
@@ -106,16 +106,22 @@ export function teamStrength(squad: Player[], lineup: string[], formation?: Form
   return n ? Math.round(sum / n) : 0;
 }
 
-/** The sim's only input about a club: its XI in formation slot order (TeamSetup). */
-export function toTeamSetup(id: ClubIdentity, squad: Player[], lineup: string[], aiSkill?: number, formation?: FormationId): TeamSetup {
+/**
+ * The sim's only input about a club: its XI in formation slot order (TeamSetup).
+ * `mentality` is left off the setup when it is Balanced, the sim's default, so
+ * a Balanced team looks the same as one from before mentalities existed.
+ */
+export function toTeamSetup(id: ClubIdentity, squad: Player[], lineup: string[], aiSkill?: number, formation?: FormationId, mentality?: Mentality): TeamSetup {
   const players = lineup.map((pid) => {
     const p = squad.find((x) => x.id === pid);
     if (!p) throw new Error(`Lineup player ${pid} not in squad`);
     return { id: p.id, name: shortName(p), number: p.number, role: p.role, attrs: toSimAttrs(p.attrs) };
   });
   const strength = teamStrength(squad, lineup, formation);
+  const m = mentalityOf(mentality);
   return {
     formation: formation ?? '4-4-2',
+    ...(m === 'balanced' ? {} : { mentality: m }),
     name: id.name,
     short: id.short,
     primary: id.primary,
@@ -149,13 +155,41 @@ export function ladderSquad(c: LadderClub): Player[] {
   return generateSquad(r, c.quality, pick(r, STYLE_KEYS));
 }
 
-/** A CPU club's formation: fixed per club (from its id), half of them 4-3-3. */
-export const clubFormation = (c: Pick<ClubIdentity, 'id'>): FormationId => ((hashString(c.id) >>> 3) & 1 ? '4-3-3' : '4-4-2');
+/** Pick from a weighted table with a 0..1 roll. */
+function weighted<T>(table: [T, number][], roll: number): T {
+  const total = table.reduce((t, [, w]) => t + w, 0);
+  let x = roll * total;
+  for (const [v, w] of table) if ((x -= w) < 0) return v;
+  return table[table.length - 1][0];
+}
 
-/** A CPU club's TeamSetup: its best XI in its own formation. */
+/** How often CPU clubs line up in each formation: the common back fours most, back threes and fives now and then. */
+const CPU_FORMATIONS: [FormationId, number][] = [
+  ['4-4-2', 18], ['4-3-3', 18], ['4-2-3-1', 16], ['4-1-4-1', 8], ['4-4-1-1', 8], ['3-5-2', 10], ['3-4-3', 7], ['5-3-2', 8], ['5-4-1', 7],
+];
+/** Most CPU clubs play Balanced; a few sit deep or press high. */
+const CPU_MENTALITIES: [Mentality, number][] = [
+  ['park', 8], ['defensive', 22], ['balanced', 40], ['attacking', 20], ['press', 10],
+];
+
+/** A stable 0..1 roll per club id and purpose. */
+const clubRoll = (c: Pick<ClubIdentity, 'id'>, salt: number): number => (Math.imul(hashString(c.id) ^ salt, 2654435761) >>> 0) / 2 ** 32;
+
+/** A CPU club's formation: fixed per club (from its id), weighted toward the common shapes. */
+export const clubFormation = (c: Pick<ClubIdentity, 'id'>): FormationId => weighted(CPU_FORMATIONS, clubRoll(c, 0x0f0f));
+
+/** A CPU club's mentality: fixed per club (from its id). A back five leans one step more cautious. */
+export function clubMentality(c: Pick<ClubIdentity, 'id'>): Mentality {
+  const m = weighted(CPU_MENTALITIES, clubRoll(c, 0x7a3c));
+  const f = clubFormation(c);
+  if ((f === '5-3-2' || f === '5-4-1') && (m === 'attacking' || m === 'press')) return m === 'press' ? 'attacking' : 'balanced';
+  return m;
+}
+
+/** A CPU club's TeamSetup: its best XI in its own formation and mentality. */
 export function cpuTeam(c: ClubIdentity, squad: Player[], aiSkill?: number): TeamSetup {
   const f = clubFormation(c);
-  return toTeamSetup(c, squad, autoLineup(squad, f), aiSkill, f);
+  return toTeamSetup(c, squad, autoLineup(squad, f), aiSkill, f, clubMentality(c));
 }
 
 export const squadAverage = (squad: Player[]): number => Math.round(squad.reduce((s, p) => s + overall(p), 0) / Math.max(1, squad.length));
