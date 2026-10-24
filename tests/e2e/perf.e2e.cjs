@@ -204,3 +204,56 @@ for (const renderer of ['3d', '2d']) test(
   },
   { timeoutMs: 120_000 },
 );
+
+/** Before boot: keep every AudioContext the page makes, and let a test fake a hidden tab. */
+function audioAndVisibilityHooks() {
+  window.__ac = [];
+  const AC = window.AudioContext;
+  if (AC) window.AudioContext = class extends AC { constructor(...a) { super(...a); window.__ac.push(this); } };
+  window.__setHidden = (hidden) => {
+    if (hidden) {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    } else {
+      delete document.hidden;
+      delete document.visibilityState;
+    }
+    document.dispatchEvent(new Event('visibilitychange'));
+  };
+}
+
+test(
+  'Perf: match sound stops while paused, with the tab hidden and after the match, and plays again on resume',
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, e2eHook: true, init: audioAndVisibilityHooks });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const box = await page.locator(SEL.pitch).boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // a gesture, so the context may run
+    const state = () => page.evaluate(() => window.__ac.map((c) => c.state).join(','));
+    const waitState = (want) => page.waitForFunction((w) => window.__ac.length > 0 && window.__ac.every((c) => c.state === w), want, { timeout: 5000 }).then(() => true, () => false);
+    if (!(await waitState('running'))) return; // no audio output in this browser
+    await page.keyboard.press('Escape');
+    await page.locator(SEL.pause).waitFor({ state: 'visible' });
+    expect(await waitState('suspended'), `paused: the context is suspended (${await state()})`).toBe(true);
+    await page.mouse.move(10, 10);
+    await page.mouse.down(); // a stray click on the pause screen does not wake it
+    await page.mouse.up();
+    await page.waitForTimeout(300);
+    expect(await state(), 'still suspended after a click while paused').toBe('suspended');
+    await page.locator(SEL.resume).click();
+    expect(await waitState('running'), 'resumed: sound again').toBe(true);
+    await page.evaluate(() => window.__setHidden(true));
+    expect(await waitState('suspended'), 'tab hidden: suspended').toBe(true);
+    await page.evaluate(() => window.__setHidden(false));
+    await page.locator(SEL.resume).click();
+    expect(await waitState('running'), 'back and resumed').toBe(true);
+    await page.keyboard.press('Escape');
+    await page.locator(SEL.forfeit).click();
+    await page.locator(SEL.modal).waitFor();
+    expect(await waitState('suspended'), 'after the match: suspended once the crowd fades').toBe(true);
+  },
+  { timeoutMs: 120_000 },
+);

@@ -160,6 +160,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     paused = v;
     $('pause').hidden = !v;
     coach?.setPaused(v);
+    juice.setPaused(v);
     if (v) {
       focusBeforePause = document.activeElement as HTMLElement | null;
       $('resume').focus();
