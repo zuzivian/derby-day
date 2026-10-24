@@ -1,0 +1,68 @@
+/* Club level: header badge and XP bar, the Club level panel, the level-up
+   dialog and the identity pickers. Colours come from the tokens in styles.css
+   (--xp-fill, --tier-*), defined for both themes. */
+
+.level-chip { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+.level-badge {
+  appearance: none; flex: none; display: inline-grid; place-items: center; cursor: pointer;
+  width: 30px; height: 30px; border-radius: 50%; padding: 0;
+  border: 3px solid var(--tier, var(--tier-bronze)); background: var(--surface); color: var(--ink);
+  font-family: var(--font-display); font-weight: 900; font-size: 15px; line-height: 1; font-variant-numeric: tabular-nums;
+}
+.level-badge:hover { background: var(--surface-2); }
+.level-badge.big { width: 56px; height: 56px; font-size: 26px; border-width: 4px; cursor: default; }
+.tier-bronze { --tier: var(--tier-bronze); }
+.tier-silver { --tier: var(--tier-silver); }
+.tier-gold { --tier: var(--tier-gold); }
+.tier-platinum { --tier: var(--tier-platinum); }
+.tier-legend { --tier: var(--tier-legend); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tier-gold); }
+.xp { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.xp-text { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xp-bar { display: block; width: 100%; min-width: 120px; max-width: 220px; height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--control-line); overflow: hidden; }
+.xp-bar span { display: block; height: 100%; background: var(--xp-fill); border-radius: 99px; }
+
+/* Club level panel (Club screen) */
+.club-grid .level-panel { grid-column: 1 / -1; }
+.level-next { margin: 0; font-size: 17px; font-weight: 600; }
+.level-next-label {
+  display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 99px; vertical-align: 2px;
+  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: var(--ink); color: var(--surface);
+}
+.unlock-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.unlock { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.unlock-level {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
+  border: 2px dashed var(--control-line); color: var(--muted); font-family: var(--font-display); font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.unlock-done .unlock-level { border-style: solid; border-color: var(--xp-fill); color: var(--ink); }
+.unlock-next .unlock-level { border-style: solid; border-color: var(--accent); color: var(--ink); }
+.unlock-body { display: flex; flex-direction: column; min-width: 0; }
+.unlock-status { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.unlock-done .unlock-status { color: var(--good); }
+.unlock-next .unlock-status { color: var(--accent); }
+.perk-pill { background: var(--muted); color: var(--surface); }
+.unlock-all summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+.unlock-all[open] summary { margin-bottom: 8px; }
+
+/* Result dialog XP lines */
+.xp-gain b, .xp-level b { color: var(--good); }
+
+/* Level-up dialog */
+.levelup-head { display: flex; align-items: center; gap: 14px; }
+.levelup-title { font-size: 44px; text-transform: uppercase; }
+.levelup-lede { margin: 0; font-weight: 700; }
+
+/* Crest and kit pickers (Club news) */
+.identity-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding-top: 8px; border-top: 1px dashed var(--line); }
+.identity-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+
+/* Onboarding: the level note on the last step */
+.ob-level { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.ob-level p { margin: 0; }
+
+@media (max-width: 640px) {
+  .xp-bar { min-width: 96px; }
+  .unlock { grid-template-columns: 30px minmax(0, 1fr); }
+  .unlock-status { grid-column: 2; }
+  .levelup-title { font-size: 36px; }
+}

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ladderSquad } from '../src/meta/club.ts';
-import { applyResult, isSave, MAX_SQUAD, MIN_SQUAD, newGame, type Save } from '../src/meta/game.ts';
+import { applyResult, isSave, MAX_SQUAD, MIN_SQUAD, newGame as freshGame, type Save } from '../src/meta/game.ts';
+import { totalXpForLevel } from '../src/meta/levels.ts';
 import { generatePlayer, overall, type Player } from '../src/meta/player.ts';
 import {
   agePlayer,
@@ -19,6 +20,13 @@ import {
   weekOfYear,
 } from '../src/meta/progression.ts';
 import { makeRng } from '../src/sim/rng.ts';
+
+/** A new club at level 10, where the season calendar is unlocked (level 15's bigger squad is not). */
+function newGame(seed: number): Save {
+  const s = freshGame(seed);
+  s.xp = totalXpForLevel(10);
+  return s;
+}
 
 /** Mean overall change over many seeded players of a given starting age and quality. */
 function meanChange(age: number, attr?: 'pace' | 'passing' | 'stamina', n = 300): number {

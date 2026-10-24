@@ -39,6 +39,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - **Loop.** Generated squad with attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach; transfers, training sessions, a 16-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
 - **Competitions.** An 8-club cup (seeded bracket, live penalty shootout when your tie is drawn) and an 8-club league season, neither touching ladder Elo. Forfeits pay nothing, so they can't be farmed.
 - **Time passes.** A 10-match season calendar: ageing curves, retirements from 34, an academy intake with scouting fog on potential, CPU clubs that rise and fall, and a season review.
+- **Club levels.** XP from matches, training and milestones; features unlock from level 1 to 12 and small perks run to 99 (see "Club levels" below).
 - **Original world.** Ten fictional name styles and nations, blocklists against famous real players and clubs.
 
 **First run and access**
@@ -122,6 +123,84 @@ How it works: `MatchState` has per-team control (`humans`, `controlled`), and `s
 - **Server authority.** Either peer could send any input it likes, and both trust the host's team setups. A server running `src/sim` with the same lockstep inputs (or as the rollback authority) is still Phase 3 work.
 - **Feel with humans.** Nobody has yet played two-tab or hot-seat matches and said whether 67 ms feels fine. Hot-seat keyboards may also ghost when both players press several keys at once.
 - **Embedded viewers.** A sandboxed frame (opaque origin) can't reach other tabs; the lobby detects that and says to open `dist/index.html` directly. Linked and hot-seat matches are not recorded as replays.
+
+## Club levels (October 2026)
+
+The club opens up as it gains experience. A new player starts with the Club screen, the Squad, ranked matches and two practice levels; everything else arrives with club levels 2 to 12, and small perks keep the levels meaningful up to 99. The rules are in `src/meta/levels.ts` (pure, unit-tested in `tests/levels.test.ts`), the UI in `src/client/levels.ts`. Match controls (sprint, through ball, chip) are never gated.
+
+**The curve.** Clearing level L takes 100 × L XP: level 1 → 2 is 100, 2 → 3 is 200, 98 → 99 is 9,800. Reaching level L takes 50 × L × (L − 1) in total, so level 99 is 485,100 XP. Level 99 is the cap: its bar is 9,900 long and reads "Max level" when full, and XP keeps counting for a future prestige. Functions: `xpToClear(level)`, `levelForXp(totalXp)` → `{ level, intoLevel, needed, maxed }`, `totalXpForLevel(level)`.
+
+**Unlocks and perks.** `UNLOCKS` in `levels.ts` is the one table; the tabs, buttons, the Club level panel and the level-up dialog all read it, and this copy is checked against it by a unit test.
+
+| Level | Kind | Unlock | What it does |
+|---|---|---|---|
+| 1 | Feature | Club screen | Your next fixture, Elo, form and club news. |
+| 1 | Feature | Squad | See your players and pick the starting six. |
+| 1 | Feature | Ranked matches | Play ladder clubs near your Elo, live. |
+| 1 | Feature | Practice (Easy, Normal) | Friendlies against the CPU. No Elo. |
+| 2 | Feature | Training | Spend the sessions you earn on player attributes. |
+| 3 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
+| 4 | Feature | Ladder | The full Elo table of all 16 clubs. |
+| 5 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
+| 5 | Feature | Practice Hard | A tougher CPU friendly: the Veterans Select. |
+| 6 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
+| 7 | Feature | Local 2P | Two humans on one keyboard. Nothing recorded. |
+| 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
+| 10 | Feature | Season calendar and academy | Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive. |
+| 12 | Feature | Link two tabs | Play another tab of this browser in lockstep. Nothing recorded. |
+| 15 | Perk | Squad of 15 | Room for one more player (14 to 15). |
+| 18 | Perk | Crest pattern | Change your crest pattern any time from Club news. |
+| 20 | Perk | Deeper market | Two extra players on the transfer market (10 to 12). |
+| 22 | Perk | Custom kit colours | Pick your own kit colours from Club news. |
+| 25 | Perk | Sharper scouts | An academy prospect's potential is known one match sooner (5 instead of 6). |
+| 25 | Perk | Silver badge | Your level badge turns silver. |
+| 30 | Perk | Squad of 16 | Room for another player (15 to 16). |
+| 35 | Perk | Win bonus | One extra training session for every ranked or competition win. |
+| 40 | Perk | Replay shelf of 8 | Keep your last 8 replays instead of 5. |
+| 50 | Perk | Squad of 17 | Room for another player (16 to 17). |
+| 50 | Perk | Gold badge | Your level badge turns gold. |
+| 65 | Perk | Replay shelf of 10 | Keep your last 10 replays. |
+| 75 | Perk | Platinum badge | Your level badge turns platinum. |
+| 80 | Perk | Scouting network | Two more players on the transfer market (12 to 14). |
+| 99 | Perk | Legend badge | Level 99. The bar keeps counting toward a future prestige. |
+
+The schedule is the owner's, unchanged. Two notes on it: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
+
+A feature is available when the club's level reaches it, when the save is already using it (a cup or league in progress, a trophy of that kind, a running calendar or academy offers), or when it was unlocked once before (`unlocksSeen`). So nothing is ever taken away, even if the XP table is rebalanced. Locked tabs and buttons are hidden, not disabled.
+
+**XP sources.**
+
+| Source | XP |
+|---|---|
+| Ranked, cup or league match | win 120, draw 80, loss 50; +10 per goal scored; +20 for a clean sheet |
+| Practice | Easy 30, Normal 40, Hard 60 (flat) |
+| Training session | 5 each |
+| Cup finish | winners +500, runners-up +200, out in the semi-final +100 |
+| League finish | 1st +800, 2nd +400, 3rd–4th +200, 5th–6th +100, 7th–8th +50 |
+| First-time milestones | finish the training ground +100, first ranked win +100, first signing +50, first trophy +200 |
+| Forfeits, abandoned matches | 0 (a forfeited cup final or last matchday also loses its finish bonus) |
+| Local 2P, Link two tabs | 0 (they record nothing) |
+
+XP is per match whatever the match length, like money and Elo. A cup tie settled on penalties counts as the draw it was.
+
+**Pacing.** Expected values (`levelForXp` over a modelled run): a typical ranked match against clubs near your Elo, at 45% wins, 25% draws, 30% losses, 1.6 goals scored and a clean sheet a quarter of the time, is worth 110 XP, plus about 12 more once its ~2.5 training sessions are spent. The tutorial's 100 comes first and the first win and first signing add 150 early. "Mixed" plays one cup tie in four matches from level 5 and adds league matchdays from level 8. Real time assumes 2 × 2-minute matches, about 5 minutes each with kick-off, half-time, the result and a minute in the menus.
+
+| Level | Total XP | Matches, ranked only | Matches, mixed | Time (mixed) |
+|---|---|---|---|---|
+| 2 | 100 | 0 (the tutorial) or 1 | 0 or 1 | setup |
+| 5 | 1,000 | 7 | 7 | ~35 min |
+| 8 | 2,800 | 22 | 20 | ~1.7 h |
+| 10 | 4,500 | 36 | 32 | ~2.7 h |
+| 12 | 6,600 | 53 | 46 | ~3.8 h |
+| 20 | 19,000 | 154 | 131 | ~11 h |
+| 50 | 122,500 | 1,001 | 842 | ~70 h |
+| 99 | 485,100 | 3,967 | 3,331 | ~280 h |
+
+So the first session reaches level 2 (finishing the training ground alone does it; a skipped tutorial needs one match that isn't a goalless defeat) and level 5, the Cup, comes in about 35 minutes. Everything that is a feature is open in about four hours. The tail to 99 is long by design; if testers stall in the 20s, the lever is the per-match numbers, not the curve.
+
+**Saves from before levels.** `ensureLevelFields` runs at boot. A save with no `xp` gets retro XP from what it records, using the same table: every match in its history (forfeits look like 0–3 defeats there, so they count as defeats), training sessions spent (sessions earned minus sessions left), cup runs and league seasons its history and trophies prove (a finished season without a title gets the bottom-place bonus), and the milestones it shows (first ranked win, a signing in the news, a trophy). The training-ground milestone can't be known, so it stays claimable from Replay tutorial. Everything its level reaches, plus anything it is using, is marked as seen, so an old save neither loses a feature in use nor gets a flood of level-up dialogs. New fields (`xp`, `unlocksSeen`, `milestones`) are optional and `isSave` accepts saves without them.
+
+**UI.** The header shows a level badge (a button to the Club level panel) and an XP bar ("Level 4 · 230 / 400 XP", `role="progressbar"` with `aria-valuenow`, `-min`, `-max` and `-valuetext`). The Club screen has a Club level panel: the next unlock ("The Cup and Practice Hard at level 5 — 340 XP to go"), how XP is earned, and every unlock and perk marked Unlocked, Next or its level. The result dialog lists the XP ("+150 XP: win 120, 3 goals 30") and any level gained. Crossing a level that unlocks something opens a level-up dialog after the result: it names the unlocks, is announced through the live region, traps focus, closes with Esc or Later, and its main button goes straight to the new feature.
 
 ## Phase 4: The economy between players (4–6 weeks)
 

@@ -3,7 +3,8 @@
 // The rules live in src/meta/progression.ts; this file only renders and wires.
 // Styles are in review.css (appended to the page by scripts/build.ts).
 
-import { MAX_SQUAD, type Save } from '../meta/game.ts';
+import type { Save } from '../meta/game.ts';
+import { scoutMatchesFor, squadCap } from '../meta/levels.ts';
 import { overall, type Player } from '../meta/player.ts';
 import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText, type IntakeEntry, type PlayerChange, type SeasonReview } from '../meta/progression.ts';
 import type { App } from './ui.ts';
@@ -37,7 +38,7 @@ function releaseOptions(s: Save): string {
 
 /** One offered prospect with the controls to sign them (releasing someone if the squad is full). */
 function offerRow(s: Save, p: Player): string {
-  const full = s.squad.length >= MAX_SQUAD;
+  const full = s.squad.length >= squadCap(s);
   const v = scoutedPotential(p);
   return `<li class="rv-row rv-offer" data-offer="${esc(p.id)}">
     <span class="rv-main"><b>${esc(p.first[0])}. ${esc(p.last)}</b>${rolePill(p.role)}<span class="muted">age ${p.age} · OVR ${overall(p)}</span>${stars(v.stars)}<span class="muted">POT ${potentialText(p)}</span></span>
@@ -104,8 +105,8 @@ function changesBody(rv: SeasonReview): string {
 
 function intakeBody(s: Save, rv: SeasonReview): string {
   const waiting = (s.offers ?? []).length;
-  const full = s.squad.length >= MAX_SQUAD;
-  return `<p class="muted small">Scouts give stars and a potential range for now; the range tightens as each prospect plays. ${waiting && full ? `The squad is full (${MAX_SQUAD}): choose someone to release to sign a prospect. Offers expire at the next season review.` : ''}${rv.expiredOffers ? ` ${rv.expiredOffers} prospect${rv.expiredOffers === 1 ? '' : 's'} from last year moved on.` : ''}</p>
+  const full = s.squad.length >= squadCap(s);
+  return `<p class="muted small">Scouts give stars and a potential range for now; the range tightens as each prospect plays. ${waiting && full ? `The squad is full (${squadCap(s)}): choose someone to release to sign a prospect. Offers expire at the next season review.` : ''}${rv.expiredOffers ? ` ${rv.expiredOffers} prospect${rv.expiredOffers === 1 ? '' : 's'} from last year moved on.` : ''}</p>
     <ul class="rv-list">${rv.intake.map((e) => intakeRow(s, e)).join('')}</ul>`;
 }
 
@@ -123,11 +124,11 @@ export function academyPanel(app: App): string {
   const s = app.save;
   const offers = s.offers ?? [];
   if (!offers.length) return '';
-  const full = s.squad.length >= MAX_SQUAD;
+  const full = s.squad.length >= squadCap(s);
   return `
   <article class="panel rv-panel" aria-labelledby="academy-title">
     <h2 id="academy-title" class="eyebrow">Academy offers · ${offers.length} waiting</h2>
-    <p class="muted small">${full ? `Your squad is full (${MAX_SQUAD}). Pick someone to release (free) to sign a prospect.` : 'There is room in the squad.'} Offers expire at the next season review. Potential is a scouting estimate until they have played ${SCOUT_MATCHES} matches.</p>
+    <p class="muted small">${full ? `Your squad is full (${squadCap(s)}). Pick someone to release (free) to sign a prospect.` : 'There is room in the squad.'} Offers expire at the next season review. Potential is a scouting estimate until they have played ${scoutMatchesFor(s, SCOUT_MATCHES)} matches.</p>
     <ul class="rv-list">${offers.map((p) => offerRow(s, p)).join('')}</ul>
   </article>`;
 }

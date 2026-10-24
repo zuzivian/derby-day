@@ -3,12 +3,14 @@
 import { FORMATION, type Role } from '../sim/constants.ts';
 import { teamStrength, type LadderClub, ladderSquad, autoLineup } from '../meta/club.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
-import { askingPrice, formatMoney, ladderTable, MAX_SQUAD, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
+import { askingPrice, formatMoney, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
+import { isUnlocked, squadCap, type UnlockId } from '../meta/levels.ts';
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { crestSvg } from './crest.ts';
+import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpRewardsHtml } from './levels.ts';
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
@@ -51,6 +53,18 @@ export interface App {
 export const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
+/** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
+const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
+  club: ['club'],
+  squad: ['squad'],
+  transfers: ['transfers'],
+  training: ['training'],
+  ladder: ['ladder'],
+  competitions: ['cup', 'league'],
+};
+
+export const screenUnlocked = (save: Save, screen: Screen): boolean => TAB_UNLOCK[screen].some((id) => isUnlocked(save, id));
+
 const TABS: { id: Screen; label: string }[] = [
   { id: 'club', label: 'Club' },
   { id: 'squad', label: 'Squad' },
@@ -66,6 +80,9 @@ export const PRACTICE = [
   { id: 'hard', label: 'Hard', name: 'Veterans Select', short: 'VET', quality: 72, aiSkill: 0.85, primary: '#1f2937', secondary: '#facc15' },
 ] as const;
 
+/** Easy and Normal from level 1; Hard needs its own unlock. */
+export const practiceUnlocked = (save: Save, id: string): boolean => (id === 'hard' ? isUnlocked(save, 'practice-hard') : true);
+
 function rankOf(save: Save): number {
   return ladderTable(save).findIndex((r) => r.you) + 1;
 }
@@ -74,7 +91,7 @@ export function shell(app: App, body: string): string {
   const s = app.save;
   const c = s.club;
   // While the result or season review dialog is open everything behind it is inert, so focus can't leave it.
-  const inert = app.result || reviewOpen(app.save) ? ' inert' : '';
+  const inert = app.result || levelUpOpen(app.save) || reviewOpen(app.save) ? ' inert' : '';
   return `
   <a class="skip-link" href="#main" data-action="skip-to-main"${inert}>Skip to main content</a>
   <header class="topbar"${inert}>
@@ -84,17 +101,18 @@ export function shell(app: App, body: string): string {
       <div class="club-chip-text">
         <div class="club-name">${esc(c.name)}</div>
         <div class="club-meta"><span>Elo <b>${c.elo}</b></span><span>#${rankOf(s)} of ${s.ladder.length + 1}</span><span title="Club florins">${formatMoney(s.budget)}</span><span>${s.trainingPoints} sessions</span></div>
+        ${levelChip(s)}
       </div>
     </div>
   </header>
   <div class="tabs" role="tablist" aria-label="Sections"${inert}>
-    ${TABS.map((t) => {
+    ${TABS.filter((t) => screenUnlocked(s, t.id)).map((t) => {
       const on = app.screen === t.id;
       return `<button class="tab${on ? ' on' : ''}" role="tab" id="tab-${t.id}" aria-controls="panel" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-action="nav" data-screen="${t.id}"${on ? ' aria-current="page"' : ''}>${t.label}</button>`;
     }).join('')}
   </div>
   <main id="main" class="screen" tabindex="-1"${inert}><div id="panel" role="tabpanel" aria-labelledby="tab-${app.screen}">${body}</div></main>
-  ${app.result ? resultModal(app) : reviewModal(app)}`;
+  ${app.result ? resultModal(app) : levelUpOpen(s) ? levelUpModal(s) : reviewModal(app)}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,13 +186,13 @@ export function clubScreen(app: App): string {
       </div>
       <div class="practice">
         <span class="practice-label">Practice vs CPU, no Elo:</span>
-        ${PRACTICE.map((x) => `<button class="btn small" data-action="play-practice" data-level="${x.id}">${x.label}</button>`).join('')}
+        ${PRACTICE.filter((x) => practiceUnlocked(s, x.id)).map((x) => `<button class="btn small" id="practice-${x.id}" data-action="play-practice" data-level="${x.id}">${x.label}</button>`).join('')}
       </div>
-      <div class="practice">
+      ${isUnlocked(s, 'local2p') || isUnlocked(s, 'link') ? `<div class="practice">
         <span class="practice-label">Two humans, no Elo:</span>
-        <button class="btn small" data-action="play-local2p">Local 2P</button>
-        <button class="btn small" data-action="play-link">Link two tabs</button>
-      </div>
+        ${isUnlocked(s, 'local2p') ? '<button class="btn small" id="play-local2p" data-action="play-local2p">Local 2P</button>' : ''}
+        ${isUnlocked(s, 'link') ? '<button class="btn small" id="play-link" data-action="play-link">Link two tabs</button>' : ''}
+      </div>` : ''}
       <p class="scribble" aria-hidden="true">your man chases the mouse → click where the ball goes</p>
     </article>
 
@@ -184,11 +202,13 @@ export function clubScreen(app: App): string {
       ${sparkline(s.eloHistory)}
       <h3 class="eyebrow">Recent</h3>
       ${formChips(s)}
-      ${recentReplaysHtml()}
+      ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
     </article>
 
+    ${levelPanel(s)}
+
     <article class="panel news">
-      <h2 class="eyebrow">Club news · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</h2>
+      <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
         ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
@@ -198,6 +218,7 @@ export function clubScreen(app: App): string {
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
       </div>
+      ${identityControls(s)}
       <p class="muted small">Saved in this browser only.</p>
     </article>
   </div>`;
@@ -251,7 +272,7 @@ export function squadScreen(app: App): string {
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best six</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
     <article class="panel">
-      <h2 class="eyebrow">Squad · ${s.squad.length}/${MAX_SQUAD}</h2>
+      <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => FORMATION.findIndex((f) => f.role === a.role) - FORMATION.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
@@ -266,7 +287,8 @@ export function transfersScreen(app: App): string {
   const s = app.save;
   const roles: (Role | 'ALL')[] = ['ALL', 'GK', 'DEF', 'MID', 'FWD'];
   const market = s.market.filter((p) => app.marketRole === 'ALL' || p.role === app.marketRole);
-  const full = s.squad.length >= MAX_SQUAD;
+  const cap = squadCap(s);
+  const full = s.squad.length >= cap;
   return `
   <div class="stack">
     <article class="panel">
@@ -282,7 +304,7 @@ export function transfersScreen(app: App): string {
           return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
         }).join('') : `<tr><td colspan="16" class="muted">Nobody at that position right now.</td></tr>`}</tbody>
       </table></div>
-      <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${MAX_SQUAD}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
+      <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
     <article class="panel">
       <h2 class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</h2>
@@ -375,8 +397,9 @@ function resultModal(app: App): string {
         ${r.summary.money > 0 ? `<li>+${formatMoney(r.summary.money)} prize money</li>` : ''}
         <li>+${r.summary.trainingPoints} training session${r.summary.trainingPoints === 1 ? '' : 's'}</li>
         ${r.summary.developments.map((x) => `<li>${esc(x)}</li>`).join('')}
+        ${xpRewardsHtml(r.summary.xp, r.forfeited)}
       </ul>` : `<p class="muted">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
-      ${resultReplayHtml()}
+      ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
       <button class="btn primary big" data-action="close-result">Back to the club</button>
     </div>
   </div>`;
