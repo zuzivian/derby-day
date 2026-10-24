@@ -4,7 +4,7 @@
 // mouse, and reads the match back.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, startRanked } = require('./lib/helpers.cjs');
+const { SEL, openApp, goTab, startRanked } = require('./lib/helpers.cjs');
 
 const PREFS = { halfSeconds: 120, controls: 'mouse', onboarded: true };
 // Pitch view in metres, see render.ts: the pitch plus a 2.6 m margin each side.
@@ -296,6 +296,7 @@ test('keys still work as the secondary scheme: WASD runs, Shift sprints, Space p
 
 test('training ground: the move and pass drills are done with the pointer', async (t) => {
   const page = await openApp(t, { prefs: PREFS, e2eHook: true });
+  await goTab(page, SEL.clubScreen);
   await page.locator('[data-action="replay-tutorial"]').click();
   await page.waitForSelector('#tr-pitch');
   expect(await page.locator('#coach-text').innerText(), 'the coach explains the speed by distance').toMatch(/further/i);
