@@ -164,50 +164,58 @@ async function openApp(t, opts = {}) {
   const userSrc = userMutate ? `(${userMutate.toString()})(save);` : '';
   const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
   const mutateSave = mutateSrc ? true : null;
-  const page = await t.newPage({ colorScheme, viewport: { width, height } });
-  // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
-  if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
-  // query: extra page parameters, e.g. 'relay=ws://127.0.0.1:8787/ws' for online tests.
+  // query: extra page parameters, e.g. 'relay=ws://127.0.0.1:8787/ws' for online tests. Both pages of a seeded start get it.
   const base = renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL;
-  await page.goto(query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base);
-  await page.waitForSelector(SEL.app + ' *');
+  const url = query ? `${base}${base.includes('?') ? '&' : '?'}${query}` : base;
+  const first = await t.newPage({ colorScheme, viewport: { width, height } });
+  // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
+  if (e2eHook) await first.addInitScript(() => { window.__e2e = true; });
+  await first.goto(url);
+  await first.waitForSelector(SEL.app + ' *');
+  await skipOnboarding(first);
+  if (!(prefs || mutateSave)) return first;
+  // The app made its first save and prefs; rewrite them with what the test asked for.
+  await first.evaluate(
+    ([saveKey, prefsKey, prefsObj, fnSrc]) => {
+      if (prefsObj) localStorage.setItem(prefsKey, JSON.stringify(prefsObj));
+      if (fnSrc) {
+        const save = JSON.parse(localStorage.getItem(saveKey));
+        new Function('save', fnSrc)(save);
+        localStorage.setItem(saveKey, JSON.stringify(save));
+      }
+    },
+    [SAVE_KEY, PREFS_KEY, prefs || null, mutateSrc],
+  );
+  // The test's page is a second page that boots on the seeded storage. Not page.reload() on the page that wrote it: see
+  // openSecondPage. The first page stays open (idle, on Home) for the rest of the test, until its context closes.
+  const page = await openSecondPage(first, { url, e2e: e2eHook });
   await skipOnboarding(page);
-  if (prefs || mutateSave) {
-    await page.evaluate(
-      ([saveKey, prefsKey, prefsObj, fnSrc]) => {
-        if (prefsObj) localStorage.setItem(prefsKey, JSON.stringify(prefsObj));
-        if (fnSrc) {
-          const save = JSON.parse(localStorage.getItem(saveKey));
-          new Function('save', fnSrc)(save);
-          localStorage.setItem(saveKey, JSON.stringify(save));
-        }
-      },
-      [SAVE_KEY, PREFS_KEY, prefs || null, mutateSrc],
-    );
-    await page.reload();
-    await page.waitForSelector(SEL.app + ' *');
-    await skipOnboarding(page);
-  }
   return page;
 }
 
 /**
- * The player's next visit: a new page in the same browser context, at the app's URL, returned ready for use. The old
- * page stays open on purpose. Use this instead of page.reload() to check what survived a visit: Chromium drops
+ * A second page in the same browser context, at the app's URL, ready for use; the first page stays open on purpose. It is how
+ * a test checks what survived a visit (nextVisit) and how openApp starts on seeded storage. Use it instead of page.reload(): Chromium drops
  * localStorage when the page that wrote it unloads, now and then, even for a static page that only writes a key.
  * Measured on such a page, 40 runs each: a second page with the old one left open lost 0 (at 6 s and at 15 s);
  * page.reload() 3 (at 15 s); close then reopen 13 and 8; a real on-disk profile closed and relaunched 1.
- * The new page sets window.__e2eSkipTabGuard so a one-club-per-browser guard does not block it while the old page is open;
- * it is a different flag from __e2e, so tests of that guard (which set __e2e) still meet it.
+ * The new page sets window.__e2eSkipTabGuard, because the first page stays open and owns the club and a one-club-per-browser
+ * guard would otherwise park the returned page; it is a different flag from __e2e, so tests of that guard (which set __e2e) still
+ * meet it. It also sets window.__e2e (the live-match hooks) when `e2e` is true, the default (nextVisit); openApp passes its own
+ * e2eHook option so a test sees what it asked for.
+ * The first page stays inert after seeding: it sits on Home, and nothing on Home runs a timer or writes the save (timers and
+ * unload handlers exist only in a match, the tutorial and the two-player lobbies), so it cannot overwrite the second page's saves.
  */
-async function nextVisit(page) {
-  const next = await page.context().newPage();
-  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await next.addInitScript(() => { window.__e2e = true; window.__e2eSkipTabGuard = true; });
-  await next.goto(APP_URL);
+async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
+  const next = await page.context().newPage(); // fonts are blocked and errors watched for the whole context (run.cjs)
+  await next.addInitScript((withHook) => { if (withHook) window.__e2e = true; window.__e2eSkipTabGuard = true; }, e2e);
+  await next.goto(url);
   await next.waitForSelector(SEL.app + ' *');
   return next;
 }
+
+/** The player's next visit, with the live-match hook (window.__e2e) on. */
+const nextVisit = (page) => openSecondPage(page);
 
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
@@ -231,4 +239,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { nextVisit, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { nextVisit, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
