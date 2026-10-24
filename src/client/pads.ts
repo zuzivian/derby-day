@@ -14,7 +14,7 @@
 
 import type { HumanInput, TeamInputs } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
-import type { PitchRenderer } from './render.ts';
+import type { MatchRenderer } from './renderer.ts';
 
 export interface PadKeys {
   up: string[];
@@ -88,6 +88,8 @@ class Pad {
 export class HotseatInput {
   /** Player 1's pointer in world metres, while player 1 is on the mouse. */
   cursor: Vec | null = null;
+  private client: { x: number; y: number } | null = null;
+  private canvas: HTMLCanvasElement | null = null;
   /** Player 1 steers with the mouse (moved it over the pitch) rather than W A S D. */
   mouse = false;
   private pads: [Pad, Pad] = [new Pad(P1_KEYS), new Pad(P2_KEYS)];
@@ -95,7 +97,7 @@ export class HotseatInput {
 
   constructor(
     canvas: HTMLCanvasElement,
-    renderer: PitchRenderer,
+    private renderer: Pick<MatchRenderer, 'toWorld' | 'screenDir'>,
     private hasBall: (team: 0 | 1) => boolean,
     onPause: () => void,
   ) {
@@ -141,6 +143,8 @@ export class HotseatInput {
 
     // Player 1's mouse.
     const toWorld = (e: PointerEvent) => {
+      this.client = { x: e.clientX, y: e.clientY };
+      this.canvas = canvas;
       const r = canvas.getBoundingClientRect();
       return renderer.toWorld(e.clientX - r.left, e.clientY - r.top);
     };
@@ -179,8 +183,13 @@ export class HotseatInput {
     const p = this.pads[team];
     const k = p.keys;
     const input: HumanInput = {};
+    if (team === 0 && this.client && this.canvas) {
+      // Re-project a still pointer: the 3D camera moves under it.
+      const r = this.canvas.getBoundingClientRect();
+      this.cursor = this.renderer.toWorld(this.client.x - r.left, this.client.y - r.top);
+    }
     if (team === 0 && this.mouse && this.cursor) input.cursor = this.cursor;
-    else input.dir = { x: (p.has(k.right) ? 1 : 0) - (p.has(k.left) ? 1 : 0), y: (p.has(k.down) ? 1 : 0) - (p.has(k.up) ? 1 : 0) };
+    else input.dir = this.renderer.screenDir({ x: (p.has(k.right) ? 1 : 0) - (p.has(k.left) ? 1 : 0), y: (p.has(k.down) ? 1 : 0) - (p.has(k.up) ? 1 : 0) });
     if (p.pass) input.pass = true;
     if (p.shoot !== null) input.shoot = p.shoot;
     if (p.has(k.sprint)) input.sprint = true;

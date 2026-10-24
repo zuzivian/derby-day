@@ -5,10 +5,12 @@ import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
-import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
+import { hudMarkup, mountHud } from './hud.ts';
+import { classifyEvent } from './r3d/director.ts';
 import { InputController } from './input.ts';
-import { PitchRenderer, type RenderExtras } from './render.ts';
+import type { RenderExtras } from './render.ts';
+import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -22,9 +24,11 @@ export interface MatchViewOptions extends MatchOptions {
   controls?: 'mouse' | 'keys';
   onEnd: (s: MatchState, forfeited: boolean) => void;
   /** Replaces the default mouse/keyboard controller, e.g. two keyboard pads for hot-seat (versus.ts). */
-  inputSource?: (canvas: HTMLCanvasElement, renderer: PitchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
+  inputSource?: (canvas: HTMLCanvasElement, renderer: MatchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
   /** Replaces the controls line under the pitch (HTML). */
   controlsHint?: string;
+  /** Top-right HUD label. Defaults to "You vs AI" (or "P1 vs P2" with two humans). */
+  modeLabel?: string;
 }
 
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
@@ -43,18 +47,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const [home, away] = s.teams;
   root.innerHTML = `
   <section class="match" aria-label="Match">
-    <header class="scoreboard">
-      <div class="sb-team">${crestSvg({ ...home, crest: o.crests[0] }, 28)}<span class="sb-name">${esc(home.name)}</span></div>
-      <div class="sb-center">
-        <div class="sb-score"><span id="sb-h">0</span><span class="sb-dash">–</span><span id="sb-a">0</span></div>
-        <div class="sb-clock"><span id="sb-min">1'</span> · <span id="sb-phase">${esc(o.label)}</span></div>
-      </div>
-      <div class="sb-team sb-away"><span class="sb-name">${esc(away.name)}</span>${crestSvg({ ...away, crest: o.crests[1] }, 28)}</div>
-    </header>
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. Mouse: move to run, left click to pass or tackle, hold right button to shoot. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, E to switch, Esc to pause."></canvas>
-      <button class="pitch-pause" id="pause-btn" type="button" aria-keyshortcuts="Escape P">Pause</button>
-      <div class="banner" id="banner" hidden></div>
+      ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
           <h2 id="pause-title">Paused</h2>
@@ -74,7 +69,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   </section>`;
 
   const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
-  const renderer = new PitchRenderer(canvas);
+  const renderer = createMatchRenderer(canvas);
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   let paused = false;
   let done = false;
@@ -110,6 +105,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   ro.observe(canvas);
   renderer.resize();
   const juice = mountJuice(root, s);
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
 
   let raf = 0;
   let last = performance.now();
@@ -119,10 +116,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let shownHalftime = false;
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
-  function banner(text: string, ms: number) {
-    const b = $('banner');
-    b.textContent = text;
-    b.hidden = false;
+  function banner(text: string, ms: number, sub?: string) {
+    hud.word(text, ms, sub);
     bannerUntil = performance.now() + ms;
   }
 
@@ -152,30 +147,31 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         steps++;
       }
     }
-    renderer.draw(s, input.extras());
+    const extras = input.extras();
+    renderer.draw(s, extras);
+    hud.update(s, extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge);
 
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
     $('sb-min').textContent = `${matchMinute(s)}'`;
     $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`;
 
-    if (s.events.length > lastGoals) {
-      const ev = s.events[s.events.length - 1];
-      lastGoals = s.events.length;
-      banner(`Goal! ${ev.scorer} ${ev.minute}'`, 2000);
+    while (s.events.length > lastGoals) {
+      const ev = s.events[lastGoals++];
+      if (classifyEvent(s, ev).kind !== 'goal') continue;
+      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
-      banner('Half-time', 1800);
+      banner('Half time', 1800);
       announce(`Half-time. ${scoreLine()}`);
     }
     if (bannerUntil && now > bannerUntil) {
-      $('banner').hidden = true;
       bannerUntil = 0;
     }
     if (s.phase === 'fulltime') {
-      banner('Full-time', 99999);
+      banner('Full time', 99999);
       announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
       cancelAnimationFrame(raf);
@@ -188,7 +184,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   function dispose() {
     input.dispose();
     juice.dispose();
+    hud.dispose();
+    offCam();
     ro.disconnect();
+    renderer.dispose();
     document.removeEventListener('visibilitychange', onVis);
     document.removeEventListener('keydown', onKey);
   }

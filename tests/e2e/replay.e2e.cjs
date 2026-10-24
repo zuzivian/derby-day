@@ -25,19 +25,35 @@ async function storeReplay(page, code) {
   await goTab(page, 'club');
 }
 
-/** A cheap fingerprint of what is on the canvas: how many colours, and a hash of the pixels. */
-const canvasStats = (page, sel = '#rv-canvas') =>
-  page.evaluate((s) => {
-    const c = document.querySelector(s);
-    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    const colours = new Set();
-    let h = 0;
-    for (let i = 0; i < d.length; i += 28) {
-      colours.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
-      h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0;
-    }
-    return { w: c.width, h: c.height, colours: colours.size, hash: h };
-  }, sel);
+/**
+ * A cheap fingerprint of what is on the canvas: how many colours, and a hash of the pixels.
+ * Taken from a screenshot of the element, so it works for the 3D (WebGL) and 2D renderers alike.
+ */
+const canvasStats = async (page, sel = '#rv-canvas') => {
+  const png = await page.locator(sel).screenshot();
+  return page.evaluate(
+    async ([s, b64]) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      const colours = new Set();
+      let h = 0;
+      for (let i = 0; i < d.length; i += 28) {
+        colours.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+        h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0;
+      }
+      const el = document.querySelector(s);
+      return { w: el.width, h: el.height, colours: colours.size, hash: h };
+    },
+    [sel, png.toString('base64')],
+  );
+};
 
 const scrubValue = (page) => page.$eval('#rv-scrub', (el) => Number(el.value));
 const scrubMax = (page) => page.$eval('#rv-scrub', (el) => Number(el.max));

@@ -8,7 +8,8 @@ const { pathToFileURL } = require('node:url');
 const SAVE_KEY = 'derbyday.save.v1';
 const PREFS_KEY = 'derbyday.prefs.v1';
 const DIST = path.resolve(__dirname, '..', '..', '..', 'dist', 'index.html');
-const APP_URL = pathToFileURL(DIST).href;
+// E2E_RENDERER=2d or 3d pins the match renderer (default: whatever the browser supports).
+const APP_URL = pathToFileURL(DIST).href + (process.env.E2E_RENDERER ? `?renderer=${process.env.E2E_RENDERER}` : '');
 
 const SEL = {
   app: '#app',

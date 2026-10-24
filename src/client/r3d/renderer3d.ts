@@ -1,0 +1,568 @@
+// three.js match renderer. Reads sim state only, like the 2D PitchRenderer,
+// and implements the same MatchRenderer interface (see ../renderer.ts).
+
+import { attackDir, inOwnBox } from '../../sim/field.ts';
+import type { MatchState, TeamSetup } from '../../sim/types.ts';
+import type { Vec } from '../../sim/vec.ts';
+import type { MatchRenderer } from '../renderer.ts';
+import type { RenderExtras } from '../render.ts';
+import { AimLayer } from './aim3d.ts';
+import { MatchCamera, type CameraMode } from './camera3d.ts';
+import { AnimDirector, keeperSet, readReferee, readRestart } from './director.ts';
+import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
+import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
+import { buildStadium, type Stadium } from './stadium.ts';
+import {
+  ACESFilmicToneMapping,
+  CanvasTexture,
+  Color,
+  DirectionalLight,
+  Float32BufferAttribute,
+  Fog,
+  HemisphereLight,
+  IcosahedronGeometry,
+  InstancedMesh,
+  Matrix4,
+  Mesh,
+  MeshBasicMaterial,
+  Object3D,
+  MeshStandardMaterial,
+  PCFShadowMap,
+  Plane,
+  PlaneGeometry,
+  Quaternion,
+  Raycaster,
+  SRGBColorSpace,
+  Scene,
+  Vector2,
+  Vector3,
+  WebGLRenderer,
+} from './three.ts';
+
+export type Quality = 'low' | 'high';
+
+export interface Renderer3DOptions {
+  quality: Quality;
+  /** Replays: lower, closer camera. */
+  cinematic?: boolean;
+}
+
+const BALL_VIS_R = 0.17;
+const CAMERA_KEY = 'derby-camera';
+/** Visual events with no sim cause linger on this clock, so they need their own lifetimes. */
+const NO_EVENTS: AnimEvent[] = [];
+
+function storedCamera(): CameraMode {
+  try {
+    return localStorage.getItem(CAMERA_KEY) === 'end' ? 'end' : 'broadcast';
+  } catch {
+    return 'broadcast';
+  }
+}
+
+/** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
+function ballGeometry(): IcosahedronGeometry {
+  const g = new IcosahedronGeometry(BALL_VIS_R, 3);
+  const ico = new IcosahedronGeometry(1, 0);
+  const pos = ico.attributes.position;
+  const verts: Vector3[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    const v = new Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)).normalize();
+    if (!verts.some((w) => w.distanceTo(v) < 1e-3)) verts.push(v);
+  }
+  ico.dispose();
+  const p = g.attributes.position;
+  const col = new Float32Array(p.count * 3);
+  const c = new Vector3();
+  for (let i = 0; i < p.count; i += 3) {
+    c.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) c.add(new Vector3(p.getX(i + k), p.getY(i + k), p.getZ(i + k)));
+    c.normalize();
+    const dark = verts.some((v) => v.dot(c) > 0.94);
+    const shade = dark ? 0.06 : 0.96;
+    for (let k = 0; k < 3; k++) col.set([shade, shade, dark ? 0.08 : 0.94], (i + k) * 3);
+  }
+  g.setAttribute('color', new Float32BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+
+function blobTexture(): CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grd.addColorStop(0, 'rgba(0,0,0,0.55)');
+  grd.addColorStop(0.6, 'rgba(0,0,0,0.25)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
+function teamKey(t: TeamSetup): string {
+  return `${t.name}|${t.primary}|${t.secondary}|${t.players.map((p) => p.id).join(',')}`;
+}
+
+export class Renderer3D implements MatchRenderer {
+  readonly kind = '3d' as const;
+  /** The 3D view moves on its own (camera, crowd), so callers should draw every frame. */
+  readonly continuous = true;
+  private gl: WebGLRenderer;
+  private scene = new Scene();
+  private cam = new MatchCamera();
+  private sun: DirectionalLight;
+  private stadium: Stadium | null = null;
+  private kit = new PlayerKit();
+  private players: Player3D[] = [];
+  private referee: Player3D | null = null;
+  private teamsKey = '';
+  private ball: Mesh;
+  private blob: Mesh;
+  private ballQ = new Quaternion();
+  private blobMat: MeshBasicMaterial;
+  private feet: InstancedMesh | null = null;
+  private m4 = new Matrix4();
+  private aim: AimLayer | null = null;
+  private director = new AnimDirector();
+  private raycaster = new Raycaster();
+  private ground = new Plane(new Vector3(0, 1, 0), 0);
+  private ndc = new Vector2();
+  private hit = new Vector3();
+  private cssW = 1;
+  private cssH = 1;
+  private clock: number | null = null;
+  private rate = 1;
+  private lastTick = -1;
+  private lastNow = 0;
+  private lastState: MatchState | null = null;
+  private heads: Vector3[] = [];
+  private reduced = prefersReducedMotion();
+  private celebrate: { i: number; until: number } | null = null;
+  private lost = false;
+  private frameTimes: number[] = [];
+  private pixelRatio: number;
+  private fpsAt = 0;
+  private fpsFrames = 0;
+  private me: 0 | 1 = 0;
+  private cleanup: (() => void)[] = [];
+
+  constructor(
+    private canvas: HTMLCanvasElement,
+    private opts: Renderer3DOptions,
+  ) {
+    const hi = opts.quality === 'high';
+    this.gl = new WebGLRenderer({ canvas, antialias: hi, powerPreference: 'high-performance', stencil: false });
+    // Software rendering (low): no shadow maps, and a slightly reduced resolution.
+    this.pixelRatio = hi ? Math.min(2, window.devicePixelRatio || 1) : Math.min(1, window.devicePixelRatio || 1) * 0.8;
+    this.gl.setPixelRatio(this.pixelRatio);
+    this.gl.outputColorSpace = SRGBColorSpace;
+    this.gl.toneMapping = ACESFilmicToneMapping;
+    this.gl.toneMappingExposure = 1.05;
+    this.gl.shadowMap.enabled = hi;
+    this.gl.shadowMap.type = PCFShadowMap;
+    this.prefMode = storedCamera();
+    this.cam.mode = this.prefMode;
+    this.cam.cinematic = !!opts.cinematic;
+
+    const scene = this.scene;
+    scene.background = new Color('#9cc8f0');
+    scene.fog = new Fog('#c6dcf0', 220, 1100);
+    const hemi = new HemisphereLight('#d6ebff', '#4d7d3a', 1.5);
+    scene.add(hemi);
+    // Low afternoon sun from behind the camera's left shoulder: players lit from the front, long
+    // diagonal shadows away up the pitch, the near stand's shadow across the near touchline.
+    this.sun = new DirectionalLight('#fff1dc', 2.3);
+    this.sun.castShadow = hi;
+    const sm = hi ? 2048 : 1024;
+    this.sun.shadow.mapSize.set(sm, sm);
+    const ext = hi ? 42 : 46;
+    const sc = this.sun.shadow.camera;
+    sc.left = -ext;
+    sc.right = ext;
+    sc.top = ext;
+    sc.bottom = -ext;
+    sc.near = 1;
+    sc.far = 260;
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.03;
+    this.sun.shadow.radius = 3;
+    this.sun.shadow.camera.layers.enable(1);
+    scene.add(this.sun, this.sun.target);
+    const fill = new DirectionalLight('#dce8ff', 0.35);
+    fill.position.set(30, 40, 60);
+    scene.add(fill);
+
+    this.ball = new Mesh(ballGeometry(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0 } as Record<string, unknown>));
+    this.ball.castShadow = true;
+    this.blobMat = new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, toneMapped: false });
+    this.blob = new Mesh(new PlaneGeometry(1, 1), this.blobMat.clone());
+    this.blob.rotation.x = -Math.PI / 2;
+    this.blob.renderOrder = 1;
+    scene.add(this.ball, this.blob);
+
+    const onLost = (e: Event) => {
+      e.preventDefault();
+      this.lost = true;
+    };
+    const onRestored = () => {
+      this.lost = false;
+    };
+    canvas.addEventListener('webglcontextlost', onLost);
+    canvas.addEventListener('webglcontextrestored', onRestored);
+    this.cleanup.push(() => {
+      canvas.removeEventListener('webglcontextlost', onLost);
+      canvas.removeEventListener('webglcontextrestored', onRestored);
+    });
+    canvas.dataset.renderer = '3d';
+    canvas.dataset.quality = opts.quality;
+    // Tooling hook for screenshots and probes: ?debug3d exposes the renderer.
+    if (/[?&]debug3d\b/.test(location.search)) (window as unknown as Record<string, unknown>).__derby3d = this;
+  }
+
+  private prefMode: CameraMode = 'broadcast';
+
+  get cameraMode(): CameraMode {
+    return this.prefMode;
+  }
+
+  setCameraMode(m: CameraMode): void {
+    this.prefMode = m;
+    this.cam.mode = m;
+    this.cam.snap();
+    try {
+      localStorage.setItem(CAMERA_KEY, m);
+    } catch {
+      /* private mode */
+    }
+  }
+
+  resize(): void {
+    const r = this.canvas.getBoundingClientRect();
+    this.cssW = Math.max(1, r.width);
+    this.cssH = Math.max(1, r.height);
+    this.gl.setSize(this.cssW, this.cssH, false);
+  }
+
+  toWorld(cssX: number, cssY: number): Vec {
+    const cam = this.cam.camera;
+    this.ndc.set((cssX / this.cssW) * 2 - 1, -(cssY / this.cssH) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, cam);
+    const ray = this.raycaster.ray;
+    let x: number;
+    let z: number;
+    if (ray.direction.y < -0.02 && ray.intersectPlane(this.ground, this.hit)) {
+      x = this.hit.x;
+      z = this.hit.z;
+    } else {
+      // Above the horizon: take the far end of the ray's ground track.
+      x = cam.position.x + ray.direction.x * 200;
+      z = cam.position.z + ray.direction.z * 200;
+    }
+    const m = 6;
+    return { x: Math.max(-m, Math.min(HALF_W * 2 + m, wx(x))), y: Math.max(-m, Math.min(HALF_H * 2 + m, wy(z))) };
+  }
+
+  screenDir(d: Vec): Vec {
+    return this.cam.screenDir(d, attackDir(this.me) as 1 | -1);
+  }
+
+  /** Frames per second over the last second, for tooling. */
+  fps = 0;
+
+  private build(s: MatchState): void {
+    const key = `${teamKey(s.teams[0])}#${teamKey(s.teams[1])}#${s.players.length}`;
+    if (key === this.teamsKey && this.stadium) return;
+    this.teamsKey = key;
+    if (!this.stadium) {
+      const aniso = Math.min(8, this.gl.capabilities.getMaxAnisotropy());
+      this.stadium = buildStadium({ teams: s.teams, quality: this.opts.quality, anisotropy: aniso });
+      this.scene.add(this.stadium.group);
+    }
+    for (const p of this.players) p.dispose();
+    this.players = [];
+    const kits = ([0, 1] as const).map((t) => {
+      const team = s.teams[t];
+      const other = s.teams[t === 0 ? 1 : 0];
+      const numberColor = colorDist(team.primary, team.secondary) > 110 ? team.secondary : colorDist(team.primary, '#ffffff') > 200 ? '#ffffff' : '#111111';
+      const shorts = colorDist(team.secondary, team.primary) > 60 ? team.secondary : '#f5f5f5';
+      return {
+        field: { shirt: team.primary, shorts, socks: team.primary, trim: numberColor },
+        keeper: keeperColors(team.primary, other.primary),
+      };
+    });
+    for (const p of s.players) {
+      const keeper = p.role === 'GK';
+      const kit = keeper ? kits[p.team].keeper : kits[p.team].field;
+      const look = lookFor(p.id, kit, p.number, keeper, (salt) => hash01(p.id + p.name, salt));
+      const model = createProceduralPlayer(this.kit, look);
+      model.object.traverse((o) => (o.castShadow = o.castShadow || false));
+      this.scene.add(model.object);
+      this.players.push(model);
+    }
+    this.heads = s.players.map(() => new Vector3());
+    // Without shadow maps, players get a soft blob under their feet instead.
+    if (this.opts.quality === 'low') {
+      this.feet?.geometry.dispose();
+      this.feet?.removeFromParent();
+      this.feet = new InstancedMesh(new PlaneGeometry(1.5, 1.5).rotateX(-Math.PI / 2), this.blobMat, s.players.length + 1);
+      this.feet.frustumCulled = false;
+      this.feet.renderOrder = 1;
+      this.scene.add(this.feet);
+    }
+    this.aim?.dispose();
+    this.aim = new AimLayer(s.players.length);
+    this.scene.add(this.aim.group);
+    this.director.reset(s);
+  }
+
+  draw(s: MatchState, x: RenderExtras): void {
+    if (this.lost) return;
+    const t0 = performance.now();
+    this.build(s);
+    const now = t0 / 1000;
+    const dt = this.lastNow ? Math.min(0.1, Math.max(0, now - this.lastNow)) : 1 / 60;
+    this.lastNow = now;
+    this.me = x.team ?? (s.humans[0] || !s.humans[1] ? 0 : 1);
+    // Two humans on one screen, or nobody playing: the side view suits everyone.
+    const mode: CameraMode = (s.humans[0] && s.humans[1]) || (!s.humans[0] && !s.humans[1]) ? 'broadcast' : this.prefMode;
+    if (mode !== this.cam.mode) {
+      this.cam.mode = mode;
+      this.cam.snap();
+    }
+
+    // Animation clock: runs smoothly at the rate sim ticks arrive, stops when they stop.
+    const tickTime = s.tick / 60;
+    const jumped = this.lastState !== s || this.lastTick < 0 || s.tick < this.lastTick || s.tick - this.lastTick > 45;
+    if (jumped || this.clock === null) {
+      this.clock = tickTime;
+      this.rate = 1;
+      if (jumped) this.cam.snap();
+    } else {
+      const adv = (s.tick - this.lastTick) / 60;
+      const inst = dt > 0 ? adv / dt : 1;
+      this.rate += (Math.min(1.6, inst) - this.rate) * Math.min(1, dt * 6);
+    }
+    const prevClock = this.clock;
+    let clock = this.clock + dt * this.rate;
+    clock = Math.max(tickTime - 3 / 60, Math.min(tickTime + 1 / 60, clock));
+    if (!jumped) clock = Math.max(prevClock, clock);
+    this.clock = clock;
+    const dtSim = jumped ? 0 : clock - prevClock;
+    const lead = Math.max(-1 / 60, Math.min(1 / 60, clock - tickTime));
+    this.lastTick = s.tick;
+    this.lastState = s;
+
+    const dir = this.director.update(s, clock);
+    const restart = readRestart(s);
+    const b = s.ball;
+
+    // Players.
+    for (const p of s.players) {
+      const model = this.players[p.i];
+      const ownsInBox = b.owner === p.i && p.role === 'GK' && inOwnBox(p.team, p.pos);
+      const throwHold = !!restart && /throw/i.test(restart.kind) && (restart.taker === p.i || (restart.taker < 0 && b.owner === p.i));
+      model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, {
+        time: clock,
+        dtSim,
+        lead,
+        keeperSet: keeperSet(s, p),
+        throwHold,
+        holding: ownsInBox && !throwHold,
+        hasBall: b.owner === p.i,
+        reducedMotion: this.reduced,
+      });
+      const ev = dir.events[p.i];
+      if (ev) for (const e of ev) if (e.kind === 'celebrate') this.celebrate = { i: p.i, until: clock + 2.4 };
+    }
+
+    // Referee, when the sim has one.
+    const ref = readReferee(s);
+    if (ref) {
+      if (!this.referee) {
+        this.referee = createProceduralPlayer(this.kit, {
+          shirt: '#151515',
+          shorts: '#101010',
+          socks: '#151515',
+          trim: '#f4dc1c',
+          skin: '#d9a77f',
+          hair: '#2b1c12',
+          hairStyle: 1,
+          boots: '#111111',
+          gloves: null,
+          longSleeves: false,
+          number: null,
+          height: 1,
+          build: 0,
+        });
+        this.scene.add(this.referee.object);
+      }
+      this.referee.update(dt, { pos: ref.pos, vel: ref.vel, facing: ref.facing }, dir.referee, {
+        time: clock,
+        dtSim,
+        lead,
+        keeperSet: 0,
+        throwHold: false,
+        holding: false,
+        hasBall: false,
+        reducedMotion: this.reduced,
+      });
+    } else if (this.referee) {
+      this.referee.dispose();
+      this.referee = null;
+    }
+
+    this.scene.updateMatrixWorld();
+    for (const p of s.players) this.players[p.i].headTop(this.heads[p.i]);
+    if (this.feet) {
+      for (const p of s.players) {
+        const o = this.players[p.i].object.position;
+        this.m4.makeTranslation(o.x + 0.25, 0.015, o.z - 0.2);
+        this.feet.setMatrixAt(p.i, this.m4);
+      }
+      this.feet.count = s.players.length;
+      this.feet.instanceMatrix.needsUpdate = true;
+    }
+
+    // Ball: in the keeper's hands, overhead for a throw-in, or where the sim has it.
+    const holder = b.owner >= 0 ? s.players[b.owner] : null;
+    const inHands = !!holder && ((holder.role === 'GK' && inOwnBox(holder.team, holder.pos)) || (!!restart && /throw/i.test(restart.kind)));
+    if (holder && inHands) {
+      this.players[holder.i].handsWorld(this.ball.position);
+      this.ball.position.y += 0.02;
+    } else {
+      const free = b.owner < 0;
+      const bx = b.pos.x + (free ? b.vel.x * lead : 0);
+      const by = b.pos.y + (free ? b.vel.y * lead : 0);
+      this.ball.position.set(sx(bx), BALL_VIS_R + b.z, sz(by));
+    }
+    // Spin: roll with ground speed; keep a gentle spin in the air.
+    const sp = Math.hypot(b.vel.x, b.vel.y);
+    if (sp > 0.05 && dtSim > 0 && !inHands) {
+      const axis = new Vector3(b.vel.y / sp, 0, -b.vel.x / sp);
+      const ang = (sp * dtSim) / BALL_VIS_R;
+      this.ballQ.setFromAxisAngle(axis, b.z > 0.05 ? ang * 0.6 : ang);
+      this.ball.quaternion.premultiply(this.ballQ);
+    }
+    const h = Math.max(0, this.ball.position.y - BALL_VIS_R);
+    this.blob.position.set(this.ball.position.x, 0.02, this.ball.position.z);
+    this.blob.scale.setScalar(0.5 + h * 0.12);
+    (this.blob.material as MeshBasicMaterial).opacity = Math.max(0.15, 0.9 - h * 0.18);
+
+    // Nets and crowd.
+    const lastGoal = s.events.length ? s.events[s.events.length - 1] : null;
+    const celebrating = s.phase === 'goal' && lastGoal ? lastGoal.team : -1;
+    const owner = holder ? holder.team : -1;
+    const nearGoal = (team: 0 | 1) => owner === team && Math.abs(b.pos.x - (team === 0 ? HALF_W * 2 : 0)) < 18;
+    const excite: [number, number] = [celebrating === 0 ? 1 : nearGoal(0) ? 0.45 : 0.08, celebrating === 1 ? 1 : nearGoal(1) ? 0.45 : 0.08];
+    if (this.stadium) {
+      if (dir.goal) this.stadium.ripple(dir.goal.side, this.ball.position, dir.goal.speed);
+      this.stadium.update(dt, clock, { excite, ball: { x: this.ball.position.x, y: this.ball.position.z, z: h, speed: sp } });
+    }
+    for (const c of dir.cards) if (c.player >= 0) this.aim?.card(c.player, c.color, clock + 3);
+
+    // Camera.
+    if (this.celebrate && (clock > this.celebrate.until || s.phase !== 'goal')) this.celebrate = null;
+    const cel = this.celebrate ? s.players[this.celebrate.i] : null;
+    const focusX = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
+    const focusY = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
+    this.cam.update(
+      dt,
+      {
+        x: sx(focusX),
+        z: sz(focusY),
+        vx: b.vel.x,
+        vz: b.vel.y,
+        air: b.z,
+        attack: holder && s.phase === 'play' ? attackDir(holder.team) : 0,
+        phase: s.phase,
+        close: cel ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
+        humanDir: attackDir(this.me) as 1 | -1,
+      },
+      this.cssW / this.cssH,
+      this.cssW,
+      this.reduced,
+    );
+    const camPos = this.cam.camera.position;
+    const camDist = camPos.distanceTo(this.cam.target);
+    if (this.stadium) {
+      const st = this.stadium.stands;
+      // A stand the camera sits in or looks through goes to layer 1: still casting its
+      // shadow on the pitch (the sun's shadow camera sees layer 1), but not drawn.
+      this.standLayer(st.near, camPos.z < HALF_H + 4);
+      this.standLayer(st.far, camPos.z > -HALF_H - 4);
+      this.standLayer(st.left, camPos.x > -HALF_W - 4);
+      this.standLayer(st.right, camPos.x < HALF_W + 4);
+    }
+
+    // Shadows follow the view, snapped to texels so they don't shimmer.
+    const tgt = this.cam.target;
+    const texel = (this.sun.shadow.camera.right * 2) / this.sun.shadow.mapSize.x;
+    const fx = Math.round(tgt.x / texel) * texel;
+    const fz = Math.round((tgt.z - 6) / texel) * texel;
+    this.sun.target.position.set(fx, 0, fz);
+    this.sun.position.set(fx - 55, 70, fz + 78);
+    this.sun.target.updateMatrixWorld();
+
+    this.aim?.update({ s, x, heads: this.heads, ball: this.ball.position, time: clock, reduced: this.reduced, camDist });
+
+    this.gl.render(this.scene, this.cam.camera);
+
+    // Frame stats and a gentle resolution step-down on slow machines.
+    const ms = performance.now() - t0;
+    this.frameTimes.push(dt * 1000);
+    if (this.frameTimes.length > 120) this.frameTimes.shift();
+    this.fpsFrames++;
+    if (t0 - this.fpsAt > 1000) {
+      this.fps = Math.round((this.fpsFrames * 1000) / (t0 - this.fpsAt || 1000));
+      this.fpsAt = t0;
+      this.fpsFrames = 0;
+      this.canvas.dataset.fps = String(this.fps);
+      this.canvas.dataset.cpuMs = ms.toFixed(1);
+      this.canvas.dataset.calls = String(this.gl.info.render.calls);
+      this.canvas.dataset.tris = String(this.gl.info.render.triangles);
+      const avg = this.frameTimes.reduce((a, b2) => a + b2, 0) / this.frameTimes.length;
+      if (this.frameTimes.length >= 120 && avg > 30 && this.pixelRatio > 1) {
+        this.pixelRatio = Math.max(1, this.pixelRatio - 0.5);
+        this.gl.setPixelRatio(this.pixelRatio);
+        this.resize();
+        this.frameTimes = [];
+      }
+    }
+  }
+
+  private disposed = false;
+
+  private standLayer(o: Object3D, shown: boolean): void {
+    if (o.userData.shown === shown) return;
+    o.userData.shown = shown;
+    o.traverse((c) => c.layers.set(shown ? 0 : 1));
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.lost = true;
+    for (const c of this.cleanup) c();
+    for (const p of this.players) p.dispose();
+    this.referee?.dispose();
+    this.kit.dispose();
+    this.aim?.dispose();
+    this.stadium?.dispose();
+    this.ball.geometry.dispose();
+    (this.ball.material as MeshStandardMaterial).dispose();
+    this.blob.geometry.dispose();
+    (this.blob.material as MeshBasicMaterial).dispose();
+    this.blobMat.map?.dispose();
+    this.blobMat.dispose();
+    this.feet?.geometry.dispose();
+    this.feet?.dispose();
+    this.sun.shadow.map?.dispose();
+    this.gl.dispose();
+    this.gl.forceContextLoss();
+    delete this.canvas.dataset.renderer;
+  }
+}

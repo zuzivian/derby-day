@@ -12,7 +12,7 @@
 
 import type { HumanInput } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
-import type { PitchRenderer } from './render.ts';
+import type { MatchRenderer } from './renderer.ts';
 
 const FULL_CHARGE_MS = 900;
 
@@ -32,10 +32,12 @@ export class InputController {
   /** Ctrl or Cmd is down right now. */
   private mod = false;
   private cleanup: (() => void)[] = [];
+  /** Last pointer position (client px). Re-projected every tick: a moving 3D camera moves the ground under a still mouse. */
+  private client: { x: number; y: number } | null = null;
 
   constructor(
-    canvas: HTMLCanvasElement,
-    renderer: PitchRenderer,
+    private canvas: HTMLCanvasElement,
+    private renderer: Pick<MatchRenderer, 'toWorld' | 'screenDir'>,
     private hasBall: () => boolean,
     private onPause: () => void,
   ) {
@@ -50,12 +52,12 @@ export class InputController {
     on(canvas, 'pointermove', (e) => {
       this.mod = e.ctrlKey || e.metaKey;
       if (e.pointerType === 'mouse') this.mode = 'mouse';
-      const r = canvas.getBoundingClientRect();
-      this.cursor = renderer.toWorld(e.clientX - r.left, e.clientY - r.top);
+      this.client = { x: e.clientX, y: e.clientY };
+      this.cursor = this.project();
     });
     on(canvas, 'pointerdown', (e) => {
-      const r = canvas.getBoundingClientRect();
-      this.cursor = renderer.toWorld(e.clientX - r.left, e.clientY - r.top);
+      this.client = { x: e.clientX, y: e.clientY };
+      this.cursor = this.project();
       if (e.pointerType !== 'mouse') return; // touch steers; the on-screen buttons act
       this.mode = 'mouse';
       this.mod = e.ctrlKey || e.metaKey;
@@ -116,6 +118,12 @@ export class InputController {
     });
   }
 
+  private project(): Vec | null {
+    if (!this.client) return null;
+    const r = this.canvas.getBoundingClientRect();
+    return this.renderer.toWorld(this.client.x - r.left, this.client.y - r.top);
+  }
+
   /** On-screen buttons for touch screens. */
   bindTouchButtons(passBtn: HTMLElement, shootBtn: HTMLElement): void {
     const pass = (e: Event) => {
@@ -164,13 +172,14 @@ export class InputController {
   /** Called once per sim tick. One-shot actions are consumed here. */
   take(): HumanInput {
     const input: HumanInput = {};
+    if (this.client) this.cursor = this.project();
     if (this.mode === 'mouse' && this.cursor) input.cursor = this.cursor;
     else {
       const k = this.keys;
-      input.dir = {
+      input.dir = this.renderer.screenDir({
         x: (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0),
         y: (k.has('s') || k.has('arrowdown') ? 1 : 0) - (k.has('w') || k.has('arrowup') ? 1 : 0),
-      };
+      });
     }
     if (this.pass) input.pass = true;
     if (this.pass && this.through) input.through = true;

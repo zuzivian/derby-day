@@ -11,7 +11,7 @@
 import { clipsFor, codeSize, decodeReplay, formatSize, ReplaySeeker, type Clip, type Replay } from '../meta/replay.ts';
 import { DT } from '../sim/constants.ts';
 import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
-import { PitchRenderer } from './render.ts';
+import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
 
 const esc = (t: string | number): string =>
@@ -255,7 +255,11 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       </div>
       <button class="btn small" data-rp="close" aria-keyshortcuts="Escape">Close</button>
     </header>
-    <canvas id="rv-canvas" class="pitch-canvas replay-canvas" role="img" aria-label="Replay of the match"></canvas>
+    <div class="rp-stage">
+      <canvas id="rv-canvas" class="pitch-canvas replay-canvas" role="img" aria-label="Replay of the match"></canvas>
+      <span class="rp-tag" aria-hidden="true">Replay</span>
+      <span class="rp-word" aria-hidden="true" hidden>Replay</span>
+    </div>
     <div class="rp-scrub">
       <label class="visually-hidden" for="rv-scrub">Replay position</label>
       <input id="rv-scrub" type="range" min="0" max="1" step="1" value="0">
@@ -291,7 +295,8 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   let dirty = true;
   let warmTimer = 0;
   let closed = false;
-  let renderer: PitchRenderer | null = null;
+  let renderer: MatchRenderer | null = null;
+  let wordTimer = 0;
   const motionOk = !reducedMotion();
 
   const layer: Layer = {
@@ -302,7 +307,10 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       closed = true;
       cancelAnimationFrame(raf);
       clearTimeout(warmTimer);
+      clearTimeout(wordTimer);
       ro.disconnect();
+      renderer?.dispose();
+      renderer = null;
       popLayer(layer);
     },
     onKey: (e) => {
@@ -367,6 +375,11 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       ? `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${replay[g.team === 0 ? 'home' : 'away'].name} score`
       : `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${clips.length > 1 ? `${replay.goals.length} goal${replay.goals.length === 1 ? '' : 's'}` : 'no goals'}`;
     canvas.setAttribute('aria-label', `Replay: ${label()}. ${names}`);
+    // Big "REPLAY" over the picture as each clip starts.
+    const word = q('.rp-word');
+    word.hidden = false;
+    clearTimeout(wordTimer);
+    wordTimer = window.setTimeout(() => (word.hidden = true), 1300);
     playing = autoplay && motionOk;
     sync();
     announce(`${label()}.`);
@@ -454,7 +467,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         sync();
       }
     }
-    if (dirty && renderer) {
+    if ((dirty || renderer?.continuous) && renderer) {
       dirty = false;
       renderer.draw(seeker.state, { cursor: null, charge: 0, showCursor: false });
     }
@@ -478,7 +491,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   pushLayer(layer);
-  renderer = new PitchRenderer(canvas);
+  renderer = createMatchRenderer(canvas, { cinematic: true });
   renderer.resize();
   ro.observe(canvas);
   setClip(idx, true);
