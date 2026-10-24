@@ -199,12 +199,13 @@ export function clubScreen(app: App): string {
         ${s.club.played === 0 ? `<button class="btn small" data-action="reroll">New name and colours</button>` : ''}
         ${reviewButton(app)}
         <button class="btn small" data-action="replay-tutorial">Replay tutorial</button>
+        <button class="btn small" data-action="open-backup">Back up or restore</button>
         ${app.confirmReset
           ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
           : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
       </div>
       ${identityControls(s)}
-      <p class="muted small">Saved in this browser only.</p>
+      <p class="muted small">Saved in this browser only. Use Back up or restore to keep a copy.</p>
     </article>
 
     ${levelPanel(s)}

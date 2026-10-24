@@ -99,7 +99,11 @@ Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two ta
   | Sprint | Left Shift (the mouse sprints by distance) | Right Shift |
   | Pause | Esc or P | Esc or P |
 
-- **Link two tabs:** open `dist/index.html` in two tabs or windows of the same browser. In one, **Host a match** and read out the 4-letter code; in the other, type it and **Join**. Each tab plays its own side with the normal controls. The tabs run the same match in deterministic lockstep over `BroadcastChannel` (no server) with a 4-tick (67 ms) input delay, exchange only inputs, and compare a state hash every second; a mismatch stops both with "Desync at tick N". Sandboxed viewers (such as some artifact hosts) block tabs from talking; the lobby says so. See "Multiplayer spike" in the roadmap for what this proves.
+- **Link two tabs:** open `dist/index.html` in two tabs or windows of the same browser. Your club can only be played in one tab (the second shows "Derby Day is open in another tab"), so in the second tab choose **Use as a guest tab**: it plays Link matches but saves nothing. In one, **Host a match** and read out the 4-letter code; in the other, type it and **Join**. Each tab plays its own side with the normal controls. The tabs run the same match in deterministic lockstep over `BroadcastChannel` (no server) with a 4-tick (67 ms) input delay, exchange only inputs, and compare a state hash every second; a mismatch stops both with "Desync at tick N". Sandboxed viewers (such as some artifact hosts) block tabs from talking; the lobby says so. See "Multiplayer spike" in the roadmap for what this proves.
+
+## Saves, backups and going live
+
+The club lives in this browser's localStorage. One tab owns it at a time; each save keeps the previous good one as a backup and a damaged save is restored from it; a full disk shows a message instead of losing progress. **Club → Back up or restore** exports the club as a file or a copyable code and imports it back after a preview. Crashes show a calm "Something went wrong" panel, the page installs as an app and opens offline after one visit, and telemetry and crash reporting are compiled out unless `DERBY_TELEMETRY_URL` / `DERBY_ERROR_URL` are set at build time. How deploys and rollbacks work, what is collected (nothing by default), and the launch checklist are in [docs/OPS.md](docs/OPS.md).
 
 ## Code layout
 
@@ -110,9 +114,14 @@ src/meta/     Club layer: name generators, players and attributes, Elo, market, 
 src/net/      Netcode, pure TS: lockstep with input delay and desync detection, a two-method
               Transport, BroadcastChannel and seeded in-memory (latency, jitter, loss) transports.
 src/client/   Browser: match renderers (renderer.ts picks 3D or 2D; r3d/ is the three.js view, render.ts
-              the 2D canvas), HUD, input, match loop, management screens, local save.
+              the 2D canvas), HUD, input, match loop, management screens, local save. boot.ts is the
+              entry (crash handler, one-tab guard, then main.ts); store.ts, backup.ts, settings.ts,
+              tabguard.ts, errors.ts, telemetry.ts and pwa.ts keep the live site safe (docs/OPS.md).
+static/       Copied into dist/ as they are: icons, manifest, robots.txt, 404, share image, sw.js.
 vendor/three/ three.js r186 (MIT), bundled into the build.
-scripts/      build.ts (bundle and inline into one HTML file), balance.ts (headless CPU matches),
+scripts/      build.ts (bundle and inline into one HTML file), size-budget.ts (page size guard),
+              perf-probe.cjs (first paint and time-to-interactive at 4x CPU), make-assets.cjs
+              (icons and share image), balance.ts (headless CPU matches),
               ai-probe.ts (equal squads, different CPU skill), net-probe.ts (lockstep stalls by
               input delay and simulated latency).
 tests/        bun test: determinism, plausible matches, Elo maths, transfers and training rules.
@@ -123,7 +132,8 @@ tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, tran
 ## Checks
 
 ```sh
-bun run check      # typecheck + tests + build
+bun run check      # typecheck + tests + build + page size budget
+bun run size       # fails if dist/index.html is over its size budget (scripts/size-budget.ts)
 bun run balance 50 # 50 CPU-vs-CPU eleven-a-side matches at full speed: goals, shots, fouls, cards, corners, offsides, upsets
 bun run balance 30 --assert  # same, but exits non-zero outside the sane bands (see scripts/balance.ts: goals 1.5-5, fouls 5-25, ...)
 bun run scripts/ai-probe.ts 40 0.85 0.25  # 40 matches, identical squads, CPU skill 0.85 vs 0.25: W/D/L

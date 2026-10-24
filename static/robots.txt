@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://derby.natwong.dev/sitemap.xml

@@ -49,6 +49,8 @@ function executablePath() {
 
 // Network noise we never want to fail on: web fonts are not reachable (or wanted) in CI sandboxes.
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
+// The page links /manifest.webmanifest and /icons/* by root-relative URL, which cannot resolve on file://.
+const ROOT_ASSET = /^file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/;
 
 async function main() {
   if (!fs.existsSync(path.join(__dirname, '..', '..', 'dist', 'index.html'))) {
@@ -94,7 +96,7 @@ async function main() {
         page.on('console', (m) => {
           if (m.type() !== 'error') return;
           const url = m.location().url || '';
-          if (FONT_HOST.test(url) || FONT_HOST.test(m.text())) return;
+          if (FONT_HOST.test(url) || FONT_HOST.test(m.text()) || ROOT_ASSET.test(url)) return;
           problems.push(`console.error: ${m.text()}`);
         });
         return page;
