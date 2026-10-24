@@ -146,14 +146,7 @@ The relay is one process with no dependencies, no disk and no database. Any host
 
 The container: `docker build -f server/Dockerfile -t derby-relay .` (from the repo root), then `docker run -p 8787:8787 -e ALLOWED_ORIGINS=https://derby.natwong.dev derby-relay`. It has a `HEALTHCHECK` on `/health`.
 
-**Fly.io** (recommended to start: regions near players, WebSockets work, a small machine costs a few dollars a month):
-```sh
-fly launch --no-deploy --dockerfile server/Dockerfile --name derby-relay
-fly secrets set ALLOWED_ORIGINS=https://derby.natwong.dev TRUST_PROXY=1
-fly deploy
-fly certs add relay.derby.natwong.dev      # then add the CNAME it prints at your DNS host
-```
-In `fly.toml`, keep `internal_port = 8787`. Set `auto_stop_machines = "off"` (or at least `min_machines_running = 1`): a machine stopped mid-match drops every match on it. Add an `http_checks` entry on `/health`. Start with **one machine in one region**: rooms live in memory, so two machines can't see each other's rooms (see Scaling).
+**Fly.io** is the recommendation to start (regions near players, WebSockets work, one small machine costs a few dollars a month). See [Deploy on Fly.io](#deploy-on-flyio) below for the full steps and the `fly.toml` in the repo root.
 
 **Render:** New → Web Service → this repo, runtime Docker, Dockerfile path `server/Dockerfile`, health check path `/health`. Set `ALLOWED_ORIGINS` and `TRUST_PROXY=1`. The free tier sleeps after inactivity, so use a paid instance for real play.
 
@@ -164,6 +157,31 @@ In `fly.toml`, keep `internal_port = 8787`. Set `auto_stop_machines = "off"` (or
 **Cloudflare (untested):** `server/cloudflare.ts` is a Worker plus one Durable Object holding the same `RelayCore`. It typechecks but has never been deployed. The `wrangler.toml` it needs is in its header comment. Try it only if you'd rather not run a server.
 
 The client connects to whatever URL it is given, so use `wss://relay.derby.natwong.dev/ws`. The relay accepts the upgrade on any path. `/ws` keeps `/` and `/health` free.
+
+### Deploy on Fly.io
+
+`fly.toml` in the repo root is ready apart from two placeholders the owner fills in: `app` (a name unique on Fly, e.g. `derby-relay`) and `primary_region` (the region nearest most players: `lhr` London, `iad` Virginia, `sjc` California, `sin` Singapore). It builds `server/Dockerfile` and keeps **one machine always running** (`auto_stop_machines = "off"`, `min_machines_running = 1`), because a stopped machine drops every match on it. It health-checks `/health` every 15 s and sets `TRUST_PROXY=1`, so the relay reads Fly's `Fly-Client-IP`. The VM is a `shared-cpu-1x` with 256 MB: the relay used about 34 MB at 300 simultaneous matches in a local load test. Neither the game's build nor Vercel reads this file; Vercel deploys only `dist/`.
+
+Once:
+
+1. Install flyctl (`curl -L https://fly.io/install.sh | sh`), then `fly auth signup` (or `fly auth login`). Fly needs a payment method on the account.
+2. Fill in `app` and `primary_region` in `fly.toml`.
+3. From the repo root, create the app without deploying: `fly launch --no-deploy --copy-config`. If it offers Postgres or Redis, say no: the relay needs neither.
+4. `fly secrets set ALLOWED_ORIGINS=https://derby.natwong.dev`. To let Vercel preview deployments play too, add their exact origins, comma-separated: there are no wildcards.
+5. `fly deploy`, then `fly scale count 1`. Keep it to **one** machine: rooms live in memory, and a second machine can't see the first one's rooms.
+6. Check it: `curl https://<app>.fly.dev/health` should answer `{"ok":true,"protocol":1,...}`.
+7. Domain: `fly certs add relay.derby.natwong.dev`. At the DNS host for `natwong.dev`, add a CNAME `relay` → `<app>.fly.dev` (or the A/AAAA records Fly prints). Wait for `fly certs show relay.derby.natwong.dev` to say the certificate is issued.
+8. Try it before switching it on for everyone: `bun run build`, then open `dist/index.html?relay=wss://relay.derby.natwong.dev/ws` in two browsers. `?relay=` only works on local pages.
+9. Turn it on: in Vercel, project settings → Environment Variables, set `DERBY_RELAY_URL` = `wss://relay.derby.natwong.dev/ws` (Production, and Preview if wanted), then redeploy. The **Online** button appears on the vs Player card. See also [OPS.md](OPS.md).
+
+Running it:
+
+- **Logs:** `fly logs` shows JSON lines: `room-open` and `room-close` with room counts. No addresses or tokens, and nothing from inside the game messages.
+- **Redeploys** drop the matches in progress, because rooms live in memory. Deploy off-peak. Players see "Lost the connection to the match server" and go back to the club; friendlies record nothing, so nothing is lost.
+- **Versions:** builds with different `SIM_VERSION` or `REPLAY_VERSION` refuse to pair ("different version"), so the order of a game deploy and a relay deploy doesn't matter. A relay redeploy is only needed when `server/` or `src/net/relay.ts` changes.
+- **Cost:** about $2–5 a month for one always-on `shared-cpu-1x` 256 MB machine, plus bandwidth of roughly 13 MB in and 13 MB out per 6-minute match.
+- **Scaling out later:** one Fly app per region (e.g. `derby-relay-lhr`, `derby-relay-iad`), with the region carried in the invite link. Never more than one machine behind one app (see Scaling).
+- **Rollback:** `fly releases`, then `fly deploy --image <previous image>`. To switch online play off without touching the relay, clear `DERBY_RELAY_URL` in Vercel and redeploy the game.
 
 ### Scaling
 

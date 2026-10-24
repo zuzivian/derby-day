@@ -1,0 +1,41 @@
+# Fly.io config for the online relay (server/). Not used by the game's build or by Vercel, which
+# deploys only dist/. Steps and operating notes: docs/ONLINE.md, "Deploy on Fly.io".
+#
+# OWNER: replace the two CHANGE-ME values before `fly launch` / `fly deploy`.
+
+app = "CHANGE-ME-app-name"         # e.g. "derby-relay"; must be unique on Fly
+primary_region = "CHANGE-ME-region" # nearest to most players: lhr London, iad Virginia, sjc California, sin Singapore
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[env]
+  PORT = "8787"
+  HOST = "0.0.0.0"
+  # Fly sets FLY_APP_NAME, so with TRUST_PROXY the relay reads Fly-Client-IP (TRUST_PROXY_HOPS doesn't matter here).
+  TRUST_PROXY = "1"
+  # ALLOWED_ORIGINS is set with `fly secrets set` (see the docs), not here.
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # A stopped machine drops every match on it: keep one running.
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "connections"
+    soft_limit = 4000
+    hard_limit = 5000 # RELAY_MAX_SOCKETS default
+
+  [[http_service.checks]]
+    grace_period = "5s"
+    interval = "15s"
+    timeout = "3s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb" # the relay used ~34 MB at 300 simultaneous matches in a local load test
