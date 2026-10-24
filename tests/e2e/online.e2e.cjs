@@ -198,6 +198,16 @@ test('Online: a wrong code and a different game version get clear messages', asy
   }
 });
 
+/** Poll `ok` every 50 ms until it is true or `ms` passes; returns whether it became true. */
+async function eventually(ok, ms = 15_000) {
+  const end = Date.now() + ms;
+  while (!ok()) {
+    if (Date.now() > end) return false;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return true;
+}
+
 /** A raw relay client in Node (the attacker), speaking the protocol directly. */
 function rawClient(port) {
   return new Promise((resolve, reject) => {
@@ -237,8 +247,7 @@ test('Online: a hostile guest cannot inject markup or script into the host page'
     const xss = '<img src=x onerror="window.__pwned++">';
     const bad = await rawClient(relay.port);
     bad.send({ t: 'join', code, v: await host.evaluate(() => window.__derbyNet.version) });
-    await new Promise((r) => setTimeout(r, 300));
-    expect(bad.inbox[0] && bad.inbox[0].t, 'attacker joined the room').toBe('joined');
+    expect(await eventually(() => bad.inbox.some((m) => m.t === 'joined')), 'attacker joined the room').toBe(true);
 
     // 1. Markup in a colour: the join is refused and the host says so.
     bad.send({ t: 'relay', m: { t: 'join', id: 'evil', team: { ...team, primary: `#f00"/>${xss}` }, crest: 'plain' } });
@@ -246,9 +255,9 @@ test('Online: a hostile guest cannot inject markup or script into the host page'
 
     // 2. Markup in names: accepted with the markup stripped; the match starts and renders the names.
     bad.send({ t: 'relay', m: { t: 'join', id: 'evil2', team: { ...team, name: `Evil ${xss}`, players: team.players.map((p) => ({ ...p, name: `${xss}${p.name}` })) }, crest: '<b>' } });
-    await new Promise((r) => setTimeout(r, 500));
-    const start = bad.inbox.find((m) => m.t === 'relay' && m.m.t === 'start');
-    expect(!!start, 'host answered the second join').toBe(true);
+    const isStart = (m) => m.t === 'relay' && m.m && m.m.t === 'start';
+    expect(await eventually(() => bad.inbox.some(isStart)), 'host answered the second join').toBe(true);
+    const start = bad.inbox.find(isStart);
     expect(JSON.stringify(start.m.start.away), 'no markup in the start the host built').notToContain('<');
     bad.send({ t: 'relay', m: { t: 'ready', id: 'evil2' } });
     await host.waitForSelector(SEL.netMatch, { timeout: 15_000 });
