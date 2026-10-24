@@ -245,15 +245,25 @@ test('onboarding: reloading on the celebration does not replay the welcome', asy
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   // What is stored before the reload: the recorded match and the prefs the first match set.
-  const before = await page.evaluate(() => ({ save: !!localStorage.getItem('derbyday.save.v1'), prefs: localStorage.getItem('derbyday.prefs.v1') }));
-  expect(before.save, 'the first match is saved by the time the celebration shows').toBe(true);
-  expect(JSON.parse(before.prefs).coachSeen, 'and the coach prefs').toBeTruthy();
+  const before = await page.evaluate(() => {
+    const save = JSON.parse(localStorage.getItem('derbyday.save.v1'));
+    return { history: save.history.length, milestones: save.milestones, xp: save.xp, prefs: localStorage.getItem('derbyday.prefs.v1') };
+  });
+  // Final the moment the celebration shows: the match is recorded, the milestone claimed, and setup is over.
+  expect(before.history, 'the first match is saved when the celebration shows').toBe(1);
+  expect(before.milestones, 'with its milestone').toContain('first-match');
+  const p = JSON.parse(before.prefs);
+  expect(p.onboarded, 'setup is over').toBe(true);
+  expect(p.coachSeen, 'and the coach prefs are kept').toBeTruthy();
+  expect(p.marks, 'with the tab marks').toContain('squad');
   await page.reload();
   await page.waitForSelector(SEL.kickOff).catch(async (e) => {
     const after = await page.evaluate(() => ({ save: !!localStorage.getItem('derbyday.save.v1'), prefs: localStorage.getItem('derbyday.prefs.v1'), text: document.getElementById('app').innerText.slice(0, 160) }));
     throw new Error(`${e.message}\nBEFORE RELOAD: ${JSON.stringify(before)}\nAFTER RELOAD: ${JSON.stringify(after)}`);
   });
   expect(await page.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
+  expect(await page.locator(SEL.modal).count(), 'and no level-up dialog: the celebration already named what opened').toBe(0);
+  expect((await prefsOf(page)).coachSeen, 'the coach prefs survive the reload').toBeTruthy();
 });
 
 test('onboarding: until level 3 Kick off is a warm-up friendly that earns XP and leaves Elo alone; at 3 it is ranked', async (t) => {

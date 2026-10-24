@@ -2,8 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { acknowledge, CoachTracker, minTipMs, openTabs, pendingMark, SEEN_AFTER_MS, TIPS, tipText } from '../src/client/coach.ts';
 import { celebrationWords } from '../src/client/onboarding.ts';
 import { toTeamSetup, generateSquad, autoLineup, generateIdentity } from '../src/meta/club.ts';
-import { newGame } from '../src/meta/game.ts';
-import { totalXpForLevel } from '../src/meta/levels.ts';
+import { isSave, newGame } from '../src/meta/game.ts';
+import { completeFirstMatch } from '../src/client/firstrun.ts';
+import type { Prefs } from '../src/client/store.ts';
+import { pendingUnlocks, totalXpForLevel } from '../src/meta/levels.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { MatchState, Restart } from '../src/sim/types.ts';
@@ -227,5 +229,50 @@ describe('first match celebration', () => {
     expect(celebrationWords(2, 1).title).toBe('What a start!');
     expect(celebrationWords(1, 1).title).toBe('Honours even');
     expect(celebrationWords(0, 3).title).toBe('Good effort');
+  });
+});
+
+describe('the end of the first match', () => {
+  const firstMatch = (gf: number, ga: number) => {
+    const s = newGame(11);
+    const prefs: Prefs = { halfSeconds: 3, controls: 'mouse', onboarded: false, coachSeen: ['run'], marks: ['home'] };
+    const out = completeFirstMatch(s, prefs, { gf, ga, scorers: [], opponent: { name: 'Marsund Rangers', short: 'MSD' } });
+    return { s, prefs, out };
+  };
+
+  test('is final the moment the celebration can mount: recorded, XP in, milestone claimed, setup over', () => {
+    for (const [gf, ga] of [[2, 1], [0, 0], [0, 3]]) {
+      const { s, prefs, out } = firstMatch(gf, ga);
+      expect(s.history.length).toBe(1);
+      expect(s.history[0].ranked).toBe(false);
+      expect(s.club.elo).toBe(1000);
+      expect(s.milestones).toContain('first-match');
+      expect(s.xp).toBeGreaterThanOrEqual(100); // even a defeat reaches level 2
+      expect(out.summary.xp.total).toBe(s.xp!);
+      expect(prefs.onboarded).toBe(true);
+    }
+  });
+
+  test('what level 2 opens is named for the celebration and marked seen, so no dialog or mark repeats it', () => {
+    const { s, prefs, out } = firstMatch(1, 0);
+    expect(out.opened).toEqual(['Squad', 'Local 2P', 'Link two tabs', 'Practice (Easy)']);
+    expect(pendingUnlocks(s)).toEqual([]);
+    expect(prefs.marks).toEqual(['home', 'squad']);
+    expect(pendingMark(s, prefs.marks, 'home')).toBeNull();
+  });
+
+  test('keeps the prefs it was given: the coach tips already shown are not discarded', () => {
+    const { prefs } = firstMatch(1, 1);
+    expect(prefs.coachSeen).toEqual(['run']);
+    expect(prefs.halfSeconds).toBe(3);
+    expect(prefs.controls).toBe('mouse');
+  });
+
+  test('the save and the prefs round-trip through JSON as a reload would read them', () => {
+    const { s, prefs } = firstMatch(3, 0);
+    const save = JSON.parse(JSON.stringify(s));
+    expect(isSave(save)).toBe(true);
+    expect(save.history.length).toBe(1);
+    expect(JSON.parse(JSON.stringify(prefs)).onboarded).toBe(true);
   });
 });

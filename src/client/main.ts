@@ -1,5 +1,6 @@
 import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
 import { warmupTeam } from '../meta/warmup.ts';
+import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
 import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
@@ -190,12 +191,11 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
       startOnboarding();
       return;
     }
-    const summary = applyResult(s, null, { name: away.name, short: away.short }, gf, ga, false, m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`), undefined, false, 'easy');
-    award(s, [claimMilestone(s, 'first-match')], summary.xp);
+    // Everything the first match changes is final, and written, before the celebration renders (see firstrun.ts).
+    const { summary, opened } = completeFirstMatch(s, app.prefs, { gf, ga, scorers: m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`), opponent: { name: away.name, short: away.short } });
     persist();
+    writePrefs(app.prefs);
     takeover = true;
-    // What this level opens is named on the celebration, so it does not get a level-up dialog or a tab mark as well.
-    const opened = pendingUnlocks(s).map((u) => u.name);
     const stop = mountAfterMatch(root, {
       save: s,
       opp: opp.id,
@@ -207,11 +207,6 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
       onDone: () => {
         stop();
         takeover = false;
-        markUnlocksSeen(s);
-        app.prefs.onboarded = true;
-        app.prefs.marks = openTabs(s);
-        writePrefs(app.prefs);
-        persist();
         app.screen = 'home';
         render();
         if (!root.querySelector('.modal')) focusMain(true);
