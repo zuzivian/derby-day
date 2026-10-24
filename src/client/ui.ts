@@ -1,6 +1,7 @@
 // HTML templates for the management screens. Pure functions of app state.
 
-import { FORMATION_IDS, formationOf, type Role } from '../sim/constants.ts';
+import { formationOf, type Role } from '../sim/constants.ts';
+import { tacticsPanel } from './tactics.ts';
 import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
@@ -255,8 +256,9 @@ export function squadScreen(app: App): string {
   return `
   <div class="squad-grid">
     ${academyPanel(app)}
+    ${tacticsPanel(s.formation, s.mentality)}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Lineup · <label class="formation-pick"><span class="sr-only">Formation</span><select id="formation" data-change="formation">${FORMATION_IDS.map((id) => `<option value="${id}"${id === (s.formation ?? '4-4-2') ? ' selected' : ''}>${id}</option>`).join('')}</select></label> · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>

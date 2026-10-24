@@ -73,6 +73,8 @@ describe('sprint (key scheme; the pointer sprints by distance, see controls.test
       const me = s.players[s.controlled[0]];
       let top = 0;
       for (let t = 0; t < 100; t++) {
+        // Nobody else moves, so a challenge can't cut the run short (the CPU presses harder than it used to).
+        for (const p of s.players) if (p.i !== me.i) p.stun = 1000;
         step(s, { dir: { x: me.team === 0 ? 1 : -1, y: 0 }, sprint });
         top = Math.max(top, len(s.players[s.controlled[0]].vel));
       }

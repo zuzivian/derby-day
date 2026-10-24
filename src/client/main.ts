@@ -1,6 +1,6 @@
 import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
-import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
-import type { FormationId } from '../sim/constants.ts';
+import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
+import type { FormationId, Mentality } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -453,6 +453,10 @@ root.addEventListener('change', (e) => {
     render();
   } else if (el.dataset.change === 'formation') {
     setFormation(app.save, el.value as FormationId);
+    persist();
+    render();
+  } else if (el.dataset.change === 'mentality') {
+    setMentality(app.save, el.value as Mentality);
     persist();
     render();
   } else if (el.dataset.change === 'crest') {

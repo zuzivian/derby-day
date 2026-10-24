@@ -14,7 +14,8 @@ import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import type { Save } from '../meta/game.ts';
 import { isUnlocked, unlockOf, type UnlockId } from '../meta/levels.ts';
-import { HALF_SECONDS } from '../sim/constants.ts';
+import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
+import { clubFormation, clubMentality } from '../meta/club.ts';
 import { crestSvg } from './crest.ts';
 import { esc, PRACTICE, practiceUnlocked, type App } from './ui.ts';
 
@@ -138,6 +139,7 @@ function hero(app: App): string {
         ${crestSvg(opp, 84)}
         <div class="hero-name">${esc(opp.name)}</div>
         <div class="hero-elo"><span>Elo <b>${opp.elo}</b></span></div>
+        <div class="hero-tactic">${clubFormation(opp)} · <b>${MENTALITY_LABEL[clubMentality(opp)]}</b></div>
       </div>
     </div>
     <p id="hero-desc" class="sr-only">Ranked match against ${esc(opp.name)}, ${MATCH_LENGTH_SPOKEN}. Win chance ${pct}%.</p>

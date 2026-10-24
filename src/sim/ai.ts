@@ -138,6 +138,9 @@ export interface Tactic {
   /** Extra players who press with the chaser (cutting passing lanes, doubling up) once the ball is beyond extraFrom (our team-x). */
   extra: number;
   extraFrom: number;
+  /** Screening: when the carrier is within screenR m of our goal, this many players step into the line between him and it. */
+  screen: number;
+  screenR: number;
   /** Counter-press: for this many ticks after losing the ball, counterN more players hunt it and the line holds up. */
   counter: number;
   counterN: number;
@@ -172,7 +175,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   park: {
     lineGap: 0.27, lineMin: 0.06, lineMax: 0.2, boxHold: 0.13, attGap: 0.4, attMin: 0.1, attMax: 0.3,
     defWidth: 0.64, squeeze: 0.26, defDepth: 0.66, attWidth: 1, attDepth: 0.78,
-    pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
     risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
     supporters: 2, supportR: 11, recover: 0.95,
@@ -180,7 +183,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   defensive: {
     lineGap: 0.25, lineMin: 0.05, lineMax: 0.32, boxHold: 0.15, attGap: 0.34, attMin: 0.12, attMax: 0.42,
     defWidth: 0.74, squeeze: 0.28, defDepth: 0.84, attWidth: 1.04, attDepth: 0.9,
-    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, screen: 1, screenR: 30, counter: 0, counterN: 0,
     fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 1,
     risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.3, tackle: 0.95, reach: 0,
     supporters: 2, supportR: 10, recover: 0.85,
@@ -188,7 +191,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   balanced: {
     lineGap: 0.24, lineMin: 0.05, lineMax: 0.42, boxHold: 0.15, attGap: 0.3, attMin: 0.14, attMax: 0.52,
     defWidth: 0.8, squeeze: 0.3, defDepth: 1, attWidth: 1.08, attDepth: 1,
-    pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, counter: 0, counterN: 0,
+    pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, screen: 0, screenR: 0, counter: 0, counterN: 0,
     fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
     risk: 1, tempo: 1, urgency: 1, carry: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
     supporters: 3, supportR: 10, recover: 0.7,
@@ -196,7 +199,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   attacking: {
     lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
     defWidth: 0.84, squeeze: 0.32, defDepth: 1, attWidth: 1.12, attDepth: 1.08,
-    pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, counter: 90, counterN: 1,
+    pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
     supporters: 3, supportR: 10, recover: 0.75,
@@ -204,7 +207,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   press: {
     lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
     defWidth: 0.8, squeeze: 0.4, defDepth: 0.82, attWidth: 1.1, attDepth: 1.02,
-    pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, counter: 180, counterN: 2,
+    pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.3, reach: 0.25,
     supporters: 3, supportR: 9, recover: 0.9,
@@ -512,6 +515,20 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
         pressers.push(m.i);
         pressLane.push(lane);
+      });
+    }
+    // A block near its own box steps into the shooting lane: shots from the
+    // edge of the area are what a deep side invites, so it puts bodies in front of them.
+    if (k.screen > 0 && dist(owner.pos, ownGoal(team)) < k.screenR) {
+      const goal = ownGoal(team);
+      const dOwner = dist(owner.pos, goal);
+      const near = mates
+        .filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i) && m.role !== 'GK' && dist(m.pos, goal) < dOwner + 3 && dist(m.pos, owner.pos) < 18)
+        .sort((x, y) => distToSegment(x.pos, owner.pos, goal) - distToSegment(y.pos, owner.pos, goal))
+        .slice(0, k.screen);
+      near.forEach((m, j) => {
+        pressers.push(m.i);
+        pressLane.push(-2 - j);
       });
     }
   }
@@ -1495,7 +1512,13 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     const lane = plan.pressLane![pj];
     let spot: Vec;
     if (lane >= 0) spot = add(seen, scale(sub(s.players[lane].pos, seen), 0.42));
-    else {
+    else if (lane <= -2) {
+      // Screening: in the line from the carrier to the middle of our goal, a stride or two off him.
+      const j = -2 - lane;
+      const toGoal = norm(sub(own, seen));
+      spot = add(add(seen, scale(toGoal, 2.4 + 1.6 * j)), scale({ x: -toGoal.y, y: toGoal.x }, j === 0 ? 0 : j % 2 ? 1.1 : -1.1));
+      return { ...seek(p, clampToPitch(spot, 0.8), 1, 1), sprint: sprintOk(s, p, dist(p.pos, spot) > 4) };
+    } else {
       const ch = plan.chaser >= 0 ? s.players[plan.chaser] : null;
       spot = add(seen, scale(norm(ch ? sub(seen, ch.pos) : sub(seen, own)), 1.3));
     }

@@ -269,7 +269,8 @@ describe('offside (Law 11)', () => {
   test('passive: an onside teammate playing it means no offence', () => {
     const { s, att, passer } = setup(85, 80, 60);
     noteBallPlayed(s, passer);
-    const onside = player(s, 0, 'WM');
+    // Any onside teammate (CPU clubs line up in several formations, not all with wide midfielders).
+    const onside = s.players.find((p) => p.team === 0 && p.role === 'MID' && p.i !== passer.i)!;
     onside.pos = { x: 70, y: 20 };
     expect(offsideOnTouch(s, onside, true)).toBe(false);
     expect(s.offside).toBeNull();
