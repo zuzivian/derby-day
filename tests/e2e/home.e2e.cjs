@@ -76,7 +76,7 @@ test('home: the mode cards appear with Practice; locked ones are teasers, not co
     await page.keyboard.press('Tab');
     stops.push(await page.evaluate(() => (document.activeElement && (document.activeElement.id || document.activeElement.className)) || ''));
   }
-  expect(stops.slice(0, 4), 'Tab order through the mode cards').toEqual(['play-local2p', 'play-link', 'practice-easy', 'practice-normal']);
+  expect(stops.slice(0, 2), 'Tab order through the mode cards (vs Player is still locked)').toEqual(['practice-easy', 'practice-normal']);
   expect(stops.some((s) => /mode-card/.test(s)), 'no stop on a locked card').toBe(false);
 });
 
