@@ -17,19 +17,23 @@ Install Bun with `curl -fsSL https://bun.sh/install | bash` (no sudo needed). Th
 
 ### Controls
 
+Mouse is the main scheme: your player runs to the pointer, and **the pointer is also where every kick goes**. No sprint key: the further the pointer is from your player, the faster you run, from a walk when it is right next to you, through a jog at 6 m, to a flat-out sprint from 12 m out (sprinting costs stamina; when the bar goes red you are winded and capped at a jog until it refills).
+
 | | Mouse (recommended) | Keyboard |
 |---|---|---|
-| Move | Your player runs to the pointer | WASD or arrows |
-| Pass (with the ball) | Left click toward a teammate or space | Space |
-| Tackle (without the ball) | Left click | Space |
-| Shoot | Hold right button, release | Hold F, release |
-| Sprint | Hold Shift or the middle button (+18% top speed, drains stamina) | Hold Shift |
-| Through ball | Ctrl/Cmd + left click: into space ahead of the receiver | R |
-| Chip (lofted) | Ctrl/Cmd + hold right button, release: lands at the pointer, charge sets the range | Hold C, release |
-| Switch player | Right click | E |
+| Run | Move the pointer. Distance sets speed: walk, jog (6 m), sprint (12 m+) | WASD or arrows, Shift to sprint |
+| Pass (with the ball) | Left click: the ball rolls to the point under the pointer | Space (to the teammate you are facing) |
+| Lofted ball (with the ball) | Press and hold left, release: lands at the pointer. A longer hold goes higher and further (12 m range at a tap, 40 m at a full 1 s hold) | Hold C, release |
+| Shoot (with the ball) | Right click: a medium shot at the pointer. Hold right for power, release to strike | Hold F, release |
+| Switch player (no ball) | Left click a teammate (pointer within 1.5 m of him); left click elsewhere to take the nearest teammate in that direction (40 degree cone), or stay if nobody is | E |
+| Tackle (no ball) | Right click: a standing tackle toward the pointer, or a slide when it is more than 2.4 m away (slides go up to 6 m, reach 3 m, and leave you on the floor) | Space |
 | Pause | Esc or P | Esc or P |
 
-The dotted line shows where a click would pass right now; hold Ctrl/Cmd and a yellow diamond shows where a through ball would land, and while charging a chip a blue ring and arc show where it will come down. The bar under your player is stamina: sprint empties it, and when it is red you are winded until it refills. A chipped ball can't be taken by outfield players while it is above 1.2 m; keepers can reach it in their box up to 2.1 m, and over the bar is not a goal. Phones get on-screen Pass and Shoot buttons.
+The pass is not snapped to a teammate. The one assist: if a teammate is standing, or running, within 1.5 m of the pointer, the ball is led to where he will be when it arrives and he is the receiver. Aim at empty grass, such as ahead of a runner, and the ball goes exactly there, so through balls are just passes into space. A human's passes and lofted balls scatter about 40% as much as a CPU's.
+
+On screen: a dotted line and ring show where a click would pass; while a left hold charges, a blue ring and arc show where the lofted ball comes down; while a right hold charges, a line runs to the pointer. A yellow ring on a teammate shows who a left click would switch to. The bar over your player is the charge (the arc and bar are red near full); the bar under him is stamina. A lofted ball can't be taken by outfield players while it is above 1.2 m; keepers can reach it in their box up to 2.1 m, and over the bar is not a goal. A hand-picked player stays yours for 3 s before the auto-switch (to whoever is nearest the ball) may take him back; whoever gets the ball always becomes yours.
+
+Phones: drag to run toward your finger (further is faster), tap **Pass** to pass, hold it to loft; **Shoot** shoots, and without the ball it tackles; tap a player on the pitch to pick him. Replays recorded before this control scheme (format 1 codes) can't be played back and are refused politely.
 
 ## Playing the CPU
 
@@ -58,11 +62,12 @@ Both are on the Club tab under **Two humans, no Elo** (Local 2P from club level 
 
   | | Player 1 (home, yellow) | Player 2 (away, cyan) |
   |---|---|---|
-  | Move | W A S D, or the mouse once you move it over the pitch | Arrow keys |
-  | Pass / tackle | Space, or left click | Enter or `/` |
-  | Shoot | Hold F, release (or hold right button) | Hold `.` (period), release |
-  | Switch player | E, or right click | `,` (comma) |
-  | Sprint | Left Shift | Right Shift |
+  | Move | W A S D, or the mouse once you move it over the pitch (further = faster) | Arrow keys |
+  | Pass / tackle | Space, or left click / right click | Enter or `/` |
+  | Lofted ball | Hold C, release (or hold left button) | Hold `M`, release |
+  | Shoot | Hold F, release (or right button) | Hold `.` (period), release |
+  | Switch player | E, or left click a player | `,` (comma) |
+  | Sprint | Left Shift (the mouse sprints by distance) | Right Shift |
   | Pause | Esc or P | Esc or P |
 
 - **Link two tabs:** open `dist/index.html` in two tabs or windows of the same browser. In one, **Host a match** and read out the 4-letter code; in the other, type it and **Join**. Each tab plays its own side with the normal controls. The tabs run the same match in deterministic lockstep over `BroadcastChannel` (no server) with a 4-tick (67 ms) input delay, exchange only inputs, and compare a state hash every second; a mismatch stops both with "Desync at tick N". Sandboxed viewers (such as some artifact hosts) block tabs from talking; the lobby says so. See "Multiplayer spike" in the roadmap for what this proves.

@@ -31,7 +31,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at well over 1,000× real time. 40 matches average about 2.9 goals, 23 shots and 160 passes; the higher-Elo club wins about four times as often as it loses.
 
 **Playing**
-- **Mouse-first control.** Your player runs to the pointer; left click passes toward it (auto-picks the teammate and leads the pass); hold right to shoot; Ctrl/Cmd for through balls and chips; Shift or middle button to sprint on a stamina bar. The ball has height, bounces, and can clear the bar. Full keyboard play works too.
+- **Mouse-first control.** Your player runs to the pointer; pointer distance sets speed (walk to stamina-costing sprint, no key); left click passes to the point under the pointer, hold left lofts it there, right click shoots (hold for power); without the ball left click picks a player and right click tackles or slides. The ball has height, bounces, and can clear the bar. Full keyboard play works too.
 - **A real CPU.** Team plans with interception prediction, goal-side marking, support runs, through balls, chips, sprinting and a keeper that narrows angles and sweeps. Difficulty is measured: identical squads at skill 0.85 beat 0.25 about 80% of the time.
 - **Sound and feel.** Synthesised kicks, whistles, net and crowd (no audio files), goal shake and confetti, all reduced-motion aware.
 

@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { generateLadder, generateSquad, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
-import { leadTarget } from '../src/sim/ai.ts';
 import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
-import { chipPlan, throughTarget } from '../src/sim/kicks.ts';
+import { chipPlan, loftPlan } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, simulate, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
@@ -67,14 +66,14 @@ function livePlay(seed = 5): MatchState {
   return s;
 }
 
-describe('sprint', () => {
+describe('sprint (key scheme; the pointer sprints by distance, see controls.test.ts)', () => {
   test('sprinting is about 18% faster than running and costs energy', () => {
     const peak = (sprint: boolean) => {
       const s = livePlay();
       const me = s.players[s.controlled[0]];
       let top = 0;
       for (let t = 0; t < 100; t++) {
-        step(s, { cursor: { x: me.pos.x + 30 * (me.team === 0 ? 1 : -1), y: me.pos.y }, sprint });
+        step(s, { dir: { x: me.team === 0 ? 1 : -1, y: 0 }, sprint });
         top = Math.max(top, len(s.players[s.controlled[0]].vel));
       }
       return { top, energy: s.players[s.controlled[0]].energy };
@@ -94,8 +93,8 @@ describe('sprint', () => {
       const me = s.players[id];
       for (const p of s.players) if (p.i !== id) p.stun = 1000; // keep control on this player
       // Zig-zag across the pitch so the player never stops against a board.
-      const x = (Math.floor(t / 90) % 2 === 0 ? 50 : 14);
-      step(s, { cursor: { x, y: PITCH_H / 2 }, sprint: true });
+      const dx = Math.floor(t / 90) % 2 === 0 ? 1 : -1;
+      step(s, { dir: { x: dx, y: 0 }, sprint: true });
       if (s.players[id].winded) {
         sawWinded = true;
         expect(s.players[id].sprinting).toBe(false);
@@ -106,44 +105,12 @@ describe('sprint', () => {
   });
 });
 
-describe('through ball', () => {
-  test('leads the receiver further along their run than a normal pass', () => {
-    const s = livePlay();
-    const from = s.players[s.controlled[0]];
-    const mate = s.players.find((p) => p.team === from.team && p.role === 'MID')!;
-    mate.pos = { x: 30, y: 12 };
-    mate.vel = { x: 6, y: 0 };
-    const feet = leadTarget(from.pos, mate, from.attrs.passing);
-    const through = throughTarget(from.pos, mate, from.attrs.passing);
-    const run = norm(mate.vel);
-    const ahead = (p: { x: number; y: number }) => dot(sub(p, mate.pos), run);
-    expect(ahead(through)).toBeGreaterThan(ahead(feet) + 2);
-    expect(ahead(through)).toBeGreaterThan(5);
-    expect(through.x).toBeLessThanOrEqual(PITCH_W);
-  });
-
-  test('a human through ball is aimed past the receiver, and still reaches a teammate', () => {
-    const s = livePlay();
-    const me = s.players[s.controlled[0]];
-    const mate = s.players.find((p) => p.team === me.team && p.role === 'MID')!;
-    mate.pos = { x: me.pos.x + 8, y: me.pos.y + 4 };
-    mate.vel = { x: 6, y: 0 };
-    mate.stun = 0;
-    step(s, { cursor: mate.pos, pass: true, through: true });
-    expect(s.ball.receiver).toBe(mate.i);
-    const want = throughTarget(me.pos, mate, me.attrs.passing);
-    const aimed = norm(s.ball.vel);
-    const toTarget = norm(sub(want, s.ball.pos));
-    expect(dot(aimed, toTarget)).toBeGreaterThan(0.97);
-  });
-});
-
 describe('chip and ball height', () => {
   test('a chip goes up, comes down, bounces with damping and z is never negative', () => {
     const s = livePlay();
     const me = s.players[s.controlled[0]];
     const target = { x: me.pos.x + 12 * (me.team === 0 ? 1 : -1), y: me.pos.y };
-    step(s, { cursor: target, shoot: 0.7, chip: true });
+    step(s, { cursor: target, loft: 0.7 });
     expect(s.ball.vz).toBeGreaterThan(3);
     let peak = 0;
     let lands = 0;
@@ -240,13 +207,16 @@ describe('chip and ball height', () => {
 });
 
 describe('determinism with the new inputs', () => {
-  test('sprint, through balls and chips replay identically', () => {
+  test('pointer passes, lofts, shots, tackles and selects replay identically', () => {
     const run = () => {
       const s = createMatch({ seed: 11, ...teams(4), halfSeconds: 20 });
       for (let t = 0; t < 3600; t++) {
-        const i: HumanInput = { cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 50) }, sprint: t % 300 < 200 };
-        if (t % 80 === 0) Object.assign(i, { pass: true, through: t % 160 === 0 });
-        if (t % 130 === 0) Object.assign(i, { shoot: 0.3 + (t % 7) / 10, chip: t % 260 === 0 });
+        const i: HumanInput = { cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 50) } };
+        if (t % 80 === 0) i.pass = true;
+        if (t % 130 === 0) i.loft = (t % 7) / 7;
+        if (t % 170 === 0) i.shoot = 0.55 + (t % 5) / 12;
+        if (t % 60 === 7) i.tackle = true;
+        if (t % 90 === 11) i.select = true;
         step(s, i);
       }
       return fingerprint(s);
@@ -256,12 +226,12 @@ describe('determinism with the new inputs', () => {
 });
 
 describe('chip landing and point-blank chips', () => {
-  test('the first bounce is where chipPlan said it would be', () => {
+  test('the first bounce is where loftPlan said it would be', () => {
     const s = livePlay();
     const me = s.players[s.controlled[0]];
     const target = { x: me.pos.x + 14 * (me.team === 0 ? 1 : -1), y: me.pos.y + 3 };
-    const plan = chipPlan(s.ball.pos, target, 1);
-    step(s, { cursor: target, shoot: 1, chip: true });
+    const plan = loftPlan(s.ball.pos, target, 1);
+    step(s, { cursor: target, loft: 1 });
     let touchdown: { x: number; y: number } | null = null;
     for (let t = 0; t < 200 && !touchdown; t++) {
       s.players.forEach((p) => (p.stun = 1000));
@@ -281,7 +251,7 @@ describe('chip landing and point-blank chips', () => {
     });
     opp.pos = { x: s.ball.pos.x + 0.9 * (me.team === 0 ? 1 : -1), y: s.ball.pos.y };
     opp.vel = { x: 0, y: 0 };
-    step(s, { cursor: { x: opp.pos.x + 10 * (me.team === 0 ? 1 : -1), y: opp.pos.y }, shoot: 0.8, chip: true });
+    step(s, { cursor: { x: opp.pos.x + 10 * (me.team === 0 ? 1 : -1), y: opp.pos.y }, loft: 0.8 });
     for (let t = 0; t < 8; t++) {
       step(s, { cursor: opp.pos });
       expect(s.ball.owner).not.toBe(opp.i);

@@ -127,7 +127,7 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -135,6 +135,8 @@ async function openApp(t, opts = {}) {
   const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
   const mutateSave = mutateSrc ? true : null;
   const page = await t.newPage({ colorScheme, viewport: { width, height } });
+  // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
+  if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
   await page.goto(APP_URL);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
