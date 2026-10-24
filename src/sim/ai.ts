@@ -87,6 +87,31 @@ function norm(a: Vec): Vec {
   const l = Math.sqrt(a.x * a.x + a.y * a.y);
   return l > 1e-9 ? { x: a.x / l, y: a.y / l } : { x: 0, y: 0 };
 }
+const dist2 = (a: Vec, b: Vec): number => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+
+/**
+ * The (up to) k items with the smallest key, nearest first, in one pass: no filter, sort or
+ * copies (these run on every team plan). A null key, or one at or above `below`, leaves it out.
+ */
+function nearestK<T>(items: readonly T[], k: number, key: (t: T) => number | null, below = Infinity): T[] {
+  const out: T[] = [];
+  const keys: number[] = [];
+  if (k <= 0) return out;
+  for (const t of items) {
+    const v = key(t);
+    if (v === null || v >= below || (out.length === k && v >= keys[k - 1])) continue;
+    let at = out.length;
+    while (at > 0 && keys[at - 1] > v) at--;
+    out.splice(at, 0, t);
+    keys.splice(at, 0, v);
+    if (out.length > k) {
+      out.pop();
+      keys.pop();
+    }
+  }
+  return out;
+}
+
 function distToSegment(p: Vec, a: Vec, b: Vec): number {
   const abx = b.x - a.x;
   const aby = b.y - a.y;
@@ -502,30 +527,24 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     engage = counterOn || bx <= k.pressUpTo || (!!ch && dist(ch.pos, owner.pos) < k.pressNear);
     const extra = Math.min(3, (bx > k.extraFrom ? k.extra : 0) + (counterOn ? k.counterN : 0));
     if (extra > 0) {
-      const near = mates
-        .filter((m) => m.i !== chaser && m.i !== human && dist(m.pos, owner.pos) < 24)
-        .sort((x, y) => dist(x.pos, owner.pos) - dist(y.pos, owner.pos))
-        .slice(0, extra);
+      const near = nearestK(mates, extra, (m) => (m.i === chaser || m.i === human ? null : dist2(m.pos, owner.pos)), 24 * 24);
       // The carrier's nearest options, whose passing lanes the pressers cut.
-      const lanes = s.players
-        .filter((o) => o.team !== team && !o.sentOff && o.i !== owner.i && o.role !== 'GK')
-        .sort((x, y) => dist(x.pos, owner.pos) - dist(y.pos, owner.pos))
-        .slice(0, 3);
-      const taken = new Set<number>();
+      const lanes = nearestK(s.players, 3, (o) => (o.team === team || o.sentOff || o.i === owner.i || o.role === 'GK' ? null : dist2(o.pos, owner.pos)));
+      const taken: number[] = [];
       near.forEach((m, j) => {
         let lane = -1;
         // The last of three pressers doubles up on the carrier.
         if (!(extra === 3 && j === 2)) {
           let bestD = Infinity;
           for (const o of lanes) {
-            if (taken.has(o.i)) continue;
-            const d = dist(m.pos, scale(add(owner.pos, o.pos), 0.5));
+            if (taken.includes(o.i)) continue;
+            const d = dist2(m.pos, { x: (owner.pos.x + o.pos.x) / 2, y: (owner.pos.y + o.pos.y) / 2 });
             if (d < bestD) {
               bestD = d;
               lane = o.i;
             }
           }
-          if (lane >= 0) taken.add(lane);
+          if (lane >= 0) taken.push(lane);
         }
         pressers.push(m.i);
         pressLane.push(lane);
@@ -536,10 +555,11 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     if (k.screen > 0 && dist(owner.pos, ownGoal(team)) < k.screenR) {
       const goal = ownGoal(team);
       const dOwner = dist(owner.pos, goal);
-      const near = mates
-        .filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i) && m.role !== 'GK' && dist(m.pos, goal) < dOwner + 3 && dist(m.pos, owner.pos) < 18)
-        .sort((x, y) => distToSegment(x.pos, owner.pos, goal) - distToSegment(y.pos, owner.pos, goal))
-        .slice(0, k.screen);
+      const near = nearestK(mates, k.screen, (m) =>
+        m.i === chaser || m.i === human || m.role === 'GK' || pressers.includes(m.i) || dist(m.pos, goal) >= dOwner + 3 || dist2(m.pos, owner.pos) >= 18 * 18
+          ? null
+          : distToSegment(m.pos, owner.pos, goal),
+      );
       near.forEach((m, j) => {
         pressers.push(m.i);
         pressLane.push(-2 - j);
