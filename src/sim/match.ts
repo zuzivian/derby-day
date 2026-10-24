@@ -840,16 +840,16 @@ function closestOn(p: Vec, a: Vec, b: Vec): { pt: Vec; t: number } {
 
 /** Distance between segments a-b and c-d (2D), with the closest point on c-d and how far along it. */
 function segSeg(a: Vec, b: Vec, c: Vec, d: Vec): { d: number; pt: Vec; t: number } {
-  let best = { d: Infinity, pt: c, t: 0 };
-  for (const q of [a, b]) {
-    const r = closestOn(q, c, d);
-    const dd = dist(q, r.pt);
-    if (dd < best.d) best = { d: dd, pt: r.pt, t: r.t };
-  }
-  for (const [q, t] of [[c, 0], [d, 1]] as const) {
-    const dd = distToSegment(q, a, b);
-    if (dd < best.d) best = { d: dd, pt: q, t };
-  }
+  // The four endpoint-to-segment distances, then the crossing case (no per-call arrays: this runs every tick).
+  const ra = closestOn(a, c, d);
+  let best = { d: dist(a, ra.pt), pt: ra.pt, t: ra.t };
+  const rb = closestOn(b, c, d);
+  const db = dist(b, rb.pt);
+  if (db < best.d) best = { d: db, pt: rb.pt, t: rb.t };
+  const dc = distToSegment(c, a, b);
+  if (dc < best.d) best = { d: dc, pt: c, t: 0 };
+  const dd = distToSegment(d, a, b);
+  if (dd < best.d) best = { d: dd, pt: d, t: 1 };
   // Crossing segments.
   const r = sub(b, a);
   const sv = sub(d, c);
