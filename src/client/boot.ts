@@ -80,18 +80,34 @@ function newerSave(): boolean {
   }
 }
 
-void claim({
-  onLost: () => {
-    setSaveGuest(true);
-    guard('taken');
-  },
-}).then((owned) => {
-  if (owned && newerSave()) {
-    setSaveGuest(true);
-    guard('newer');
-  } else if (owned) startGame();
-  else {
-    setSaveGuest(true);
-    guard('other-tab');
+/**
+ * Test-only escape hatch: when the e2e harness sets BOTH window.__e2e and window.__e2eSkipTabGuard (its
+ * nextVisit() helper opens the next visit as a second page while the first stays open), the guard does nothing,
+ * exactly as before it existed. Either flag alone leaves the guard on, so the guard's own tests still run it.
+ */
+function guardSkippedForTests(): boolean {
+  try {
+    const w = window as unknown as { __e2e?: unknown; __e2eSkipTabGuard?: unknown };
+    return !!(w.__e2e && w.__e2eSkipTabGuard);
+  } catch {
+    return false;
   }
-});
+}
+
+if (guardSkippedForTests()) startGame();
+else
+  void claim({
+    onLost: () => {
+      setSaveGuest(true);
+      guard('taken');
+    },
+  }).then((owned) => {
+    if (owned && newerSave()) {
+      setSaveGuest(true);
+      guard('newer');
+    } else if (owned) startGame();
+    else {
+      setSaveGuest(true);
+      guard('other-tab');
+    }
+  });

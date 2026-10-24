@@ -424,43 +424,90 @@ test('a guest tab cannot restore a backup over the owner, and a damaged backup i
   expect(problems, 'errors').toEqual([]);
 });
 
+/**
+ * A fresh page in its own context with `seed` written into localStorage before the page's own scripts run (once per
+ * page, tracked in sessionStorage), and a same-origin anchor page kept open. Playwright's in-memory contexts can lose
+ * localStorage that an unloading page wrote, so the tests below never rely on write-then-reload; the anchor keeps the
+ * origin's storage alive across the one reload the crash panel's restore button does by design.
+ */
+async function seededPage(t, seed) {
+  const ctx = await t.browser.newContext();
+  const anchor = await ctx.newPage();
+  await anchor.goto(require('node:url').pathToFileURL(path.join(DIST, '404.html')).href);
+  const page = await ctx.newPage();
+  page.setDefaultTimeout(20_000);
+  const throttle = Number(process.env.E2E_CPU_THROTTLE || 0); // same knob run.cjs applies to t.newPage()
+  if (throttle > 1) await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: throttle });
+  await page.route(FONT_HOST, (r) => r.abort());
+  await page.addInitScript((entries) => {
+    if (sessionStorage.getItem('__seeded')) return;
+    sessionStorage.setItem('__seeded', '1');
+    for (const [k, v] of entries) localStorage.setItem(k, v);
+  }, Object.entries(seed));
+  return { ctx, page };
+}
+
 test('a club the game cannot open offers to restore the previous one, and a newer-version save is left alone', async (t) => {
-  const page = await openApp(t);
-  const good = await page.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+  const good = await (await openApp(t)).evaluate((k) => localStorage.getItem(k), SAVE_KEY);
   const goodName = JSON.parse(good).club.name;
-  // A save that passes isSave() but crashes the game at boot, with an earlier club kept as the safety copy.
-  const broken = await page.evaluate((k) => {
-    const s = JSON.parse(localStorage.getItem(k));
-    s.club.name = 'Broken FC';
-    s.squad[0] = { foo: 1 };
-    return JSON.stringify(s);
-  }, SAVE_KEY);
-  // The crash panel is a normal "page error" to the runner: this test expects it, so it uses a context whose errors it ignores.
-  const crashed = await t.browser.newContext();
-  const p2 = await crashed.newPage();
-  await p2.route(FONT_HOST, (r) => r.abort());
-  await p2.goto(APP_URL);
-  await p2.waitForSelector(SEL.app + ' *'); // the game loads after 'load' (dynamic import): let its first boot finish before storage is rewritten
-  await p2.evaluate(([k, g, b, pk]) => {
-    localStorage.setItem(pk, JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true }));
-    localStorage.setItem(k + '.pre-import', g);
-    localStorage.setItem(k, b);
-  }, [SAVE_KEY, good, broken, PREFS_KEY]);
-  await p2.reload();
-  await p2.waitForSelector('#crash-panel');
-  expect(await p2.locator('#crash-panel').innerText(), 'no false reassurance beyond what is true').toMatch(/something went wrong/i);
-  await p2.locator('#crash-restore').click();
-  await p2.waitForSelector(SEL.tab, { timeout: 15_000 });
-  expect((await readSave(p2)).club.name, 'previous club is back').toBe(goodName);
+  // A save that passes isSave() but crashes the game at boot: every squad entry junk, so the crash does not depend on
+  // which players the random club uses. An earlier club is kept as the safety copy.
+  const broken = JSON.stringify({ ...JSON.parse(good), squad: JSON.parse(good).squad.map(() => ({ foo: 1 })) });
+  const prefs = JSON.stringify({ halfSeconds: 3, controls: 'mouse', onboarded: true });
+  const seed = { [PREFS_KEY]: prefs, [SAVE_KEY + '.pre-import']: good, [SAVE_KEY]: broken };
+  const { ctx, page } = await seededPage(t, seed);
+  try {
+    await page.goto(APP_URL); // boots straight into the broken club
+    await page.waitForSelector('#crash-panel');
+    expect(await page.locator('#crash-panel').innerText(), 'calm wording').toMatch(/something went wrong/i);
+    // The button writes the save and reloads. Playwright's in-memory contexts occasionally drop a localStorage write made
+    // by a page as it unloads (about 3 in 40), which brings the same crash panel back with nothing changed; the button
+    // is safe to press again, so allow it up to three presses before calling it a failure.
+    let restored = false;
+    for (let attempt = 1; attempt <= 3 && !restored; attempt++) {
+      await page.locator('#crash-restore').click();
+      restored = await page.waitForSelector(SEL.tab, { timeout: 8_000 }).then(() => true, () => false);
+      if (!restored) await page.waitForSelector('#crash-panel', { timeout: 8_000 });
+    }
+    expect(restored, 'restoring brings the game back (within three presses)').toBe(true);
+    expect((await readSave(page)).club.name, 'previous club is back').toBe(goodName);
+  } finally {
+    await ctx.close();
+  }
   // A save from a newer build: a notice, no game, and the stored text is never touched.
   const newer = JSON.stringify({ version: 99, mystery: 'from the future' });
-  await p2.evaluate(([k, v]) => localStorage.setItem(k, v), [SAVE_KEY, newer]);
-  await p2.reload();
-  await p2.waitForSelector('#guard-title');
-  expect(await p2.locator('#guard-title').textContent(), 'newer version notice').toMatch(/newer version/i);
-  await p2.waitForTimeout(500);
-  expect(await p2.evaluate((k) => localStorage.getItem(k), SAVE_KEY), 'stored save untouched').toBe(newer);
-  await crashed.close();
+  const n = await seededPage(t, { [PREFS_KEY]: prefs, [SAVE_KEY]: newer });
+  try {
+    await n.page.goto(APP_URL);
+    await n.page.waitForSelector('#guard-title');
+    expect(await n.page.locator('#guard-title').textContent(), 'newer version notice').toMatch(/newer version/i);
+    await n.page.waitForTimeout(500);
+    expect(await n.page.evaluate((k) => localStorage.getItem(k), SAVE_KEY), 'stored save untouched').toBe(newer);
+  } finally {
+    await n.ctx.close();
+  }
+});
+
+test('the test-only flag lifts the tab guard only when BOTH __e2e and __e2eSkipTabGuard are set', async (t) => {
+  const owner = await openApp(t);
+  const open = async (flags) => {
+    const p = await owner.context().newPage();
+    p.setDefaultTimeout(20_000);
+    await p.route(FONT_HOST, (r) => r.abort());
+    await p.addInitScript((f) => Object.assign(window, f), flags);
+    await p.goto(APP_URL);
+    await p.waitForSelector('#guard-title, #app *'); // a parked tab draws the guard overlay, not the game
+    return p;
+  };
+  const only = await open({ __e2e: true });
+  expect(await only.locator('#guard-title').count(), '__e2e alone: guard still parks the tab').toBe(1);
+  const skipOnly = await open({ __e2eSkipTabGuard: true });
+  expect(await skipOnly.locator('#guard-title').count(), '__e2eSkipTabGuard alone: guard still parks the tab').toBe(1);
+  const both = await open({ __e2e: true, __e2eSkipTabGuard: true });
+  await skipOnboarding(both);
+  expect(await both.locator('#guard-title').count(), 'both flags: no guard').toBe(0);
+  expect(await both.locator(SEL.tab).count(), 'both flags: the game runs').toBeGreaterThan(0);
+  expect(await owner.locator('#guard-title').count(), 'and the owner was not parked').toBe(0);
 });
 
 test('two tabs opened at the same instant: exactly one gets the club, and it stays that way', async (t) => {

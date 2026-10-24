@@ -188,9 +188,28 @@ function writeNow(s: Save): WriteResult {
   }
 }
 
+/**
+ * Ask the browser once to make this origin's storage durable (not evictable under storage pressure). Chromium and
+ * Safari decide silently; Firefox would put up a permission prompt, so it is skipped. Called after the first
+ * successful save, never from a guest tab, and any failure is ignored: the backup export remains the real safety net.
+ */
+let askedPersist = false;
+function askForDurableStorage(): void {
+  if (askedPersist) return;
+  askedPersist = true;
+  try {
+    if (/Firefox\//.test(navigator.userAgent)) return;
+    void navigator.storage?.persist?.()?.catch?.(() => {});
+  } catch {
+    /* not supported here */
+  }
+}
+
 export function writeSaveResult(s: Save): WriteResult {
   if (guest) return 'guest';
-  return (lastResult = writeNow(s));
+  lastResult = writeNow(s);
+  if (lastResult === 'ok') askForDurableStorage();
+  return lastResult;
 }
 
 /** True when the save is safe (written, or deliberately not written by a guest tab). */

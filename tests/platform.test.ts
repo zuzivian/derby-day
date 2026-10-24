@@ -183,6 +183,63 @@ describe('save safety', () => {
   });
 });
 
+describe('durable storage request', () => {
+  const nav = globalThis.navigator as unknown as Record<string, unknown>;
+  const calls = { n: 0 };
+  const realStorage = Object.getOwnPropertyDescriptor(nav, 'storage');
+  const realUA = Object.getOwnPropertyDescriptor(nav, 'userAgent');
+  const set = (storage: unknown, ua?: string) => {
+    Object.defineProperty(nav, 'storage', { value: storage, configurable: true });
+    if (ua !== undefined) Object.defineProperty(nav, 'userAgent', { value: ua, configurable: true });
+  };
+  const restore = () => {
+    if (realStorage) Object.defineProperty(nav, 'storage', realStorage);
+    else delete nav.storage;
+    if (realUA) Object.defineProperty(nav, 'userAgent', realUA);
+  };
+
+  test('asks once, after the first successful save, and never from a guest tab', async () => {
+    // A fresh module instance, because the request is made once per page load.
+    const fresh = await import(`../src/client/store.ts?persist=${Math.random()}`);
+    calls.n = 0;
+    set({ persist: async () => (calls.n++, true) }, 'Mozilla/5.0 Chrome/130');
+    try {
+      fresh.setSaveGuest(true);
+      fresh.writeSaveResult(newGame(1));
+      expect(calls.n).toBe(0);
+      fresh.setSaveGuest(false);
+      mem.quota = 10; // a failed save is not a reason to ask
+      fresh.writeSaveResult(newGame(1));
+      expect(calls.n).toBe(0);
+      mem.quota = Infinity;
+      fresh.writeSaveResult(newGame(1));
+      fresh.writeSaveResult(newGame(2));
+      expect(calls.n).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  test('is skipped on Firefox (it would prompt) and where the API is missing or throws', async () => {
+    for (const [storage, ua] of [
+      [{ persist: async () => (calls.n++, true) }, 'Mozilla/5.0 Gecko/20100101 Firefox/130.0'],
+      [undefined, 'Chrome'],
+      [{ persist: () => { throw new Error('nope'); } }, 'Chrome'],
+      [{ persist: () => Promise.reject(new Error('denied')) }, 'Chrome'],
+    ] as const) {
+      const fresh = await import(`../src/client/store.ts?persist=${Math.random()}`);
+      calls.n = 0;
+      set(storage, ua);
+      try {
+        expect(fresh.writeSaveResult(newGame(3))).toBe('ok'); // never breaks saving
+        expect(calls.n).toBe(0);
+      } finally {
+        restore();
+      }
+    }
+  });
+});
+
 describe('backup export and import', () => {
   test('file round trip keeps the whole club', async () => {
     const s = newGame(7);
