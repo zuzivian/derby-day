@@ -48,7 +48,9 @@ export const ZOOM_MIN = 0.6;
 export const ZOOM_MAX = 1.45;
 export const ZOOM_STEP = 1.12;
 /** Long view: elevated, wide, showing about three quarters of the pitch (research brief §5). */
-export const LONG_WIDTH = 80;
+export const LONG_WIDTH = 90;
+/** The long view on the narrowest screens is still at least this wide. */
+export const LONG_MIN = 70;
 export const LONG_ELEV = 46;
 
 export const clampZoom = (z: number): number => (Number.isFinite(z) ? Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z)) : 1);
@@ -124,9 +126,10 @@ export class MatchCamera {
   update(dt: number, f: CameraFocus, aspect: number, cssWidth: number, reduced: boolean): void {
     const cam = this.camera;
     cam.aspect = aspect;
-    // Phones: closer in, and closer still in a portrait (taller than wide) view, which shows more
-    // depth instead: about 29 m across at zoom 1 on a 390 px portrait phone, so players stay readable.
-    const narrow = (cssWidth < 560 ? 0.8 : 1) * (aspect < 1 ? 0.72 : 1);
+    // Phones: a little closer in, and a little closer again in a portrait (taller than wide) view,
+    // which shows more depth instead: about 45 m across at the ball at zoom 1 on a 390 px portrait
+    // phone (pinch or the on-screen buttons zoom in for bigger players).
+    const narrow = (cssWidth < 560 ? 0.93 : 1) * (aspect < 1 ? 0.93 : 1);
     const slow = reduced ? 1.6 : 1;
 
     // Where to look: the ball plus where it's heading (or where the carrier's team attacks).
@@ -186,7 +189,8 @@ export class MatchCamera {
     const lv = f.long;
     if (lv && !close) {
       // Long view: up and out, so the player can pick out teammates up to and beyond halfway.
-      width = Math.max(width, lv.width * narrow);
+      // Never narrowed below LONG_MIN on a phone: the point is to see past halfway.
+      width = Math.max(width, Math.max(LONG_MIN, lv.width * narrow));
       elev = this.mode === 'broadcast' ? LONG_ELEV : 40;
       if (this.mode === 'broadcast') {
         tx = lv.x;

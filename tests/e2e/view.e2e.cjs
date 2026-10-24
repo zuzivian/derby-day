@@ -19,7 +19,7 @@ async function waitFor(page, fn, arg, ms = 30_000) {
   return false;
 }
 
-test('3D view: the mouse wheel and + / - zoom the camera, within limits, and the zoom is remembered', async (t) => {
+test('3D view: the mouse wheel, + / - and the touch buttons zoom the camera, within limits, and the zoom is remembered', async (t) => {
   const page = await openApp(t, { prefs: LONG, renderer: '3d' });
   await startRanked(page);
   if ((await pitchData(page)).renderer !== '3d') return; // no WebGL2 here: nothing to zoom
@@ -31,16 +31,17 @@ test('3D view: the mouse wheel and + / - zoom the camera, within limits, and the
   const out = await zoom();
   expect(out, 'wheel down zooms out').toBeGreaterThan(1);
   expect(await page.locator('#cam-btn').innerText(), 'the chip says the new zoom').toMatch(/zoom \d+%/i);
-  for (let i = 0; i < 12; i++) await page.keyboard.press('Minus');
+  for (let i = 0; i < 12; i++) await page.keyboard.press('Equal');
   const tight = await zoom();
-  expect(tight, 'minus zooms in').toBeLessThan(out);
+  expect(tight, '+ zooms in').toBeLessThan(out);
   expect(tight, 'but not past the limit').toBeGreaterThanOrEqual(0.59);
   // The page itself did not scroll on the wheel.
   expect(await page.evaluate(() => window.scrollY), 'wheel over the pitch does not scroll the page').toBe(0);
   await page.keyboard.press('0');
   expect(await zoom(), '0 resets').toBe(1);
-  await page.keyboard.press('Equal');
+  await page.keyboard.press('Minus');
   const kept = await zoom();
+  expect(kept, '- zooms out').toBeGreaterThan(1);
   await page.reload();
   await page.waitForSelector(SEL.app + ' *');
   expect(await zoom(), 'remembered across reloads').toBe(kept);
@@ -73,14 +74,23 @@ test('3D view: a goal gets an instant replay at the stoppage; the live match wai
   expect(d.camera, 'with a replay camera').toMatch(/^replay-/);
   expect(await page.locator('.hud-replay').isVisible(), 'REPLAY shows in the HUD').toBe(true);
   expect(await page.locator('.hud-replay').innerText(), 'with what it is').toMatch(/goal/i);
-  // The live sim is held.
+  // The live sim is held, and the HUD follows the replay: no power bar.
   const held = await tick(page);
   await page.waitForTimeout(900);
   expect(await tick(page), 'the live match does not move during the replay').toBe(held);
+  expect(await page.evaluate(() => getComputedStyle(document.querySelector('.hud-power')).visibility), 'power bar hidden in the replay').toBe('hidden');
+  // Pausing mid-replay (P) and resuming takes one Esc, as always; the replay is still there after.
+  await page.keyboard.press('p');
+  await page.locator(SEL.pause).waitFor({ state: 'visible' });
+  await page.keyboard.press('Escape');
+  await page.locator(SEL.pause).waitFor({ state: 'hidden', timeout: 3000 });
+  expect((await pitchData(page)).replay, 'the replay carries on after the pause').toBe('goal');
   await page.keyboard.press('Space');
   expect(await waitFor(page, () => !document.querySelector('#pitch').dataset.replay, null, 5000), 'Space skips it').toBe(true);
   expect(await page.locator('.hud-replay').isVisible(), 'REPLAY gone').toBe(false);
   expect(await page.locator(SEL.pause).isVisible(), 'skipping did not pause the match').toBe(false);
+  expect(await page.locator('#banner').isVisible(), 'no GOAL banner again on the way back').toBe(false);
+  expect(await page.evaluate(() => window.__derbyMatch.score[0]), 'and the goal counted once').toBe(1);
   // Play resumes from the tick it stopped on (give it a moment to step on).
   await page.waitForTimeout(600);
   const after = await tick(page);

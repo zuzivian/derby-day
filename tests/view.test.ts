@@ -110,7 +110,7 @@ describe('instant replays: spotting highlights', () => {
   test('a shot off the post is the woodwork, one just wide is a near miss', () => {
     for (const [y, kind] of [
       [PITCH_H / 2 - 3.66 - 0.05, 'woodwork'],
-      [PITCH_H / 2 + 3.66 + 1.0, 'miss'],
+      [PITCH_H / 2 + 3.66 + 0.3, 'miss'],
     ] as const) {
       const s = match(9, [false, false]);
       for (let t = 0; t < 300; t++) step(s);
@@ -248,6 +248,32 @@ describe('camera', () => {
     expect(point().distanceTo(p0)).toBeLessThan(0.5);
   });
 
+  test('the long view reaches past halfway on desktop and on a portrait phone', () => {
+    for (const [aspect, w] of [
+      [1.5, 1040],
+      [0.8, 358],
+    ]) {
+      const c = new MatchCamera();
+      const kx = -PITCH_W / 2 + 6;
+      const f = { ...focus, x: kx, long: { x: kx + 90 * 0.32, z: 0, width: 90 } };
+      for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
+      const y = new Vector3(kx, 0, 0).project(c.camera).y;
+      const hit = new Vector3();
+      rc.setFromCamera(new Vector2(1, y), c.camera);
+      rc.ray.intersectPlane(ground, hit);
+      expect(hit.x).toBeGreaterThan(12); // scene x 0 is halfway
+      rc.setFromCamera(new Vector2(-1, y), c.camera);
+      rc.ray.intersectPlane(ground, hit);
+      expect(hit.x).toBeLessThan(kx); // and the keeper is in shot
+    }
+  });
+
+  test('a portrait phone shows at least 40 m across at the ball', () => {
+    const c = new MatchCamera();
+    const y = settle(c, focus, 0.8, 358);
+    expect(across(c, y)).toBeGreaterThan(40);
+  });
+
   test('long view: goal kicks and the keeper holding the ball, for the human side only', () => {
     const s = match(13);
     for (let t = 0; t < 300; t++) step(s, {});
@@ -266,10 +292,21 @@ describe('camera', () => {
       seen = longView(s, 0);
     }
     expect(seen).not.toBe(null);
-    expect(seen!.width).toBeGreaterThanOrEqual(75);
-    // Centred upfield of the goal area, so the frame runs past halfway.
-    expect(seen!.x + seen!.width / 2).toBeGreaterThan(PITCH_W / 2);
+    expect(seen!.width).toBeGreaterThanOrEqual(85);
+    // Centred upfield of the goal area, so the frame runs well past halfway.
+    expect(seen!.x + seen!.width / 2).toBeGreaterThan(PITCH_W / 2 + 15);
     expect(longView(s, 1)).toBe(null);
+    // It holds for as long as the restart waits on the taker (every tick of 'setup' and 'ready'),
+    // so once humans take their own goal kicks it stays up until they kick.
+    let waiting = 0;
+    for (let t = 0; t < 600 && s.restart?.kind === 'goalkick'; t++) {
+      if (s.restart.stage !== 'whistle') {
+        waiting++;
+        expect(longView(s, 0)).not.toBe(null);
+      }
+      step(s, {});
+    }
+    expect(waiting).toBeGreaterThan(20);
     // Two humans on one screen: no long view (one camera for both).
     const hs = match(13, [true, true]);
     expect(longView(hs, 0)).toBe(null);

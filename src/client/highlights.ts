@@ -29,8 +29,8 @@ export interface Highlight {
 
 /** Higher is more worth a replay; a better moment replaces a pending one. */
 export const HIGHLIGHT_RANK: Record<HighlightKind, number> = { goal: 6, red: 5, save: 4, woodwork: 4, yellow: 2, miss: 3 };
-/** Wide of the post by at most this, or over the bar by at most half this, is a near miss. */
-export const HIGHLIGHT_MISS_M = 1.5;
+/** Wide of the post, or over the bar, by at most this is a near miss. */
+export const HIGHLIGHT_MISS_M = 0.5;
 /** Saves count from shots struck at least this hard, m/s (a tame roll into the keeper's arms is not a moment). */
 export const HIGHLIGHT_SAVE_SPEED = 17;
 /** A shot is followed for this long for a save, the woodwork or a near miss. */
@@ -151,7 +151,7 @@ export class HighlightSpotter {
     if (crossed) {
       const wide = b.pos.y < GOAL_TOP ? GOAL_TOP - b.pos.y : b.pos.y > GOAL_BOTTOM ? b.pos.y - GOAL_BOTTOM : 0;
       const over = b.z - GOAL_BAR_H;
-      if ((wide > 0 && wide < HIGHLIGHT_MISS_M && b.z < GOAL_BAR_H + 1) || (wide === 0 && over > 0 && over < HIGHLIGHT_MISS_M / 2)) {
+      if ((wide > 0 && wide < HIGHLIGHT_MISS_M && b.z < GOAL_BAR_H + HIGHLIGHT_MISS_M) || (wide === 0 && over > 0 && over < HIGHLIGHT_MISS_M)) {
         return { kind: 'miss', tick: s.tick, goalX: w.goalX, label: `So close${who}` };
       }
       this.watch = null;

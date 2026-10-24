@@ -71,7 +71,7 @@ const REPLAY_DELAY: Record<Highlight['kind'], number> = { goal: 2.6, red: 1.2, y
 /** A pending moment not shown within this long (play went on) is dropped. */
 const REPLAY_STALE = 6 * TICK_HZ;
 /** Between replays of anything but goals and red cards, at least this much match time, ticks. */
-const REPLAY_GAP = 50 * TICK_HZ;
+const REPLAY_GAP = 90 * TICK_HZ;
 /** Clicks and keys can't skip in the first moments, so a click already in progress doesn't. */
 const REPLAY_SKIP_AFTER_MS = 400;
 
@@ -210,6 +210,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     skip: HTMLButtonElement;
   } | null = null;
   const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
+  const hudEl = root.querySelector<HTMLElement>('.hud')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
 
   function consider(h: Highlight) {
@@ -234,6 +235,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     skip.addEventListener('contextmenu', (e) => e.preventDefault());
     wrapEl.appendChild(skip);
     wrapEl.classList.add('replaying');
+    hudEl.classList.add('replaying');
     replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
     // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
     r3.replayShot = { kind: 'low', goalX: h.goalX };
@@ -250,6 +252,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     replay.skip.remove();
     replay = null;
     wrapEl.classList.remove('replaying');
+    hudEl.classList.remove('replaying');
     (renderer as Renderer3D).replayShot = null;
     hud.replay(null);
     delete canvas.dataset.replay;
@@ -272,10 +275,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     return r.state.tick < r.end;
   }
 
-  // Space, Enter and Esc skip a replay; caught before the match's own keys see them.
+  // Space, Enter and Esc skip a replay; caught before the match's own keys see them. While paused
+  // (the pause menu is up), keys go to the menu as usual: Esc resumes, the replay then carries on.
+  // Hot-seat: Space and Enter are the two players' pass keys, so only Esc (and a click) skip there.
+  const hotseat = s.humans[0] && s.humans[1];
   const onReplayKey = (e: KeyboardEvent) => {
-    if (!replay) return;
-    if (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter') {
+    if (!replay || paused) return;
+    if (e.key === 'Escape' || (!hotseat && (e.key === ' ' || e.key === 'Enter'))) {
       e.preventDefault();
       e.stopImmediatePropagation();
       if (!e.repeat && performance.now() - replay.started > REPLAY_SKIP_AFTER_MS) endReplay();
@@ -318,7 +324,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (replay) {
       renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
-      hud.update(s, 0, null);
+      hud.update(replay.state, 0, null);
     } else {
       if (!paused) {
         acc += elapsed;
@@ -345,7 +351,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       }
       if (replay) {
         renderer.draw((replay as { state: MatchState }).state, { cursor: null, charge: 0, showCursor: false, noAim: true });
-        hud.update(s, 0, null);
+        hud.update((replay as { state: MatchState }).state, 0, null);
       } else {
         const extras = input.extras();
         renderer.draw(s, extras);

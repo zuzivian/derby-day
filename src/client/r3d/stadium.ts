@@ -325,7 +325,8 @@ const CROWD_COLOR = `
 #include <color_vertex>
 {
   float t = fract(aSeed * 7.31);
-  vec3 skinC = mix(vec3(0.93, 0.74, 0.58), vec3(0.36, 0.22, 0.13), t * t);
+  // Faces a little darker than life, so heads don't sparkle across the stand at broadcast distance.
+  vec3 skinC = mix(vec3(0.93, 0.74, 0.58), vec3(0.36, 0.22, 0.13), t * t) * 0.8;
   float isHead = step(0.5, aPart) * step(aPart, 1.5);
   vColor.rgb = mix(vColor.rgb, skinC, isHead);
 }
@@ -678,8 +679,6 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
   // --- stands, crowd, flags --------------------------------------------------
   const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
-  // Muted seats: dark enough that empty rows read as shadow rather than bright stripes.
-  const seatMats = [keep(new MeshLambertMaterial({ color: '#243a5e' })), keep(new MeshLambertMaterial({ color: '#4a5260' }))];
   const roofMat = keep(new MeshStandardMaterial({ color: '#e7e9ec', roughness: 0.6, metalness: 0.2, side: DoubleSide }));
   const steelMat = keep(new MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.55, metalness: 0.2 }));
   const fanGeo = keep(fanGeometry());
@@ -695,6 +694,14 @@ export function buildStadium(o: StadiumOptions): Stadium {
   const tmpS = new Vector3(1, 1, 1);
   const UP = new Vector3(0, 1, 0);
 
+  // Crowd colours: very light kits (white, cream) would turn a stand into a white wall, so they are
+  // knocked back, and everything is pulled toward a dark grey for less contrast.
+  const grey = new Color('#4a4f57');
+  const tone = (c: Color) => {
+    const l = (c.r + c.g + c.b) / 3;
+    if (l > 0.62) c.multiplyScalar(0.62 / l);
+    return c.lerp(grey, 0.38);
+  };
   const buildStand = (key: 'far' | 'near' | 'left' | 'right', fans: TeamSetup, rows: number, roof: boolean) => {
     const sg = new Group();
     sg.name = `stand-${key}`;
@@ -705,11 +712,14 @@ export function buildStadium(o: StadiumOptions): Stadium {
     const FRONT = 0.9;
     // Stand-local: x along, z away from the pitch (positive), y up. Front wall at z = 0.
     const blocks: Part[] = [];
+    const stepCol = tone(new Color(fans.primary)).lerp(new Color('#3a3f47'), 0.35);
     // Painted front wall, grey steps, lighter back and side walls.
     blocks.push({ geo: new BoxGeometry(along, FRONT, 0.4).translate(0, FRONT / 2, 0.2), color: [0.07, 0.16, 0.3] });
     for (let i = 0; i < rows; i++) {
       const top = FRONT + i * RISE;
-      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: i % 2 ? [0.3, 0.32, 0.36] : [0.26, 0.28, 0.32] });
+      // Steps in a dark shade of the fans' colour, barely striped: empty places blend into the block.
+      const k = i % 2 ? 0.5 : 0.45;
+      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: [stepCol.r * k, stepCol.g * k, stepCol.b * k] });
     }
     const depth = 0.4 + rows * ROW_D;
     const backH = FRONT + rows * RISE + 2.2;
@@ -727,7 +737,10 @@ export function buildStadium(o: StadiumOptions): Stadium {
       const top = FRONT + i * RISE;
       seats.push({ geo: new BoxGeometry(along - 0.6, 0.22, 0.05).translate(0, top + 0.11, 0.4 + i * ROW_D + 0.1) });
     }
-    const seatMesh = new Mesh(merge(seats), seatMats[key === 'far' ? 0 : 1]);
+    // Seats in a dark shade of the fans' colour, so empty seats (a thin crowd on slow GPUs) blend
+    // into the block instead of showing as a second pattern.
+    const seatMat = keep(new MeshLambertMaterial({ color: tone(new Color(fans.primary)).multiplyScalar(0.42) }));
+    const seatMesh = new Mesh(merge(seats), seatMat);
     disposables.push(seatMesh.geometry);
     seatMesh.receiveShadow = true;
     sg.add(seatMesh);
@@ -773,17 +786,10 @@ export function buildStadium(o: StadiumOptions): Stadium {
     // sections about 14 m long, most in the fans' primary colour and some in their secondary, with a
     // few fans in muted everyday clothes. Colours are pulled toward a mid grey (less contrast) and
     // darken toward the back rows, under the roof, so the stand reads as a mass, not as noise.
-    const section = 14;
+    const section = 22;
     const nSec = Math.max(1, Math.round(along / section));
-    const secCol = Array.from({ length: nSec }, (_, k) => (k % 4 === 2 ? fans.secondary : fans.primary));
+    const secCol = Array.from({ length: nSec }, (_, k) => (k % 3 === 1 ? fans.secondary : fans.primary));
     const casual = ['#30343b', '#3d434c', '#4b4f57', '#5a4a3c', '#2f3c52'];
-    const grey = new Color('#5b616b');
-    const tone = (c: Color) => {
-      // Very light kits (white, cream) would turn a stand into a white wall: knock them back.
-      const l = (c.r + c.g + c.b) / 3;
-      if (l > 0.72) c.multiplyScalar(0.72 / l);
-      return c.lerp(grey, 0.28);
-    };
     spots.forEach(([x, y, z, row], i) => {
       const sc = 0.92 + r() * 0.16;
       tmpQ.setFromAxisAngle(UP, Math.PI + (r() - 0.5) * 0.5);
@@ -793,10 +799,10 @@ export function buildStadium(o: StadiumOptions): Stadium {
       im.setMatrixAt(i, tmpM);
       const sec = Math.min(nSec - 1, Math.max(0, Math.floor(((x + along / 2) / along) * nSec)));
       const pick = r();
-      crowdColor.set(pick < 0.8 ? secCol[sec] : pick < 0.88 ? (secCol[sec] === fans.primary ? fans.secondary : fans.primary) : casual[Math.floor(r() * casual.length)]);
+      crowdColor.set(pick < 0.93 ? secCol[sec] : casual[Math.floor(r() * casual.length)]);
       tone(crowdColor);
-      // Darker toward the back (under the roof), and a small per-fan variation.
-      crowdColor.multiplyScalar((1 - 0.34 * (row / Math.max(1, rows - 1))) * (0.9 + r() * 0.14));
+      // Darker toward the back (under the roof), and only a slight per-fan variation.
+      crowdColor.multiplyScalar((1 - 0.5 * (row / Math.max(1, rows - 1))) * (0.95 + r() * 0.06));
       im.setColorAt(i, crowdColor);
       seeds[i] = r();
     });

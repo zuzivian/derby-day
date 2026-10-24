@@ -97,7 +97,7 @@ export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; widt
     if (r.kind === 'goalkick') from = r.spot.x;
     else if (r.kind === 'freekick' && own) {
       from = r.spot.x;
-      width = LONG_WIDTH * 0.82;
+      width = LONG_WIDTH * 0.8;
     }
   } else if (s.phase === 'play' && b.inHands && b.owner >= 0) {
     const k = s.players[b.owner];
@@ -105,7 +105,7 @@ export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; widt
   }
   if (from === null) return null;
   // Centre a good way upfield of the ball, so the frame runs from the ball to beyond halfway.
-  return { x: from + dir * width * 0.3, y: HALF_H, width };
+  return { x: from + dir * width * 0.32, y: HALF_H, width };
 }
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
@@ -313,7 +313,7 @@ export class Renderer3D implements MatchRenderer {
     return this.cam.zoom;
   }
 
-  /** One wheel notch or +/- press: out (1) shows more pitch, in (-1) less. */
+  /** One zoom step: out (1) shows more pitch, in (-1) less. */
   zoomStep(dir: 1 | -1): number {
     return this.setZoom(this.cam.zoom * (dir > 0 ? ZOOM_STEP : 1 / ZOOM_STEP));
   }

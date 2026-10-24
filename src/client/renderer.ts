@@ -114,8 +114,9 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
 
 /**
  * A small "Camera" chip on the pitch (and the V key) that switches between the broadcast and
- * end-to-end views, plus zoom: the mouse wheel over the pitch and the + / - keys (0 resets). The
- * chip is faint until used, and says what changed for a moment when the view or zoom changes.
+ * end-to-end views, plus zoom: the mouse wheel over the pitch, the + / - keys (0 resets), and on
+ * touch screens a pinch or the − / + buttons. The chip says what changed for a moment when the
+ * view or zoom changes.
  * Only for the 3D renderer; returns cleanup.
  */
 export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: HTMLCanvasElement): () => void {
@@ -163,9 +164,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const k = e.key;
     if (k === '+' || k === '=' || k === '-' || k === '_' || k === '0') {
-      // + shows more pitch (zooms out), - less, 0 back to the default.
+      // + zooms in (bigger players, less pitch), - zooms out, 0 back to the default.
       e.preventDefault();
-      zoom(k === '0' ? 0 : k === '-' || k === '_' ? -1 : 1);
+      zoom(k === '0' ? 0 : k === '-' || k === '_' ? 1 : -1);
       return;
     }
     if (e.repeat) return;
@@ -182,14 +183,60 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     wheelAt = now;
     zoom(e.deltaY > 0 ? 1 : -1);
   };
+  // Pinch to zoom on touch screens: two fingers on the pitch scale the zoom by how far apart they
+  // move (spreading them shows less pitch, like a map). One finger still steers (input.ts).
+  const touches = new Map<number, { x: number; y: number }>();
+  let pinch: { d0: number; z0: number } | null = null;
+  const spread = () => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  const onDown = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch') return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) pinch = { d0: Math.max(20, spread()), z0: r.zoom };
+  };
+  const onMove = (e: PointerEvent) => {
+    if (!touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && touches.size === 2) {
+      r.setZoom(pinch.z0 * (pinch.d0 / Math.max(20, spread())));
+      label();
+    }
+  };
+  const onUp = (e: PointerEvent) => {
+    if (!touches.delete(e.pointerId)) return;
+    if (pinch && touches.size < 2) {
+      pinch = null;
+      flash(`Zoom ${Math.round(r.zoom * 100)}%`);
+    }
+  };
+  // On-screen zoom buttons (shown on touch screens, hud.css), so zoom needs neither wheel nor keys.
+  const zoomBox = document.createElement('span');
+  zoomBox.className = 'pitch-zoom';
+  zoomBox.innerHTML = '<button type="button" data-zoom="1" aria-label="Zoom out: more pitch">−</button><button type="button" data-zoom="-1" aria-label="Zoom in: bigger players">+</button>';
+  zoomBox.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-zoom]');
+    if (b) zoom(Number(b.dataset.zoom) as 1 | -1);
+  });
   window.addEventListener('keydown', onKey);
   canvas?.addEventListener('wheel', onWheel, { passive: false });
+  canvas?.addEventListener('pointerdown', onDown);
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
   const anchor = wrap.querySelector('#pause');
   anchor ? wrap.insertBefore(btn, anchor) : wrap.appendChild(btn);
+  btn.after(zoomBox);
   return () => {
     clearTimeout(flashTimer);
     window.removeEventListener('keydown', onKey);
     canvas?.removeEventListener('wheel', onWheel);
+    canvas?.removeEventListener('pointerdown', onDown);
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
     btn.remove();
+    zoomBox.remove();
   };
 }

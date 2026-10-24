@@ -27,10 +27,18 @@
   font: 700 11px/1 'Barlow', system-ui, sans-serif; letter-spacing: 0; text-transform: none; color: #111; background: #f4f4f4; border-radius: 3px;
   padding: 3px 5px; box-shadow: 0 2px 0 #9aa0a6;
 }
-.pitch-cam {
-  font-size: 10px; padding: 3px 6px; pointer-events: auto; opacity: .42; background: rgba(8, 12, 11, .45); transition: opacity .25s, background .25s;
+.pitch-cam { font-size: 11px; padding: 3px 7px; pointer-events: auto; background: rgba(8, 12, 11, .6); color: rgba(255, 255, 255, .92); transition: background .25s, color .25s; }
+.pitch-cam:hover, .pitch-cam:focus-visible { background: rgba(8, 12, 11, .82); color: #fff; }
+.pitch-cam.flash { background: rgba(8, 12, 11, .86); color: #ffd60a; }
+/* Zoom buttons for touch screens (renderer.ts); a mouse has the wheel and the keyboard + / -. */
+.pitch-zoom { display: none; gap: 4px; pointer-events: auto; }
+.pitch-zoom button {
+  appearance: none; border: 0; border-radius: 4px; width: 32px; height: 32px; background: rgba(8, 12, 11, .6); color: #fff;
+  font: 800 20px/1 var(--font-display, 'Arial Narrow', sans-serif); touch-action: manipulation; cursor: pointer;
 }
-.pitch-cam:hover, .pitch-cam:focus-visible, .pitch-cam.flash { opacity: 1; background: rgba(8, 12, 11, .78); }
+@media (pointer: coarse) {
+  .pitch-zoom { display: flex; }
+}
 .hud-mode { font: 600 12px/1 'Barlow', system-ui, sans-serif; background: rgba(8, 12, 11, .5); border-radius: 3px; padding: 4px 8px; }
 
 .hud .hud-word {
@@ -65,6 +73,9 @@
 .hud-replay span { font-size: clamp(26px, 4.4vw, 46px); letter-spacing: .04em; line-height: 1; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45); }
 .hud-replay small { font: 700 11px/1.2 'Barlow', system-ui, sans-serif; font-style: normal; letter-spacing: .04em; text-transform: none; background: rgba(8, 12, 11, .55); border-radius: 3px; padding: 2px 7px; margin-top: 3px; }
 .hud-replay[hidden] { display: none; }
+/* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
+.hud.replaying .hud-power { visibility: hidden; }
+.pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
 .replay-skip { position: absolute; inset: 0; z-index: 3; cursor: pointer; background: transparent; border: 0; padding: 0; pointer-events: auto; }
 .replay-skip:focus-visible { outline: 3px solid #ffd60a; outline-offset: -3px; }
 .pitch-wrap.replaying::after {
@@ -86,7 +97,7 @@
   .hud-menu { font-size: 11px; padding: 3px 6px; gap: 4px; }
   .hud-menu kbd { font-size: 9px; padding: 2px 3px; }
   .hud-mode { display: none; }
-  .pitch-cam { font-size: 9px; padding: 2px 5px; }
+  .pitch-cam { font-size: 10px; padding: 3px 6px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
   .hud-replay { top: 50px; }
