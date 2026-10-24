@@ -488,16 +488,24 @@ export function sendOff(s: MatchState, p: MatchPlayer): void {
   fixControlled(s);
 }
 
-/** A human must never steer a player who is off the pitch, or a keeper. */
+/**
+ * A human must never steer a player who is off the pitch, or a keeper except while the
+ * keeper has the ball, it is on its way to him, or he is taking a restart (human.ts
+ * keeperControllable: the human distributes it, not the CPU).
+ */
 export function fixControlled(s: MatchState): void {
   for (const team of [0, 1] as const) {
     if (!s.humans[team]) continue;
     const cur = s.players[s.controlled[team]];
-    if (cur && !cur.sentOff && cur.team === team && cur.role !== 'GK') continue;
+    const keeperOk = (p: MatchPlayer) =>
+      s.ball.owner === p.i || (s.ball.owner < 0 && s.ball.receiver === p.i) || (!!s.restart && s.restart.taker === p.i && s.restart.stage !== 'whistle');
+    if (cur && !cur.sentOff && cur.team === team && (cur.role !== 'GK' || keeperOk(cur))) continue;
     const cands = s.players.filter((m) => m.team === team && !m.sentOff && m.role !== 'GK');
     if (!cands.length) continue;
     cands.sort((a, b) => dist(a.pos, s.ball.pos) - dist(b.pos, s.ball.pos));
     s.controlled[team] = cands[0].i;
+    // An automatic change: he holds until the pointer moves (MatchState.ctlHold, human.ts).
+    if (s.ctlHold) s.ctlHold[team] = true;
   }
 }
 

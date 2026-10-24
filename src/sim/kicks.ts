@@ -72,9 +72,20 @@ export function loftPlan(from: Vec, target: Vec, hold: number): ChipPlan {
  * below ROLL_FAST_V, a gentler speed term above). A test rolls a real ball and
  * checks it ends where groundPassPlan said.
  */
-/** A ground pass reaches its point still rolling at this speed, so a runner can take it in stride. */
-export const PASS_ARRIVAL_SPEED = 3;
+/**
+ * A ground pass into space reaches its point still rolling at this speed, so a runner
+ * can take it in stride; it then stops a few metres on.
+ */
+export const PASS_ARRIVAL_SPEED = 3.5;
 const PASS_MAX_SPEED = 28;
+/**
+ * A pass to a teammate is played firmly, to arrive at a controllable pace: 7 m/s for a
+ * short one, rising 0.4 m/s per metre to 12 m/s from 12.5 m. A 10 m pass leaves the foot
+ * at about 13 m/s and gets there in 0.85 s (research: short passes 10-15 m/s, arriving in
+ * about 0.4-0.8 s; feedback/research-mouse-and-pace.md section 3 and 4). A receiver
+ * controls up to 11 + 11 x dribbling m/s (match.ts), so every receiver can take it.
+ */
+export const receiverArrival = (d: number): number => clamp(6 + 0.4 * d, 7, 12);
 /** The fast regime as dv/dt = -(FAST_A + ROLL_FAST_B v), continuous with the slow one at ROLL_FAST_V. */
 const FAST_A = ROLL_A + (ROLL_B - ROLL_FAST_B) * ROLL_FAST_V;
 
@@ -120,47 +131,84 @@ export interface GroundPassPlan {
   flight: number;
 }
 
-/** What it takes to roll a ball `d` metres. Longer than the ball can go (about 60 m) caps at the hardest kick. */
-export function groundPassPlan(d: number): GroundPassPlan {
-  let lo = PASS_ARRIVAL_SPEED;
+/**
+ * What it takes to roll a ball `d` metres and have it still going at `arrive` m/s when it
+ * gets there. Longer than the ball can go (about 60 m) caps at the hardest kick.
+ */
+export function groundPassPlan(d: number, arrive = PASS_ARRIVAL_SPEED): GroundPassPlan {
+  let lo = arrive;
   let hi = PASS_MAX_SPEED;
   for (let i = 0; i < 30; i++) {
     const mid = (lo + hi) / 2;
-    if (rollDistance(mid, PASS_ARRIVAL_SPEED) < d) lo = mid;
+    if (rollDistance(mid, arrive) < d) lo = mid;
     else hi = mid;
   }
-  const speed = clamp(hi, PASS_ARRIVAL_SPEED + 0.5, PASS_MAX_SPEED);
-  return { speed, flight: rollTime(speed, PASS_ARRIVAL_SPEED) };
+  const speed = clamp(hi, arrive + 0.5, PASS_MAX_SPEED);
+  return { speed, flight: rollTime(speed, Math.min(arrive, speed)) };
 }
 
-/** A teammate within this many metres of the pointer (or of where they are running to) is the pass's receiver. */
+/**
+ * Pass assist. A teammate is the pass's receiver when the pointer is near him, or near
+ * where he is running to: within PASS_ASSIST_R metres, growing by PASS_ASSIST_GROW per
+ * metre of pass to at most PASS_ASSIST_MAX (2.5 m at 10 m, 4 m from 25 m: the broadcast
+ * camera makes depth hard to judge at range). Or when the pointer is on the line to him,
+ * inside PASS_ASSIST_CONE degrees, and between 0.6 and 1.2 times his distance (a click a
+ * little short of him or just past him). Research: snap inside a cone of about 25-30
+ * degrees (section 3); this one is narrower so balls into space stay possible.
+ */
 export const PASS_ASSIST_R = 1.5;
+export const PASS_ASSIST_GROW = 0.1;
+export const PASS_ASSIST_MAX = 4;
+export const PASS_ASSIST_CONE = 12;
+const CONE_COS = Math.cos((PASS_ASSIST_CONE * Math.PI) / 180);
+
+export const assistRadius = (passLen: number): number => clamp(PASS_ASSIST_R + PASS_ASSIST_GROW * passLen, PASS_ASSIST_R, PASS_ASSIST_MAX);
+
+/** Where a teammate will be when a firm pass from `from` reaches him. */
+export function leadPoint(from: Vec, m: MatchPlayer): Vec {
+  let lead = m.pos;
+  if (len(m.vel) > 0.8) {
+    // Two passes of the fixed point settle it.
+    for (let k = 0; k < 2; k++) {
+      const d = dist(from, lead);
+      const t = Math.min(groundPassPlan(d, receiverArrival(d)).flight, 1.5);
+      lead = clampToPitch(add(m.pos, scale(m.vel, t)), 0.5);
+    }
+  }
+  return lead;
+}
 
 /**
- * A human pass in pointer mode: the ball goes to the point under the pointer.
- * The one assist: if a teammate is standing, or running, within PASS_ASSIST_R of
- * the pointer, the ball is led to where they will be when it arrives and they
- * become the receiver. Nothing else is snapped: aim at empty grass and the ball
- * goes to that grass (receiver -1), which is how through balls are played.
+ * A human pass in pointer mode. When the assist finds a teammate (see PASS_ASSIST_R), the
+ * ball goes to his feet, or to where he will be if he is running, firmly enough to get
+ * there quickly (receiverArrival). Otherwise it goes to the grass under the pointer and
+ * slows to PASS_ARRIVAL_SPEED there (receiver -1): through balls into space.
  */
 export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number } {
   const ball = s.ball.pos;
   let target = clampToPitch(aim, 0.5);
   let receiver = -1;
-  let best = PASS_ASSIST_R;
+  const toAim = sub(aim, ball);
+  const dAim = len(toAim);
+  const radius = assistRadius(dAim);
+  let bestErr = Infinity;
   for (const m of s.players) {
-    if (m.team !== p.team || m.i === p.i || m.sentOff) continue;
-    let lead = m.pos;
-    if (len(m.vel) > 0.8) {
-      // Where will they be when the ball gets there? Two passes of the fixed-point settle it.
-      for (let k = 0; k < 2; k++) {
-        const t = Math.min(groundPassPlan(dist(ball, lead)).flight, 1.5);
-        lead = clampToPitch(add(m.pos, scale(m.vel, t)), 0.5);
-      }
-    }
+    // Not to a teammate who is down for longer than the pass takes.
+    if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30) continue;
+    const lead = leadPoint(ball, m);
     const near = Math.min(dist(aim, m.pos), dist(aim, lead));
-    if (near < best) {
-      best = near;
+    let err = Infinity;
+    if (near < radius) err = near / radius;
+    else if (dAim > 1) {
+      const toLead = sub(lead, ball);
+      const dLead = len(toLead);
+      const cos = dLead > 1 ? (toAim.x * toLead.x + toAim.y * toLead.y) / (dAim * dLead) : -1;
+      if (cos > CONE_COS && dAim > 0.6 * dLead && dAim < 1.2 * dLead) err = 1 + (1 - cos) / (1 - CONE_COS);
+    }
+    // A keeper is only played to on purpose (pointer right on him).
+    if (m.role === 'GK' && near > PASS_ASSIST_R) err = Infinity;
+    if (err < bestErr) {
+      bestErr = err;
       receiver = m.i;
       target = lead;
     }
@@ -170,7 +218,24 @@ export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: 
     const way = norm(sub(target, ball));
     target = clampToPitch(add(ball, scale(way.x === 0 && way.y === 0 ? p.facing : way, 2)), 0.5);
   }
-  return { target, receiver, speed: groundPassPlan(dist(ball, target)).speed };
+  const d = dist(ball, target);
+  return { target, receiver, speed: groundPassPlan(d, receiver >= 0 ? receiverArrival(d) : PASS_ARRIVAL_SPEED).speed };
+}
+
+// ---------------------------------------------------------------------------
+// Goalkeeper's long kick
+
+/** A punt (from the hands) or long goal kick reaches 30 m at the lightest press, 62 m at full power. */
+export const PUNT_MIN_RANGE = 30;
+export const PUNT_RANGE_GAIN = 32;
+export const puntRange = (power: number): number => PUNT_MIN_RANGE + PUNT_RANGE_GAIN * clamp(power, 0, 1);
+
+/** Where and how a keeper's long kick flies: lands on the target if it is in range, else at the end of the range that way. */
+export function puntPlan(from: Vec, target: Vec, power: number): ChipPlan {
+  const to = sub(target, from);
+  const d = clamp(Math.min(len(to), puntRange(power)), 12, 62);
+  const flight = clamp(1.2 + 0.03 * d, 1.5, 3.1);
+  return lob(from, len(to) < 1e-6 ? { x: 1, y: 0 } : to, d, flight);
 }
 
 /**

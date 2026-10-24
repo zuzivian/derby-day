@@ -212,6 +212,8 @@ export function filterInput(id: DrillId, input: HumanInput): HumanInput {
   const out: HumanInput = {};
   if (input.cursor) out.cursor = input.cursor;
   if (input.dir) out.dir = input.dir;
+  if (input.moved) out.moved = true;
+  if (input.aim) out.aim = input.aim;
   if (input.pass && id === 'pass') out.pass = true;
   if (input.loft !== undefined && id === 'pass') out.loft = input.loft;
   if (input.shoot !== undefined && id === 'shoot') out.shoot = input.shoot;
