@@ -45,8 +45,9 @@ swapped underneath them.
 `vercel.json` sends `Strict-Transport-Security` (1 year, no preload), `X-Content-Type-Options`, `Referrer-Policy`,
 `Permissions-Policy`, `X-Frame-Options: SAMEORIGIN` and `Content-Security-Policy: frame-ancestors 'self'`. The build also
 puts a full CSP in a `<meta>` on `dist/index.html` (not in the artifact build, whose host sets its own): `script-src` is the
-SHA-256 of the single inline script, so injected script cannot run; `connect-src` is `'self'` plus the origins of
-`DERBY_ERROR_URL` / `DERBY_TELEMETRY_URL` when they are absolute URLs; styles allow `'unsafe-inline'` because `fx.ts` and
+SHA-256 of the single inline script, so injected script cannot run; `connect-src` is `'self'`, loopback WebSockets (`ws://127.0.0.1:*`, `ws://localhost:*`, for local relay development; they can only reach the
+player's own machine) and the origins of `DERBY_ERROR_URL` / `DERBY_TELEMETRY_URL` / `DERBY_RELAY_URL` when they are absolute URLs, so a
+`?relay=` link pointing at anyone else's server is blocked; styles allow `'unsafe-inline'` because `fx.ts` and
 `versus.ts` add `<style>` elements at run time. Vercel's preview toolbar injects its own script, which the CSP blocks on
 preview deployments only (a console message; production is unaffected).
 

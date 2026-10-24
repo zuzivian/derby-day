@@ -58,7 +58,9 @@ function csp(js: string): string {
     `font-src https://fonts.gstatic.com`,
     `img-src 'self' data: blob:`,
     `media-src 'self' data: blob:`,
-    `connect-src 'self' ${connectOrigins()}`.trim(),
+    // ws://127.0.0.1 and ws://localhost let a local relay be used for development and the e2e suite (?relay=ws://127.0.0.1:PORT/ws);
+    // they only ever reach the player's own machine. Any other relay must be the build-time DERBY_RELAY_URL.
+    `connect-src 'self' ws://127.0.0.1:* ws://localhost:* ${connectOrigins()}`.trim(),
     `worker-src 'self' blob:`,
     `manifest-src 'self'`,
     `object-src 'none'`,
