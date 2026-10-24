@@ -1075,19 +1075,27 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
 function timeToTravel(b: MatchState['ball'], d: number): number {
   const v = len(b.vel);
   if (v < 1e-6) return Infinity;
+  let t0 = 0;
+  let v0 = v;
+  let left = d;
   if (b.z > 0 || b.vz > 0) {
-    const x = (AIR_DRAG * d) / v;
-    return x < 0.99 ? -Math.log(1 - x) / AIR_DRAG : Infinity;
+    // In the air until it lands (later bounces ignored), then rolling at what is left of its pace.
+    const tLand = (b.vz + Math.sqrt(b.vz * b.vz + 2 * GRAVITY * b.z)) / GRAVITY;
+    const dAir = (v * (1 - Math.exp(-AIR_DRAG * tLand))) / AIR_DRAG;
+    if (d <= dAir) return -Math.log(1 - (AIR_DRAG * d) / v) / AIR_DRAG;
+    t0 = tLand;
+    v0 = v * Math.exp(-AIR_DRAG * tLand) * 0.82;
+    left = d - dAir;
   }
-  if (rollTravel(v, 10) < d) return Infinity;
+  if (rollTravel(v0, 10) < left) return Infinity;
   let lo = 0;
   let hi = 10;
   for (let i = 0; i < 24; i++) {
     const mid = (lo + hi) / 2;
-    if (rollTravel(v, mid) < d) lo = mid;
+    if (rollTravel(v0, mid) < left) lo = mid;
     else hi = mid;
   }
-  return hi;
+  return t0 + hi;
 }
 
 /**
