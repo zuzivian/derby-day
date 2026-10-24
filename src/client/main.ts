@@ -21,7 +21,8 @@ import { initReplayUi } from './replayView.ts';
 import { mountOnboarding } from './onboarding.ts';
 import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
 import { mountTutorial } from './tutorial.ts';
-import { mountLink, mountLocal2P, type VersusOptions } from './versus.ts';
+import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
+import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
 import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
@@ -130,6 +131,7 @@ function startOnboarding() {
       app.prefs.onboarded = true;
       writePrefs(app.prefs);
       app.screen = 'home';
+      if (openInvite()) return; // came from an invite link: straight to the online lobby
       render();
       if (!root.querySelector('.modal')) focusMain(true);
     },
@@ -381,6 +383,9 @@ root.addEventListener('click', (e) => {
     case 'play-link':
       if (isUnlocked(s, 'link')) startVersus(mountLink);
       return;
+    case 'play-online':
+      if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
+      return;
     case 'auto-lineup':
       s.lineup = autoLineup(s.squad, s.formation);
       toast('Best XI picked.');
@@ -507,6 +512,17 @@ document.addEventListener('keydown', (e) => {
   } else trapTab(modal, e);
 });
 
+/** An invite link (?join=CODE) opens the online lobby with the code, once any first-run setup is done. */
+let pendingJoin = relayConfig() ? inviteCode() : null;
+if (pendingJoin) history.replaceState(null, '', location.href.replace(/([?&])join=[^&#]*&?/, '$1').replace(/[?&](#|$)/, '$1'));
+function openInvite(): boolean {
+  const code = pendingJoin;
+  pendingJoin = null;
+  if (!code) return false;
+  startVersus((r, o) => mountOnline(r, { ...o, joinCode: code }));
+  return true;
+}
+
 if (app.prefs.onboarded === false) startOnboarding();
-else render();
+else if (!openInvite()) render();
 if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

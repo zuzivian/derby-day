@@ -10,7 +10,9 @@ const dist = `${root}dist`;
 
 async function build(): Promise<void> {
   const t0 = performance.now();
-  const out = await Bun.build({ entrypoints: [`${root}src/client/main.ts`], target: 'browser', minify: true, format: 'esm' });
+  // DERBY_RELAY_URL (e.g. wss://relay.derby.natwong.dev/ws) turns on Online friendlies; see docs/ONLINE.md.
+  const define = { __DERBY_RELAY_URL__: JSON.stringify(process.env.DERBY_RELAY_URL ?? '') };
+  const out = await Bun.build({ entrypoints: [`${root}src/client/main.ts`], target: 'browser', minify: true, format: 'esm', define });
   if (!out.success) {
     for (const log of out.logs) console.error(log);
     throw new Error('Bundle failed');

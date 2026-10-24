@@ -8,6 +8,10 @@
 //
 // Lockstep itself already pauses: with no inputs from the other side neither
 // peer can advance. Coming back within the window simply resumes the match.
+//
+// Only time this side spends running counts towards the window: if our own
+// tab freezes (backgrounded, a long GC or shader compile, a laptop lid), the
+// gap is ours, not the opponent's, and doesn't eat into their 20 seconds.
 
 /** How long a lost opponent has to come back (docs/ROADMAP.md, Phase 3 exit criteria). */
 export const ABANDON_MS = 20_000;
@@ -26,21 +30,31 @@ export interface PresenceInput {
 
 export type Presence = { state: 'ok' } | { state: 'lost'; remainingMs: number } | { state: 'abandoned' };
 
+/** Longest gap between two updates that counts in full. Longer gaps are our own tab stalling, not the peer. */
+export const MAX_STEP_MS = 250;
+
 export class PeerWatch {
-  private lostSince: number | null = null;
+  /** Time spent lost, counting only time this side was actually running. */
+  private lostMs = 0;
+  private lastAt: number | null = null;
+  /** When we came back from a stall of our own (a frozen or backgrounded tab): silence before it isn't the peer's. */
+  private resumedAt = -Infinity;
   private done = false;
 
   constructor(readonly abandonMs = ABANDON_MS, readonly silentMs = SILENT_MS) {}
 
   update(i: PresenceInput): Presence {
     if (this.done) return { state: 'abandoned' };
-    const lost = i.away || (i.stalled && i.now - i.lastHeardAt > this.silentMs);
-    if (!lost) {
-      this.lostSince = null;
+    const dt = this.lastAt === null ? 0 : Math.max(0, i.now - this.lastAt);
+    this.lastAt = i.now;
+    if (dt > MAX_STEP_MS) this.resumedAt = i.now;
+    const silent = i.stalled && i.now - Math.max(i.lastHeardAt, this.resumedAt) > this.silentMs;
+    if (!i.away && !silent) {
+      this.lostMs = 0;
       return { state: 'ok' };
     }
-    this.lostSince ??= i.now;
-    const remainingMs = this.abandonMs - (i.now - this.lostSince);
+    this.lostMs += Math.min(dt, MAX_STEP_MS);
+    const remainingMs = this.abandonMs - this.lostMs;
     if (remainingMs <= 0) {
       this.done = true;
       return { state: 'abandoned' };

@@ -6,15 +6,23 @@
 //                  BroadcastChannel with deterministic lockstep
 //                  (src/net/lockstep.ts). One hosts and shows a room code, the
 //                  other joins with it. Only inputs cross between the tabs.
+//   Online         the same lockstep match between two browsers anywhere,
+//                  over the WebSocket relay (server/, docs/ONLINE.md). Shown
+//                  only when a relay URL is configured (src/net/config.ts).
+//                  The host gets a code and an invite link (?join=CODE).
 
 import { cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
 import { clubTeam, lineupReady, type Save } from '../meta/game.ts';
 import type { CrestPattern } from '../meta/names.ts';
+import { REPLAY_VERSION } from '../meta/replay.ts';
 import { BroadcastTransport, broadcastSupport } from '../net/broadcast.ts';
+import { inviteLink, relayConfig, type RelayConfig } from '../net/config.ts';
 import { Lockstep, syncHash } from '../net/lockstep.ts';
-import { isLockstepMsg, matchFromStart, roomCode, cleanCode, type StartInfo, type WireMsg } from '../net/room.ts';
-import { narrow } from '../net/transport.ts';
-import { DT } from '../sim/constants.ts';
+import { PeerWatch } from '../net/presence.ts';
+import { isLockstepMsg, matchFromStart, roomCode, cleanCode, type RoomMsg, type StartInfo, type WireMsg } from '../net/room.ts';
+import { narrow, type Transport } from '../net/transport.ts';
+import { netVersion, WebSocketTransport } from '../net/websocket.ts';
+import { DT, SIM_VERSION } from '../sim/constants.ts';
 import { matchMinute, possessionShare } from '../sim/match.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
@@ -60,6 +68,9 @@ const CSS = `
 .link-note { color: var(--warn); }
 .net-stats { margin: 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
 .net-banner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; padding: 6px 12px; border-radius: 8px; background: rgba(15,21,19,.85); color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.net-banner.lost { background: #8a5a00; }
+.invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
+.invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
 @media (max-width: 640px) { .link-cols, .vs-sides { grid-template-columns: 1fr; } }
 `;
@@ -257,11 +268,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     const off = tr.onMessage((m) => {
       if (m.t === 'join' && (!guest || guest === m.id)) {
         guest = m.id;
-        if (!start) {
-          let away = o.avoidClash(home, m.team);
-          if (away.name === home.name) away = { ...away, name: `${away.name} II` };
-          start = { seed, home, away, crests: [o.save.club.crest, m.crest], halfSeconds: o.prefs.halfSeconds, delay };
-        }
+        start ??= hostStart(o, home, m, seed, delay);
         tr.send({ t: 'start', to: guest, host: id, start });
         status('Guest found. Starting…');
       } else if (m.t === 'ready' && m.id === guest && start) {
@@ -325,19 +332,11 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
       side,
       transport: tr,
       controls: o.prefs.controls,
-      onEnd: (m, finished) => {
+      onEnd: (m, end) => {
         stopMatch = null;
         closed = true;
         tr.close();
-        clearLastReplay(); // linked matches aren't recorded; don't offer the previous replay
-        if (!finished) {
-          o.onDone(null);
-          return;
-        }
-        const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
-        const hash = syncHash(m).toString(16).padStart(8, '0');
-        const note = `Final ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short} at tick ${m.tick}, state #${hash}. Input delay ${start.delay} ticks.`;
-        o.onDone(resultFor(m, side, opp, o.save.club.elo, 'Linked friendly', note));
+        o.onDone(netResult(m, end, start, side, o, 'Linked friendly'));
       },
     });
   }
@@ -350,16 +349,246 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
   };
 }
 
+/** The result dialog for a finished or abandoned two-human match (null: straight back to the club). */
+function netResult(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o: VersusOptions, label: string): ResultView | null {
+  clearLastReplay(); // linked and online matches aren't recorded; don't offer the previous replay
+  if (end === 'left') return null;
+  const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
+  if (end === 'abandoned') {
+    const note = `Your opponent disconnected and did not come back within 20 seconds. Abandoned at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
+    return { ...resultFor(m, side, opp, o.save.club.elo, 'Abandoned friendly', note), unrecorded: 'Abandoned friendly: no result, no Elo, no money, no training.' };
+  }
+  const hash = syncHash(m).toString(16).padStart(8, '0');
+  const note = `Final ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short} at tick ${m.tick}, state #${hash}. Input delay ${start.delay} ticks.`;
+  return resultFor(m, side, opp, o.save.club.elo, label, note);
+}
+
+/** The host's half of the room handshake: answer a guest's join with the start info. */
+function hostStart(o: VersusOptions, home: TeamSetup, m: Extract<RoomMsg, { t: 'join' }>, seed: number, delay: number): StartInfo {
+  let away = o.avoidClash(home, m.team);
+  if (away.name === home.name) away = { ...away, name: `${away.name} II` };
+  return { seed, home, away, crests: [o.save.club.crest, m.crest], halfSeconds: o.prefs.halfSeconds, delay };
+}
+
 // ---------------------------------------------------------------------------
-// Link two tabs: the match
+// Online: two browsers over the relay
+
+export interface OnlineOptions extends VersusOptions {
+  /** From an invite link (?join=CODE): join this code straight away. */
+  joinCode?: string;
+}
+
+/** The online lobby, or a note that no relay is configured. */
+export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
+  injectCss();
+  const cfg = relayConfig();
+  const home = ownTeam(o.save);
+  let link: WebSocketTransport<WireMsg> | null = null;
+  let offLink: (() => void)[] = [];
+  let timers: ReturnType<typeof setInterval>[] = [];
+  let stopMatch: (() => void) | null = null;
+  let closed = false;
+  const version = netVersion(SIM_VERSION, REPLAY_VERSION);
+
+  root.innerHTML = `
+  <section class="panel vs-setup" aria-labelledby="online-title" id="online-lobby">
+    <h1 id="online-title" tabindex="-1">Online friendly</h1>
+    <p>Play a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team and only inputs cross the network. No Elo, no rewards.</p>
+    ${cfg ? '' : '<p class="link-warn" role="alert" id="online-off">Online play is not switched on for this copy of the game.</p>'}
+    ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
+    <div class="link-cols">
+      <div class="link-col">
+        <h2>Invite a friend</h2>
+        <label>Input delay <select id="online-delay">${[3, 4, 5, 6, 8].map((d) => `<option value="${d}"${d === DEFAULT_DELAY ? ' selected' : ''}>${d} ticks (${Math.round((d * 1000) / 60)} ms)</option>`).join('')}</select></label>
+        <button class="btn primary" id="online-host"${cfg && home ? '' : ' disabled'}>Create a match</button>
+        <div class="link-code" id="online-code" aria-live="polite" hidden></div>
+        <div class="invite" id="online-invite" hidden>
+          <input id="online-link" readonly aria-label="Invite link">
+          <button class="btn" id="online-copy">Copy link</button>
+          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn" id="online-share">Share</button>' : ''}
+        </div>
+      </div>
+      <div class="link-col">
+        <h2>Join a friend</h2>
+        <label>Match code <input id="online-code-input" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text" value="${esc(o.joinCode ?? '')}"></label>
+        <button class="btn primary" id="online-join"${cfg && home ? '' : ' disabled'}>Join</button>
+      </div>
+    </div>
+    <p id="online-status" role="status" aria-live="polite"></p>
+    <div class="vs-actions"><button class="btn" id="online-back">Back to the club</button></div>
+    <p class="muted small">Best on a wired or strong Wi-Fi connection, with both of you in the same region. If the connection drops, the match pauses for up to 20 seconds while it reconnects.</p>
+  </section>`;
+  const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)!;
+  const lobby = $('online-lobby');
+  const status = (t: string, bad = false, state = '') => {
+    const el = $('online-status');
+    el.textContent = t;
+    el.className = bad ? 'link-warn' : '';
+    lobby.dataset.state = state;
+  };
+  const buttons = (enabled: boolean) => {
+    $<HTMLButtonElement>('online-host').disabled = !enabled || !cfg || !home;
+    $<HTMLButtonElement>('online-join').disabled = !enabled || !cfg || !home;
+  };
+  $('online-title').focus();
+
+  const cleanup = () => {
+    for (const t of timers) clearInterval(t);
+    timers = [];
+    for (const f of offLink) f();
+    offLink = [];
+  };
+  /** Back to the lobby's start, keeping the message on screen. */
+  const reset = () => {
+    cleanup();
+    link?.close();
+    link = null;
+    $('online-code').hidden = true;
+    $('online-invite').hidden = true;
+    buttons(true);
+  };
+  const leave = () => {
+    if (closed) return;
+    closed = true;
+    cleanup();
+    link?.close();
+    o.onDone(null);
+  };
+  $('online-back').addEventListener('click', leave);
+  $('online-copy').addEventListener('click', async () => {
+    const input = $<HTMLInputElement>('online-link');
+    try {
+      await navigator.clipboard.writeText(input.value);
+      status('Link copied. Send it to your friend; this page waits for them.', false, lobby.dataset.state);
+    } catch {
+      input.select();
+    }
+  });
+  root.querySelector('#online-share')?.addEventListener('click', () => {
+    navigator.share?.({ title: 'Derby Day', text: `Play me at Derby Day: code ${link?.code ?? ''}`, url: $<HTMLInputElement>('online-link').value }).catch(() => {});
+  });
+
+  /** A relay link plus the handlers every lobby state shares. */
+  function connect(c: RelayConfig, role: { host: true } | { join: string }): WebSocketTransport<WireMsg> {
+    const tr = (link = new WebSocketTransport<WireMsg>({ url: c.url, version, role }));
+    if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyNet?: unknown }).__derbyNet = tr;
+    offLink.push(
+      tr.onEvent((e) => {
+        if (stopMatch || closed) return;
+        if (e.type === 'error') {
+          status(e.msg, true, e.code);
+          reset();
+        } else if (e.type === 'peer' && e.s === 'left') {
+          status('Your friend left before kick-off.', true, 'peer-left');
+          reset();
+        }
+      }),
+    );
+    return tr;
+  }
+
+  $('online-host').addEventListener('click', () => {
+    if (link || !home || !cfg) return;
+    buttons(false);
+    const delay = Number($<HTMLSelectElement>('online-delay').value) || DEFAULT_DELAY;
+    const tr = connect(cfg, { host: true });
+    status('Connecting to the match server…', false, 'connecting');
+    const seed = clientSeed();
+    let start: StartInfo | null = null;
+    offLink.push(
+      tr.onEvent((e) => {
+        if (e.type === 'room' && !start) {
+          const url = inviteLink(e.code, cfg);
+          $('online-code').textContent = e.code;
+          $('online-code').hidden = false;
+          $<HTMLInputElement>('online-link').value = url;
+          $('online-invite').hidden = false;
+          status(`Send your friend the link or the code ${e.code}. Waiting for them to join…`, false, 'waiting');
+        } else if (e.type === 'peer' && e.s === 'joined') status('Friend connected. Setting up the match…', false, 'pairing');
+      }),
+      tr.onMessage((m) => {
+        if (m.t === 'join') {
+          start ??= hostStart(o, home, m, seed, delay);
+          tr.send({ t: 'start', to: m.id, host: 'host', start });
+        } else if (m.t === 'ready' && start) launch(tr, start, 0);
+      }),
+    );
+  });
+
+  const join = () => {
+    if (link || !home || !cfg) return;
+    const code = cleanCode($<HTMLInputElement>('online-code-input').value);
+    if (code.length < 4) {
+      status('Type the code your friend sees on their screen.', true, 'bad-code');
+      return;
+    }
+    buttons(false);
+    const id = peerId();
+    const tr = connect(cfg, { join: code });
+    status(`Joining ${code}…`, false, 'connecting');
+    let started = false;
+    const hello = () => tr.send({ t: 'join', id, team: home, crest: o.save.club.crest });
+    offLink.push(
+      tr.onEvent((e) => {
+        if (e.type !== 'room' || started) return;
+        status('Connected. Waiting for the match to start…', false, 'pairing');
+        hello();
+        timers.push(setInterval(() => !started && hello(), 700));
+      }),
+      tr.onMessage((m) => {
+        if (m.t !== 'start' || m.to !== id || started) return;
+        started = true;
+        launch(tr, m.start, 1);
+        tr.send({ t: 'ready', id });
+      }),
+    );
+  };
+  $('online-join').addEventListener('click', join);
+
+  function launch(tr: WebSocketTransport<WireMsg>, start: StartInfo, side: 0 | 1) {
+    cleanup();
+    stopMatch = mountNetMatch(root, {
+      start,
+      side,
+      transport: tr,
+      link: tr,
+      label: 'Online',
+      controls: o.prefs.controls,
+      onEnd: (m, end) => {
+        stopMatch = null;
+        closed = true;
+        tr.close();
+        o.onDone(netResult(m, end, start, side, o, 'Online friendly'));
+      },
+    });
+  }
+
+  if (o.joinCode && cfg && home) join();
+
+  return () => {
+    closed = true;
+    cleanup();
+    stopMatch?.();
+    link?.close();
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Linked and online matches
+
+/** How a two-human match ended: full-time, someone left (or desync), or the opponent never came back. */
+type NetEnd = 'full' | 'left' | 'abandoned';
 
 interface NetMatchOptions {
   start: StartInfo;
   side: 0 | 1;
-  transport: BroadcastTransport<WireMsg>;
+  transport: Transport<WireMsg>;
+  /** The relay link, for online matches: its status and peer notices feed the disconnect countdown. */
+  link?: WebSocketTransport<WireMsg>;
+  /** Scoreboard label. */
+  label?: string;
   controls: Prefs['controls'];
-  /** finished: true at full-time, false when someone left or the tabs desynced. */
-  onEnd: (s: MatchState, finished: boolean) => void;
+  onEnd: (s: MatchState, end: NetEnd) => void;
 }
 
 const FRAME_MS = DT * 1000;
@@ -371,16 +600,17 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const [home, away] = s.teams;
   const me = o.side;
   const delayMs = Math.round(o.start.delay * FRAME_MS);
+  const label = o.label ?? 'Linked';
   root.innerHTML = `
-  <section class="match" aria-label="Linked match" id="net-match" data-side="${me}">
+  <section class="match" aria-label="${label} match" id="net-match" data-side="${me}" data-mode="${o.link ? 'online' : 'tabs'}">
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. Mouse or keys as usual; Esc opens the leave menu."></canvas>
-      ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label: 'Linked', menuId: 'net-menu-btn', menuText: 'Menu' })}
+      ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label, menuId: 'net-menu-btn', menuText: 'Menu' })}
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="net-menu-title">
-          <h2 id="net-menu-title">Linked match</h2>
+          <h2 id="net-menu-title">${label} match</h2>
           <p class="hint">The match keeps running: there is no pause online.</p>
           <div class="pause-actions">
             <button class="btn primary" id="net-resume">Keep playing</button>
@@ -412,9 +642,9 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   $('net-resume').addEventListener('click', () => setMenu(false));
   $('net-leave').addEventListener('click', () => {
     ls.leave();
-    finish(false);
+    finish('left');
   });
-  $('net-stop-back').addEventListener('click', () => finish(false));
+  $('net-stop-back').addEventListener('click', () => finish('left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
   const onHide = () => ls.leave();
@@ -442,6 +672,21 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     stop(`Desync at tick ${d.tick}: the two tabs no longer agree on the match (#${d.mine.toString(16)} vs #${d.theirs.toString(16)}). Stopped.`);
   };
   ls.onPeerLeft = () => stop('Your opponent left the match.');
+  const offLink = o.link
+    ? o.link.onEvent((e) => {
+        if (e.type === 'peer' && e.s === 'left' && ls.running) stop('Your opponent left the match.');
+        else if (e.type === 'error' && ls.running) stop(e.msg);
+      })
+    : () => {};
+  // Disconnects: lockstep already pauses both sides; this decides when to say so, and when to give up.
+  const watch = new PeerWatch();
+  const abandon = () => {
+    ls.leave();
+    finish('abandoned');
+  };
+  // End-to-end tests (window.__e2e) read the state hash every 60 ticks to compare the two sides.
+  const e2eHashes = (globalThis as { __e2e?: boolean }).__e2e ? new Map<number, string>() : null;
+  if (e2eHashes) (globalThis as { __derbyNetHashes?: Map<number, string> }).__derbyNetHashes = e2eHashes;
 
   // Fixed-step pump. It runs from requestAnimationFrame, from every message
   // the peer sends (so a hidden tab, which gets no animation frames, still
@@ -467,6 +712,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
         break;
       }
       juice.tick(s);
+      if (e2eHashes && s.tick % 60 === 0) e2eHashes.set(s.tick, syncHash(s).toString(16));
       acc -= FRAME_MS;
       steps++;
     }
@@ -506,9 +752,21 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
     $('sb-min').textContent = `${matchMinute(s)}'`;
-    $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : `Linked · ${s.half === 1 ? '1st' : '2nd'} half`;
-    const waiting = stallStart !== null && now - stallStart > WAIT_BANNER_MS && ls.running;
-    $('net-wait').hidden = !waiting;
+    $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : `${label} · ${s.half === 1 ? '1st' : '2nd'} half`;
+    const link = o.link;
+    const pres = ls.running ? watch.update({ now, stalled: ls.stalled, lastHeardAt: ls.lastHeardAt, away: !!link && (link.peer === 'away' || link.status === 'reconnecting') }) : { state: 'ok' as const };
+    if (pres.state === 'abandoned') {
+      abandon();
+      return;
+    }
+    const lost = pres.state === 'lost' ? Math.ceil(pres.remainingMs / 1000) : 0;
+    const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && ls.running);
+    const waitEl = $('net-wait');
+    waitEl.hidden = !waiting;
+    const waitText = lost ? (link?.status === 'reconnecting' ? `Connection lost, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';
+    if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
+    waitEl.classList.toggle('lost', lost > 0);
+    section.dataset.lost = String(lost);
     section.dataset.tick = String(s.tick);
     section.dataset.waiting = waiting ? '1' : '0';
     if (now - statsAt > 250) {
@@ -520,7 +778,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       section.dataset.stallEvents = String(stallEvents);
       section.dataset.rttMs = ls.rttMs.toFixed(2);
       section.dataset.checks = String(ls.checksPassed);
-      $('net-stats').textContent = `Tick ${s.tick} · input delay ${o.start.delay} ticks (${delayMs} ms) · round trip ${ls.rttMs.toFixed(1)} ms · waited ${Math.round(((stalledMs + stallNow) / elapsed) * 100)}% of the time · in sync ×${ls.checksPassed}`;
+      if (link) section.dataset.link = link.status;
+      $('net-stats').textContent = `${link ? `${link.status === 'open' ? 'Online' : link.status} · ` : ''}Tick ${s.tick} · input delay ${o.start.delay} ticks (${delayMs} ms) · round trip ${ls.rttMs.toFixed(1)} ms · waited ${Math.round(((stalledMs + stallNow) / elapsed) * 100)}% of the time · in sync ×${ls.checksPassed}`;
     }
 
     while (lastEvent < s.events.length) {
@@ -545,17 +804,18 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
         announce(`Full-time. ${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`);
       }
       // Give the final state hash a moment to arrive from the other tab and be compared.
-      if (now - fullAt > 1500) finish(true);
+      if (now - fullAt > 1500) finish('full');
     }
   }
   raf = requestAnimationFrame(frame);
   canvas.focus({ preventScroll: true });
-  announce(`Linked match. ${home.name} against ${away.name}. You are ${me === 0 ? 'home' : 'away'}.`);
+  announce(`${label} match. ${home.name} against ${away.name}. You are ${me === 0 ? 'home' : 'away'}.`);
 
   function dispose() {
     cancelAnimationFrame(raf);
     clearInterval(timer);
     offMsg();
+    offLink();
     ls.dispose();
     input.dispose();
     juice.dispose();
@@ -566,11 +826,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
   }
-  function finish(finished: boolean) {
+  function finish(end: NetEnd) {
     if (ended) return;
     ended = true;
     dispose();
-    o.onEnd(s, finished);
+    o.onEnd(s, end);
   }
   return () => {
     if (ended) return;
