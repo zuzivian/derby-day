@@ -1,0 +1,164 @@
+{
+ "checks_run": "Worktree /tmp/rt/perf/repo at derby/main c59a889. Scripts are in /tmp/rt/perf/scripts and outputs/screenshots in /tmp/rt/perf/out. Headless Chromium 1243 with SwiftShader, so the 3D view runs in low quality (832x557 buffer) unless forced high.\n\nCAVEATS\n- The 4-core box was shared with other red-team agents; load average reached 18. I re-ran the headline timings once load dropped to about 2-4. Frame intervals measure SwiftShader, not a real GPU.\n- Two harness artifacts would have looked like game leaks, and I removed both: holding WebGL contexts strongly, and Playwright page.waitForSelector handles (used by helpers.startRanked) pinning the old #pitch canvas.\n\nBUILD\n- bun run build gives dist/index.html of 1,095,719 B (1070 KB); gzip -9 is 312,000 B.\n- JS is 979,765 B, of which three.js plus r3d is about 644 KB. CSS is about 115 KB.\n\nFRAME TIME, FULL MATCH, 4x CPU THROTTLE, RANDOM MOUSE (match.cjs)\n- 3D low quality (full3d-4x-b): wall time 434.7 s for a 360 s match.\n  - Frame interval avg 173 ms, p50 167, p95 233, max 617.\n  - rAF callback avg 19.3 ms, p50 15.8, p95 51.8, p99 67.9, max 597.\n  - Renderer3D.draw avg 16.4, p95 41.4; gl.render avg 12.1, p95 33.3.\n  - 506 long tasks, 33.2 s in total, max 602 ms; 73-114 draw calls per frame.\n  - The earlier contended run: callback avg 24.0, p95 61.6, max 881; 563 long tasks.\n- 3D high quality (hq3d-4x, 2x20 s halves): 149-184 draw calls; draw p50 16.0 ms, p95 45.9; gl.render p50 11.1, p95 39.9.\n- 2D (full2d-4x-b): wall 385 s.\n  - Frame interval avg 65.7 ms, p95 83.4.\n  - rAF callback avg 3.8 ms, p95 9.1, p99 13.6, max 55.8.\n  - 2 long tasks, max 117 ms.\n- 3D at 1x with GC sampling (full3d-1x-gc): callback avg 9.7 ms, p95 20.2.\n\nHEAP WITHIN A MATCH (GC before each sample, every 30 s)\n- 9.08 MB at tick 106 rising to 14.10 MB at tick 22200: linear, about 0.23 KB per tick, mostly replay input runs.\n- DOM nodes 321-346 and listeners 74 stayed flat.\n- renderer.info (glinfo.cjs): geometries 58 to 71, textures 43 to 66 (lazy name sprites), programs 23.\n\nFIVE CONSECUTIVE MATCHES, 2x20 s, FORCED GC ON HOME AFTER EACH (cycles.cjs)\n- 3D: heap 2.98, 10.29, 14.21, 17.82, 21.28, 24.46 MB. Nodes 376, 652, 914, 1200, 1458, 1721. Listeners 35, 49, 63, 77, 91, 105. 0 live WebGL contexts.\n- 2D: heap 2.98, 4.65, 4.94, 5.40, 5.55, 5.70 MB. Nodes 378-420. Listeners flat at 35.\n- leakcount.cjs (Runtime.queryObjects): Renderer3D/WebGLRenderer/Scene alive 1, 2, 3 after 3 matches. With the two three.js singletons disposed after each match: 1, 1, 1, and heap 9.15, 9.23, 9.44 MB.\n- Root cause from a heap snapshot (retain.cjs) with ephemeron edges excluded.\n- Replay viewer (rvleak.cjs): the renderer count stays 1 across 3 opens; +76 nodes and +2 listeners per open.\n\nDOM CHURN (dom.cjs, 120 frames)\n- #sb-h, #sb-a, #sb-min and #sb-phase each got a childList mutation in 120/120 frames.\n- #pitch[data-camera] was written in 120/120 frames.\n- A 3 s trace showed 22 Layout events in 22 frames and 0 forced reflows.\n\nALLOCATION AND CPU PROFILE (prof.cjs on an unminified build, sampling includes collected objects)\n- 332 KB per frame in total, including sim ticks. Client sites are listed in the findings.\n- twopass.cjs: 5.2 material.needsUpdate bumps per frame at midfield, all on transparent DoubleSide MeshBasicMaterials.\n\nSHADERS\n- progwatch.cjs: the only mid-match program compile in 70 s was a map-less sprite when the first card was shown.\n- cardhitch.cjs: the frame after the card took 858.8 ms of callback time (baseline 2-14 ms).\n\nHIDDEN TAB\n- hide.cjs (rAF held 5 s, timers running, visibilitychange fired): the match paused. Tick stayed at 184 throughout. Focus went to Resume. After Resume it ran at 58.8 ticks/s with no catch-up. AudioContext stayed 'running'.\n- Window minimise through CDP does not hide the page in this headless build, so I used the emulation above.\n- shoot.cjs: the shootout resolves the kick while the tab is hidden.\n\nRESIZE, DPR AND CONTEXT LOSS (vis.cjs, dpr.cjs)\n- Viewports 390x844, 1920x1080, 844x390 and 1280x800 mid-match: the buffer follows the CSS size and scrollWidth equals innerWidth at every size. 844x390 leaves the pitch at 413x277 px.\n- DPR 3 (low quality): the 0.8 ratio is kept by design.\n- DPR 1 to 2 (high quality and 2D): the buffer stays 1041x697 while the radar follows.\n- Context loss: white pitch while play continues; restore works.\n\nCONSOLE\n- No pageerror, console.error or console.warn in any run. The only console output was three's 'Context Lost/Restored' logs in the loss test.\n\nSCREENSHOTS VIEWED\n- vis3d-resize-390x844/1920x1080/844x390, vis3d-ctx-lost, vis3d-ctx-restored, hide-3d-paused, 2d-1280x800, 2d-390x844, dpr2-3dqualityhigh, owner-match.webp.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "3D: every match leaks its whole renderer, scene, match DOM and match closures (about 3.5 MB per short match, about 10 MB per full match)",
+   "area": "memory / perf",
+   "evidence": "MEASUREMENTS\n- cycles.cjs, 5 ranked matches (2x20 s halves, random mouse), forced GC on Home after each:\n  - heap 2.98, 10.29, 14.21, 17.82, 21.28, 24.46 MB\n  - DOM nodes 376, 652, 914, 1200, 1458, 1721\n  - JS listeners 35, 49, 63, 77, 91, 105\n- The same run with ?renderer=2d stays flat: heap 2.98 to 5.70, nodes about 393-420, listeners 35. So the leak is 3D-only.\n- leakcount.cjs (CDP Runtime.queryObjects) after matches 1, 2, 3:\n  - Renderer3D, WebGLRenderer and Scene instances alive: 1, 2, 3\n  - canvases 38, 74, 112; heap 9.22, 12.09, 15.23 MB\n\nRETAINER PATH (retain.cjs heap snapshot, weak and ephemeron edges excluded)\n1. A window listener's module scope, variable `Aa`: three.js's shared Sprite geometry (three.core.js:22432/22489).\n2. Its ._listeners.dispose[1]: the onGeometryDispose closure each WebGLRenderer adds (three.module.js:4182).\n3. That closure's WebGL2RenderingContext, then canvas#pitch.\n4. The detached .pitch-wrap, then the #hint-more click listener.\n5. The mountMatch scope, then the Renderer3D. The matchView scope also holds the ReplayBuffer snapshots and the ReplayRecorder.\n\nAfter disposing that geometry, the next retainer is three's DFG_LUT DataTexture singleton (three.module.js:16074, onTextureDispose at :11737).\n\nFIX CONFIRMED\nDisposing both singletons after each match (FIX=1) gives:\n- Renderer3D 1, 1, 1\n- heap 9.15, 9.23, 9.44 MB\n- listeners 49, 49, 49\n\nFULL MATCH: the result screen held 13.4 MB versus 3.0 MB on Home before the match, so about 10 MB per match. A long session on a phone grows by that much per match.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node leakcount.cjs 3d 3 4  (compare: FIX=1 ... ; and leakcount.cjs 2d 3 4). Five-match curve: node cycles.cjs 3d 5 20 cycles3d-clean. Retainer path: NO_EPHEMERON=1 TARGET=ja node retain.cjs '3d&debug3d' 2",
+   "suggested_fix": "In Renderer3D.dispose() (src/client/r3d/renderer3d.ts:729), before this.gl.dispose(), release this renderer's hold on three's module singletons:\n- The shared Sprite geometry: in AimLayer.dispose (src/client/r3d/aim3d.ts:490) call this.markers[0].geometry.dispose().\n- The DFG LUT: while the renderer is alive, capture this.gl.properties.get(<any rendered MeshStandardMaterial>).uniforms.dfgLUT.value, then call .dispose() on it.\nBoth are re-uploaded automatically by the next renderer.\n\nThe sturdier fix is one long-lived WebGLRenderer and canvas re-parented into each match. It also saves context creation and shader recompiles per match.\n\nAdd an e2e test: play 3 short 3D matches, run HeapProfiler.collectGarbage, then assert Performance.getMetrics Nodes and JSEventListeners do not grow. 2D gives the expected flat baseline.",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/aim3d.ts",
+    "vendor/three/three.core.js",
+    "vendor/three/three.module.js",
+    "src/client/matchView.ts",
+    "tests/e2e/view.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "First card of every match compiles a new shader mid-match: about a 1 s freeze on software GL, a hitch on real GPUs",
+   "area": "perf / 3D renderer",
+   "evidence": "- progwatch.cjs: 23 programs after prepare(). In 70 s of play the only new program was 'sprite,highp,srgb,...', at tick 674, exactly when s.cards went from 0 to 1.\n- cardhitch.cjs (yellow card injected into s.events): programs went from 23 to 24. The next frame's rAF callback took 858.8 ms against a 2.4-14 ms baseline; frame interval 1052 ms.\n- The CPU profile (prof3d.json) has a 2457 ms busy stretch: WebGLRenderer.render > setProgram > onFirstUse > getShaderInfoLog/getProgramInfoLog, next to the 'Yellow card' banner.\n- Cause: AimLayer.card() (src/client/r3d/aim3d.ts:288-301) creates a SpriteMaterial with no map. That compiles to a different program from the mapped marker and name sprites, and it does not exist yet when prepare() (renderer3d.ts:413-431) compiles everything.\n- Each match builds a new renderer, so this repeats every match.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node cardhitch.cjs 1   (or node progwatch.cjs 70 and wait for a card)",
+   "suggested_fix": "Give card sprites a map: a shared 1x1 white CanvasTexture, so they reuse the marker/name sprite program. Alternatively, create one hidden card sprite in the AimLayer constructor (aim3d.ts) so prepare()'s forced-visible gl.compile covers it.",
+   "files": [
+    "src/client/r3d/aim3d.ts",
+    "src/client/r3d/renderer3d.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "WebGL context loss: the pitch goes blank white while the match keeps running",
+   "area": "robustness / 3D renderer",
+   "evidence": "vis.cjs section E called WEBGL_lose_context.loseContext() mid-match:\n- /tmp/rt/perf/out/vis3d-ctx-lost.png shows a blank white pitch. The HUD, radar and clock (01:56) stay live, and the human keeper's 'KEEPER \u00b7 2' countdown keeps running.\n- The tick advanced from 1491 to 1600 during 1.5 s of loss. The only signal was the console log 'THREE.WebGLRenderer: Context Lost.'\n- After restoreContext() the scene came back intact (vis3d-ctx-restored.png).\n\nCode: renderer3d.ts:264-270 only sets this.lost, and draw() returns early (renderer3d.ts:434). matchView.ts never finds out, so play continues blind. If the context is never restored, which happens after repeated GPU resets, the match stays white.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node vis.cjs 3d vis3d   (see the 'ctxloss' line and the two ctx-*.png screenshots)",
+   "suggested_fix": "- Have Renderer3D expose onContextLost/onContextRestored callbacks.\n- On loss, matchView.ts (and replayView.ts) calls setPaused(true) with a 'Restoring graphics\u2026' note, and resumes when the context is restored.\n- If there is no restore within about 3 s, swap to PitchRenderer (renderer.ts, createMatchRenderer with '2d') on a fresh canvas so the match can finish.",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/matchView.ts",
+    "src/client/renderer.ts",
+    "src/client/replayView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "3D renderer costs about 16 ms of main-thread JS per frame at 4x throttle (2D: about 4 ms in total), with avoidable work",
+   "area": "perf / frame time",
+   "evidence": "Full match at 4x CPU throttle, low quality (full3d-4x-b):\n- rAF callback avg 19.3 ms, p95 51.8, p99 67.9.\n- Renderer3D.draw avg 16.4, p95 41.4; gl.render avg 12.1, p95 33.3.\n- 506 long tasks, 33.2 s in total.\n- A device about 4x slower than this core spends the whole 16.7 ms budget in the 3D renderer alone.\n\nHigh quality, the default on real GPUs (hq3d-4x): 149-184 draw calls per frame, draw p95 45.9 ms.\n\n2D: callback avg 3.8 ms, p95 9.1.\n\nAvoidable work found:\n- scene.updateMatrixWorld() runs twice per frame over about 610 objects: renderer3d.ts:549, then again in three's render() (three.module.js:17700) because matrixWorldAutoUpdate is left on.\n- 24 SkinnedMeshes each set boneTexture.needsUpdate, a texture upload every frame (three.core.js:25157).\n- Transparent DoubleSide materials are drawn twice per object with needsUpdate=true, which triggers a getProgram each time (three.module.js:18202-18210).\n- The adaptive step-down (renderer3d.ts:712) only lowers pixelRatio. That does nothing for a CPU-bound frame and never triggers in low quality, where pixelRatio is at most 0.8.",
+   "repro": "cd /tmp/rt/perf/scripts && DEBUG3D=1 NODE_PATH=/opt/node22/lib/node_modules node match.cjs 3d 4 full full3d-4x-b ; DEBUG3D=1 node match.cjs '3d&quality=high' 4 20 hq3d-4x ; node match.cjs 2d 4 full full2d-4x-b",
+   "suggested_fix": "- Set scene.matrixWorldAutoUpdate = false in Renderer3D, since it already calls updateMatrixWorld itself.\n- Set forceSinglePass: true on the overlay, wedge and net materials.\n- Merge static stadium meshes to cut draw calls.\n- Skip or slow animation (bone updates) for players far off-screen.\n- Add a CPU-time quality governor: when the average draw time exceeds about 10 ms, drop crowd animation, nets ripple, shadows and the town.",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/stadium.ts",
+    "src/client/r3d/aim3d.ts",
+    "src/client/r3d/player3d.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Cup shootout does not pause when the tab is hidden, so the kick is decided while you are away",
+   "area": "robustness / visibility",
+   "evidence": "shoot.cjs emulates a background tab: rAF held for 5 s, timers running, document.hidden set and visibilitychange dispatched.\n- Keeper turn ('steps up\u2026 Choose left, centre or right'): on return the live region said 'Too slow. You stayed in the middle.' and the phase was already 'flight'. This happened on both keeper turns.\n- Taker holding the button to charge when hidden: on return the phase was already 'flight'. The meter had hit POWER_CAP and struck by itself.\n\nCode: shootout.ts has no visibilitychange handler (grep). The keeper window (KEEPER_WINDOW_MS 3800, shootout.ts:76) and the charge (CHARGE_MS, :74; update at :516-527) run on performance.now() wall time. Live matches do pause (matchView.ts:186), and a shootout decides a cup tie.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node shoot.cjs",
+   "suggested_fix": "Add a visibilitychange listener in mountShootout (src/client/shootout.ts). On hidden, record the time. On visible, shift kickStart, chargeStart, flightStart and resultStart by the hidden duration so the phase continues where it was. Alternatively, cancel a charge and restart the keeper window. Remove the listener in the existing cleanup.",
+   "files": [
+    "src/client/shootout.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Render-loop allocations in src/client: about 30-50 KB per frame from three.js program lookups plus per-frame object literals",
+   "area": "perf / GC",
+   "evidence": "prof.cjs (unminified build, HeapProfiler sampling that includes GC'd objects, 199 frames), per-frame bytes:\n- three: getParameters 21.9 KB, getTextureCacheKey join 7.6 KB, getProgramCacheKeyParameters 3.6 KB, copyArray from setValueM3 10.9 KB.\n- Player3D.update 8.4 KB; ReplayBuffer cloneState 7.7 KB; NetPanel.update 5.9 KB.\n- drawRadar 4.3 KB; snapshotLunges 4.0 KB; Renderer3D.draw 3.4 KB.\n- OneEuro filter 5.7 KB (prof3d); drawConfetti plus its filter iterator 23 KB while confetti flies.\n\ntwopass.cjs: 5.2 material version bumps per frame at midfield, all on transparent DoubleSide MeshBasicMaterials, each forcing a getProgram (three.module.js:18202-18210). The 8 net panels (stadium.ts:587) add 16 more when a goal is in view.\n\nSites in code:\n- renderer3d.ts:\n  - :490 a new PlayerContext literal per player per frame\n  - :533 two literals for the referee\n  - :577 new Vector3 axis\n  - :584 ball.position.clone() each frame for fast balls\n  - :587 forEach closure\n  - :603-604 nearGoal closure and excite tuple\n  - :638 {...lv} spread\n  - :644-658 CameraFocus literal with nested close/long/replay objects\n  - :694 AimFrame literal\n- director.ts:55: s.players.map(() => []) builds 23 arrays per frame; :110 restartPrev object.\n- aim3d.ts:\n  - :331 aimAt literal\n  - :399-400 ([0,1]).filter plus [0,1] array\n  - :421 closure\n  - Color.set('#hex') string parses at :366, :369, :410, :411\n- kickGauge/pointerPass run 3 times per frame: matchView.ts:373, aim3d.ts:337, aim3d.ts:358.\n- matchView.ts:174: extras() literal plus armed() object per frame.\n- Per sim tick:\n  - input.ts:335-340 input object, DOMRect and toWorld {x,y}\n  - highlights.ts:72-97 out array, closure, [0,1] array and players.find closure\n  - highlights.ts:202 structuredClone of the whole MatchState every 30 ticks\n  - fx.ts:270 snapshot() and detectSfx arrays\n- Per frame: hud.ts:132 getBoundingClientRect.",
+   "repro": "cd /tmp/rt/perf/scripts && /root/.bun/bin/bun run build-dev.ts && NODE_PATH=/opt/node22/lib/node_modules node prof.cjs 3d prof3d-b 20 ; node twopass.cjs",
+   "suggested_fix": "- Set forceSinglePass: true on these materials, or use FrontSide for the ground overlays, which are only seen from above. This removes the two-pass draws and the per-draw getProgram:\n  - aim3d.ts:48 overlay()\n  - the wedge ShaderMaterial at aim3d.ts:213-219\n  - stadium.ts:587 netMat\n- Reuse one PlayerContext, one CameraFocus and one AimFrame plus scratch Vector3s in Renderer3D.\n- Keep director event arrays allocated and clear them in place.\n- Compute kickGauge and pointerPass once per frame in matchView and pass the result to the HUD and AimLayer.\n- Pre-build Color objects instead of parsing hex strings each frame.\n- Keep Player3D animation state in a Float64Array instead of closure lets.",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/director.ts",
+    "src/client/r3d/aim3d.ts",
+    "src/client/r3d/stadium.ts",
+    "src/client/r3d/player3d.ts",
+    "src/client/matchView.ts",
+    "src/client/power.ts",
+    "src/client/input.ts",
+    "src/client/highlights.ts",
+    "src/client/fx.ts",
+    "src/client/hud.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "HUD rewrites four text nodes and a canvas attribute every frame, causing a style and layout pass every frame",
+   "area": "perf / DOM",
+   "evidence": "- dom.cjs, MutationObserver on .match over 120 frames:\n  - childList mutations on #sb-h, #sb-a, #sb-min and #sb-phase in 120/120 frames each, so 480 new Text nodes\n  - attribute #pitch[data-camera] written in 120/120 frames\n- A 3 s devtools trace showed 22 Layout and 22 UpdateLayoutTree events in 22 frames.\n- Without GC, the Nodes metric climbs between collections (for example 671 to 2249 in 86 s in full3d-4x).\n- Code: matchView.ts:381-384 assigns textContent unconditionally, and renderer3d.ts:642 sets canvas.dataset.camera every draw. hud.ts:194 already caches #sb-clock.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node dom.cjs 3d",
+   "suggested_fix": "Cache the last score, minute and phase strings in matchView.ts and write textContent only when they change, the same pattern as hud.ts's lastClock. In renderer3d.ts, write dataset.camera only when the value differs from the previous frame.",
+   "files": [
+    "src/client/matchView.ts",
+    "src/client/r3d/renderer3d.ts",
+    "src/client/hud.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Landscape phone (844x390): the pitch gets 413x277 px and the REPLAY tag overlaps the score bar",
+   "area": "resize / layout",
+   "evidence": "- vis.cjs resizing mid-match to 844x390 gave a canvas of 413x277 CSS px, about 35% of the viewport, with wide empty gutters.\n- /tmp/rt/perf/out/vis3d-resize-844x390.png shows the italic REPLAY word over the score bar ('CVY REPLAY ORK') during an instant replay.\n- Cause: hud.css:2 `.match .pitch-wrap { width: min(100%, calc((100vh - 120px) * 1.531)); }` reserves 120 px of height for the hint line even on a 390 px tall landscape screen.\n- Portrait 390x844 is fine (358x448).",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node vis.cjs 3d vis3d ; open /tmp/rt/perf/out/vis3d-resize-844x390.png",
+   "suggested_fix": "Add an @media (orientation: landscape) and (max-height: 500px) block to src/client/hud.css:\n- size .pitch-wrap from 100dvh with no 120 px reservation and use the full width\n- hide .controls-hint and .hint-more\n- move or scale .hud-replay so it sits below the score bar instead of over it",
+   "files": [
+    "src/client/hud.css",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Pitch drawing buffer ignores devicePixelRatio changes mid-match (blurry after moving to a HiDPI screen or changing zoom)",
+   "area": "resize / DPR",
+   "evidence": "dpr.cjs, with ?quality=high and DPR changed from 1 to 2 at the same CSS size:\n- #pitch stayed 1041x697 when 2082x1394 was expected, and stayed so after a later resize event.\n- The HUD radar did follow (156 to 312 px).\n- The 2D renderer behaves the same (1041x697).\n\nCode: renderer3d.ts:213 computes pixelRatio once in the constructor, and resize() (:329-339) reuses gl.getPixelRatio(). render.ts:50-55 reads devicePixelRatio only when the ResizeObserver fires.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node dpr.cjs '3d&quality=high' ; node dpr.cjs 2d",
+   "suggested_fix": "In Renderer3D and PitchRenderer, listen to matchMedia(`(resolution: ${devicePixelRatio}dppx)`) change events and re-arm the listener on each change. On change, recompute the ratio (min(2, dpr), or min(1, dpr)*0.8 in low quality), call gl.setPixelRatio, then resize(). For 2D, call resize().",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/render.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Match audio keeps running while paused or with the tab hidden",
+   "area": "robustness / audio",
+   "evidence": "- hide.cjs: AudioContext.state was 'running' before the hide, while hidden and paused, and after.\n- matchView.ts setPaused (lines 156-168) never touches sound.\n- The crowd watchdog (audio.ts:286-291) only calls applyCrowd(0), which sets gain to 0.02 + 0.11*0 = 0.02 (audio.ts:306) rather than 0. The LFO keeps modulating and the setInterval keeps firing.\n- Result: a faint crowd bed plays behind the pause menu and in background tabs, and the audio thread keeps running.",
+   "repro": "cd /tmp/rt/perf/scripts && NODE_PATH=/opt/node22/lib/node_modules node hide.cjs 3d   (see 'ac' in each state)",
+   "suggested_fix": "Expose suspend() and resume() on the sound engine in src/client/audio.ts (ctx.suspend()/ctx.resume()). Call them from matchView.ts setPaused, which onVis already reaches, and from mountJuice dispose. In the watchdog, ramp the gain to 0.",
+   "files": [
+    "src/client/audio.ts",
+    "src/client/matchView.ts",
+    "src/client/fx.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "replayStore keeps every decoded replay of the session in memory, even after storage drops it",
+   "area": "memory",
+   "evidence": "- Code: replayStore.ts:12 `const decoded = new Map<string, Replay>()` is filled in storeReplay (:40) and open (:76) and never deleted from. addRecent caps the stored list at 5 to 10 entries (KEEP_REPLAYS, replaySlots).\n- Heap snapshots (cycles2d-replays, snap.cjs): live Replay objects equal the number of matches played (1 to 9). Each holds one input run per tick the pointer moved: 2062 runs, about 0.2 MB, for a 2x20 s match, so about 2 MB for a full 2x3 min match with constant mouse movement.\n- The 2D five-match curve, which has no renderer leak, still rises by about 0.25 MB per short match (4.65, 4.94, 5.40, 5.55, 5.70 MB).",
+   "repro": "cd /tmp/rt/perf/scripts && SNAPSHOT=1 NODE_PATH=/opt/node22/lib/node_modules node cycles.cjs 2d 9 2 cycles2d-replays",
+   "suggested_fix": "In src/client/replayStore.ts, after addRecent in storeReplay and in recentReplays, delete entries from `decoded` whose id is no longer in the stored list (or in memory). Alternatively, make `decoded` an LRU capped at `keep`.",
+   "files": [
+    "src/client/replayStore.ts"
+   ]
+  }
+ ],
+ "good": [
+  "Live match: on visibilitychange it pauses immediately. The tick stays frozen through a 5 s hide, focus goes to Resume, and play resumes at real time (58.8 ticks/s) with no catch-up burst, thanks to the 0.2 s elapsed cap and 12 steps per frame.",
+  "The 2D renderer has no leak across 5 matches (listeners flat at 35, nodes 393-420). Its main-thread cost is low: 3.8 ms per frame average at 4x throttle.",
+  "Within one match, DOM nodes and listeners stay flat and GPU resources are bounded (geometries 58 to 71, textures 43 to 66, programs 23).",
+  "No page errors, console errors or console warnings in any run: full matches at 4x and 1x, 3D and 2D, five-match cycles, resizes, DPR changes.",
+  "Disposed renderers force-lose their contexts: 0 live WebGL contexts after 5 matches, so GPU memory is released even though the JS side leaks.",
+  "WebGL context restore works: the page calls preventDefault and three re-uploads everything, and the scene returns intact.",
+  "Mid-match resizes (390x844, 1920x1080, 844x390, 1280x800) keep the drawing buffer matched to the CSS size, with no horizontal scroll at any width.",
+  "Single-file build is 1.07 MB, 312 KB gzipped, with three.js tree-shaken to about 644 KB including the r3d code."
+ ]
+}
