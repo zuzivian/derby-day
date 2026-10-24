@@ -396,6 +396,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
       scorersAgainst,
       label,
       note: outcome.note,
+      pens,
     };
     ctx.persist();
     ctx.app.screen = 'competitions';

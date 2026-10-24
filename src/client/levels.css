@@ -1,68 +1,151 @@
-/* Club level: header badge and XP bar, the Club level panel, the level-up
-   dialog and the identity pickers. Colours come from the tokens in styles.css
-   (--xp-fill, --tier-*), defined for both themes. */
+/* Club level: header badge and XP bar, the Club level panel, the XP card on
+   the result dialog, the level-up dialog and the identity pickers. Colours
+   come from the tokens in styles.css (--xp-fill, --tier-*), in both themes. */
 
-.level-chip { display: flex; align-items: center; gap: 8px; margin-top: 4px; min-width: 0; }
+.level-chip { display: flex; align-items: center; gap: var(--sp-2, 8px); margin-top: 4px; min-width: 0; }
 .level-badge {
-  appearance: none; flex: none; display: inline-grid; place-items: center; cursor: pointer;
+  appearance: none; flex: none; display: inline-grid; place-items: center; cursor: pointer; position: relative;
   width: 30px; height: 30px; border-radius: 50%; padding: 0;
-  border: 3px solid var(--tier, var(--tier-bronze)); background: var(--surface); color: var(--ink);
+  border: 3px solid var(--tier, var(--tier-bronze));
+  background: radial-gradient(circle at 50% 30%, var(--surface), var(--surface-2));
+  color: var(--ink); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tier, var(--tier-bronze)) 30%, transparent), 0 2px 6px rgba(0, 0, 0, .15);
   font-family: var(--font-display); font-weight: 900; font-size: 15px; line-height: 1; font-variant-numeric: tabular-nums;
 }
 .level-badge:hover { background: var(--surface-2); }
-.level-badge.big { width: 56px; height: 56px; font-size: 26px; border-width: 4px; cursor: default; }
+.level-badge.big { width: 64px; height: 64px; font-size: 30px; border-width: 4px; cursor: default; }
 .tier-bronze { --tier: var(--tier-bronze); }
 .tier-silver { --tier: var(--tier-silver); }
 .tier-gold { --tier: var(--tier-gold); }
 .tier-platinum { --tier: var(--tier-platinum); }
 .tier-legend { --tier: var(--tier-legend); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tier-gold); }
 .xp { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
-.xp-text { font-size: 12px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.xp-bar { display: block; width: 100%; min-width: 120px; max-width: 220px; height: 8px; border-radius: 99px; background: var(--surface-2); border: 1px solid var(--control-line); overflow: hidden; }
-.xp-bar span { display: block; height: 100%; background: var(--xp-fill); border-radius: 99px; }
+.xp-text { font-size: var(--fs-xs, 12px); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xp-bar { display: block; width: 100%; min-width: 120px; max-width: 220px; height: 7px; border-radius: 99px; background: var(--surface-3, var(--surface-2)); overflow: hidden; }
+.xp-bar span { display: block; height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 70%, var(--ink)), var(--xp-fill)); border-radius: 99px; }
 
 /* Club level panel (Club screen) */
 .club-grid .level-panel { grid-column: 1 / -1; }
-.level-next { margin: 0; font-size: 17px; font-weight: 600; }
+.level-next { margin: 0; font-size: var(--fs-lg, 17px); font-weight: 700; }
 .level-next-label {
-  display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 99px; vertical-align: 2px;
-  font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; background: var(--ink); color: var(--surface);
+  display: inline-block; margin-right: 6px; padding: 1px 9px; border-radius: 99px; vertical-align: 2px;
+  font-size: var(--fs-2xs, 11px); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; background: var(--ink); color: var(--surface);
 }
 .unlock-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.unlock { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.unlock { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: var(--sp-2, 8px) 10px; border-radius: var(--r-md, 10px); background: var(--surface-2); border: 1px solid var(--line); }
 .unlock-level {
   display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
   border: 2px dashed var(--control-line); color: var(--muted); font-family: var(--font-display); font-weight: 800; font-variant-numeric: tabular-nums;
 }
-.unlock-done .unlock-level { border-style: solid; border-color: var(--xp-fill); color: var(--ink); }
+.unlock-done .unlock-level { border-style: solid; border-color: var(--xp-fill); color: var(--ink); background: color-mix(in srgb, var(--xp-fill) 14%, var(--surface)); }
+.unlock-next { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft, var(--surface-2)); }
 .unlock-next .unlock-level { border-style: solid; border-color: var(--accent); color: var(--ink); }
+.unlock-later { background: transparent; border-style: dashed; }
 .unlock-body { display: flex; flex-direction: column; min-width: 0; }
-.unlock-status { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.unlock-name { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; }
+.unlock-status { font-size: var(--fs-xs, 12px); font-weight: 800; color: var(--muted); white-space: nowrap; }
 .unlock-done .unlock-status { color: var(--good); }
 .unlock-next .unlock-status { color: var(--accent); }
 .perk-pill { background: var(--muted); color: var(--surface); }
-.unlock-all summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
-.unlock-all[open] summary { margin-bottom: 8px; }
+.unlock-all summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
+.unlock-all summary:hover { color: var(--accent); }
+.unlock-all[open] summary { margin-bottom: var(--sp-2, 8px); }
 
-/* Result dialog XP lines */
-.xp-gain b, .xp-level b { color: var(--good); }
+/* XP card on the result dialog. The bar fills from where the club was to where
+   it is; crossing a level it runs to the end, the badge turns over and the
+   "Level up" tag pops. Reduced motion shows the end state at once. */
+.xp-card {
+  position: relative; overflow: hidden; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 14px;
+  padding: var(--sp-3, 12px) 14px; border-radius: var(--r-md, 10px);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--xp-fill) 13%, var(--surface-2)), var(--surface-2) 70%);
+  border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line));
+}
+.xp-card .level-badge { width: 50px; height: 50px; font-size: 24px; cursor: default; overflow: hidden; }
+.xp-card .level-badge > span { grid-area: 1 / 1; }
+.xp-card-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.xp-gain { margin: 0; font-size: var(--fs-sm, 13px); line-height: 1.35; font-weight: 600; color: var(--muted); }
+.xp-gain .xp-colon { font-size: 0; }
+.xp-gain .xp-parts { display: block; margin-top: 2px; font-size: var(--fs-xs, 12px); }
+.xp-gain b { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; letter-spacing: .02em; color: var(--good); }
+.xp-card.is-empty { background: var(--surface-2); border-color: var(--line); }
+.xp-card.is-empty .level-badge { opacity: .7; }
+.xp-card.is-empty .xp-gain { font-size: var(--fs-md, 15px); color: var(--ink); font-weight: 700; }
+.xp-card-track { display: block; height: 10px; border-radius: 99px; background: var(--surface-3, var(--surface)); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .12); overflow: hidden; }
+.xp-card-fill {
+  display: block; height: 100%; width: var(--xp-to); border-radius: 99px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 75%, var(--ink)), var(--xp-fill) 70%, color-mix(in srgb, var(--xp-fill) 55%, #fff));
+  animation: xp-fill 1s .45s var(--ease-out, ease-out) both;
+}
+.xp-card-level { margin: 0; font-size: var(--fs-xs, 12px); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+@keyframes xp-fill { from { width: var(--xp-from); } }
+.is-levelup .xp-card-fill { animation: xp-fill-up 1.7s .45s var(--ease-out, ease-out) both; }
+@keyframes xp-fill-up {
+  0% { width: var(--xp-from); }
+  48% { width: 100%; }
+  52% { width: 100%; opacity: 1; }
+  53% { width: 0%; opacity: 0; }
+  56% { opacity: 1; }
+  100% { width: var(--xp-to); }
+}
+.xp-lv-old { animation: lv-out .3s 1.2s ease-in both; }
+.xp-lv-new { animation: lv-in .5s 1.3s var(--ease-spring, ease-out) both; }
+@keyframes lv-out { to { transform: translateY(-140%); opacity: 0; } }
+@keyframes lv-in { from { transform: translateY(140%); opacity: 0; } }
+.xp-card.is-levelup .level-badge { animation: lv-ring .9s 1.3s ease-out both; }
+@keyframes lv-ring { 0% { box-shadow: 0 0 0 0 rgba(255, 214, 10, .7); } 100% { box-shadow: 0 0 0 14px rgba(255, 214, 10, 0); } }
+.xp-level { grid-column: 1 / -1; margin: 2px 0 0; display: flex; align-items: center; gap: var(--sp-2, 8px); animation: lv-pop .55s 1.35s var(--ease-spring, ease-out) both; }
+.xp-level-tag {
+  font-family: var(--font-display); font-weight: 900; font-size: 16px; line-height: 1; letter-spacing: .1em; text-transform: uppercase;
+  padding: 6px 12px; border-radius: 99px; background: linear-gradient(135deg, #ffe680, #f5b800); color: #2a1d00; box-shadow: 0 4px 14px -4px rgba(245, 184, 0, .7);
+}
+.xp-level-nums { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
+@keyframes lv-pop { from { transform: scale(.6); opacity: 0; } }
+.xp-card.is-levelup::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .3) 50%, transparent 65%);
+  transform: translateX(-110%); animation: xp-shine 1s 1.35s ease-out both;
+}
+@keyframes xp-shine { to { transform: translateX(110%); } }
 
-/* Level-up dialog */
-.levelup-head { display: flex; align-items: center; gap: 14px; }
-.levelup-title { font-size: 44px; text-transform: uppercase; }
-.levelup-lede { margin: 0; font-weight: 700; }
+/* Level-up dialog: a gold burst over the badge, then what just opened. */
+.levelup-card { width: min(480px, 100%); padding: 0; gap: 0; overflow: hidden; text-align: center; }
+.levelup-hero {
+  position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 26px var(--sp-6, 24px) 22px; color: #fff8e1;
+  background: radial-gradient(90% 110% at 50% 0%, #6b5410 0%, #2c2408 55%, #15120a 100%);
+}
+.levelup-rays {
+  position: absolute; left: 50%; top: 56%; width: 640px; height: 640px; margin: -320px 0 0 -320px; z-index: -1; pointer-events: none; border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 214, 10, .16) 0deg 9deg, transparent 9deg 22deg);
+  -webkit-mask-image: radial-gradient(circle, #000 18%, transparent 62%); mask-image: radial-gradient(circle, #000 18%, transparent 62%);
+  animation: lv-spin 40s linear infinite;
+}
+@keyframes lv-spin { to { transform: rotate(360deg); } }
+.levelup-eyebrow { font-size: var(--fs-xs, 12px); font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #ffd60a; }
+.levelup-hero .level-badge { color: var(--ink); box-shadow: 0 0 0 6px rgba(255, 214, 10, .18), 0 10px 30px -6px rgba(0, 0, 0, .6); animation: lv-pop .6s .1s var(--ease-spring, ease-out) both; }
+.levelup-title { font-size: var(--fs-4xl, 44px); font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+.levelup-body { display: flex; flex-direction: column; gap: 14px; padding: 20px var(--sp-6, 24px) var(--sp-6, 24px); text-align: left; }
+.levelup-lede { margin: 0; font-weight: 700; font-size: var(--fs-lg, 17px); text-align: center; }
+.levelup-list .unlock { grid-template-columns: 34px minmax(0, 1fr) auto; }
+.new-pill { background: var(--xp-fill); color: var(--on-status); }
+.levelup-next { margin: 0; font-size: var(--fs-sm, 13px); color: var(--muted); }
+.levelup-actions { display: flex; flex-direction: column; gap: var(--sp-2, 8px); }
+.levelup-actions .btn { width: 100%; }
 
 /* Crest and kit pickers (Club news) */
-.identity-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding-top: 8px; border-top: 1px dashed var(--line); }
-.identity-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; }
+.identity-row { display: flex; flex-wrap: wrap; gap: var(--sp-2, 8px) var(--sp-4, 16px); align-items: center; padding-top: var(--sp-3, 12px); border-top: 1px solid var(--line); }
+.identity-field { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); color: var(--muted); font-size: 14px; font-weight: 600; }
 
 /* Onboarding: the level note on the last step */
-.ob-level { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3, 12px) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md, 10px); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
 .ob-level p { margin: 0; }
 
 @media (max-width: 640px) {
   .xp-bar { min-width: 96px; }
   .unlock { grid-template-columns: 30px minmax(0, 1fr); }
   .unlock-status { grid-column: 2; }
+  .levelup-list .unlock { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .levelup-title { font-size: 36px; }
+  .levelup-body { padding: var(--sp-4, 16px) 20px 20px; }
+  .xp-card { padding: 10px var(--sp-3, 12px); gap: 6px var(--sp-3, 12px); }
+  .xp-card .level-badge { width: 44px; height: 44px; font-size: 20px; }
 }
