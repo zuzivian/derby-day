@@ -5,8 +5,8 @@ import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
-import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG_AT, POINTER_SPRINT_AT, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
-import { groundPassPlan, loftPlan, loftRange, pointerPass, PASS_ASSIST_R } from '../src/sim/kicks.ts';
+import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
+import { assistRadius, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, norm, sub, type Vec } from '../src/sim/vec.ts';
@@ -55,12 +55,16 @@ function oppHasBall(s: MatchState): MatchPlayer {
 }
 
 describe('pointer distance sets speed', () => {
-  test('the curve: dead zone, a walk, a jog at 6 m, a full sprint from 12 m', () => {
+  test('the curve: a 0.6 m dead zone, a walk, a jog at 4 m, a run at 8 m, a full sprint from 11 m', () => {
+    expect(POINTER_DEAD).toBe(0.6);
     expect(pointerEffort(0)).toBe(0);
     expect(pointerEffort(POINTER_DEAD)).toBe(0);
     expect(pointerEffort(POINTER_DEAD + 0.01)).toBeCloseTo(POINTER_WALK, 1);
-    expect(pointerEffort(POINTER_JOG_AT)).toBeCloseTo(0.9, 5);
+    expect(pointerEffort(POINTER_JOG_AT)).toBeCloseTo(POINTER_JOG, 5);
+    expect(pointerEffort(POINTER_RUN_AT)).toBeCloseTo(1, 5);
     expect(pointerEffort(POINTER_SPRINT_AT)).toBeCloseTo(SPRINT_MULT, 5);
+    // Sprint to jog is about 2:1 (research: about 2.5:1).
+    expect(SPRINT_MULT / POINTER_JOG).toBeGreaterThan(2);
     expect(pointerEffort(40)).toBe(SPRINT_MULT);
     let prev = 0;
     for (let d = 0; d <= 20; d += 0.1) {
@@ -71,8 +75,8 @@ describe('pointer distance sets speed', () => {
   });
 
   test('sprint starts above normal top speed, and the speed asked for is continuous across it', () => {
-    let lastSpeed = pointerEffort(0.5);
-    for (let d = 0.5; d <= 14; d += 0.05) {
+    let lastSpeed = pointerEffort(0.65);
+    for (let d = 0.65; d <= 14; d += 0.05) {
       const { throttle, sprint } = pointerThrottle(d);
       const asked = throttle * (sprint ? SPRINT_MULT : 1);
       expect(asked).toBeCloseTo(pointerEffort(d), 9);
@@ -81,6 +85,7 @@ describe('pointer distance sets speed', () => {
       expect(sprint).toBe(pointerEffort(d) > 1);
     }
     expect(pointerThrottle(3).sprint).toBe(false);
+    expect(pointerThrottle(7.9).sprint).toBe(false);
     expect(pointerThrottle(9).sprint).toBe(true);
   });
 
@@ -153,7 +158,7 @@ describe('ground pass goes where the pointer is', () => {
     }
   });
 
-  test('a left click rolls the ball to the point under the pointer, from 5 to 35 m, in any direction', () => {
+  test('a left click into space rolls the ball to the point under the pointer, from 5 to 35 m, in any direction', () => {
     for (const [dx, dy] of [[5, 0], [12, 0], [20, 6], [-14, 3], [8, -12], [30, -4], [-18, -18]]) {
       const { s, me } = carrier({ x: 30, y: 20 });
       const target = { x: 30 + dx, y: 20 + dy };
@@ -167,20 +172,22 @@ describe('ground pass goes where the pointer is', () => {
       }
       // Passes through the point (within a metre and a half), and has stopped not far beyond it.
       expect(closest).toBeLessThan(1.5);
-      expect(dist(s.ball.pos, target)).toBeLessThan(4);
+      expect(dist(s.ball.pos, target)).toBeLessThan(5);
     }
   });
 
-  test('a pass does not snap to a teammate unless one is within the assist radius of the pointer', () => {
+  test('a pass does not snap to a teammate unless the pointer is within the assist radius of him or on the line to him', () => {
     const { s, me } = carrier({ x: 30, y: 20 });
     const mate = s.players.find((p) => p.team === 0 && p.role === 'MID')!;
     mate.pos = { x: 40, y: 20 };
     mate.vel = { x: 0, y: 0 };
-    const off = { x: 40, y: 20 + PASS_ASSIST_R + 0.6 };
+    mate.stun = 0;
+    // Well off to the side (outside the radius, outside the cone): into space.
+    const off = { x: 40, y: 20 + assistRadius(10) + 1.5 };
     const r = pointerPass(s, me, off);
     expect(r.receiver).toBe(-1);
     expect(r.target).toEqual(off);
-    const near = pointerPass(s, me, { x: 40, y: 20 + PASS_ASSIST_R - 0.5 });
+    const near = pointerPass(s, me, { x: 40, y: 20 + assistRadius(10) - 0.3 });
     expect(near.receiver).toBe(mate.i);
     expect(near.target).toEqual(mate.pos);
   });
@@ -190,6 +197,7 @@ describe('ground pass goes where the pointer is', () => {
     const mate = s.players.find((p) => p.team === 0 && p.role === 'MID')!;
     mate.pos = { x: 30, y: 14 };
     mate.vel = { x: 6, y: 0 };
+    mate.stun = 0;
     const r = pointerPass(s, me, { x: 30.5, y: 14.5 });
     expect(r.receiver).toBe(mate.i);
     expect(r.target.x).toBeGreaterThan(mate.pos.x + 2);

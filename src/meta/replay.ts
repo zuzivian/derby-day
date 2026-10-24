@@ -74,6 +74,8 @@ export function quantiseInput(i: HumanInput): HumanInput {
   if (i.select) o.select = true;
   if (i.sprint) o.sprint = true;
   if (i.switchPlayer) o.switchPlayer = true;
+  if (i.aim) o.aim = { x: q100(i.aim.x), y: q100(i.aim.y) };
+  if (i.moved) o.moved = true;
   return o;
 }
 
@@ -90,8 +92,12 @@ export function inputsEqual(a: HumanInput, b: HumanInput): boolean {
     a.select === b.select &&
     a.sprint === b.sprint &&
     a.switchPlayer === b.switchPlayer &&
+    a.aim?.x === b.aim?.x &&
+    a.aim?.y === b.aim?.y &&
+    a.moved === b.moved &&
     !a.cursor === !b.cursor &&
-    !a.dir === !b.dir
+    !a.dir === !b.dir &&
+    !a.aim === !b.aim
   );
 }
 
@@ -491,7 +497,9 @@ const F_CURSOR = 1;
 const F_DIR = 2;
 const F_PASS = 4;
 const F_SPRINT = 8;
-const F_SWITCH = 16;
+/** Format 4: the pointer really moved this tick. (Formats 2 and 3: switch player, now E_SWITCH.) */
+const F_MOVED = 16;
+const F_SWITCH_V3 = 16;
 /** An extra byte follows with the rarer fields. */
 const F_EXT = 32;
 /** The run is longer than one tick; its length follows. */
@@ -502,6 +510,10 @@ const E_TACKLE = 2;
 const E_SHOOT = 4;
 /** The loft hold byte follows (after the shot byte, if any). */
 const E_LOFT = 8;
+/** Format 4: switch player (key scheme). */
+const E_SWITCH = 16;
+/** Format 4: an aim point follows the cursor and axes, delta-coded against the cursor. */
+const E_AIM = 32;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
   // Cursor and axes are delta-coded against the previous run's, in whole cm.
@@ -515,12 +527,14 @@ function writeRuns(w: Writer, runs: InputRun[]) {
     if (i.tackle) e |= E_TACKLE;
     if (i.shoot !== undefined) e |= E_SHOOT;
     if (i.loft !== undefined) e |= E_LOFT;
+    if (i.switchPlayer) e |= E_SWITCH;
+    if (i.aim) e |= E_AIM;
     let f = 0;
     if (i.cursor) f |= F_CURSOR;
     if (i.dir) f |= F_DIR;
     if (i.pass) f |= F_PASS;
     if (i.sprint) f |= F_SPRINT;
-    if (i.switchPlayer) f |= F_SWITCH;
+    if (i.moved) f |= F_MOVED;
     if (e) f |= F_EXT;
     if (n > 1) f |= F_MULTI;
     w.byte(f);
@@ -543,11 +557,15 @@ function writeRuns(w: Writer, runs: InputRun[]) {
       dx = x;
       dy = y;
     }
+    if (i.aim) {
+      w.ivar(Math.round(i.aim.x * 100) - cx);
+      w.ivar(Math.round(i.aim.y * 100) - cy);
+    }
     if (n > 1) w.uvar(n);
   }
 }
 
-function readRuns(r: Reader, ticks: number): InputRun[] {
+function readRuns(r: Reader, ticks: number, version: number): InputRun[] {
   const runs: InputRun[] = [];
   let cx = 0;
   let cy = 0;
@@ -571,11 +589,17 @@ function readRuns(r: Reader, ticks: number): InputRun[] {
       dy += r.ivar();
       input.dir = { x: dx / 100, y: dy / 100 };
     }
+    if (version >= 4 && e & E_AIM) {
+      const ax = cx + r.ivar();
+      const ay = cy + r.ivar();
+      input.aim = { x: ax / 100, y: ay / 100 };
+    }
     if (f & F_PASS) input.pass = true;
     if (f & F_SPRINT) input.sprint = true;
     if (e & E_SELECT) input.select = true;
     if (e & E_TACKLE) input.tackle = true;
-    if (f & F_SWITCH) input.switchPlayer = true;
+    if (version >= 4 ? e & E_SWITCH : f & F_SWITCH_V3) input.switchPlayer = true;
+    if (version >= 4 && f & F_MOVED) input.moved = true;
     const n = f & F_MULTI ? r.uvar() : 1;
     if (n < 1 || total + n > ticks) throw new Error('Replay code is damaged or cut short.');
     runs.push({ n, input });
@@ -613,8 +637,11 @@ function checksum(b: Uint8Array): number {
  * codes were recorded against the old controls and would not play back the same.
  * 3: eleven-a-side: each team carries its formation, and the body records the SIM_VERSION.
  * Version 2 codes (six-a-side) still open, but play back a different match and are flagged.
+ * 4: inputs carry `aim` (a click aims where the button went down) and `moved` (the pointer
+ * really moved); switch player moved to the extra byte to make room. Version 3 codes still
+ * open (recorded on an earlier sim, so flagged as from another version).
  */
-export const REPLAY_VERSION = 3;
+export const REPLAY_VERSION = 4;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
@@ -697,7 +724,7 @@ function decodeBody(code: string): Replay {
   const fp = r.u32();
   const ticks = r.uvar();
   if (ticks > MAX_TICKS) throw new Error('Replay code is damaged or cut short.');
-  const runs = readRuns(r, ticks);
+  const runs = readRuns(r, ticks, version);
   if (!r.done) throw new Error('Replay code is damaged or cut short.');
   return { seed, halfSeconds, humanTeam, home, away, ticks, runs, goals, score, fp, label, at, sim };
 }

@@ -60,6 +60,11 @@
 .hud-power i { display: block; height: 100%; width: 0; background: linear-gradient(#7cf06b, #2fb33b); }
 .hud-power.hot i { background: linear-gradient(#ff8a6b, #e0402a); }
 .hud-power b { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px #000; }
+.hud-hold {
+  position: absolute; right: 10px; bottom: 34px; background: rgba(8, 12, 11, .72); border-radius: 4px; padding: 3px 9px;
+  font-weight: 800; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+}
+.hud-hold.hot { background: rgba(196, 44, 24, .85); }
 
 .pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 13px/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
 .pause-opt[hidden] { display: none; }
@@ -100,6 +105,7 @@
   .pitch-cam { font-size: 10px; padding: 3px 6px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
+  .hud-hold { right: 6px; bottom: 24px; font-size: 11px; padding: 2px 6px; }
   .hud-replay { top: 50px; }
   .hud-replay small { font-size: 10px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
