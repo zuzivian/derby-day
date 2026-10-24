@@ -145,11 +145,19 @@ export class InputController {
   private loftKeyStart: number | null = null;
   private touchTap: { t: number; x: number; y: number; id: number } | null = null;
   private cleanup: (() => void)[] = [];
-  /** Last pointer position, client pixels. Re-projected every tick: a moving 3D camera slides the pitch under a still mouse. */
+  /**
+   * Last pointer position, client pixels. The world point under it (`cursor`) is taken when the
+   * pointer moves and then kept: a still mouse stays on the same grass while the 3D camera pans.
+   * (Re-projecting it every tick made the target run ahead of a player chasing it, as the camera
+   * followed him: with the mouse still he never arrived, and could dribble out of play.)
+   */
   private client: { x: number; y: number } | null = null;
+  /** Touch pointers down on the pitch. Only the first one steers; two at once is a pinch (renderer.ts), which doesn't. */
+  private touches = new Set<number>();
+  private steerTouch: number | null = null;
 
   constructor(
-    private canvas: HTMLCanvasElement,
+    canvas: HTMLCanvasElement,
     private picker: WorldPicker,
     private hasBall: () => boolean,
     private onPause: () => void,
@@ -167,12 +175,23 @@ export class InputController {
     on(canvas, 'mousedown', (e) => {
       if (e.button === 1) e.preventDefault(); // no autoscroll
     });
+    // A touch that isn't the steering finger, or any touch while two are down (a pinch), moves nothing.
+    const steers = (e: PointerEvent) => e.pointerType === 'mouse' || (e.pointerId === this.steerTouch && this.touches.size < 2);
     on(canvas, 'pointermove', (e) => {
+      if (!steers(e)) return;
       if (e.pointerType === 'mouse') this.mode = 'mouse';
       if (this.client) this.travel += Math.hypot(e.clientX - this.client.x, e.clientY - this.client.y);
       this.cursor = toWorld(e);
     });
     on(canvas, 'pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') {
+        this.touches.add(e.pointerId);
+        if (this.touches.size === 1) this.steerTouch = e.pointerId;
+        if (!steers(e)) {
+          this.touchTap = null; // a second finger: a pinch, not a tap
+          return;
+        }
+      }
       this.cursor = toWorld(e);
       if (e.pointerType !== 'mouse') {
         // Touch steers by dragging; a quick tap with no ball picks a player (checked on release).
@@ -185,8 +204,18 @@ export class InputController {
       if (e.button === 0) this.pressLeft();
       if (e.button === 2) this.pressRight();
     });
+    const touchUp = (e: PointerEvent) => {
+      this.touches.delete(e.pointerId);
+      if (e.pointerId === this.steerTouch) this.steerTouch = null;
+    };
+    on(window, 'pointercancel', (e) => {
+      if (e.pointerType !== 'mouse') touchUp(e);
+    });
     on(window, 'pointerup', (e) => {
       if (e.pointerType !== 'mouse') {
+        const steering = e.pointerId === this.steerTouch && this.touches.size < 2;
+        touchUp(e);
+        if (!steering) return;
         const tap = this.touchTap;
         this.touchTap = null;
         if (tap && tap.id === e.pointerId && performance.now() - tap.t < TOUCH_TAP_MS && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) < TOUCH_TAP_PX && !this.hasBall()) this.select = true;
@@ -334,10 +363,6 @@ export class InputController {
   /** Called once per sim tick. One-shot actions are consumed here. */
   take(): HumanInput {
     const input: HumanInput = {};
-    if (this.client && this.mode === 'mouse') {
-      const r = this.canvas.getBoundingClientRect();
-      this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
-    }
     const pointer = this.mode === 'mouse' && this.cursor;
     if (pointer) {
       input.cursor = this.smooth.filter(this.cursor!, 1 / 60);
