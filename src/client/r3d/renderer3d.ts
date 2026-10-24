@@ -105,7 +105,7 @@ export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; widt
   }
   if (from === null) return null;
   // Centre a good way upfield of the ball, so the frame runs from the ball to beyond halfway.
-  return { x: from + dir * width * 0.36, y: HALF_H, width };
+  return { x: from + dir * width * 0.3, y: HALF_H, width };
 }
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
@@ -320,6 +320,8 @@ export class Renderer3D implements MatchRenderer {
 
   /** Instant replays: the replay camera to use, or null for the normal match cameras. */
   replayShot: ReplayShot | null = null;
+
+  private longHold: { x: number; y: number; width: number; until: number } | null = null;
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
@@ -631,7 +633,11 @@ export class Renderer3D implements MatchRenderer {
       focusX = b.pos.x;
       focusY = b.pos.y;
     }
-    const lv = this.replayShot ? null : longView(s, this.me);
+    // The long view holds a moment after the kick, so the player sees the ball arrive, then eases back.
+    let lv = this.replayShot ? null : longView(s, this.me);
+    if (lv) this.longHold = { ...lv, until: clock + 0.9 };
+    else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
+    else this.longHold = null;
     this.longViewOn = !!lv;
     this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? 'long' : this.cam.mode;
     const rs = this.replayShot;

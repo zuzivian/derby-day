@@ -709,7 +709,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     blocks.push({ geo: new BoxGeometry(along, FRONT, 0.4).translate(0, FRONT / 2, 0.2), color: [0.07, 0.16, 0.3] });
     for (let i = 0; i < rows; i++) {
       const top = FRONT + i * RISE;
-      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: i % 2 ? [0.42, 0.45, 0.5] : [0.36, 0.39, 0.44] });
+      blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: i % 2 ? [0.3, 0.32, 0.36] : [0.26, 0.28, 0.32] });
     }
     const depth = 0.4 + rows * ROW_D;
     const backH = FRONT + rows * RISE + 2.2;
@@ -831,7 +831,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
       tmpM.compose(tmpP, tmpQ, tmpS);
       poles.setMatrixAt(i, tmpM);
       crowdColor.set(flagCols[i % flagCols.length]);
-      flags.setColorAt(i, crowdColor);
+      flags.setColorAt(i, tone(crowdColor));
       fseeds[i] = r();
     }
     flags.geometry.setAttribute('aSeed', new InstancedBufferAttribute(fseeds, 1));

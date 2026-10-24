@@ -35,12 +35,12 @@ export interface CameraFocus {
 }
 
 /**
- * Broadcast framing at zoom 1: metres of pitch across the frame at the ball. Research brief §5
- * ("frame at least 60 m along the play axis") and the owner's "too zoomed in" ask: about 50 m
- * across, with the perspective adding more toward the far touchline, so the frame spans roughly
- * 45 to 60 m. Was 28 m.
+ * Broadcast framing at zoom 1: metres across the frame at the camera's target. Research brief §5
+ * ("frame at least 60 m along the play axis") and the owner's "too zoomed in" ask. With the ball
+ * below the frame centre this is about 48 m across at the ball on a desktop window (it was 19 m),
+ * more toward the far touchline; zoom takes it from about 29 m to 69 m.
  */
-export const BROADCAST_WIDTH = 50;
+export const BROADCAST_WIDTH = 56;
 /** Camera tilt for the broadcast view, degrees down. Higher than before (27) so a wider frame keeps the far side readable. */
 export const BROADCAST_ELEV = 33;
 /** Zoom limits (a multiplier on the framing width) and the step per wheel notch or +/- key. */
@@ -229,8 +229,9 @@ export class MatchCamera {
       // Pan follows briskly but with a capped speed; zoom and tilt change slowly.
       this.tx.step(tx, 0.42 * slow, dt, 32);
       this.tz.step(tz, 0.6 * slow, dt, 22);
-      this.width.step(width, (close ? 1.1 : 0.9) * slow, dt, 30);
-      this.elev.step(elev, 1.1 * slow, dt, 30);
+      // The long view eases out in about a second (research brief §5), quicker than other zooms.
+      this.width.step(width, (close ? 1.1 : lv ? 0.5 : 0.9) * slow, dt, lv ? 70 : 30);
+      this.elev.step(elev, (lv ? 0.6 : 1.1) * slow, dt, 30);
     }
 
     if (f.replay) {
