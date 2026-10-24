@@ -50,9 +50,9 @@ export const BROADCAST_ELEV = 33;
 export const ZOOM_MIN = 0.6;
 export const ZOOM_MAX = 1.45;
 export const ZOOM_STEP = 1.12;
-/** Long view: elevated, wide, showing about three quarters of the pitch (research brief §5). */
 /** The end camera's long view is at least this wide. */
 export const LONG_MIN = 70;
+/** Long view tilt, degrees down: steeper than the broadcast view, so a wide frame keeps its depth. */
 export const LONG_ELEV = 46;
 
 /** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
@@ -213,7 +213,9 @@ export class MatchCamera {
       const long = clamp01((Math.hypot(f.vx, f.vz) - 16) / 10);
       const kick = f.phase === 'kickoff' ? 0.1 : 0;
       width = base * (1 + (reduced ? 0.5 : 1) * (0.14 * Math.max(air, long * 0.7) + kick));
-      elev = this.cinematic ? 20 : BROADCAST_ELEV;
+      // Taller-than-wide screens (phones upright) look more steeply down, so the extra height shows
+      // pitch rather than sky and stand: 33° at 1:1 and wider, about 45° at 3:5.
+      elev = this.cinematic ? 20 : BROADCAST_ELEV + Math.max(0, Math.min(14, (1 - aspect) * 30));
       if (this.cinematic) width *= 0.85;
       // Dead zone: follow the focus only once it leaves a box round the anchor.
       const fx = f.x + this.leadX.x;
@@ -239,8 +241,10 @@ export class MatchCamera {
     } else {
       const d = f.humanDir;
       width = (BIG_PITCH ? 34 : 26) * narrow * this.zoom * (1 + 0.15 * clamp01((f.air - 1) / 3));
-      elev = 30;
-      tx = f.x + d * 9 + this.leadX.x * 0.5;
+      // Steeper and with less look-ahead than before (30°, 9 m): the man on the ball sits about two
+      // thirds of the way down the frame, with room behind him for a back pass.
+      elev = 37;
+      tx = f.x + d * 4 + this.leadX.x * 0.4;
       tz = f.z * 0.9 + this.leadZ.x * 0.5;
       tx = Math.max(-HALF_W + 4, Math.min(HALF_W - 4, tx));
       tz = Math.max(-HALF_H + 3, Math.min(HALF_H - 3, tz));

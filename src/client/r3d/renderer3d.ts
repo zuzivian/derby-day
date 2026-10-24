@@ -697,6 +697,7 @@ export class Renderer3D implements MatchRenderer {
     this.sun.target.updateMatrixWorld();
 
     this.aim?.update({ s, x, heads: this.heads, ball: this.ball.position, time: clock, reduced: this.reduced, camDist });
+    this.edgeMarks(s, !!x.noAim);
 
     this.gl.render(this.scene, this.cam.camera);
 
@@ -731,6 +732,56 @@ export class Renderer3D implements MatchRenderer {
     o.traverse((c) => c.layers.set(shown ? 0 : 1));
   }
 
+  private marks: HTMLElement[] = [];
+  private markV = new Vector3();
+
+  /**
+   * The man a human steers is sometimes off-screen (a cone click can pick a teammate the camera
+   * isn't showing): then an arrow with his name sits on the frame edge, pointing at him.
+   */
+  private edgeMarks(s: MatchState, hide: boolean): void {
+    const wrap = this.canvas.parentElement;
+    if (!wrap) return;
+    const both = s.humans[0] && s.humans[1];
+    for (const t of [0, 1] as const) {
+      const i = s.humans[t] ? s.controlled[t] : -1;
+      let el = this.marks[t];
+      const p = i >= 0 ? s.players[i] : null;
+      const head = i >= 0 ? this.heads[i] : null;
+      const v = this.markV;
+      let off = false;
+      if (p && head && !hide && !p.sentOff) {
+        v.copy(head).project(this.cam.camera);
+        // Behind the camera, the projection mirrors: flip it so the arrow still points the right way.
+        if (v.z > 1) v.set(-v.x, -v.y, v.z);
+        off = Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
+      }
+      if (!off) {
+        if (el) el.hidden = true;
+        continue;
+      }
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'edge-mark';
+        el.setAttribute('aria-hidden', 'true');
+        el.innerHTML = '<i></i><span></span>';
+        wrap.appendChild(el);
+        this.marks[t] = el;
+      }
+      // Push the point onto the inset frame edge along the line from the centre.
+      const k = Math.max(Math.abs(v.x) / 0.9, Math.abs(v.y) / 0.82);
+      const ex = v.x / k;
+      const ey = v.y / k;
+      el.hidden = false;
+      el.style.left = `${((ex + 1) / 2) * this.cssW}px`;
+      el.style.top = `${((1 - ey) / 2) * this.cssH}px`;
+      el.style.setProperty('--a', `${Math.atan2(-v.y, v.x)}rad`);
+      el.style.setProperty('--c', both && t === 1 ? '#22d3ee' : '#ff8a1c');
+      const name = el.querySelector('span')!;
+      if (name.textContent !== p!.name) name.textContent = p!.name;
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -756,5 +807,6 @@ export class Renderer3D implements MatchRenderer {
     this.gl.dispose();
     this.gl.forceContextLoss();
     delete this.canvas.dataset.renderer;
+    for (const m of this.marks) m?.remove();
   }
 }

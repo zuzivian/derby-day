@@ -112,6 +112,9 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
   return new PitchRenderer(canvas);
 }
 
+/** Wheel zoom: the zoom scales by exp(px * this) for px pixels of scroll (100 px ≈ ×1.13). */
+export const WHEEL_ZOOM_PER_PX = Math.log(1.12) / 100;
+
 /**
  * A small "Camera" chip on the pitch (and the V key) that switches between the broadcast and
  * end-to-end views, plus zoom: the mouse wheel over the pitch, the + / - keys (0 resets), and on
@@ -172,17 +175,26 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (e.repeat) return;
     if (k.toLowerCase() === 'v') toggle();
   };
-  // Wheel down (toward you) pulls the camera back, like map apps. One step per notch, whatever the
-  // device's delta, so a trackpad fling doesn't jump from one limit to the other.
-  let wheelAt = 0;
+  // Wheel down (toward you) pulls the camera back, like map apps. Zoom follows how far the wheel
+  // or trackpad scrolls (a mouse notch of about 100 px is about one ZOOM_STEP), so a gentle trackpad
+  // scroll zooms a little rather than jumping to a limit. Listened for on the whole pitch area, so
+  // the HUD buttons over it don't scroll the page either.
+  let flashAt = 0;
   const onWheel = (e: WheelEvent) => {
     if (e.ctrlKey) return; // pinch-zoom of the page
+    if ((e.target as HTMLElement | null)?.closest('#pause')) return;
     e.preventDefault();
+    const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+    if (!px) return;
+    r.setZoom(r.zoom * Math.exp(Math.max(-150, Math.min(150, px)) * WHEEL_ZOOM_PER_PX));
+    label();
     const now = performance.now();
-    if (Math.abs(e.deltaY) < 1 || now - wheelAt < 70) return;
-    wheelAt = now;
-    zoom(e.deltaY > 0 ? 1 : -1);
+    if (now - flashAt > 120) {
+      flashAt = now;
+      flash(`Zoom ${Math.round(r.zoom * 100)}%`);
+    }
   };
+  const wheelEl = canvas?.parentElement ?? canvas;
   // Pinch to zoom on touch screens: two fingers on the pitch scale the zoom by how far apart they
   // move (spreading them shows less pitch, like a map). One finger still steers (input.ts).
   const touches = new Map<number, { x: number; y: number }>();
@@ -220,7 +232,7 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (b) zoom(Number(b.dataset.zoom) as 1 | -1);
   });
   window.addEventListener('keydown', onKey);
-  canvas?.addEventListener('wheel', onWheel, { passive: false });
+  wheelEl?.addEventListener('wheel', onWheel, { passive: false });
   canvas?.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove);
   window.addEventListener('pointerup', onUp);
@@ -231,7 +243,7 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   return () => {
     clearTimeout(flashTimer);
     window.removeEventListener('keydown', onKey);
-    canvas?.removeEventListener('wheel', onWheel);
+    wheelEl?.removeEventListener('wheel', onWheel);
     canvas?.removeEventListener('pointerdown', onDown);
     window.removeEventListener('pointermove', onMove);
     window.removeEventListener('pointerup', onUp);

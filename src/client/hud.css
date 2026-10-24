@@ -78,6 +78,13 @@
 .hud-replay span { font-size: clamp(26px, 4.4vw, 46px); letter-spacing: .04em; line-height: 1; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45); }
 .hud-replay small { font: 700 11px/1.2 'Barlow', system-ui, sans-serif; font-style: normal; letter-spacing: .04em; text-transform: none; background: rgba(8, 12, 11, .55); border-radius: 3px; padding: 2px 7px; margin-top: 3px; }
 .hud-replay[hidden] { display: none; }
+/* A call made while play goes on (Advantage): small, at the top, out of the way. */
+.hud-tag {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .7); border-radius: 4px; padding: 4px 10px;
+}
+.hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
+.hud-tag[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
 .pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
@@ -89,10 +96,7 @@
 }
 .pitch-wrap .juice-mute { top: auto; right: auto; left: 10px; bottom: 10px; width: 32px; height: 32px; }
 
-@media (pointer: coarse) {
-  .hud-power { bottom: 92px; }
-}
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-height: 520px) {
   .hud-tl { left: 6px; top: 6px; gap: 5px; }
   .hud-tr { right: 6px; top: 6px; gap: 4px; }
   .hud-club .crest { width: 18px; height: 20px; }
@@ -111,8 +115,40 @@
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
 }
 @media (max-width: 640px) and (orientation: portrait) {
-  #pitch.pitch-3d { aspect-ratio: 4 / 5; }
+  /* Taller, to use the phone's height (the 3D camera fits any shape). */
+  #pitch.pitch-3d { aspect-ratio: 9 / 16; max-height: calc(100dvh - 110px); }
   .hud-radar { width: 72px; }
+}
+/* Touch screens: the power bar sits above the Pass / Shoot buttons rather than under them, and the
+   radar moves to the left, beside the mute button, out of the buttons' way. After the size rules
+   above, so it wins the cascade. */
+@media (pointer: coarse) {
+  .hud-power { bottom: 86px; right: 10px; }
+  .hud-radar { left: 52px; transform: none; }
+}
+/* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
+.edge-mark {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font: italic 800 12px/1 var(--font-display, 'Arial Narrow', sans-serif); color: var(--c, #ff8a1c); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; z-index: 1;
+}
+.edge-mark i {
+  width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 16px solid var(--c, #ff8a1c);
+  transform: rotate(var(--a, 0rad)); filter: drop-shadow(0 0 2px rgba(0, 0, 0, .9));
+}
+.edge-mark[hidden] { display: none; }
+/* The end camera puts the man on the ball low in the middle: the radar moves to the left there. */
+#pitch[data-camera="end"] ~ .hud .hud-radar { left: 52px; transform: none; }
+/* The 2D view already shows the whole pitch: no radar over it. */
+#pitch[data-renderer="2d"] ~ .hud .hud-radar { display: none; }
+/* Phones held sideways: the pitch fills the screen and the HUD keeps to its edges. */
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+  #app:has(> .match) { padding-top: 8px; padding-bottom: 8px; gap: 0; min-height: 0; }
+  .match { gap: 0; }
+  .match .pitch-wrap { width: 100%; min-width: 0; }
+  #pitch.pitch-3d { aspect-ratio: auto; height: calc(100dvh - 16px); }
+  .match .controls-hint, .match .controls-hint.clamp, .match .hint-more { display: none; }
+  .hud-tr { flex-direction: row; align-items: flex-start; }
+  .hud-power { bottom: 84px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }
