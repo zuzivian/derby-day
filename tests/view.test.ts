@@ -248,23 +248,36 @@ describe('camera', () => {
     expect(point().distanceTo(p0)).toBeLessThan(0.5);
   });
 
-  test('the long view reaches past halfway on desktop and on a portrait phone', () => {
+  // Red-team round 1: an own-half free kick near the near touchline put the ball and the taker
+  // off-screen, and every desktop long view lost the near-side teammates under the frame.
+  test('the long view keeps the ball, both touchlines and 20 m past halfway in shot, on every screen shape', () => {
+    const spots: [string, number, number][] = [['goalkick', 5.5, 24.84], ['goalkick', 5.5, 43.16]];
+    for (let y = 5; y <= 63; y += 6) for (const x of [12, 30, 45]) spots.push(['freekick', x, y]);
     for (const [aspect, w] of [
-      [1.5, 1040],
-      [0.8, 358],
+      [1041 / 697, 1041],
+      [358 / 448, 358],
+      [358 / 597, 358],
+      [828 / 374, 828],
+      [1900 / 1000, 1900],
     ]) {
-      const c = new MatchCamera();
-      const kx = -PITCH_W / 2 + 6;
-      const f = { ...focus, x: kx, long: { x: kx + 90 * 0.32, z: 0, width: 90 } };
-      for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
-      const y = new Vector3(kx, 0, 0).project(c.camera).y;
-      const hit = new Vector3();
-      rc.setFromCamera(new Vector2(1, y), c.camera);
-      rc.ray.intersectPlane(ground, hit);
-      expect(hit.x).toBeGreaterThan(12); // scene x 0 is halfway
-      rc.setFromCamera(new Vector2(-1, y), c.camera);
-      rc.ray.intersectPlane(ground, hit);
-      expect(hit.x).toBeLessThan(kx); // and the keeper is in shot
+      for (const [kind, x, y] of spots) {
+        const s = match(14);
+        s.restart = { kind, team: 0, spot: { x, y }, stage: 'ready' } as MatchState['restart'];
+        const lv = longView(s, 0)!;
+        expect(lv).not.toBe(null);
+        const c = new MatchCamera();
+        const f = { ...focus, x: x - PITCH_W / 2, z: y - PITCH_H / 2, long: { points: lv.points.map((p) => ({ x: p.x - PITCH_W / 2, z: p.y - PITCH_H / 2 })) } };
+        for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
+        // The ball, the corners of the strip (touchline to touchline, from behind the ball to 20 m past
+        // halfway), and a full-back on each touchline level with the ball.
+        const must = [{ x, y }, ...lv.points, { x: x + 8, y: 64 }, { x: x + 8, y: 4 }];
+        for (const p of must) {
+          const v = new Vector3(p.x - PITCH_W / 2, 0, p.y - PITCH_H / 2).project(c.camera);
+          const ok = Math.abs(v.x) <= 0.9 && Math.abs(v.y) <= 0.9;
+          if (!ok) throw new Error(`${kind} at ${x},${y}, aspect ${aspect.toFixed(2)}: (${p.x},${p.y}) at ndc ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
+        }
+        expect(lv.points.some((p) => p.x >= PITCH_W / 2 + 20)).toBe(true);
+      }
     }
   });
 
@@ -292,9 +305,10 @@ describe('camera', () => {
       seen = longView(s, 0);
     }
     expect(seen).not.toBe(null);
-    expect(seen!.width).toBeGreaterThanOrEqual(85);
-    // Centred upfield of the goal area, so the frame runs well past halfway.
-    expect(seen!.x + seen!.width / 2).toBeGreaterThan(PITCH_W / 2 + 15);
+    // It frames the ball and the strip out to 20 m past halfway.
+    expect(seen!.points.length).toBeGreaterThan(3);
+    expect(Math.max(...seen!.points.map((p) => p.x))).toBeGreaterThanOrEqual(PITCH_W / 2 + 20);
+    expect(seen!.points[0]).toEqual(seen!.ball);
     expect(longView(s, 1)).toBe(null);
     // It holds for as long as the restart waits on the taker (every tick of 'setup' and 'ready'),
     // so once humans take their own goal kicks it stays up until they kick.

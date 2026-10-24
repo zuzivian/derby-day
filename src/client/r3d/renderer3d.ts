@@ -7,7 +7,7 @@ import type { Vec } from '../../sim/vec.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer } from './aim3d.ts';
-import { LONG_WIDTH, MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
+import { MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
@@ -81,32 +81,37 @@ export interface ReplayShot {
 /**
  * Should the camera pull back to the long view? When the human's side has a goal kick, or a free
  * kick in its own half, or the human's keeper holds the ball: the player is about to distribute it
- * and needs to see who is free up to and beyond halfway. Returns the sim point to centre on and the
- * width to show, or null. Pure, for tests.
+ * and needs to see who is free up to and beyond halfway. Returns the ball's spot and the sim points
+ * the frame must show (the ball, a little behind it, and touchline to touchline out to LONG_PAST
+ * beyond halfway), or null. Pure, for tests.
  */
-export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; width: number } | null {
+export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[] } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
   const dir = attackDir(me);
   const r = s.restart;
   const b = s.ball;
-  const half = HALF_W;
-  let from: number | null = null;
-  let width = LONG_WIDTH;
+  let ball: Vec | null = null;
   if (r && r.team === me && r.stage !== 'whistle') {
-    const own = dir > 0 ? r.spot.x < half : r.spot.x > half;
-    if (r.kind === 'goalkick') from = r.spot.x;
-    else if (r.kind === 'freekick' && own) {
-      from = r.spot.x;
-      width = LONG_WIDTH * 0.8;
-    }
+    const own = dir > 0 ? r.spot.x < HALF_W : r.spot.x > HALF_W;
+    if (r.kind === 'goalkick' || (r.kind === 'freekick' && own)) ball = r.spot;
   } else if (s.phase === 'play' && b.inHands && b.owner >= 0) {
     const k = s.players[b.owner];
-    if (k.team === me && k.role === 'GK') from = k.pos.x;
+    if (k.team === me && k.role === 'GK') ball = k.pos;
   }
-  if (from === null) return null;
-  // Centre a good way upfield of the ball, so the frame runs from the ball to beyond halfway.
-  return { x: from + dir * width * 0.32, y: HALF_H, width };
+  if (!ball) return null;
+  const back = Math.max(0, Math.min(HALF_W * 2, ball.x - dir * 4));
+  const past = HALF_W + dir * LONG_PAST;
+  const near = HALF_H * 2 - LONG_TOUCH;
+  return {
+    ball: { x: ball.x, y: ball.y },
+    points: [{ x: ball.x, y: ball.y }, { x: back, y: LONG_TOUCH }, { x: back, y: near }, { x: past, y: LONG_TOUCH }, { x: past, y: near }],
+  };
 }
+
+/** The long view shows this far past halfway, metres. */
+export const LONG_PAST = 20;
+/** And touchline to touchline, but for this strip along each (where nobody stands at a set piece). */
+export const LONG_TOUCH = 3;
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
 function ballGeometry(): IcosahedronGeometry {
@@ -321,7 +326,7 @@ export class Renderer3D implements MatchRenderer {
   /** Instant replays: the replay camera to use, or null for the normal match cameras. */
   replayShot: ReplayShot | null = null;
 
-  private longHold: { x: number; y: number; width: number; until: number } | null = null;
+  private longHold: { ball: Vec; points: Vec[]; until: number } | null = null;
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
@@ -653,7 +658,7 @@ export class Renderer3D implements MatchRenderer {
         phase: s.phase,
         close: cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
         humanDir: attackDir(this.me) as 1 | -1,
-        long: lv ? { x: sx(lv.x), z: sz(lv.y), width: lv.width } : null,
+        long: lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })) } : null,
         replay: rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null,
       },
       this.cssW / this.cssH,
