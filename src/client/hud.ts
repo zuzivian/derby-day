@@ -12,6 +12,7 @@ import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.t
 import { matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
+import type { Gauge } from './power.ts';
 import { HUMAN_COLORS } from './render.ts';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -59,12 +60,19 @@ export function hudMarkup(o: HudOptions): string {
       <div class="banner hud-word" id="banner" hidden></div>
       <canvas class="hud-radar" aria-hidden="true" style="aspect-ratio: ${PITCH_W} / ${PITCH_H}"></canvas>
       <div class="hud-power" aria-hidden="true"><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
+      <div class="hud-replay" hidden><span>Replay</span><small></small></div>
     </div>`;
 }
 
 export interface Hud {
-  /** Every frame. `charge` is the human's shot charge (0 when not charging). */
-  update(s: MatchState, charge: number): void;
+  /**
+   * Every frame. `charge` is the human's shot charge (0 when not charging). `gauge`, when given,
+   * drives the bar instead (src/client/power.ts, the same numbers as the 3D aim wedge): the pace of a
+   * plain pass while nothing charges, the shot or loft while it does.
+   */
+  update(s: MatchState, charge: number, gauge?: Gauge | null): void;
+  /** The REPLAY tag over an instant replay (top centre), or null to hide it. */
+  replay(text: string | null): void;
   /** Big centre word, with an optional smaller line under it. */
   word(text: string, ms: number, sub?: string): void;
   dispose(): void;
@@ -105,6 +113,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   const radar = q<HTMLCanvasElement>('.hud-radar');
   const power = q('.hud-power');
   const fill = power.querySelector('i') as HTMLElement;
+  const tick = power.querySelector('b') as HTMLElement;
+  const replayTag = q('.hud-replay');
+  let lastGauge = '';
   const ctx = radar.getContext('2d');
   let until = 0;
   let lastClock = '';
@@ -173,13 +184,27 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   }
 
   const hud: Hud = {
-    update(s, charge) {
+    update(s, charge, gauge) {
       const c = matchClock(s);
       if (c !== lastClock) {
         clock.textContent = c;
         lastClock = c;
       }
-      if (charge !== lastCharge) {
+      if (gauge !== undefined) {
+        // Charging: full strength. Idle with the ball: the pace a click would pass at, dimmer.
+        const g = gauge;
+        const key = g ? `${Math.round(g.fill * 100)}|${g.band}|${g.tick}|${charge > 0}` : '';
+        if (key !== lastGauge) {
+          lastGauge = key;
+          fill.style.width = `${g ? Math.round(g.fill * 100) : 0}%`;
+          tick.style.left = `${(g ? g.tick : SWEET_SPOT) * 100}%`;
+          tick.hidden = !!g && g.tick >= 1;
+          power.classList.toggle('on', !!g && charge > 0);
+          power.classList.toggle('idle', !!g && charge <= 0);
+          power.classList.toggle('amber', g?.band === 'amber');
+          power.classList.toggle('hot', g?.band === 'red');
+        }
+      } else if (charge !== lastCharge) {
         lastCharge = charge;
         fill.style.width = `${Math.round(charge * 100)}%`;
         power.classList.toggle('on', charge > 0);
@@ -199,6 +224,10 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
       void banner.offsetWidth;
       banner.style.animation = '';
       until = performance.now() + ms;
+    },
+    replay(text) {
+      replayTag.hidden = text === null;
+      if (text !== null) replayTag.querySelector('small')!.textContent = text;
     },
     dispose() {
       until = 0;
