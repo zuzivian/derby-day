@@ -25,10 +25,11 @@ So the roadmap tests feel before building netcode, and plans for low concurrency
 As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependencies, and CI (typecheck, ~175 unit tests, a balance guard, ~26 browser tests) runs on every push.
 
 **Engine**
+- **Eleven-a-side under the Laws.** A 105 × 68 m pitch with real markings, 4-4-2 and 4-3-3, throw-ins, goal kicks, corners, offside (judged when the ball is played, an offence on involvement), fouls with advantage, direct and indirect free kicks with walls, live penalties, yellow and red cards (DOGSO, second yellow, a man short), and a referee who follows play. All seeded and deterministic (`src/sim/rules.ts`).
 - **Deterministic sim.** `src/sim` is pure TypeScript: fixed 60 Hz tick, seeded RNG, no DOM, no clock, no `Math.random`, `sqrt` instead of `Math.hypot`. The same seed plus the same input log reproduces a match exactly (tested). That one property unlocks server authority, replays, rollback netcode and bot-driven balance testing.
 - **Inputs are tiny.** A tick of human input is a cursor point plus a few flags. A recorded 2×2-minute match with constant mouse movement is about 39 KB as a replay code; an idle one is 1–3 KB.
 - **Replays prove it.** Every match is recorded as its input log and re-simulated for goal highlights, with seeking (keyframes every 600 ticks, warm seeks ~3 ms) and a hash check that warns if the engine changed since recording.
-- **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at well over 1,000× real time. 40 matches average about 2.9 goals, 23 shots and 160 passes; the higher-Elo club wins about four times as often as it loses.
+- **Headless balance.** `bun run balance` plays CPU-vs-CPU matches at about 900× real time (a 2 × 3-minute eleven-a-side match in about 0.4 s). 30 matches average about 2.4 goals, 12 shots, 9 fouls, 2.3 yellows (a red every seven or eight matches), 2 corners and 1 offside; the higher-Elo club wins about twice as often as it loses.
 
 **Playing**
 - **Mouse-first control.** Your player runs to the pointer; pointer distance sets speed (walk to stamina-costing sprint, no key); left click passes to the point under the pointer, hold left lofts it there, right click shoots (hold for power); without the ball left click picks a player and right click tackles or slides. The ball has height, bounces, and can clear the bar. Full keyboard play works too.
@@ -46,7 +47,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - Five-step onboarding with a coached training-ground tutorial on the real engine, skippable at every step.
 - WCAG 2.1 AA pass: skip link, ARIA tabs, focus restored after every render, live announcements for goals and results, dialogs with focus traps, contrast fixed in both themes, team markers that don't rely on colour alone.
 
-Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; two tabs can overwrite each other); no fouls or set pieces; the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
+Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; two tabs can overwrite each other); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
 
 ## Phase 1: Feel lab (2–4 weeks part-time)
 
@@ -55,7 +56,7 @@ Goal: people choose to play a second match against the CPU.
 - Put the build on a URL, recruit 10–20 testers, and watch 5 of them play without help.
 - Instrument: matches started vs. finished, second-session rate, control mode used (mouse vs. keys), goals per match, time to first goal.
 - Tune the controls: arrival radius, acceleration, first-touch, pass auto-target cone, shot charge curve. Add one-twos, through balls (double-click?), and a sprint with stamina cost.
-- Decide the format: 6-a-side on boards (current) vs. 7- or 11-a-side with throw-ins. Smaller sides mean more touches per person, which suits real-time play.
+- ~~Decide the format~~: decided, eleven-a-side under the Laws, 2 × 3 minutes. Watch whether one human among 22 gets enough touches; more set pieces under the human's control (free kicks, corners) are the cheap lever.
 - Replays from the input log: cheap, because the sim is deterministic. Good for bug reports and for sharing goals.
 - Move the renderer to PixiJS (WebGPU with WebGL fallback) only if Canvas 2D becomes the bottleneck. It isn't yet.
 
@@ -135,7 +136,7 @@ The club opens up as it gains experience. A new player starts with the Home and 
 | Level | Kind | Unlock | What it does |
 |---|---|---|---|
 | 1 | Feature | Home and Club | Kick off your next match from Home; club news and this list live under Club. |
-| 1 | Feature | Squad | See your players and pick the starting six. |
+| 1 | Feature | Squad | See your players and pick the starting eleven. |
 | 1 | Feature | Ranked matches | Play ladder clubs near your Elo, live. |
 | 1 | Feature | Practice (Easy, Normal) | Friendlies against the CPU. No Elo. |
 | 1 | Feature | Local 2P | vs Player on one screen: two humans, one keyboard. Nothing recorded. |
@@ -148,16 +149,16 @@ The club opens up as it gains experience. A new player starts with the Home and 
 | 6 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
 | 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
 | 10 | Feature | Season calendar and academy | Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive. |
-| 15 | Perk | Squad of 15 | Room for one more player (14 to 15). |
+| 15 | Perk | Squad of 25 | Room for one more player (24 to 25). |
 | 18 | Perk | Crest pattern | Change your crest pattern any time from Club news. |
 | 20 | Perk | Deeper market | Two extra players on the transfer market (10 to 12). |
 | 22 | Perk | Custom kit colours | Pick your own kit colours from Club news. |
 | 25 | Perk | Sharper scouts | An academy prospect's potential is known one match sooner (5 instead of 6). |
 | 25 | Perk | Silver badge | Your level badge turns silver. |
-| 30 | Perk | Squad of 16 | Room for another player (15 to 16). |
+| 30 | Perk | Squad of 26 | Room for another player (25 to 26). |
 | 35 | Perk | Win bonus | One extra training session for every ranked or competition win. |
 | 40 | Perk | Replay shelf of 8 | Keep your last 8 replays instead of 5. |
-| 50 | Perk | Squad of 17 | Room for another player (16 to 17). |
+| 50 | Perk | Squad of 27 | Room for another player (26 to 27). |
 | 50 | Perk | Gold badge | Your level badge turns gold. |
 | 65 | Perk | Replay shelf of 10 | Keep your last 10 replays. |
 | 75 | Perk | Platinum badge | Your level badge turns platinum. |

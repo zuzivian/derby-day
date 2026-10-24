@@ -17,11 +17,12 @@
 //    (src/client/shootout.ts, rules in src/meta/shootout.ts) and its score is
 //    passed to recordCupMatch.
 
-import { autoLineup, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from './club.ts';
+import { autoLineup, cpuTeam, ladderSquad, type ClubIdentity, type LadderClub } from './club.ts';
 import { applyResult, formatMoney, type ResultSummary, type Save } from './game.ts';
 import { award, claimMilestone, cupFinishXp, leagueFinishXp } from './levels.ts';
 import { overall, type Player } from './player.ts';
 import { simulate } from '../sim/match.ts';
+import { TEAM_SIZE } from '../sim/constants.ts';
 import { chance, hashString, int, makeRng, type Rng } from '../sim/rng.ts';
 import type { CrestPattern } from './names.ts';
 
@@ -133,7 +134,7 @@ export type QuickSim = (save: Save, a: LadderClub, b: LadderClub, seed: number) 
 export const realQuickSim: QuickSim = (_save, a, b, seed) => {
   const sa = ladderSquad(a);
   const sb = ladderSquad(b);
-  const s = simulate({ seed, home: toTeamSetup(a, sa, autoLineup(sa)), away: toTeamSetup(b, sb, autoLineup(sb)), halfSeconds: QUICK_HALF_SECONDS });
+  const s = simulate({ seed, home: cpuTeam(a, sa), away: cpuTeam(b, sb), halfSeconds: QUICK_HALF_SECONDS });
   return { ga: s.score[0], gb: s.score[1] };
 };
 
@@ -223,7 +224,7 @@ function settleTie(save: Save, cup: Cup, tie: Tie, round: number, index: number,
 // Cup
 
 export function canStart(save: Save): { ok: boolean; message: string } {
-  if (save.lineup.filter(Boolean).length < 6) return { ok: false, message: 'Pick six players first.' };
+  if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI first.' };
   if (save.ladder.length < COMP_SIZE - 1) return { ok: false, message: 'Not enough clubs on the ladder.' };
   return { ok: true, message: '' };
 }
@@ -548,7 +549,7 @@ export function ordinal(n: number): string {
   return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
 }
 
-/** Average overall of a club's starting six, for previews. */
+/** Average overall of a club's starting eleven, for previews. */
 export function clubStrength(save: Save, id: string): number {
   if (id === save.club.id) {
     const xi = save.lineup.map((x) => save.squad.find((p) => p.id === x)).filter((p): p is Player => !!p);

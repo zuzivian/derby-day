@@ -11,10 +11,30 @@ import { add, dist, scale, type Vec } from '../sim/vec.ts';
 export type DrillId = 'move' | 'pass' | 'shoot' | 'tackle';
 export const DRILLS: DrillId[] = ['move', 'pass', 'shoot', 'tackle'];
 
-/** Player indices: ours are 0..5 in formation order, theirs 6..11. */
-export const HUMAN = 5;
-export const CARRIER = 11;
-export const MARKER: Vec = { x: 38, y: 12 };
+/**
+ * The drills were laid out for a 64 x 40 m training pitch; on the full-size
+ * pitch they happen in the attacking end, at the same distances from the
+ * right-hand goal. `at` maps a training-ground point onto the pitch.
+ */
+const OFF_X = PITCH_W - 64;
+const OFF_Y = (PITCH_H - 40) / 2;
+export const at = (x: number, y: number): Vec => ({ x: x + OFF_X, y: y + OFF_Y });
+/** The tackle drill defends the left-hand goal, so it keeps the training ground's x. */
+export const atLeft = (x: number, y: number): Vec => ({ x, y: y + OFF_Y });
+
+/**
+ * Player indices (4-4-2 slot order). Ours: 0 keeper, 2 and 3 centre-backs, 5 and
+ * 8 wide midfielders, 9 the striker the human plays. Theirs start at 11: 20 is
+ * the carrier in the tackle drill. Everyone else watches from the touchline.
+ */
+export const HUMAN = 9;
+export const CARRIER = 20;
+/** A teammate to pass to in the pass drill. */
+export const MATE = 5;
+export const MARKER: Vec = at(38, 12);
+/** Training-ground index (six-a-side, 0..5 ours, 6..11 theirs) to the eleven-a-side one. */
+const IDX = [0, 2, 3, 5, 8, 9, 11, 13, 14, 16, 19, 20];
+const EXTRA = [1, 4, 6, 7, 10, 12, 15, 17, 18, 21];
 export const MARKER_R = 1.8;
 
 /** Why a drill was set up again. The client turns these into coaching lines. */
@@ -26,6 +46,8 @@ export interface Drill {
   id: DrillId;
   /** Players held still this drill, and where. */
   frozen: Map<number, Vec>;
+  /** Teammates kept on their spots (but free to take a pass) so they stay in the drill area. */
+  pinned: Map<number, Vec>;
   marker: Vec | null;
   base: { score: [number, number]; passes: number; tackles: number; shots: number };
   looseTicks: number;
@@ -75,6 +97,8 @@ function place(s: MatchState, i: number, pos: Vec, facing: Vec): void {
   p.kickCd = 0;
   p.holdTicks = 0;
   p.aiTimer = 24;
+  p.sentOff = false;
+  p.yellow = 0;
 }
 
 function giveBall(s: MatchState, i: number): void {
@@ -91,13 +115,24 @@ function giveBall(s: MatchState, i: number): void {
 
 type Layout = Record<number, Vec>;
 
+/** A training-ground layout (old indices, old coordinates) on the full pitch. */
+function L(l: Record<number, [number, number]>, map = at): Layout {
+  const out: Layout = {};
+  for (const [k, [x, y]] of Object.entries(l)) out[IDX[Number(k)]] = Number(k) === 0 ? { x: 2.5, y: PITCH_H / 2 } : map(x, y);
+  return out;
+}
+/** Players not in a drill stand along the near touchline, out of the way. */
+const SPECTATORS: Layout = Object.fromEntries(EXTRA.map((i, k) => [i, { x: 6 + k * 3.2, y: 1.2 }]));
+
 /** Opponents standing still out of the way, keeper resting beside the post. */
-const MANNEQUINS: Layout = { 6: { x: 62.3, y: 14.4 }, 7: { x: 52, y: 8 }, 8: { x: 52, y: 32 }, 9: { x: 43, y: 4.5 }, 10: { x: 43, y: 35.5 }, 11: { x: 30, y: 34 } };
-const OUR_SHAPE: Layout = { 0: { x: 2.5, y: 20 }, 1: { x: 15, y: 12 }, 2: { x: 15, y: 28 }, 3: { x: 30, y: 7 }, 4: { x: 30, y: 33 } };
-const OUR_ATTACK: Layout = { 0: { x: 2.5, y: 20 }, 1: { x: 24, y: 13 }, 2: { x: 24, y: 27 }, 3: { x: 40, y: 8 }, 4: { x: 40, y: 32 } };
-/** For the tackle drill our outfielders watch from the boards so the human makes the tackle. */
-const OUR_WATCHING: Layout = { 0: { x: 2.5, y: 20 }, 1: { x: 10, y: 4 }, 2: { x: 10, y: 36 }, 3: { x: 21, y: 2.5 }, 4: { x: 21, y: 37.5 } };
-const THEIR_WATCHING: Layout = { 6: { x: 61, y: 20 }, 7: { x: 52, y: 6 }, 8: { x: 52, y: 34 }, 9: { x: 46, y: 3 }, 10: { x: 46, y: 37 } };
+const MANNEQUINS: Layout = L({ 6: [62.3, 14.4], 7: [52, 8], 8: [52, 32], 9: [43, 4.5], 10: [43, 35.5], 11: [30, 34] });
+const OUR_SHAPE: Layout = L({ 0: [2.5, 20], 1: [15, 12], 2: [15, 28], 3: [30, 7], 4: [30, 33] });
+const OUR_ATTACK: Layout = L({ 0: [2.5, 20], 1: [24, 13], 2: [24, 27], 3: [40, 8], 4: [40, 32] });
+/** For the tackle drill our outfielders watch from the side so the human makes the tackle. */
+const OUR_WATCHING: Layout = L({ 0: [2.5, 20], 1: [10, 4], 2: [10, 36], 3: [21, 2.5], 4: [21, 37.5] }, atLeft);
+const THEIR_WATCHING: Layout = L({ 6: [61, 20], 7: [52, 6], 8: [52, 34], 9: [46, 3], 10: [46, 37] }, atLeft);
+/** The tackle drill's spectators stand on the far touchline, away from the run. */
+const SPECTATORS_FAR: Layout = Object.fromEntries(EXTRA.map((i, k) => [i, { x: 60 + k * 3.2, y: PITCH_H - 1.2 }]));
 
 function baseline(s: MatchState): Drill['base'] {
   return { score: [s.score[0], s.score[1]], passes: s.stats[0].passes, tackles: s.stats[0].tackles, shots: s.stats[0].shots };
@@ -116,21 +151,27 @@ export function stageDrill(s: MatchState, id: DrillId, fresh = true): Drill {
     freeze(THEIR_WATCHING);
     for (const [k, v] of Object.entries(OUR_WATCHING)) if (k !== '0') frozen.set(Number(k), { ...v });
   } else freeze(MANNEQUINS);
+  freeze(id === 'tackle' ? SPECTATORS_FAR : SPECTATORS);
 
   if (fresh) {
     const ours = id === 'shoot' ? OUR_ATTACK : id === 'tackle' ? OUR_WATCHING : OUR_SHAPE;
     for (const [k, v] of Object.entries(ours)) place(s, Number(k), v, RIGHT);
-    for (const [k, v] of frozen) if (k >= 6) place(s, k, v, LEFT);
+    for (const [k, v] of frozen) place(s, k, v, k >= 11 ? LEFT : RIGHT);
     if (id === 'tackle') {
-      place(s, CARRIER, { x: 46, y: 20 }, LEFT);
-      place(s, HUMAN, { x: 33, y: 16 }, RIGHT);
+      place(s, CARRIER, atLeft(46, 20), LEFT);
+      place(s, HUMAN, atLeft(33, 20), RIGHT);
       giveBall(s, CARRIER);
     } else {
       place(s, CARRIER, MANNEQUINS[CARRIER], LEFT);
-      const start = id === 'shoot' ? { x: 47, y: 20 } : id === 'pass' ? MARKER : { x: 24, y: 22 };
+      const start = id === 'shoot' ? at(47, 20) : id === 'pass' ? MARKER : at(24, 22);
       place(s, HUMAN, start, RIGHT);
       giveBall(s, HUMAN);
     }
+    // Whatever the referee had going (a throw-in, a free kick, a card) is forgotten between drills.
+    s.restart = null;
+    s.offside = null;
+    s.advantage = null;
+    s.pendingCards = [];
     s.phase = 'play';
     s.phaseTicks = 0;
     s.controlled[0] = HUMAN;
@@ -141,7 +182,9 @@ export function stageDrill(s: MatchState, id: DrillId, fresh = true): Drill {
     giveBall(s, HUMAN);
     s.controlled[0] = HUMAN;
   }
-  const d: Drill = { id, frozen, marker: id === 'move' ? { ...MARKER } : null, base: baseline(s), looseTicks: 0, lastTackleCd: s.players[HUMAN].tackleCd };
+  const pinned = new Map<number, Vec>();
+  if (id !== 'tackle') for (const [k, v] of Object.entries(id === 'shoot' ? OUR_ATTACK : OUR_SHAPE)) if (k !== '0') pinned.set(Number(k), { ...v });
+  const d: Drill = { id, frozen, pinned, marker: id === 'move' ? { ...MARKER } : null, base: baseline(s), looseTicks: 0, lastTackleCd: s.players[HUMAN].tackleCd };
   holdFrozen(s, d);
   return d;
 }
@@ -151,6 +194,12 @@ export function holdFrozen(s: MatchState, d: Drill): void {
   for (const [i, pos] of d.frozen) {
     const p = s.players[i];
     p.stun = Math.max(p.stun, 2);
+    p.pos = { ...pos };
+    p.vel = { x: 0, y: 0 };
+  }
+  for (const [i, pos] of d.pinned) {
+    const p = s.players[i];
+    if (s.ball.owner === i || i === s.controlled[0]) continue;
     p.pos = { ...pos };
     p.vel = { x: 0, y: 0 };
   }

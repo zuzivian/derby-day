@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { toTeamSetup } from '../src/meta/club.ts';
 import { newGame } from '../src/meta/game.ts';
 import { deriveShort, renameClub, rerollColours, rerollName, validateClubName, NAME_MAX } from '../src/meta/identity.ts';
-import { checkDrill, createTraining, CARRIER, DRILLS, filterInput, holdFrozen, HUMAN, MARKER, onPitch, sparringSide, stageDrill, type Drill, type DrillId } from '../src/client/drills.ts';
+import { at, checkDrill, createTraining, CARRIER, DRILLS, filterInput, holdFrozen, HUMAN, MARKER, MATE, onPitch, sparringSide, stageDrill, type Drill, type DrillId } from '../src/client/drills.ts';
 import { step } from '../src/sim/match.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
 import { dist } from '../src/sim/vec.ts';
@@ -152,7 +152,7 @@ describe('training-ground drills', () => {
     const d = stageDrill(s, 'move');
     for (let t = 0; t < 60; t++) {
       holdFrozen(s, d);
-      step(s, filterInput('move', { cursor: { x: 24, y: 30 }, pass: true, shoot: 1 }));
+      step(s, filterInput('move', { cursor: at(24, 30), pass: true, shoot: 1 }));
       holdFrozen(s, d);
     }
     expect(s.ball.owner).toBe(HUMAN);
@@ -163,7 +163,7 @@ describe('training-ground drills', () => {
     runDrill(s, 'move', stageDrill(s, 'move'), () => ({ cursor: MARKER }));
     const d = stageDrill(s, 'pass', false);
     const r = runDrill(s, 'pass', d, (st, t) => {
-      const mate = st.players[3].pos;
+      const mate = st.players[MATE].pos;
       return t === 20 ? { cursor: mate, pass: true } : { cursor: st.players[HUMAN].pos };
     });
     expect(r.ticks).toBeLessThan(400);
@@ -171,7 +171,7 @@ describe('training-ground drills', () => {
 
   test('shoot: a shot at goal scores within a few attempts', () => {
     const s = training();
-    const r = runDrill(s, 'shoot', stageDrill(s, 'shoot'), (_st, t) => (t === 10 ? { cursor: { x: 64, y: 20 }, shoot: 0.6 } : { cursor: { x: 64, y: 20 } }));
+    const r = runDrill(s, 'shoot', stageDrill(s, 'shoot'), (_st, t) => (t === 10 ? { cursor: at(64, 20), shoot: 0.6 } : { cursor: at(64, 20) }));
     expect(r.retries).toBeLessThan(4);
     expect(s.score[0]).toBe(1);
   });
@@ -182,7 +182,7 @@ describe('training-ground drills', () => {
     let retry: string | null = null;
     for (let t = 0; t < 600 && !retry; t++) {
       holdFrozen(s, d);
-      step(s, filterInput('shoot', { cursor: { x: 66, y: 20 } }));
+      step(s, filterInput('shoot', { cursor: at(66, 20) }));
       holdFrozen(s, d);
       const r = checkDrill(s, d);
       expect(r.done).toBe(false);
@@ -207,7 +207,7 @@ describe('training-ground drills', () => {
     let retry: string | null = null;
     for (let t = 0; t < 2400 && !retry; t++) {
       holdFrozen(s, d);
-      step(s, filterInput('tackle', { cursor: { x: 28, y: 3 } }));
+      step(s, filterInput('tackle', { cursor: at(28, 3) }));
       holdFrozen(s, d);
       const r = checkDrill(s, d);
       if (!r.done) retry = r.retry;

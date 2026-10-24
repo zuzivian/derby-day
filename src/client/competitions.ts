@@ -2,7 +2,7 @@
 // "play next match", which launches the normal live match via playLive().
 // The rules live in src/meta/competitions.ts; this file only renders and wires.
 
-import { autoLineup, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
+import { autoLineup, cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
 import {
   canStart,
   clubById,
@@ -346,7 +346,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   }
   const label = kind === 'cup' ? `Cup ${CUP_ROUNDS[s.cup!.round].toLowerCase()}` : `League matchday ${s.season!.matchday + 1}`;
   const squad = ladderSquad(opp);
-  const away = toTeamSetup(opp, squad, autoLineup(squad));
+  const away = cpuTeam(opp, squad);
   const oppCrest = opp.crest;
   return ctx.playLive(away, opp.crest, label, (m, forfeited, shown) => {
     let [gf, ga] = m.score;
@@ -375,8 +375,8 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
 
   function finishMatch(m: MatchState, forfeited: boolean, shown: TeamSetup, gf: number, ga: number, pens?: HumanPens) {
     // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
-    const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-    const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+    const scorersFor = forfeited ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+    const scorersAgainst = forfeited ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
     const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited, pens) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);

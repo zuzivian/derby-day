@@ -145,7 +145,7 @@ describe('retirements', () => {
     expect(s.squad.length - intake).toBeGreaterThanOrEqual(MIN_SQUAD);
     expect(s.squad.some((p) => p.role === 'GK')).toBe(true);
     expect(s.lineup.every((id) => s.squad.some((p) => p.id === id))).toBe(true);
-    expect(new Set(s.lineup).size).toBe(6);
+    expect(new Set(s.lineup).size).toBe(11);
   });
 });
 

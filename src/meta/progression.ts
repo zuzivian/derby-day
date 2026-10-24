@@ -263,7 +263,7 @@ export function generateProspect(r: Rng, year: number): Player {
 }
 
 function dropFromLineup(save: Save): void {
-  if (save.lineup.some((id) => !save.squad.some((p) => p.id === id))) save.lineup = autoLineup(save.squad);
+  if (save.lineup.some((id) => !save.squad.some((p) => p.id === id))) save.lineup = autoLineup(save.squad, save.formation);
 }
 
 /** Sign an offered prospect. If the squad is full, `releaseId` names who leaves (a free release). */

@@ -3,6 +3,7 @@
 //   bun run scripts/ai-probe.ts [matches] [skillA] [skillB] [quality] [halfSeconds]
 
 import { autoLineup, generateSquad, toTeamSetup } from '../src/meta/club.ts';
+import { HALF_SECONDS } from '../src/sim/constants.ts';
 import { simulate } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 
@@ -10,7 +11,7 @@ const n = Number(process.argv[2] ?? 40);
 const skillA = Number(process.argv[3] ?? 0.85);
 const skillB = Number(process.argv[4] ?? 0.25);
 const quality = Number(process.argv[5] ?? 60);
-const halfSeconds = Number(process.argv[6] ?? 120);
+const halfSeconds = Number(process.argv[6] ?? HALF_SECONDS);
 
 let w = 0;
 let d = 0;

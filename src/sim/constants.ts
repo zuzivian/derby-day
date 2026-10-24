@@ -1,37 +1,71 @@
-// World units are metres. Indoor six-a-side arena with boards on every side
-// except the goal mouths, so the ball stays in play and matches stay fast.
+// World units are metres. Eleven-a-side on a full-size pitch with the Laws of
+// the Game markings: the ball goes out of play over the touchlines and goal
+// lines (no boards), so throw-ins, goal kicks and corners restart play.
+//
+// Coordinates: x runs along the pitch from team 0's goal line (x = 0) to team
+// 1's (x = PITCH_W); y runs across it from one touchline (y = 0) to the other.
+
+/**
+ * Bumped whenever a change makes the sim produce a different match from the
+ * same seed and inputs. Replays carry it, so one recorded on another version
+ * is flagged instead of silently showing a different match.
+ *   1  six-a-side on boards (until 2026-10)
+ *   2  eleven-a-side, full pitch, Laws 8, 11, 12, 13-17 (restarts, offside, fouls, cards)
+ */
+export const SIM_VERSION = 2;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;
 
-export const PITCH_W = 64;
-export const PITCH_H = 40;
-export const GOAL_W = 6;
-export const GOAL_DEPTH = 1.6;
+export const PITCH_W = 105;
+export const PITCH_H = 68;
+/** Inside of the posts. */
+export const GOAL_W = 7.32;
+export const GOAL_DEPTH = 2;
 export const GOAL_TOP = (PITCH_H - GOAL_W) / 2;
 export const GOAL_BOTTOM = (PITCH_H + GOAL_W) / 2;
-export const BOX_DEPTH = 7;
-export const BOX_W = 16;
+/** Penalty area: 16.5 m from the goal line, 16.5 m either side of the posts. */
+export const BOX_DEPTH = 16.5;
+export const BOX_W = GOAL_W + 2 * 16.5;
+/** Goal area: 5.5 m deep, 5.5 m either side of the posts. */
+export const SIX_DEPTH = 5.5;
+export const SIX_W = GOAL_W + 2 * 5.5;
+/** Penalty mark, from the goal line. */
+export const PENALTY_SPOT = 11;
+/** Centre circle radius, penalty arc radius, and the free-kick / corner distance. */
+export const CENTRE_R = 9.15;
+export const RETREAT = 9.15;
+export const CORNER_R = 1;
 
 export const PLAYER_R = 0.65;
-export const BALL_R = 0.22;
-export const TEAM_SIZE = 6;
+export const BALL_R = 0.11;
+export const TEAM_SIZE = 11;
+/** Squad size of a generated club: 11 starters and 7 on the bench. */
+export const SQUAD_SIZE = 18;
 
 /** Default real-time length of one half, in seconds. Shown as 45 match minutes. */
-export const HALF_SECONDS = 120;
+export const HALF_SECONDS = 180;
+/** Match seconds shown on a 90-minute clock. */
+export const MATCH_SECONDS = 90 * 60;
 
 /** Ball flight. Metres and seconds, so gravity is the real thing. */
 export const GRAVITY = 9.8;
 export const BOUNCE_DAMP = 0.55;
-/** Above this height a ball cannot be taken by an outfield player. */
+/** Above this height a ball cannot be controlled by an outfield player (headers go up to HEAD_Z). */
 export const REACH_Z = 1.2;
+/** A descending ball below this can be headed. */
+export const HEAD_Z = 2.5;
 /** Keepers can leap for it, but only inside their box and below this height. */
-export const KEEPER_REACH_Z = 2.1;
-/** Crossbar height: a ball arriving higher than this over the line is not a goal. */
-export const GOAL_BAR_H = 2.2;
+export const KEEPER_REACH_Z = 2.6;
+/** Crossbar height (underside): a ball higher than this over the line is not a goal. */
+export const GOAL_BAR_H = 2.44;
+/** Players may run this far beyond the lines (to take a throw-in or a corner). */
+export const RUN_OFF = 3;
 
 /** A chip leaves the foot already above the floor, so a defender at point-blank range cannot just take it. */
 export const CHIP_Z0 = 1.3;
+/** A throw-in leaves the hands above the head. */
+export const THROW_Z0 = 2.0;
 
 export const SPRINT_MULT = 1.18;
 /** Energy per second burned while sprinting, scaled by stamina. */
@@ -43,17 +77,81 @@ export const KICKOFF_PAUSE = 50;
 export const GOAL_PAUSE = 130;
 export const HALFTIME_PAUSE = 120;
 
-export type Role = 'GK' | 'DEF' | 'MID' | 'FWD';
+/** Restart timing, ticks. See rules.ts for the state machine. */
+export const RESTART_WHISTLE = 30;
+export const RESTART_WHISTLE_FOUL = 55;
+export const RESTART_SETUP_MIN = 24;
+export const RESTART_SETUP_MAX = 210;
+/** A human taker who does nothing for this long has the CPU take it for them. */
+export const RESTART_HUMAN_WAIT = 300;
+/** How long the referee waits to see whether an advantage comes to anything. */
+export const ADVANTAGE_TICKS = 120;
 
-/** Formation 1-2-2-1. x runs from own goal (0) to the opponent's goal (1). */
-export const FORMATION: { role: Role; x: number; y: number }[] = [
-  { role: 'GK', x: 0.03, y: 0.5 },
-  { role: 'DEF', x: 0.2, y: 0.3 },
-  { role: 'DEF', x: 0.2, y: 0.7 },
-  { role: 'MID', x: 0.42, y: 0.22 },
-  { role: 'MID', x: 0.42, y: 0.78 },
-  { role: 'FWD', x: 0.62, y: 0.5 },
-];
+export type Role = 'GK' | 'DEF' | 'MID' | 'FWD';
+/** Finer positions inside a role: full-back/centre-back, holding/central/wide midfielder, winger/striker. */
+export type SubRole = 'GK' | 'CB' | 'FB' | 'DM' | 'CM' | 'WM' | 'W' | 'ST';
+export type FormationId = '4-4-2' | '4-3-3';
+
+export interface FormationSlot {
+  role: Role;
+  sub: SubRole;
+  /** Short label for a lineup board, e.g. "LB". */
+  label: string;
+  /** Base shape in team coordinates: x from own goal line (0) to the opponent's (1), y across (0..1). */
+  x: number;
+  y: number;
+}
+
+export const FORMATIONS: Record<FormationId, FormationSlot[]> = {
+  '4-4-2': [
+    { role: 'GK', sub: 'GK', label: 'GK', x: 0.02, y: 0.5 },
+    { role: 'DEF', sub: 'FB', label: 'LB', x: 0.2, y: 0.13 },
+    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.39 },
+    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.61 },
+    { role: 'DEF', sub: 'FB', label: 'RB', x: 0.2, y: 0.87 },
+    { role: 'MID', sub: 'WM', label: 'LM', x: 0.4, y: 0.12 },
+    { role: 'MID', sub: 'DM', label: 'CM', x: 0.36, y: 0.4 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.4, y: 0.6 },
+    { role: 'MID', sub: 'WM', label: 'RM', x: 0.4, y: 0.88 },
+    { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.37 },
+    { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.63 },
+  ],
+  '4-3-3': [
+    { role: 'GK', sub: 'GK', label: 'GK', x: 0.02, y: 0.5 },
+    { role: 'DEF', sub: 'FB', label: 'LB', x: 0.2, y: 0.13 },
+    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.39 },
+    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.61 },
+    { role: 'DEF', sub: 'FB', label: 'RB', x: 0.2, y: 0.87 },
+    { role: 'MID', sub: 'DM', label: 'DM', x: 0.32, y: 0.5 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.33 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.67 },
+    { role: 'FWD', sub: 'W', label: 'LW', x: 0.58, y: 0.12 },
+    { role: 'FWD', sub: 'ST', label: 'ST', x: 0.6, y: 0.5 },
+    { role: 'FWD', sub: 'W', label: 'RW', x: 0.58, y: 0.88 },
+  ],
+};
+
+export const FORMATION_IDS = Object.keys(FORMATIONS) as FormationId[];
+export const DEFAULT_FORMATION: FormationId = '4-4-2';
+
+/** The default formation's slots. Kept for callers that predate formations. */
+export const FORMATION: FormationSlot[] = FORMATIONS[DEFAULT_FORMATION];
+
+export const formationOf = (id: FormationId | undefined): FormationSlot[] => FORMATIONS[id ?? DEFAULT_FORMATION] ?? FORMATION;
+
+/**
+ * Rolling ball. Below ROLL_FAST_V it slows at ROLL_A + ROLL_B * v m/s per
+ * second (a short pass feels the same as it always did); above, the speed
+ * term is only ROLL_FAST_B, so a struck shot or a long pass keeps its pace
+ * across a full-size pitch. Continuous at ROLL_FAST_V. rollDistance and
+ * rollTravel in kicks.ts integrate it exactly.
+ */
+export const ROLL_A = 1.6;
+export const ROLL_B = 0.35;
+export const ROLL_FAST_V = 6;
+export const ROLL_FAST_B = 0.08;
+/** Deceleration of a rolling ball at speed v, m/s per second. */
+export const rollDecel = (v: number): number => ROLL_A + ROLL_B * Math.min(v, ROLL_FAST_V) + ROLL_FAST_B * Math.max(0, v - ROLL_FAST_V);
 
 /** Horizontal drag on a ball in the air, per second (much weaker than floor friction). */
 export const AIR_DRAG = 0.12;

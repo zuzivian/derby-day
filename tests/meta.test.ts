@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup } from '../src/meta/club.ts';
 import { eloDelta, expectedScore, goalDiffMultiplier } from '../src/meta/elo.ts';
-import { applyResult, askingPrice, buyPlayer, ladderTable, MAX_SQUAD, newGame, salePrice, sellPlayer, setLineupSlot, train } from '../src/meta/game.ts';
+import { applyResult, askingPrice, buyPlayer, ensureElevenASide, ladderTable, MAX_SQUAD, MIN_SQUAD, newGame, salePrice, sellPlayer, setFormation, setLineupSlot, train } from '../src/meta/game.ts';
 import { clubName } from '../src/meta/names.ts';
 import { overall } from '../src/meta/player.ts';
 import { makeRng } from '../src/sim/rng.ts';
@@ -30,8 +30,9 @@ describe('names', () => {
 describe('club loop', () => {
   test('new game has a full lineup and a market', () => {
     const s = newGame(123);
-    expect(s.lineup.filter(Boolean).length).toBe(6);
-    expect(new Set(s.lineup).size).toBe(6);
+    expect(s.lineup.filter(Boolean).length).toBe(11);
+    expect(new Set(s.lineup).size).toBe(11);
+    expect(s.squad.length).toBe(18);
     expect(s.market.length).toBe(10);
     expect(s.ladder.length).toBe(15);
   });
@@ -74,7 +75,7 @@ describe('club loop', () => {
     setLineupSlot(s, 1, b);
     expect(s.lineup[1]).toBe(b);
     expect(s.lineup[3]).toBe(a);
-    expect(new Set(s.lineup).size).toBe(6);
+    expect(new Set(s.lineup).size).toBe(11);
   });
 
   test('ranked result updates elo, record and ladder', () => {
@@ -87,6 +88,32 @@ describe('club loop', () => {
     expect(opp.elo).toBeLessThan(oppBefore);
     expect(s.club.won).toBe(1);
     expect(ladderTable(s).some((row) => row.you)).toBe(true);
+  });
+
+  test('a six-a-side save is brought up to eleven-a-side on load', () => {
+    const s = newGame(44);
+    s.squad = s.squad.slice(0, 10);
+    s.lineup = s.lineup.slice(0, 6);
+    delete s.formation;
+    ensureElevenASide(s);
+    expect(s.squad.length).toBe(18);
+    expect(s.formation).toBe('4-4-2');
+    expect(new Set(s.lineup).size).toBe(11);
+    expect(s.lineup.every((id) => s.squad.some((p) => p.id === id))).toBe(true);
+    expect(new Set(s.squad.map((p) => p.number)).size).toBe(18);
+    expect(s.squad.filter((p) => p.role === 'GK').length).toBeGreaterThanOrEqual(2);
+    // Safe to call again: nothing changes.
+    const before = JSON.stringify(s.squad);
+    ensureElevenASide(s);
+    expect(JSON.stringify(s.squad)).toBe(before);
+    expect(MIN_SQUAD).toBe(14);
+  });
+
+  test('changing formation re-picks the XI for the new slots', () => {
+    const s = newGame(45);
+    setFormation(s, '4-3-3');
+    expect(s.formation).toBe('4-3-3');
+    expect(new Set(s.lineup).size).toBe(11);
   });
 
   test('auto lineup prefers a real keeper in goal', () => {

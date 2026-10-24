@@ -1,4 +1,4 @@
-import type { Role } from './constants.ts';
+import type { FormationId, Role, SubRole } from './constants.ts';
 import type { Rng } from './rng.ts';
 import type { Vec } from './vec.ts';
 
@@ -26,17 +26,22 @@ export interface TeamSetup {
   short: string;
   primary: string;
   secondary: string;
-  /** Exactly TEAM_SIZE players, in FORMATION slot order. */
+  /** Exactly TEAM_SIZE players, in the formation's slot order (FORMATIONS in constants.ts). */
   players: PlayerSetup[];
   /** 0..1. Drives how quickly and how well the CPU decides. */
   aiSkill: number;
+  /** Default '4-4-2'. */
+  formation?: FormationId;
 }
 
 export interface MatchPlayer {
   i: number;
   team: 0 | 1;
   slot: number;
+  /** The slot's role. A keeper sent off is replaced in goal by an outfielder, whose role becomes 'GK'. */
   role: Role;
+  /** Finer position from the formation slot (full-back, holding midfielder, winger...). */
+  sub: SubRole;
   id: string;
   name: string;
   number: number;
@@ -56,6 +61,10 @@ export interface MatchPlayer {
   jitter: Vec;
   jitterTimer: number;
   holdTicks: number;
+  /** Yellow cards this match (0, 1; a second one is a red). */
+  yellow: number;
+  /** Shown a red card: off the pitch for the rest of the match. Its position is parked far outside the pitch. */
+  sentOff: boolean;
   /** Scratch memory for the CPU brain in ai.ts. Created lazily there; nothing else reads it. */
   ai?: AiMemory;
 }
@@ -69,7 +78,7 @@ export interface AiMemory {
   /** Whether the team was attacking when the target was chosen. */
   attacking: boolean;
   /** Carrier behaviour that persists across ticks. */
-  mode: 'none' | 'takeon' | 'shield';
+  mode: 'none' | 'takeon' | 'shield' | 'dive';
   modeTicks: number;
   modeTarget: Vec | null;
 }
@@ -89,16 +98,127 @@ export interface Ball {
   vz: number;
   /** Ticks left of the first-touch cushion after a player takes the ball. */
   touch: number;
+  /** The restart the ball was last played from, until another player touches it (throw-ins can't score directly, etc). */
+  setPiece: RestartKind | null;
+  /** With setPiece: false for an indirect free kick or a throw-in (a goal needs another touch first). */
+  setPieceDirect: boolean;
+  /** Last player to kick the ball on purpose (pass, shot, clearance), or -1. A keeper may not handle a teammate's kick. */
+  kickedBy: number;
+  /** A keeper is holding it, or a thrower has it above the head. */
+  inHands: boolean;
 }
 
-export type Phase = 'kickoff' | 'play' | 'goal' | 'halftime' | 'fulltime';
+/** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
+export type Phase = 'kickoff' | 'play' | 'restart' | 'goal' | 'halftime' | 'fulltime';
 
-export interface MatchEvent {
+export type RestartKind = 'kickoff' | 'throwin' | 'goalkick' | 'corner' | 'freekick' | 'penalty';
+
+/**
+ * A restart in progress (Laws 8, 13-17). The stages:
+ *   whistle  the ball is dead and still rolling; players ease off.
+ *   setup    the ball is on the spot, the taker walks to it, everyone takes up legal positions.
+ *   ready    the taker is over the ball (or holding it for a throw-in) and plays it when ready.
+ * Kick-offs only use 'ready' (during Phase 'kickoff').
+ */
+export interface Restart {
+  kind: RestartKind;
+  /** Team taking it. */
+  team: 0 | 1;
+  /** Where the ball is placed. */
+  spot: Vec;
+  /** Player index of the taker, or -1 until chosen at the start of setup. */
+  taker: number;
+  stage: 'whistle' | 'setup' | 'ready';
+  /** Ticks spent in the current stage. */
+  ticks: number;
+  /** Can a goal be scored straight from it? False for an indirect free kick and a throw-in. */
+  direct: boolean;
+  /** Why play stopped. */
+  reason: 'out' | 'foul' | 'offside' | 'goal' | 'half' | 'start';
+  /** CPU taker: ticks to wait in 'ready' before playing it. */
+  wait: number;
+}
+
+export interface Referee {
+  pos: Vec;
+  vel: Vec;
+  facing: Vec;
+}
+
+export type FoulSeverity = 'careless' | 'reckless' | 'excessive';
+export type CardReason = 'reckless' | 'excessive' | 'spa' | 'dogso' | 'second-yellow';
+
+interface EventBase {
   tick: number;
+  /** 1..90 on the match clock. */
   minute: number;
+  /** Match clock in seconds, 0..5400 (matchSeconds). */
+  second: number;
+  team: 0 | 1;
+  /** Player index the event is about, or -1. */
+  player: number;
+}
+
+export interface GoalEvent extends EventBase {
+  kind: 'goal';
+  /** Scoring team. */
   team: 0 | 1;
   scorer: string;
+  ownGoal: boolean;
+  /** Restart the goal came from directly (one touch), or 'play'. */
+  from: RestartKind | 'play';
 }
+export interface FoulEvent extends EventBase {
+  kind: 'foul';
+  /** Offending team; player is the offender. */
+  victim: number;
+  spot: Vec;
+  severity: FoulSeverity;
+  penalty: boolean;
+  /** The referee waved play on (advantage). */
+  advantage: boolean;
+}
+export interface CardEvent extends EventBase {
+  kind: 'card';
+  color: 'yellow' | 'red';
+  name: string;
+  /** A second yellow: always followed by the red it brings (which has this set too). */
+  secondYellow: boolean;
+  reason: CardReason;
+}
+export interface OffsideEvent extends EventBase {
+  kind: 'offside';
+  /** Offending (attacking) team; the assistant's flag goes up. */
+  spot: Vec;
+}
+export interface RestartEvent extends EventBase {
+  kind: 'restart';
+  /** Team awarded it; player is the taker once known (-1 when awarded). */
+  restart: RestartKind;
+  spot: Vec;
+  direct: boolean;
+  reason: Restart['reason'];
+}
+export interface RestartTakenEvent extends EventBase {
+  kind: 'restartTaken';
+  restart: RestartKind;
+  spot: Vec;
+}
+export interface AdvantageEvent extends EventBase {
+  kind: 'advantage';
+  /** Team benefiting. */
+  spot: Vec;
+}
+export interface PhaseEvent extends EventBase {
+  kind: 'halftime' | 'fulltime';
+}
+export interface SendOffEvent extends EventBase {
+  kind: 'sentOff';
+  name: string;
+}
+
+/** Everything a renderer, commentary or audio might key off, in tick order. */
+export type MatchEvent = GoalEvent | FoulEvent | CardEvent | OffsideEvent | RestartEvent | RestartTakenEvent | AdvantageEvent | PhaseEvent | SendOffEvent;
 
 export interface TeamStats {
   shots: number;
@@ -106,6 +226,36 @@ export interface TeamStats {
   passes: number;
   tackles: number;
   possessionTicks: number;
+  fouls: number;
+  yellows: number;
+  reds: number;
+  corners: number;
+  offsides: number;
+  throwIns: number;
+  goalKicks: number;
+  freeKicks: number;
+  penalties: number;
+}
+
+/** A pass by `team` with these players in an offside position when it was played (Law 11). */
+export interface OffsideWatch {
+  team: 0 | 1;
+  tick: number;
+  players: number[];
+}
+
+/** Advantage being played: if `team` loses the ball before `until`, the free kick comes back. */
+export interface Advantage {
+  team: 0 | 1;
+  until: number;
+  spot: Vec;
+  penalty: boolean;
+}
+
+export interface PendingCard {
+  player: number;
+  color: 'yellow' | 'red';
+  reason: CardReason;
 }
 
 export interface MatchState {
@@ -128,10 +278,24 @@ export interface MatchState {
   controlled: [number, number];
   /** Per team: ticks until the auto-switch next re-checks who the human should steer. */
   switchTimer: [number, number];
+  /** Goals only, in order (also in `events`). */
+  goals: GoalEvent[];
+  /** Every goal, foul, card, offside, restart and half/full-time whistle, in order. */
   events: MatchEvent[];
+  /** Cards shown, in order (also in `events`). */
+  cards: CardEvent[];
   stats: [TeamStats, TeamStats];
+  /** The restart in progress during Phase 'restart' and 'kickoff', else null. */
+  restart: Restart | null;
+  referee: Referee;
+  offside: OffsideWatch | null;
+  advantage: Advantage | null;
+  /** Cards decided during an advantage, shown at the next stoppage. */
+  pendingCards: PendingCard[];
   /** CPU team plans, owned by ai.ts. Kept in the state (not a module cache) so a cloned state replays identically. */
   aiPlans?: [AiTeamPlan | null, AiTeamPlan | null];
+  /** CPU set-piece positions for the restart in progress, owned by ai.ts (refreshed every 15 ticks). */
+  aiRestart?: { key: number; kind: RestartKind; team: 0 | 1; targets: (Vec | null)[] };
 }
 
 export interface AiInterception {
@@ -156,6 +320,12 @@ export interface AiTeamPlan {
   mark: number[];
   /** Player who sweeps between ball and goal when defending, or -1. */
   cover: number;
+  /** Height of this team's back line in team coordinates (0 own goal line .. 1 the opponent's). */
+  line: number;
+  /** The opponents' back line (second-last opponent) in this team's coordinates: attackers stay level with it until the pass. */
+  oppLine: number;
+  /** Tick this spell of possession began (attacking), for urgency: a side that has kept it a while takes more risks. */
+  possSince: number;
 }
 
 
@@ -221,7 +391,8 @@ export type Action =
    * it a touch firmer.
    */
   | { kind: 'pass'; target: Vec; receiver: number; through?: boolean; speed?: number }
-  | { kind: 'shoot'; target: Vec; power: number }
+  /** `lift`: optional initial vertical speed in m/s (a dipping free kick over the wall). Added for the CPU; humans leave it out. */
+  | { kind: 'shoot'; target: Vec; power: number; lift?: number }
   /** CPU chip: lofted, lands near `target` or as far as `power` allows. `chipPlan()` previews it. */
   | { kind: 'chip'; target: Vec; power: number }
   /**

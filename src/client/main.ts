@@ -1,5 +1,6 @@
-import { autoLineup, generateSquad, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
-import { applyResult, buyPlayer, newGame, pickOpponent, rerollIdentity, sellPlayer, setLineupSlot, train, type Save } from '../meta/game.ts';
+import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
+import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
+import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -32,6 +33,7 @@ function freshSeed(): number {
 
 function boot(save: Save): App {
   ensureProgressionFields(save);
+  ensureElevenASide(save); // six-a-side saves get a squad of 18 and an eleven-man lineup
   ensureLevelFields(save); // older saves get retro XP and keep what they already use
   return {
     save,
@@ -144,15 +146,15 @@ function tutorialXp(): string {
 
 function startTraining() {
   const s = app.save;
-  if (s.lineup.filter(Boolean).length < 6) {
-    toast('Pick six players first.', false);
+  if (!lineupReady(s)) {
+    toast('Pick a full XI first.', false);
     return;
   }
   takeover = true;
   hideToast();
   window.scrollTo({ top: 0 });
   const stop = mountTutorial(root, {
-    home: toTeamSetup(s.club, s.squad, s.lineup, 0.6),
+    home: clubTeam(s, 0.6),
     controls: app.prefs.controls,
     headingLevel: 1,
     onDone: (completed) => {
@@ -195,11 +197,11 @@ function playLive(
   forfeitText?: string,
 ): boolean {
   const s = app.save;
-  if (s.lineup.filter(Boolean).length < 6) {
-    toast('Pick six players first.', false);
+  if (!lineupReady(s)) {
+    toast('Pick a full XI first.', false);
     return false;
   }
-  const home = toTeamSetup(s.club, s.squad, s.lineup, 0.6);
+  const home = clubTeam(s, 0.6);
   const away = avoidClash(home, opponent);
   const seed = int(s.rng, 1, 2 ** 31 - 1);
   matchOrigin = captureFocus(root) ?? keyFor({ action: 'play-ranked' });
@@ -243,7 +245,7 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
   let crest = opp?.crest ?? 'plain';
   if (opp) {
     const squad = ladderSquad(opp);
-    away = toTeamSetup(opp, squad, autoLineup(squad));
+    away = cpuTeam(opp, squad);
   } else {
     const lvl = practiceLevel!;
     const squad = generateSquad(makeRng(lvl.quality * 7919), lvl.quality);
@@ -281,8 +283,8 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
   // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
-  const scorersFor = forfeited ? [] : m.events.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-  const scorersAgainst = forfeited ? [] : m.events.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorersFor = forfeited ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorersAgainst = forfeited ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited, practice);
@@ -380,8 +382,8 @@ root.addEventListener('click', (e) => {
       if (isUnlocked(s, 'link')) startVersus(mountLink);
       return;
     case 'auto-lineup':
-      s.lineup = autoLineup(s.squad);
-      toast('Best six picked.');
+      s.lineup = autoLineup(s.squad, s.formation);
+      toast('Best XI picked.');
       persist();
       break;
     case 'market-role':
@@ -447,6 +449,10 @@ root.addEventListener('change', (e) => {
   const el = e.target as HTMLSelectElement;
   if (el.dataset.change === 'slot') {
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
+    persist();
+    render();
+  } else if (el.dataset.change === 'formation') {
+    setFormation(app.save, el.value as FormationId);
     persist();
     render();
   } else if (el.dataset.change === 'crest') {

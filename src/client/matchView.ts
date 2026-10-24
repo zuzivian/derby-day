@@ -3,7 +3,7 @@
 
 import { DT } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
-import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
+import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
@@ -32,6 +32,26 @@ export interface MatchInputSource {
   take(): HumanInput | TeamInputs;
   extras(): RenderExtras;
   dispose(): void;
+}
+
+/** A short banner for a referee decision, or null for events that don't need one. */
+export function refereeCall(s: MatchState, e: MatchEvent): string | null {
+  const team = s.teams[e.team]?.name ?? '';
+  switch (e.kind) {
+    case 'offside':
+      return `Offside: ${s.players[e.player].name}`;
+    case 'card':
+      return e.color === 'yellow' ? `Yellow card: ${e.name}` : e.secondYellow ? `Second yellow, red card: ${e.name}` : `Red card: ${e.name}`;
+    case 'advantage':
+      return 'Advantage';
+    case 'restart':
+      if (e.restart === 'penalty') return `Penalty to ${team}`;
+      if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
+      if (e.restart === 'corner') return `Corner to ${team}`;
+      return null;
+    default:
+      return null;
+  }
 }
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -117,6 +137,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let last = performance.now();
   let acc = 0;
   let lastGoals = 0;
+  let lastEvent = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
@@ -161,9 +182,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     $('sb-min').textContent = `${matchMinute(s)}'`;
     $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`;
 
-    if (s.events.length > lastGoals) {
-      const ev = s.events[s.events.length - 1];
-      lastGoals = s.events.length;
+    // Referee's calls: offside, fouls, cards, penalties, set pieces (goals have their own banner below).
+    while (lastEvent < s.events.length) {
+      const call = refereeCall(s, s.events[lastEvent++]);
+      if (call) {
+        banner(call, 1400);
+        announce(call);
+      }
+    }
+    if (s.goals.length > lastGoals) {
+      const ev = s.goals[s.goals.length - 1];
+      lastGoals = s.goals.length;
       banner(`Goal! ${ev.scorer} ${ev.minute}'`, 2000);
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }

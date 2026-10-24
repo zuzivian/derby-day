@@ -2,8 +2,9 @@
 // Everything here is plain data in, plain data out, so it can move behind an
 // API unchanged when the economy goes server-side.
 
-import { TEAM_SIZE } from '../sim/constants.ts';
+import { DEFAULT_FORMATION, FORMATIONS, TEAM_SIZE, type FormationId, type Role } from '../sim/constants.ts';
 import { chance, makeRng, next, pick, type Rng } from '../sim/rng.ts';
+import type { TeamSetup } from '../sim/types.ts';
 import {
   assignNumbers,
   autoLineup,
@@ -12,6 +13,7 @@ import {
   generateLadder,
   generateSquad,
   qualityForElo,
+  toTeamSetup,
   type ClubIdentity,
   type ClubRecord,
   type LadderClub,
@@ -23,9 +25,15 @@ import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, start
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
 export const SAVE_VERSION = 1;
-/** Base squad cap. Club-level perks raise it (squadCap in levels.ts). */
-export const MAX_SQUAD = 14;
-export const MIN_SQUAD = TEAM_SIZE + 1;
+/**
+ * Squad size rules for eleven-a-side. A new club has 18 (11 starters and 7 on
+ * the bench). The cap is 24 (club-level perks add up to three more, squadCap
+ * in levels.ts); you can't sell or retire below 14: an XI plus a keeper and
+ * two outfield cover. Saves from the six-a-side days are topped up to 18 and
+ * get an eleven-man lineup on load (ensureElevenASide).
+ */
+export const MAX_SQUAD = 24;
+export const MIN_SQUAD = TEAM_SIZE + 3;
 export const LADDER_SIZE = 15;
 
 export interface MatchRecord {
@@ -82,6 +90,8 @@ export interface Save {
   unlocksSeen?: UnlockId[];
   /** First-time milestones already claimed. */
   milestones?: MilestoneId[];
+  /** The club's formation (FORMATIONS in sim/constants.ts). Default 4-4-2. The lineup is in its slot order. */
+  formation?: FormationId;
 }
 
 export function newGame(seed: number): Save {
@@ -94,7 +104,8 @@ export function newGame(seed: number): Save {
     rng: r,
     club: { ...identity, ...emptyRecord(), elo: START_ELO },
     squad,
-    lineup: autoLineup(squad),
+    lineup: autoLineup(squad, DEFAULT_FORMATION),
+    formation: DEFAULT_FORMATION,
     budget: 1_200_000,
     trainingPoints: 6,
     eloHistory: [START_ELO],
@@ -171,7 +182,7 @@ export function sellPlayer(save: Save, id: string): Outcome {
   const price = salePrice(p);
   save.squad = save.squad.filter((x) => x.id !== id);
   save.budget += price;
-  if (save.lineup.includes(id)) save.lineup = autoLineup(save.squad);
+  if (save.lineup.includes(id)) save.lineup = autoLineup(save.squad, save.formation);
   save.news.push(`Sold ${shortName(p)} for ${formatMoney(price)}.`);
   return { ok: true, message: `${shortName(p)} sold for ${formatMoney(price)}.` };
 }
@@ -199,6 +210,46 @@ export function setLineupSlot(save: Save, slot: number, playerId: string): void 
   const displaced = save.lineup[slot];
   save.lineup[slot] = playerId;
   if (current >= 0 && current !== slot) save.lineup[current] = displaced;
+}
+
+/** Has the club picked a full XI? */
+export const lineupReady = (save: Save): boolean => save.lineup.filter(Boolean).length >= TEAM_SIZE;
+
+/** The player's own club as the sim sees it. */
+export function clubTeam(save: Save, aiSkill: number): TeamSetup {
+  return toTeamSetup(save.club, save.squad, save.lineup, aiSkill, save.formation);
+}
+
+/** Change formation: the lineup is re-picked for the new slots. */
+export function setFormation(save: Save, formation: FormationId): void {
+  if (!FORMATIONS[formation]) return;
+  save.formation = formation;
+  save.lineup = autoLineup(save.squad, formation);
+}
+
+/**
+ * Bring a save from the six-a-side game up to eleven-a-side: top the squad up
+ * to 18 with players of about its current level (two of each outfield role
+ * at least, a second keeper), and pick an eleven-man lineup. Safe to call on
+ * every load.
+ */
+export function ensureElevenASide(save: Save): void {
+  save.formation ??= DEFAULT_FORMATION;
+  if (save.squad.length < 18) {
+    const r = makeRng((save.seed ^ 0x11a51de) | 0);
+    const avg = save.squad.length ? Math.round(save.squad.reduce((t, p) => t + overall(p), 0) / save.squad.length) : 54;
+    const want: Record<Role, number> = { GK: 2, DEF: 6, MID: 6, FWD: 4 };
+    for (const p of save.squad) want[p.role]--;
+    const roles = (['DEF', 'MID', 'FWD', 'GK'] as Role[]).flatMap((role) => new Array(Math.max(0, want[role])).fill(role) as Role[]);
+    while (save.squad.length < 18) {
+      const role = roles.shift() ?? (['DEF', 'MID', 'FWD'] as Role[])[save.squad.length % 3];
+      save.squad.push(generatePlayer(r, { role, quality: avg - 3 + Math.floor(next(r) * 5) }));
+    }
+    assignNumbers(save.squad);
+    save.news.push('The club moves up to eleven-a-side: the board has signed players to make up a squad of 18.');
+  }
+  const ok = save.lineup.length === TEAM_SIZE && save.lineup.every((id) => save.squad.some((p) => p.id === id)) && new Set(save.lineup).size === TEAM_SIZE;
+  if (!ok) save.lineup = autoLineup(save.squad, save.formation);
 }
 
 export function pickOpponent(save: Save): LadderClub {

@@ -1,6 +1,6 @@
 // HTML templates for the management screens. Pure functions of app state.
 
-import { FORMATION, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, formationOf, type Role } from '../sim/constants.ts';
 import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
@@ -237,15 +237,17 @@ const attrHead = ATTR_KEYS.map((k) => `<th class="num" title="${ATTR_NAME[k]}">$
 export function squadScreen(app: App): string {
   const s = app.save;
   const byId = new Map(s.squad.map((p) => [p.id, p]));
-  const slots = FORMATION.map((f, slot) => {
+  const formation = formationOf(s.formation);
+  const slots = formation.map((f, slot) => {
     const cur = byId.get(s.lineup[slot]);
     const options = [...s.squad]
       .sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))
       .map((p) => `<option value="${p.id}"${p.id === cur?.id ? ' selected' : ''}>${esc(`${p.last} · ${ratingAs(p, f.role)}${p.role !== f.role ? ` (${p.role})` : ''}`)}</option>`)
       .join('');
-    return `<div class="slot" style="--x:${f.x * 100}%;--y:${f.y * 100}%">
+    // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board.
+    return `<div class="slot" style="--x:${(2 + (f.x / 0.62) * 88).toFixed(1)}%;--y:${f.y * 100}%">
       <span class="magnet">${cur?.number ?? '?'}</span>
-      <label class="slot-label"><span class="slot-role">${f.role}</span>
+      <label class="slot-label"><span class="slot-role">${f.label}</span>
         <select id="slot-${slot}" data-change="slot" data-slot="${slot}">${options}</select>
       </label>
     </div>`;
@@ -254,15 +256,15 @@ export function squadScreen(app: App): string {
   <div class="squad-grid">
     ${academyPanel(app)}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Lineup · 1-2-2-1 · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Lineup · <label class="formation-pick"><span class="sr-only">Formation</span><select id="formation" data-change="formation">${FORMATION_IDS.map((id) => `<option value="${id}"${id === (s.formation ?? '4-4-2') ? ' selected' : ''}>${id}</option>`).join('')}</select></label> · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
-      <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best six</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
+      <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
     <article class="panel">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
-        <tbody>${[...s.squad].sort((a, b) => FORMATION.findIndex((f) => f.role === a.role) - FORMATION.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
+        <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
       </table></div>
     </article>
   </div>`;

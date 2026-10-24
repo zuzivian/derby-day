@@ -259,7 +259,8 @@ select {
 .magnet.big { width: 56px; height: 56px; font-size: 26px; flex: none; }
 .slot-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .slot-role { font-size: 11px; font-weight: 800; letter-spacing: .1em; color: var(--chalk); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); background: rgba(10, 30, 18, .45); border-radius: 4px; padding: 0 5px; }
-.slot select { font-size: 13px; max-width: 150px; background: var(--surface); }
+.slot select { font-size: 12px; max-width: 112px; background: var(--surface); }
+.formation-pick select { font: inherit; font-size: 12px; padding: 0 4px; background: var(--surface); color: inherit; }
 
 /* Training --------------------------------------------------------------- */
 .training-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 16px; align-items: start; }
@@ -322,8 +323,8 @@ select {
 .sb-score { font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; color: #ffd60a; letter-spacing: .04em; }
 .sb-dash { color: #6b7a74; margin: 0 4px; }
 .sb-clock { font-size: 12px; color: #a9b7b1; font-variant-numeric: tabular-nums; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
-.pitch-wrap { position: relative; width: min(100%, calc((100vh - 190px) * 1.531)); min-width: min(100%, 320px); }
-#pitch, .pitch-canvas { display: block; width: 100%; aspect-ratio: 69.2 / 45.2; border-radius: 10px; cursor: none; touch-action: none; background: #1f4f33; }
+.pitch-wrap { position: relative; width: min(100%, calc((100vh - 190px) * 1.493)); min-width: min(100%, 320px); }
+#pitch, .pitch-canvas { display: block; width: 100%; aspect-ratio: 112 / 75; border-radius: 10px; cursor: none; touch-action: none; background: #1f4f33; }
 .pitch-pause {
   position: absolute; left: 10px; top: 10px; z-index: 2; appearance: none; cursor: pointer; border: 1.5px solid rgba(255, 255, 255, .75); border-radius: 7px;
   background: rgba(15, 21, 19, .6); color: #fff; font-weight: 700; font-size: 13px; padding: 4px 10px;
@@ -449,7 +450,7 @@ select {
 .coach-note.good { color: var(--good); }
 .coach-note.good::before { content: '\2713  '; }
 .coach-note.again { color: var(--muted); }
-.training-pitch { width: min(100%, calc((100vh - 370px) * 1.531)); }
+.training-pitch { width: min(100%, calc((100vh - 370px) * 1.493)); }
 
 @media (max-width: 640px) {
   .ob-step-label { display: none; }

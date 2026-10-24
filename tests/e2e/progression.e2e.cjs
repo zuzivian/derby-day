@@ -18,7 +18,7 @@ function nearSeasonEndFullSquad(save) {
   save.year = 1;
   save.squad.forEach((p) => (p.age = 25));
   let i = 0;
-  while (save.squad.length < 14) {
+  while (save.squad.length < 24) {
     const c = JSON.parse(JSON.stringify(save.squad[i++ % 6]));
     c.id = `clone${i}`;
     c.number = 60 + i;
@@ -71,13 +71,13 @@ test('the 10th counted match rolls the season over and shows the review after th
 });
 
 test('a full squad is only offered prospects; you can release someone to sign one', async (t) => {
-  // Level 14: the calendar is on and the squad cap is still 14 (level 15 adds a place).
+  // Level 14: the calendar is on and the squad cap is still 24 (level 15 adds a place).
   const page = await openApp(t, { level: 14, mutateSave: nearSeasonEndFullSquad });
   await forfeitRanked(page);
   await page.locator(SEL.modalClose).click();
   await page.locator(R.review).waitFor();
   const s = await readSave(page);
-  expect(s.squad.length, 'squad stays at the cap').toBe(14);
+  expect(s.squad.length, 'squad stays at the cap').toBe(24);
   expect(s.offers.length, 'prospects are held as offers').toBeGreaterThan(1);
 
   await page.locator(R.close).click();
@@ -87,7 +87,7 @@ test('a full squad is only offered prospects; you can release someone to sign on
   await page.locator(`[data-offer="${offer.id}"] ${R.sign}`).click();
   await page.locator(SEL.toast).waitFor();
   const done = await readSave(page);
-  expect(done.squad.length, 'squad still at the cap').toBe(14);
+  expect(done.squad.length, 'squad still at the cap').toBe(24);
   expect(done.squad.some((p) => p.id === offer.id), 'prospect signed').toBe(true);
   expect(done.offers.length, 'offer taken').toBe(s.offers.length - 1);
   expect(done.budget, 'release was free').toBe(s.budget);

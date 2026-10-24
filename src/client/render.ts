@@ -1,12 +1,12 @@
 // Canvas renderer for a match. Reads state, never writes it.
 
-import { BOX_DEPTH, BOX_W, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
 import { humanPass, loftPlan, pointerPass } from '../sim/kicks.ts';
 import type { MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 
-export const MARGIN = 2.6;
+export const MARGIN = 3.5;
 // Drawn larger than their physical size so players read at a glance.
 const PLAYER_R = 0.95;
 const BALL_R = 0.3;
@@ -59,6 +59,7 @@ export class PitchRenderer {
     const { ctx, k } = this;
     ctx.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
     this.drawPitch();
+    this.drawOfficials(s);
 
     // Aim feedback. With the ball: where a click would pass to, or the landing ring and arc of a
     // lofted ball being charged, or the line of a shot being charged. Without it: who a click picks.
@@ -132,7 +133,7 @@ export class PitchRenderer {
     // Sprint streaks behind anyone running flat out.
     ctx.lineCap = 'round';
     for (const p of s.players) {
-      if (!p.sprinting) continue;
+      if (!p.sprinting || p.sentOff) continue;
       const sp = Math.hypot(p.vel.x, p.vel.y);
       if (sp < 1) continue;
       const dx = p.vel.x / sp;
@@ -151,11 +152,13 @@ export class PitchRenderer {
     // Shadows first so nobody's shadow sits on top of another player.
     ctx.fillStyle = 'rgba(0,0,0,.22)';
     for (const p of s.players) {
+      if (p.sentOff) continue;
       ctx.beginPath();
       ctx.ellipse(p.pos.x + 0.18, p.pos.y + 0.22, PLAYER_R, PLAYER_R * 0.8, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     for (const p of s.players) {
+      if (p.sentOff) continue; // sent off: gone from the pitch
       const team = s.teams[p.team];
       const isCtrl = s.humans[p.team] && p.i === s.controlled[p.team];
       ctx.globalAlpha = p.stun > 0 ? 0.55 : 1;
@@ -186,6 +189,14 @@ export class PitchRenderer {
       ctx.textBaseline = 'middle';
       ctx.fillText(String(p.number), p.pos.x, p.pos.y + 0.04);
       ctx.globalAlpha = 1;
+      if (p.yellow > 0) {
+        // Booked: a small yellow card by the shoulder.
+        ctx.fillStyle = '#ffd60a';
+        ctx.strokeStyle = 'rgba(0,0,0,.6)';
+        ctx.lineWidth = 0.05;
+        ctx.fillRect(p.pos.x + PLAYER_R * 0.6, p.pos.y - PLAYER_R - 0.2, 0.42, 0.6);
+        ctx.strokeRect(p.pos.x + PLAYER_R * 0.6, p.pos.y - PLAYER_R - 0.2, 0.42, 0.6);
+      }
       if (isCtrl) {
         ctx.fillStyle = HUMAN_COLORS[mark(p.team)];
         ctx.beginPath();
@@ -291,36 +302,54 @@ export class PitchRenderer {
 
   private drawPitch(): void {
     const { ctx } = this;
-    // Surround (the boards and the floor outside them)
-    ctx.fillStyle = '#1f4f33';
+    // Surround: the grass outside the lines.
+    ctx.fillStyle = '#245a3a';
     ctx.fillRect(-MARGIN, -MARGIN, VIEW_W, VIEW_H);
-    const bands = 10;
+    const bands = 14;
     for (let i = 0; i < bands; i++) {
       ctx.fillStyle = i % 2 ? '#2f7d4a' : '#348752';
       ctx.fillRect((PITCH_W / bands) * i, 0, PITCH_W / bands + 0.01, PITCH_H);
     }
-    ctx.strokeStyle = 'rgba(243,246,241,.85)';
-    ctx.lineWidth = 0.14;
+    const line = 'rgba(243,246,241,.85)';
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 0.18;
     ctx.strokeRect(0, 0, PITCH_W, PITCH_H);
     ctx.beginPath();
     ctx.moveTo(PITCH_W / 2, 0);
     ctx.lineTo(PITCH_W / 2, PITCH_H);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(PITCH_W / 2, PITCH_H / 2, 5, 0, Math.PI * 2);
+    ctx.arc(PITCH_W / 2, PITCH_H / 2, CENTRE_R, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.fillStyle = 'rgba(243,246,241,.85)';
-    for (const x of [PITCH_W / 2, 5.5, PITCH_W - 5.5]) {
+    const midY = PITCH_H / 2;
+    for (const side of [0, 1] as const) {
+      const gx = side === 0 ? 0 : PITCH_W;
+      const dir = side === 0 ? 1 : -1;
+      // Penalty area, goal area, penalty mark and the arc outside the area.
+      ctx.strokeRect(side === 0 ? 0 : PITCH_W - BOX_DEPTH, midY - BOX_W / 2, BOX_DEPTH, BOX_W);
+      ctx.strokeRect(side === 0 ? 0 : PITCH_W - SIX_DEPTH, midY - SIX_W / 2, SIX_DEPTH, SIX_W);
+      const spot = gx + dir * PENALTY_SPOT;
+      const half = Math.acos((BOX_DEPTH - PENALTY_SPOT) / CENTRE_R);
       ctx.beginPath();
-      ctx.arc(x, PITCH_H / 2, 0.2, 0, Math.PI * 2);
+      if (side === 0) ctx.arc(spot, midY, CENTRE_R, -half, half);
+      else ctx.arc(spot, midY, CENTRE_R, Math.PI - half, Math.PI + half);
+      ctx.stroke();
+      ctx.fillStyle = line;
+      ctx.beginPath();
+      ctx.arc(spot, midY, 0.22, 0, Math.PI * 2);
       ctx.fill();
+      // Corner arcs.
+      for (const cy of [0, PITCH_H]) {
+        ctx.beginPath();
+        const a0 = side === 0 ? (cy === 0 ? 0 : -Math.PI / 2) : cy === 0 ? Math.PI / 2 : Math.PI;
+        ctx.arc(gx, cy, CORNER_R, a0, a0 + Math.PI / 2);
+        ctx.stroke();
+      }
     }
-    ctx.strokeRect(0, (PITCH_H - BOX_W) / 2, BOX_DEPTH, BOX_W);
-    ctx.strokeRect(PITCH_W - BOX_DEPTH, (PITCH_H - BOX_W) / 2, BOX_DEPTH, BOX_W);
-    // Boards
-    ctx.strokeStyle = 'rgba(255,255,255,.35)';
-    ctx.lineWidth = 0.4;
-    ctx.strokeRect(-0.2, -0.2, PITCH_W + 0.4, PITCH_H + 0.4);
+    ctx.fillStyle = line;
+    ctx.beginPath();
+    ctx.arc(PITCH_W / 2, midY, 0.22, 0, Math.PI * 2);
+    ctx.fill();
     // Goals with net hatch
     for (const side of [0, 1]) {
       const x0 = side === 0 ? -GOAL_DEPTH : PITCH_W;
@@ -349,5 +378,33 @@ export class PitchRenderer {
       ctx.lineTo(front, GOAL_BOTTOM);
       ctx.stroke();
     }
+  }
+
+  /** The referee (black, with a whistle-yellow rim) and, during a restart, the spot and the 9.15 m the opponents must keep. */
+  private drawOfficials(s: MatchState): void {
+    const { ctx } = this;
+    const r = s.restart;
+    if (r && r.stage !== 'whistle' && (r.kind === 'freekick' || r.kind === 'corner')) {
+      ctx.save();
+      ctx.setLineDash([0.4, 0.5]);
+      ctx.strokeStyle = 'rgba(255,255,255,.35)';
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.arc(r.spot.x, r.spot.y, RETREAT, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    const ref = s.referee;
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.beginPath();
+    ctx.ellipse(ref.pos.x + 0.15, ref.pos.y + 0.18, 0.7, 0.56, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111418';
+    ctx.strokeStyle = '#f5d90a';
+    ctx.lineWidth = 0.14;
+    ctx.beginPath();
+    ctx.arc(ref.pos.x, ref.pos.y, 0.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 }

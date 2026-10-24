@@ -1,8 +1,8 @@
 // First-run setup: welcome, your club, controls, the training ground, and
 // the first fixture. Skippable at every step. Renders into #app while it runs.
 
-import { toTeamSetup, type LadderClub } from '../meta/club.ts';
-import type { Save } from '../meta/game.ts';
+import { type LadderClub } from '../meta/club.ts';
+import { clubTeam, type Save } from '../meta/game.ts';
 import { NAME_MAX, NAME_MIN, renameClub, rerollColours, rerollName, validateClubName } from '../meta/identity.ts';
 import { award, claimMilestone, clubLevel, nextUnlockText, unlockOf } from '../meta/levels.ts';
 import { announce, captureFocus, restoreFocus } from './a11y.ts';
@@ -152,7 +152,7 @@ export function mountOnboarding(root: HTMLElement, o: OnboardingOptions): () => 
       <main id="main" class="ob-main" tabindex="-1">${body()}</main>`;
     if (step === 'training') {
       stopTutorial = mountTutorial(host.querySelector<HTMLElement>('#ob-training')!, {
-        home: toTeamSetup(o.save.club, o.save.squad, o.save.lineup, 0.6),
+        home: clubTeam(o.save, 0.6),
         controls: o.prefs.controls,
         onDone: (completed) => {
           stopTutorial = null;
