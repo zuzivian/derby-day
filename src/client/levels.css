@@ -41,6 +41,7 @@
 .unlock-next .unlock-level { border-style: solid; border-color: var(--accent); color: var(--ink); }
 .unlock-later { background: transparent; border-style: dashed; }
 .unlock-body { display: flex; flex-direction: column; min-width: 0; }
+.unlock-name { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; }
 .unlock-status { font-size: var(--fs-xs, 12px); font-weight: 800; color: var(--muted); white-space: nowrap; }
 .unlock-done .unlock-status { color: var(--good); }
 .unlock-next .unlock-status { color: var(--accent); }
@@ -62,8 +63,11 @@
 .xp-card .level-badge > span { grid-area: 1 / 1; }
 .xp-card-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .xp-gain { margin: 0; font-size: var(--fs-sm, 13px); line-height: 1.35; font-weight: 600; color: var(--muted); }
-.xp-gain .xp-parts { display: inline-block; }
+.xp-gain .xp-colon { font-size: 0; }
+.xp-gain .xp-parts { display: block; margin-top: 2px; font-size: var(--fs-xs, 12px); }
 .xp-gain b { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; letter-spacing: .02em; color: var(--good); }
+.xp-card.is-empty { background: var(--surface-2); border-color: var(--line); }
+.xp-card.is-empty .level-badge { opacity: .7; }
 .xp-card.is-empty .xp-gain { font-size: var(--fs-md, 15px); color: var(--ink); font-weight: 700; }
 .xp-card-track { display: block; height: 10px; border-radius: 99px; background: var(--surface-3, var(--surface)); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .12); overflow: hidden; }
 .xp-card-fill {

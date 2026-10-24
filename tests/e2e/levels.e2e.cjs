@@ -73,7 +73,7 @@ test('levels: a ranked match awards XP, shown in the result dialog and the heade
   const save = await readSave(page);
   const rec = save.history.at(-1);
   expect(save.xp, 'some XP').toBeGreaterThanOrEqual(50);
-  const line = await page.locator(SEL.xpGain).innerText();
+  const line = (await page.locator(SEL.xpGain).innerText()).replace(/\s+/g, ' ');
   const result = rec.goalsFor > rec.goalsAgainst ? 'win 120' : rec.goalsFor === rec.goalsAgainst ? 'draw 80' : 'loss 50';
   expect(line, 'result line').toMatch(new RegExp(`^\\+${save.xp} XP: ${result}`));
   if (rec.goalsFor) expect(line, 'goals').toContain(`${rec.goalsFor} goal`);
@@ -158,4 +158,25 @@ test('levels: a forfeited match earns no XP', async (t) => {
   await page.locator(SEL.modalClose).waitFor();
   expect(await page.locator(SEL.xpGain).innerText(), 'result line').toMatch(/No XP/);
   expect((await readSave(page)).xp, 'unchanged').toBe(150);
+});
+
+test('levels: at 1280x800 a level-up win shows the "Level up" flourish without scrolling the result', async (t) => {
+  // Level 30, 40 XP short of 31; a 3–1 win pays well over that.
+  const page = await openApp(t, { xp: totalXpForLevel(31) - 40, prefs: SHORT, e2eHook: true, width: 1280, height: 800 });
+  await startRanked(page);
+  await page.waitForFunction(() => window.__derbyMatch);
+  await page.evaluate(() => {
+    const m = window.__derbyMatch;
+    m.score = [3, 1];
+    m.goals.push({ team: 0, scorer: 'K. Ashton', minute: 12 }, { team: 1, scorer: 'R. Cartmore', minute: 56 }, { team: 0, scorer: 'K. Ashton', minute: 61 }, { team: 0, scorer: 'M. Delacroix-Hartmann', minute: 88 });
+  });
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
+  await page.waitForTimeout(2500); // the flourish pops after the XP bar has filled
+  const box = await page.evaluate(() => {
+    const scroll = document.querySelector('.modal .rs-scroll').getBoundingClientRect();
+    const lv = document.querySelector('.modal .xp-level')?.getBoundingClientRect();
+    return lv && { top: lv.top, bottom: lv.bottom, viewTop: scroll.top, viewBottom: scroll.bottom };
+  });
+  expect(!!box, 'the result shows a level up').toBe(true);
+  expect(box.top >= box.viewTop && box.bottom <= box.viewBottom, `"Level up" is inside the visible result (${JSON.stringify(box)})`).toBe(true);
 });

@@ -17,11 +17,13 @@ export function crestSvg(c: { primary: string; secondary: string; crest: CrestPa
   const shield = 'M3 3 H37 V20 C37 32 27 38 20 41 C13 38 3 32 3 20 Z';
   const textFill = c.crest === 'plain' || c.crest === 'sash' ? s : p;
   const textStroke = textFill === s ? p : s;
+  // Three letters always fit inside the shield, whatever font loaded (the fallback is much wider).
+  const fit = c.short.length >= 3 ? ' textLength="26" lengthAdjust="spacingAndGlyphs"' : '';
   return `<svg class="crest" width="${size}" height="${Math.round(size * 1.1)}" viewBox="0 0 40 44" aria-hidden="true">
     <defs><clipPath id="${id}"><path d="${shield}"/></clipPath></defs>
     <g clip-path="url(#${id})">${fills[c.crest]}</g>
     <path d="${shield}" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.6"/>
-    <text x="20" y="${c.crest === 'hoops' ? 19 : 25}" text-anchor="middle" font-family="'Big Shoulders Display', 'Arial Narrow', sans-serif" font-weight="800" font-size="12"
+    <text x="20" y="${c.crest === 'hoops' ? 19 : 25}" text-anchor="middle" font-family="'Big Shoulders Display', 'Arial Narrow', sans-serif" font-weight="800" font-size="12"${fit}
       fill="${textFill}" stroke="${textStroke}" stroke-width="2.4" paint-order="stroke">${c.short}</text>
   </svg>`;
 }

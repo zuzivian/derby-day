@@ -217,24 +217,24 @@ export function clubScreen(app: App): string {
 
 function attrCell(v: number): string {
   const tier = v >= 80 ? 'a' : v >= 68 ? 'b' : v >= 55 ? 'c' : 'd';
-  return `<td class="num attr t-${tier}">${v}</td>`;
+  return `<td class="num attr opt t-${tier}">${v}</td>`;
 }
 
 function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
   return `<tr${starter ? ' class="starter"' : ''}>
     <td class="num${showNumber ? '' : ' muted'}">${showNumber ? p.number : '–'}</td>
     <td class="name">${esc(fullName(p))}${starter ? ' <span class="pill">XI</span>' : ''}</td>
-    <td>${esc(nation(p))}</td>
-    <td class="num">${p.age}</td>
+    <td class="opt">${esc(nation(p))}</td>
+    <td class="num opt">${p.age}</td>
     <td><span class="pos pos-${p.role}">${p.role}</span></td>
     <td class="num ovr">${overall(p)}</td>
-    <td class="num muted">${potentialText(p)}</td>
+    <td class="num muted opt">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
     ${extra}
   </tr>`;
 }
 
-const attrHead = ATTR_KEYS.map((k) => `<th class="num" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
+const attrHead = ATTR_KEYS.map((k) => `<th class="num opt" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
 
 export function squadScreen(app: App): string {
   const s = app.save;
@@ -244,7 +244,7 @@ export function squadScreen(app: App): string {
     const cur = byId.get(s.lineup[slot]);
     const options = [...s.squad]
       .sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))
-      .map((p) => `<option value="${p.id}"${p.id === cur?.id ? ' selected' : ''}>${esc(`${p.last} · ${ratingAs(p, f.role)}${p.role !== f.role ? ` (${p.role})` : ''}`)}</option>`)
+      .map((p) => `<option value="${p.id}"${p.id === cur?.id ? ' selected' : ''}>${esc(`${ratingAs(p, f.role)} · ${p.last}${p.role !== f.role ? ` (${p.role})` : ''}`)}</option>`)
       .join('');
     // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board.
     return `<div class="slot" style="--x:${(2 + (f.x / 0.62) * 88).toFixed(1)}%;--y:${f.y * 100}%">
@@ -265,7 +265,7 @@ export function squadScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
       </table></div>
     </article>
@@ -288,7 +288,7 @@ export function transfersScreen(app: App): string {
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th>Nation</th><th class="num">Age</th><th>Pos</th><th class="num">OVR</th><th class="num">POT</th>${attrHead}<th class="num">Price</th><th></th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
@@ -396,11 +396,11 @@ function scorerList(list: string[], club: string): string {
 }
 
 /** One two-sided stat bar. `a` is us, `b` them; the larger side is highlighted. */
-function statRow(label: string, a: number, b: number, us: string, them: string, show: (v: number) => string = String): string {
+function statRow(label: string, a: number, b: number, us: string, them: string, show: (v: number) => string = String, lead = true): string {
   const total = a + b;
   const pa = total > 0 ? (a / total) * 100 : 50;
-  const lead = a > b ? ' lead-a' : b > a ? ' lead-b' : '';
-  return `<li class="rs-stat${total ? '' : ' empty'}${lead}">
+  const cls = !lead ? ' no-lead' : a > b ? ' lead-a' : b > a ? ' lead-b' : '';
+  return `<li class="rs-stat${total ? '' : ' empty'}${cls}${a === 0 || b === 0 ? ' one-sided' : ''}">
     <span class="sr-only">${esc(`${label}: ${us} ${show(a)}, ${them} ${show(b)}.`)}</span>
     <span class="rs-va" aria-hidden="true">${show(a)}</span><span class="rs-label" aria-hidden="true">${esc(label)}</span><span class="rs-vb" aria-hidden="true">${show(b)}</span>
     <span class="rs-bar" aria-hidden="true"><i style="width:${pa.toFixed(1)}%"></i><i style="width:${(100 - pa).toFixed(1)}%"></i></span>
@@ -414,7 +414,7 @@ function cardsRow(a: TeamStats, b: TeamStats, us: string, them: string): string 
   const pa = total > 0 ? (ta / total) * 100 : 50;
   const glyphs = (y: number, r: number) => `<span class="rs-cards"><i class="card-y"></i>${y}${r ? `<i class="card-r"></i>${r}` : ''}</span>`;
   const words = (y: number, r: number) => `${y} yellow${r ? `, ${r} red` : ''}`;
-  return `<li class="rs-stat rs-stat-cards${total ? '' : ' empty'}${ta > tb ? ' lead-a' : tb > ta ? ' lead-b' : ''}">
+  return `<li class="rs-stat rs-stat-cards no-lead${total ? '' : ' empty'}${ta === 0 || tb === 0 ? ' one-sided' : ''}">
     <span class="sr-only">${esc(`Cards: ${us} ${words(ya, ra)}, ${them} ${words(yb, rb)}.`)}</span>
     <span class="rs-va" aria-hidden="true">${glyphs(ya, ra)}</span><span class="rs-label" aria-hidden="true">Cards</span><span class="rs-vb" aria-hidden="true">${glyphs(yb, rb)}</span>
     <span class="rs-bar" aria-hidden="true"><i style="width:${pa.toFixed(1)}%"></i><i style="width:${(100 - pa).toFixed(1)}%"></i></span>
@@ -445,13 +445,14 @@ function resultModal(app: App): string {
       ].filter(Boolean)
     : [];
   const dev = sum?.developments ?? [];
+  const growth = dev.length ? `<div class="rs-growth"><span class="rs-growth-title">${RS_GROWTH}<span>Player growth</span></span><ul>${dev.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const pens = r.pens ? `<span class="rs-pens">${r.pens.you}–${r.pens.opp} on penalties</span>` : '';
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
       <div class="rs-scroll">
       <header class="rs-hero">
-        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · Full-time${r.forfeited ? ' · Forfeited' : ''}</div>
+        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.forfeited ? 'Forfeited' : 'Full-time'}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${OUTCOME_WORD[outcome]}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
@@ -483,15 +484,16 @@ function resultModal(app: App): string {
             ${statRow('On target', a.onTarget, b.onTarget, us, them)}
             ${statRow('Passes', a.passes, b.passes, us, them)}
             ${statRow('Tackles won', a.tackles, b.tackles, us, them)}
-            ${statRow('Fouls', a.fouls ?? 0, b.fouls ?? 0, us, them)}
+            ${statRow('Fouls', a.fouls ?? 0, b.fouls ?? 0, us, them, String, false)}
             ${cardsRow(a, b, us, them)}
           </ul>
+          ${growth}
         </section>`}
         <section class="rs-panel rs-rewards" aria-labelledby="rs-rewards-title">
           <h3 id="rs-rewards-title" class="rs-section"><span>Rewards</span></h3>
           ${sum
             ? `${chips.length ? `<ul class="rs-chips">${chips.join('')}</ul>` : ''}
-              ${dev.length ? `<div class="rs-growth"><span class="rs-growth-title">${RS_GROWTH}<span>Player growth</span></span><ul>${dev.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+              ${r.forfeited ? growth : ''}
               ${xpCardHtml(app.save, sum.xp, r.forfeited)}`
             : `<p class="rs-empty">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
         </section>

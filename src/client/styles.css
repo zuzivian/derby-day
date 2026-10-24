@@ -75,6 +75,7 @@
   --shadow-3: 0 30px 70px -24px rgba(10, 16, 28, .5), 0 2px 8px rgba(10, 16, 28, .12);
   --shadow: var(--shadow-2);
   --scrim: rgba(12, 18, 24, .55);
+  --scroll-shadow: rgba(20, 32, 51, .42);
   --font-display: 'Big Shoulders Display', 'Arial Narrow', 'Roboto Condensed', sans-serif;
   --font-body: 'Barlow', 'Segoe UI', system-ui, sans-serif;
   --font-marker: 'Permanent Marker', 'Comic Sans MS', 'Segoe Print', cursive;
@@ -115,6 +116,7 @@
     --shadow-2: inset 0 1px 0 rgba(255, 255, 255, .04), 0 14px 30px -14px rgba(0, 0, 0, .75);
     --shadow-3: 0 34px 80px -24px rgba(0, 0, 0, .85), 0 0 0 1px rgba(255, 255, 255, .04);
     --scrim: rgba(3, 6, 5, .7);
+    --scroll-shadow: rgba(0, 0, 0, .7);
     color-scheme: dark;
   }
 }
@@ -153,6 +155,7 @@
   --shadow-2: inset 0 1px 0 rgba(255, 255, 255, .04), 0 14px 30px -14px rgba(0, 0, 0, .75);
   --shadow-3: 0 34px 80px -24px rgba(0, 0, 0, .85), 0 0 0 1px rgba(255, 255, 255, .04);
   --scrim: rgba(3, 6, 5, .7);
+  --scroll-shadow: rgba(0, 0, 0, .7);
   color-scheme: dark;
 }
 
@@ -311,8 +314,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background:
     linear-gradient(90deg, var(--surface) 40%, transparent) left center / 32px 100% no-repeat local,
     linear-gradient(270deg, var(--surface) 40%, transparent) right center / 32px 100% no-repeat local,
-    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, .28), transparent) left center / 12px 100% no-repeat scroll,
-    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, .28), transparent) right center / 12px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left center / 16px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right center / 16px 100% no-repeat scroll,
     var(--surface);
 }
 
@@ -383,6 +386,15 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tbl tr.starter td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .tbl tr.you td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
 .tbl tr.you td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+/* Short tables (Sell): the name takes the spare width, the numbers sit together on the right. */
+.tbl.compact td.name { width: 100%; }
+/* Phones: the player tables keep #, name, position, OVR and the money column; the detail columns go. */
+@media (max-width: 600px) {
+  .tbl .opt { display: none; }
+  .tbl td.name { white-space: normal; min-width: 9ch; }
+  /* Starters already carry the accent edge; the XI pill stays for screen readers only. */
+  .tbl td.name .pill { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
 .tbl .name { font-weight: 600; }
 .tbl .ovr { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-lg); }
 .tbl .pill { margin-left: 4px; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
@@ -416,7 +428,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .slot-label { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .slot-role { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .1em; color: var(--chalk); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); background: rgba(8, 24, 14, .55); border-radius: 4px; padding: 0 6px; }
 .slot select {
-  font-size: var(--fs-xs); font-weight: 700; max-width: 122px; min-height: 30px; padding: 4px 26px 4px 9px; border-radius: var(--r-pill);
+  font-size: var(--fs-xs); font-weight: 700; max-width: 148px; min-height: 30px; padding: 4px 26px 4px 9px; border-radius: var(--r-pill);
   color: #f3f6f1; background-color: rgba(8, 20, 13, .78); border-color: rgba(243, 246, 241, .4); box-shadow: 0 2px 6px rgba(0, 0, 0, .3);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23dfe9e3' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: right 9px center;
@@ -534,6 +546,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-bar i { display: block; height: 100%; border-radius: 3px; background: var(--rival); transform-origin: left center; animation: rs-grow .7s .25s var(--ease-out) both; }
 .rs-bar i:first-child { background: var(--accent); transform-origin: right center; }
 .rs-stat.empty .rs-bar i { background: var(--surface-3); }
+.rs-stat.one-sided:not(.empty) .rs-bar { gap: 0; }
+/* The page's scrolling middle fades out at the bottom, so a cut-off card reads as "more below". */
+.rs-scroll::after { content: ''; position: sticky; bottom: 0; display: block; height: 22px; margin-top: -22px; pointer-events: none; background: linear-gradient(transparent, var(--surface)); }
 @keyframes rs-grow { from { transform: scaleX(0); } }
 .rs-cards { display: inline-flex; align-items: center; gap: 3px; }
 .rs-vb .rs-cards { justify-content: flex-end; }
@@ -577,6 +592,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 .rs-foot .replay-actions { justify-content: center; }
+/* The replay code's size: a quiet tag beside Copy, not a stray number. */
+.rs-foot .replay-actions > .muted { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--line); }
+.rs-foot .replay-actions > .muted::before { content: 'Code '; }
 .rs-close { width: 100%; }
 .modal-foot { position: sticky; bottom: calc(-1 * var(--sp-6)); margin: 0 calc(-1 * var(--sp-6)) calc(-1 * var(--sp-6)); padding: var(--sp-4) var(--sp-6) var(--sp-6); background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl); display: flex; flex-direction: column; gap: var(--sp-3); }
 

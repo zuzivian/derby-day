@@ -57,7 +57,7 @@ function unlockRow(s: Save, u: Unlock, nextLevel: number | null): string {
   const status = st === 'done' ? 'Unlocked' : st === 'next' ? 'Next' : `Level ${u.level}`;
   return `<li class="unlock unlock-${st}">
     <span class="unlock-level" aria-hidden="true">${u.level}</span>
-    <span class="unlock-body"><b>${esc(u.name)}</b>${u.kind === 'perk' ? ' <span class="pill perk-pill">perk</span>' : ''}<span class="muted small">${esc(u.text)}</span></span>
+    <span class="unlock-body"><span class="unlock-name"><b>${esc(u.name)}</b>${u.kind === 'perk' ? ' <span class="pill perk-pill">perk</span>' : ''}</span><span class="muted small">${esc(u.text)}</span></span>
     <span class="unlock-status">${st === 'done' ? '<span aria-hidden="true">✓ </span>' : ''}${status}<span class="visually-hidden">, level ${u.level}</span></span>
   </li>`;
 }
@@ -116,7 +116,7 @@ export function xpCardHtml(s: Save, gain: XpGain | undefined, forfeited: boolean
   return `<div class="xp-card${up ? ' is-levelup' : ''}" style="--xp-from:${pct(before).toFixed(1)}%;--xp-to:${to.toFixed(1)}%;--xp-start:${from.toFixed(1)}%">
     <span class="level-badge tier-${badgeTier(after.level)}" aria-hidden="true">${up ? `<span class="xp-lv-old">${before.level}</span><span class="xp-lv-new">${after.level}</span>` : `<span>${after.level}</span>`}</span>
     <div class="xp-card-body">
-      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">:</span> <span class="xp-parts">${esc(rest.join(': '))}</span></p>
+      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(rest.join(': '))}</span></p>
       <span class="xp-card-track" aria-hidden="true"><span class="xp-card-fill"></span></span>
       <p class="xp-card-level">${esc(levelText(after))}</p>
     </div>
