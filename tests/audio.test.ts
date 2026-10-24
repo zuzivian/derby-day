@@ -109,7 +109,7 @@ describe('detectSfx', () => {
   test('goal event when events grow, no whistle', () => {
     const s = liveMatch();
     const before = snapshot(s);
-    s.events.push({ tick: s.tick, minute: 3, team: 1, scorer: 'X' });
+    s.goals.push({ kind: 'goal', tick: s.tick, minute: 3, second: 150, team: 1, player: -1, scorer: 'X', ownGoal: false, from: 'play' });
     s.phase = 'goal';
     expect(detectSfx(before, s)).toEqual([{ type: 'goal', team: 1 }]);
   });

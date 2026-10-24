@@ -6,7 +6,7 @@
 // The only places this file touches the sim are createMatch(), step() and
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
-import { HALF_SECONDS, TEAM_SIZE, TICK_HZ, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, HALF_SECONDS, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
 
@@ -42,6 +42,12 @@ export interface Replay {
   label: string;
   /** Unix seconds when it was played. */
   at: number;
+  /**
+   * SIM_VERSION of the engine it was recorded on. A replay from another
+   * version still opens (six-a-side teams are padded to eleven) but plays a
+   * different match, and the viewer says so.
+   */
+  sim: number;
 }
 
 export type ReplayOptions = Pick<MatchOptions, 'seed' | 'home' | 'away' | 'halfSeconds' | 'humanTeam'>;
@@ -127,11 +133,12 @@ export class ReplayRecorder {
       away: this.opts.away,
       ticks: this.ticks,
       runs: this.runs.map((r) => ({ n: r.n, input: r.input })),
-      goals: s.events.map((e) => ({ tick: e.tick, team: e.team, minute: e.minute, scorer: e.scorer })),
+      goals: s.goals.map((e) => ({ tick: e.tick, team: e.team, minute: e.minute, scorer: e.scorer })),
       score: [s.score[0], s.score[1]],
       fp: finalHash(s),
       label: this.label,
       at: Math.floor(at),
+      sim: SIM_VERSION,
     };
   }
 }
@@ -139,9 +146,29 @@ export class ReplayRecorder {
 // ---------------------------------------------------------------------------
 // Re-simulation (the only sim calls)
 
+/**
+ * A team recorded on an older engine (six-a-side) made up to eleven so it can
+ * still be simulated: the outfield players are repeated. It won't be the match
+ * that was played, and verification will say so.
+ */
+function elevenOf(t: TeamSetup): TeamSetup {
+  if (t.players.length === TEAM_SIZE) return t;
+  const players = t.players.slice(0, TEAM_SIZE);
+  const outfield = t.players.filter((p) => p.role !== 'GK');
+  for (let k = 0; players.length < TEAM_SIZE; k++) {
+    const src = outfield[k % Math.max(1, outfield.length)] ?? t.players[0];
+    players.push({ ...src, id: `${src.id}~${k}`, number: 30 + k });
+  }
+  // Slot order for the default formation: keeper first, then four defenders, four midfielders, two forwards.
+  const order: Role[] = ['GK', 'DEF', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'MID', 'FWD', 'FWD'];
+  return { ...t, formation: '4-4-2', players: order.map((role, i) => ({ ...players[i], role })) };
+}
+
 function newMatch(r: Replay): MatchState {
   // Cloned so the replay's own team data can never be touched by the sim.
-  return createMatch({ seed: r.seed, home: structuredClone(r.home), away: structuredClone(r.away), halfSeconds: r.halfSeconds, humanTeam: r.humanTeam });
+  const home = elevenOf(structuredClone(r.home));
+  const away = elevenOf(structuredClone(r.away));
+  return createMatch({ seed: r.seed, home, away, halfSeconds: r.halfSeconds, humanTeam: r.humanTeam });
 }
 
 function advance(s: MatchState, input: HumanInput): void {
@@ -271,7 +298,8 @@ export class ReplaySeeker {
     const end = this.replay.ticks;
     for (let i = 0; i < maxTicks && w.tick < end; i++) this.stepOnce(w);
     if (w.tick >= end) {
-      this.verified = this.replay.fp ? finalHash(w) === this.replay.fp : null;
+      // Another engine version never reproduces the match, even if a hash happened to collide.
+      this.verified = this.replay.sim !== SIM_VERSION ? false : this.replay.fp ? finalHash(w) === this.replay.fp : null;
       this.warmState = null;
       return true;
     }
@@ -421,6 +449,7 @@ function writeTeam(w: Writer, t: TeamSetup) {
   writeColour(w, t.primary);
   writeColour(w, t.secondary);
   w.num(t.aiSkill);
+  w.byte(Math.max(0, FORMATION_IDS.indexOf(t.formation ?? '4-4-2')));
   w.uvar(t.players.length);
   for (const p of t.players) {
     w.str(p.id);
@@ -431,14 +460,17 @@ function writeTeam(w: Writer, t: TeamSetup) {
   }
 }
 
-function readTeam(r: Reader): TeamSetup {
+/** `withFormation`: version 3 and later carry the formation; version 2 teams were six-a-side. */
+function readTeam(r: Reader, withFormation: boolean): TeamSetup {
   const name = r.str();
   const short = r.str();
   const primary = readColour(r);
   const secondary = readColour(r);
   const aiSkill = r.num();
+  const formation = withFormation ? FORMATION_IDS[r.byte()] : undefined;
+  if (withFormation && !formation) throw new Error('Replay code is damaged or cut short.');
   const count = r.uvar();
-  if (count !== TEAM_SIZE) throw new Error('Replay code has the wrong squad size.');
+  if (count < 1 || count > TEAM_SIZE) throw new Error('Replay code has the wrong squad size.');
   const players: PlayerSetup[] = [];
   for (let i = 0; i < count; i++) {
     const id = r.str();
@@ -450,7 +482,7 @@ function readTeam(r: Reader): TeamSetup {
     for (const k of ATTRS) attrs[k] = r.num();
     players.push({ id, name: pname, number, role, attrs });
   }
-  return { name, short, primary, secondary, players, aiSkill };
+  return formation ? { name, short, primary, secondary, players, aiSkill, formation } : { name, short, primary, secondary, players, aiSkill };
 }
 
 // Run flags. A tick that only moves the pointer is one flag byte plus two
@@ -579,8 +611,10 @@ function checksum(b: Uint8Array): number {
  * Format version, the first byte of the body. 2: the pointer controls (loft, tackle, select
  * instead of through and chip, and a different meaning for the pointer's distance). Version 1
  * codes were recorded against the old controls and would not play back the same.
+ * 3: eleven-a-side: each team carries its formation, and the body records the SIM_VERSION.
+ * Version 2 codes (six-a-side) still open, but play back a different match and are flagged.
  */
-export const REPLAY_VERSION = 2;
+export const REPLAY_VERSION = 3;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
@@ -588,6 +622,7 @@ export function encodeReplay(r: Replay): string {
   w.ivar(r.seed | 0);
   w.uvar(Math.round(r.halfSeconds * 1000));
   w.byte(r.humanTeam + 1);
+  w.uvar(r.sim);
   writeTeam(w, r.home);
   writeTeam(w, r.away);
   w.str(r.label);
@@ -638,14 +673,15 @@ function decodeBody(code: string): Replay {
   if (checksum(body) !== want) throw new Error('Replay code is damaged or cut short.');
   const r = new Reader(body);
   const version = r.byte();
-  if (version < REPLAY_VERSION) throw new Error('Replay code is from an older version of the game, before the new controls, and can no longer be played back.');
+  if (version < 2) throw new Error('Replay code is from an older version of the game, before the new controls, and can no longer be played back.');
   if (version > REPLAY_VERSION) throw new Error('Replay code is from a newer version of the game.');
   const seed = r.ivar() | 0;
   const halfSeconds = r.uvar() / 1000;
   const humanTeam = (r.byte() - 1) as 0 | 1 | -1;
   if (halfSeconds < 1 || halfSeconds > 3600 || ![-1, 0, 1].includes(humanTeam)) throw new Error('Replay code is damaged or cut short.');
-  const home = readTeam(r);
-  const away = readTeam(r);
+  const sim = version >= 3 ? r.uvar() : 1;
+  const home = readTeam(r, version >= 3);
+  const away = readTeam(r, version >= 3);
   const label = r.str();
   const at = r.uvar();
   const score: [number, number] = [r.uvar(), r.uvar()];
@@ -663,7 +699,7 @@ function decodeBody(code: string): Replay {
   if (ticks > MAX_TICKS) throw new Error('Replay code is damaged or cut short.');
   const runs = readRuns(r, ticks);
   if (!r.done) throw new Error('Replay code is damaged or cut short.');
-  return { seed, halfSeconds, humanTeam, home, away, ticks, runs, goals, score, fp, label, at };
+  return { seed, halfSeconds, humanTeam, home, away, ticks, runs, goals, score, fp, label, at, sim };
 }
 
 /** Bytes of the code as the player would paste it. */

@@ -60,7 +60,7 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
   const text = await page.locator(SEL.levelPanel).innerText();
   expect(text, 'unlocked row').toMatch(/Ladder[\s\S]*Unlocked/);
   expect(text, 'later row').toMatch(/League season[\s\S]*Level 8/);
-  expect(text, 'perks listed').toContain('Squad of 15');
+  expect(text, 'perks listed').toContain('Squad of 25');
   // The header badge jumps to the panel, from any tab.
   await goTab(page, SEL.homeScreen);
   await page.locator(SEL.levelBadge).click();

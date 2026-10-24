@@ -135,7 +135,7 @@ describe('unlock table', () => {
     expect(nextUnlocks(s).map((u) => u.id)).toEqual(['cup', 'practice-hard']);
     expect(nextUnlockText(s)).toBe('The Cup and Practice Hard at level 5 — 340 XP to go');
     s.xp = totalXpForLevel(10);
-    expect(nextUnlockText(s)).toBe('Squad of 15 at level 15 — 6,000 XP to go');
+    expect(nextUnlockText(s)).toBe('Squad of 25 at level 15 — 6,000 XP to go');
   });
   test('pending unlocks are what the level-up dialog lists; closing it marks them seen', () => {
     const s = newGame(4);
@@ -159,10 +159,10 @@ describe('unlock table', () => {
     expect(pendingUnlocks(s).map((u) => u.id)).toEqual(['training']);
   });
   test('perks: squad cap, market size, replay shelf', () => {
-    expect(squadCap(atLevel(1, 14))).toBe(14);
-    expect(squadCap(atLevel(1, 15))).toBe(15);
-    expect(squadCap(atLevel(1, 30))).toBe(16);
-    expect(squadCap(atLevel(1, 50))).toBe(17);
+    expect(squadCap(atLevel(1, 14))).toBe(24);
+    expect(squadCap(atLevel(1, 15))).toBe(25);
+    expect(squadCap(atLevel(1, 30))).toBe(26);
+    expect(squadCap(atLevel(1, 50))).toBe(27);
     expect(marketSize(atLevel(1, 19))).toBe(10);
     expect(marketSize(atLevel(1, 20))).toBe(12);
     expect(marketSize(atLevel(1, 80))).toBe(14);

@@ -43,7 +43,7 @@ const speedOf = (vx: number, vy: number) => Math.hypot(vx, vy);
 export function snapshot(s: MatchState): Snapshot {
   return {
     phase: s.phase,
-    goals: s.events.length,
+    goals: s.goals.length,
     tackles: s.stats[0].tackles + s.stats[1].tackles,
     lunges: snapshotLunges(s),
     owner: s.ball.owner,
@@ -75,7 +75,7 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
   const b = next.ball;
 
   // Phase changes: whistles, goals.
-  if (next.events.length > prev.goals) out.push({ type: 'goal', team: next.events[next.events.length - 1].team });
+  if (next.goals.length > prev.goals) out.push({ type: 'goal', team: next.goals[next.goals.length - 1].team });
   if (next.phase !== prev.phase) {
     if (next.phase === 'kickoff') out.push({ type: 'whistle', kind: 'kickoff' });
     else if (next.phase === 'halftime') out.push({ type: 'whistle', kind: 'halftime' });

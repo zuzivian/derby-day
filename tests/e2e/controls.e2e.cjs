@@ -7,10 +7,10 @@ const { test, expect } = require('./lib/harness.cjs');
 const { SEL, openApp, goTab, startRanked } = require('./lib/helpers.cjs');
 
 const PREFS = { halfSeconds: 120, controls: 'mouse', onboarded: true };
-// Pitch view in metres, see render.ts: the pitch plus a 2.6 m margin each side.
-const VIEW_W = 64 + 5.2;
-const VIEW_H = 40 + 5.2;
-const MARGIN = 2.6;
+// Pitch view in metres, see render.ts: the 105 x 68 m pitch plus a 3.5 m margin each side.
+const MARGIN = 3.5;
+const VIEW_W = 105 + 2 * MARGIN;
+const VIEW_H = 68 + 2 * MARGIN;
 
 async function openMatch(t) {
   const page = await openApp(t, { prefs: PREFS, e2eHook: true });
@@ -201,6 +201,7 @@ test('mouse without the ball: left click on a teammate switches to him, elsewher
     const mates = s.players.filter((p) => p.team === 0 && p.role !== 'GK');
     const [cur, east, west, south, spare] = mates;
     spare.pos = { x: 60, y: 38 }; // out of everyone's way
+    mates.slice(5).forEach((p, k) => (p.pos = { x: 95 + k * 2, y: 66 })); // eleven-a-side: the rest too
     for (const p of s.players) {
       p.vel = { x: 0, y: 0 };
       p.stun = 1e7;
@@ -301,7 +302,8 @@ test('training ground: the move and pass drills are done with the pointer', asyn
   await page.waitForSelector('#tr-pitch');
   expect(await page.locator('#coach-text').innerText(), 'the coach explains the speed by distance').toMatch(/further/i);
   // Drill 1: put the pointer on the marker.
-  const marker = { x: 38, y: 12 };
+  // The training-ground marker (drills.ts MARKER: the drills sit in the attacking end of the full pitch).
+  const marker = { x: 79, y: 26 };
   await moveTo(page, marker);
   await page.waitForSelector('.coach-dots li[data-drill="move"].done', { timeout: 15_000 });
   // Drill 2: left click a teammate. The CPU moves them about, so hold them where they stand.
@@ -320,7 +322,7 @@ test('training ground: the move and pass drills are done with the pointer', asyn
       requestAnimationFrame(pin);
     };
     pin();
-    const m = pins.map((k) => k.pos).sort((a, b) => Math.hypot(a.x - 38, a.y - 12) - Math.hypot(b.x - 38, b.y - 12))[0];
+    const m = pins.map((k) => k.pos).sort((a, b) => Math.hypot(a.x - 79, a.y - 26) - Math.hypot(b.x - 79, b.y - 26))[0];
     return { x: m.x + 0.4, y: m.y - 0.3 };
   });
   await click(page, mate);

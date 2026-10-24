@@ -31,7 +31,7 @@
 .rp-heading p { margin: 2px 0 0; }
 .rp-title { font-size: 28px; text-transform: uppercase; }
 .rp-title:focus { outline: none; }
-.replay-canvas { cursor: default; width: min(100%, calc((100vh - 300px) * 1.531)); margin: 0 auto; }
+.replay-canvas { cursor: default; width: min(100%, calc((100vh - 300px) * 1.493)); margin: 0 auto; }
 .rp-scrub { display: flex; align-items: center; gap: 12px; }
 .rp-scrub input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); cursor: pointer; }
 .rp-time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); white-space: nowrap; min-width: 8.5em; text-align: right; }

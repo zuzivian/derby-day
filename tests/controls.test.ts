@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
-import { SPRINT_MULT } from '../src/sim/constants.ts';
+import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG_AT, POINTER_SPRINT_AT, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
 import { groundPassPlan, loftPlan, loftRange, pointerPass, PASS_ASSIST_R } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
@@ -332,12 +332,13 @@ describe('right click shoots toward the pointer', () => {
   });
 
   test('a shot at the goal counts as a shot, and a miss of the frame does not count on target', () => {
-    const { s } = carrier({ x: 50, y: 20 });
-    step(s, { cursor: { x: 64, y: 20 }, shoot: 0.55 });
+    // 14 m out from the right-hand goal (x = PITCH_W, centred on y = PITCH_H / 2).
+    const { s } = carrier({ x: PITCH_W - 14, y: PITCH_H / 2 });
+    step(s, { cursor: { x: PITCH_W, y: PITCH_H / 2 }, shoot: 0.55 });
     expect(s.stats[0].shots).toBe(1);
     expect(s.stats[0].onTarget).toBe(1);
-    const w = carrier({ x: 50, y: 20 });
-    step(w.s, { cursor: { x: 64, y: 3 }, shoot: 0.55 });
+    const w = carrier({ x: PITCH_W - 14, y: PITCH_H / 2 });
+    step(w.s, { cursor: { x: PITCH_W, y: PITCH_H / 2 - 17 }, shoot: 0.55 });
     expect(w.s.stats[0].shots).toBe(1);
     expect(w.s.stats[0].onTarget).toBe(0);
   });
@@ -368,6 +369,8 @@ describe('left click without the ball picks a player', () => {
     northeast.pos = { x: 38, y: 14 }; // 10 m away, 37 degrees off east
     west.pos = { x: 20, y: 21 }; // 10 m west
     south.pos = { x: 31, y: 35 }; // 15 m south
+    // Eleven-a-side: the rest of our outfielders stand well away, behind the keeper's line of sight.
+    mates.slice(5).forEach((p, k) => (p.pos = { x: 95 + k * 2, y: 66 }));
     for (const p of s.players) {
       p.vel = { x: 0, y: 0 };
       if (p.team === 0 && p.role === 'GK') p.pos = { x: 2, y: 20 };
