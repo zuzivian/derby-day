@@ -49,6 +49,9 @@
   .tac-step { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: center; padding: 10px 12px; }
   .tac-pips { grid-row: 1 / span 2; }
   .tac-step-name { font-size: 18px; }
+  /* Only the chosen step keeps its description, so the lineup stays near the top on a phone. */
+  .tac-step:not(.on):not(:has(input:checked)) .tac-step-note { display: none; }
+  .tac-step:not(.on):not(:has(input:checked)) { padding-block: 8px; }
 }
 @media (max-width: 640px) {
   .tac-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }

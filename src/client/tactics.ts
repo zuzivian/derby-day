@@ -22,12 +22,12 @@ export const FORMATION_NOTE: Record<FormationId, string> = {
 
 /** Plain-language descriptions of each mentality step, for the selector. */
 export const MENTALITY_NOTE: Record<Mentality, string> = {
-  park: 'A deep, narrow low block. Nobody goes in until the ball is about 35 m from goal, players step in front of shots, only the strikers go forward.',
-  defensive: 'A low line and a compact shape. Press from about halfway, full-backs stay home, safe passes.',
+  park: 'A deep, narrow low block: nobody goes in until the ball is about 35 m out, bodies step in front of shots, only the strikers go forward. Best when you are the underdog.',
+  defensive: 'A low, compact block that engages about 40 m from goal and blocks shots; full-backs stay home, safe passes. Fewer goals both ways.',
   balanced: 'A mid block. Press the ball, full-backs overlap on the ball side, short passing mixed with runs in behind.',
-  attacking: 'A higher line, more players in the box, riskier forward passes. Hunt the ball for a moment after losing it.',
-  press: 'A high line and three men pressing from midfield up. Wins it back high up, but more fouls and more space behind.',
-}
+  attacking: 'A higher line, more players in the box, riskier forward passes. Hunts the ball for a moment after losing it. For when you are the stronger side.',
+  press: 'A high line, and from midfield up two more players hunt the ball with the man closing it down. Wins it back high, but more fouls, more running, space behind.',
+};
 
 /** Shape icon: the formation's slots as dots on a small pitch, attacking to the right. */
 export function formationSvg(id: FormationId): string {

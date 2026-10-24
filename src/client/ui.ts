@@ -245,8 +245,9 @@ export function squadScreen(app: App): string {
       .sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))
       .map((p) => `<option value="${p.id}"${p.id === cur?.id ? ' selected' : ''}>${esc(`${p.last} · ${ratingAs(p, f.role)}${p.role !== f.role ? ` (${p.role})` : ''}`)}</option>`)
       .join('');
-    // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board.
-    return `<div class="slot" style="--x:${(2 + (f.x / 0.62) * 88).toFixed(1)}%;--y:${f.y * 100}%">
+    // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board, with
+    // room between keeper and centre-backs; y keeps wing-backs' badges and pickers on the pitch.
+    return `<div class="slot" style="--x:${(5 + ((f.x - 0.02) / 0.58) * 87).toFixed(1)}%;--y:${(5 + f.y * 90).toFixed(1)}%">
       <span class="magnet">${cur?.number ?? '?'}</span>
       <label class="slot-label"><span class="slot-role">${f.label}</span>
         <select id="slot-${slot}" data-change="slot" data-slot="${slot}">${options}</select>

@@ -216,7 +216,7 @@ export const isFormationId = (v: unknown): v is FormationId => typeof v === 'str
  * forward, pass risk and tempo, how far the full-backs go.
  */
 export type Mentality = 'park' | 'defensive' | 'balanced' | 'attacking' | 'press';
-/** Deepest to most aggressive. Replays store a team's mentality by its distance from Balanced, so this order is fixed. */
+/** Deepest to most aggressive, the order the tactics board shows. (Replays store a mentality by its own code, MENTALITY_CODES in src/meta/replay.ts.) */
 export const MENTALITY_IDS: Mentality[] = ['park', 'defensive', 'balanced', 'attacking', 'press'];
 export const DEFAULT_MENTALITY: Mentality = 'balanced';
 export const MENTALITY_LABEL: Record<Mentality, string> = {

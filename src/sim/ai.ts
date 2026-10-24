@@ -174,19 +174,19 @@ export interface Tactic {
 
 export const TACTICS: Record<Mentality, Tactic> = {
   park: {
-    lineGap: 0.27, lineMin: 0.06, lineMax: 0.2, boxHold: 0.13, attGap: 0.4, attMin: 0.1, attMax: 0.3,
-    defWidth: 0.64, squeeze: 0.26, defDepth: 0.66, attWidth: 1, attDepth: 0.78,
+    lineGap: 0.22, lineMin: 0.08, lineMax: 0.26, boxHold: 0.17, attGap: 0.4, attMin: 0.1, attMax: 0.3,
+    defWidth: 0.66, squeeze: 0.26, defDepth: 0.6, attWidth: 1, attDepth: 0.78,
     pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, markR: 0.75, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
     risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
     supporters: 2, supportR: 11, recover: 0.95,
   },
   defensive: {
-    lineGap: 0.25, lineMin: 0.05, lineMax: 0.32, boxHold: 0.15, attGap: 0.34, attMin: 0.12, attMax: 0.42,
-    defWidth: 0.74, squeeze: 0.28, defDepth: 0.84, attWidth: 1.04, attDepth: 0.9,
-    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, markR: 0.9, screen: 1, screenR: 30, counter: 0, counterN: 0,
-    fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 1,
-    risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.3, tackle: 0.95, reach: 0,
+    lineGap: 0.23, lineMin: 0.06, lineMax: 0.34, boxHold: 0.16, attGap: 0.34, attMin: 0.12, attMax: 0.42,
+    defWidth: 0.74, squeeze: 0.28, defDepth: 0.7, attWidth: 1.04, attDepth: 0.9,
+    pressUpTo: 0.4, pressNear: 4, extra: 0, extraFrom: 2, markR: 0.8, screen: 2, screenR: 32, counter: 0, counterN: 0,
+    fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 2,
+    risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.15, tackle: 0.95, reach: 0,
     supporters: 2, supportR: 10, recover: 0.85,
   },
   balanced: {
@@ -199,7 +199,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   },
   attacking: {
     lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
-    defWidth: 0.84, squeeze: 0.32, defDepth: 1, attWidth: 1.12, attDepth: 1.08,
+    defWidth: 0.84, squeeze: 0.32, defDepth: 1.08, attWidth: 1.12, attDepth: 1.08,
     pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, markR: 1, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
@@ -207,10 +207,10 @@ export const TACTICS: Record<Mentality, Tactic> = {
   },
   press: {
     lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
-    defWidth: 0.8, squeeze: 0.4, defDepth: 0.82, attWidth: 1.1, attDepth: 1.02,
+    defWidth: 0.8, squeeze: 0.4, defDepth: 0.95, attWidth: 1.1, attDepth: 1.02,
     pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, markR: 1.15, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
-    risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.3, reach: 0.25,
+    risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.2, reach: 0.2,
     supporters: 3, supportR: 9, recover: 0.9,
   },
 };
