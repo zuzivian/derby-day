@@ -258,7 +258,7 @@ test(
   { timeoutMs: 120_000 },
 );
 
-for (const [renderer, query] of [['3d', 'quality=high'], ['2d', '']]) test(
+for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']]) test(
   `Perf: the ${renderer} pitch's drawing buffer follows a devicePixelRatio change mid-match (new screen, browser zoom)`,
   async (t) => {
     const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer, e2eHook: true, query: query || undefined });

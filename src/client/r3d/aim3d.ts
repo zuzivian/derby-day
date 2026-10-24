@@ -37,6 +37,15 @@ export const ORANGE = '#ff8a1c';
 /** Controlled-player colours: home orange (yellow ring), away cyan when two humans share a screen. */
 const MARK: [string, string] = [ORANGE, '#22d3ee'];
 const RING: [string, string] = ['#ffd60a', '#22d3ee'];
+/** Parsed once: Color.set('#hex') parses the string (and allocates) every call, and these are set every frame. */
+const colorCache = new Map<string, Color>();
+const col = (hex: string): Color => {
+  let c = colorCache.get(hex);
+  if (!c) colorCache.set(hex, (c = new Color(hex)));
+  return c;
+};
+
+const TEAMS = [0, 1] as const;
 
 const flat = (m: Object3D, y = 0.03) => {
   m.rotation.x = -Math.PI / 2;
@@ -45,7 +54,9 @@ const flat = (m: Object3D, y = 0.03) => {
 };
 
 function overlay(color: string, opacity = 1, depthTest = true): MeshBasicMaterial {
-  return new MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest, side: DoubleSide, toneMapped: false });
+  // forceSinglePass: a transparent double-sided material is otherwise drawn twice (back, then front),
+  // and three rebuilds its program parameters on each pass; flat overlays don't need the two passes.
+  return new MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, depthTest, side: DoubleSide, forceSinglePass: true, toneMapped: false });
 }
 
 /** Wedge from the player (narrow) to the target (wide), fading toward the tip. */
@@ -231,6 +242,7 @@ export class AimLayer {
         transparent: true,
         depthWrite: false,
         side: DoubleSide,
+        forceSinglePass: true,
       }),
     );
     this.wedge = new Mesh(keepG(wedgeGeometry()), this.wedgeMat);
@@ -385,11 +397,11 @@ export class AimLayer {
         this.wedge.scale.set(L, 1, Math.min(2.4, 0.7 + L * 0.06) * Math.max(1, k * 0.9));
         this.wedge.rotation.y = -Math.atan2(dz, dx);
         const u = this.wedgeMat.uniforms;
-        u.color.value.set(gauge ? GAUGE_COLORS[gauge.band] : '#ffffff');
+        u.color.value.copy(col(gauge ? GAUGE_COLORS[gauge.band] : '#ffffff'));
         u.fill.value = gauge ? gauge.fill : 0;
         u.tick.value = gauge ? gauge.tick : 1;
         u.opacity.value = wedgeAlpha;
-        (this.chipRing.material as MeshBasicMaterial).color.set(gauge && armed?.kind === 'loft' ? GAUGE_COLORS[gauge.band] : '#8cdcff');
+        (this.chipRing.material as MeshBasicMaterial).color.copy(col(gauge && armed?.kind === 'loft' ? GAUGE_COLORS[gauge.band] : '#8cdcff'));
       }
     } else if (ctrl && !hasBall && pointerOn && cursor && s.phase === 'play' && !x.noAim) {
       // No ball: who a left click would switch to.
@@ -410,9 +422,8 @@ export class AimLayer {
     this.reticle.visible = showRet;
 
     // Controlled players: marker over the head and a ring on the ground.
-    const ctrls = ([0, 1] as const).filter((t) => s.humans[t] && s.controlled[t] >= 0);
-    for (const t of [0, 1] as const) {
-      const on = ctrls.includes(t);
+    for (const t of TEAMS) {
+      const on = s.humans[t] && s.controlled[t] >= 0;
       const mk = this.markers[t];
       const rg = this.rings[t];
       mk.visible = on;
@@ -420,8 +431,8 @@ export class AimLayer {
       if (!on) continue;
       const p = s.players[s.controlled[t]];
       const c = both ? t : 0;
-      mk.material.color.set(MARK[c]);
-      (rg.material as MeshBasicMaterial).color.set(RING[c]);
+      mk.material.color.copy(col(MARK[c]));
+      (rg.material as MeshBasicMaterial).color.copy(col(RING[c]));
       const head = f.heads[p.i];
       const bob = f.reduced ? 0 : Math.sin(f.time * 4) * 0.06;
       mk.position.set(head.x, head.y + 0.55 * k + bob, head.z);
