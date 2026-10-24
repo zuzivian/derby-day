@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { TEAM_SIZE } from '../src/sim/constants.ts';
+import { keeperControllable } from '../src/sim/human.ts';
 import { createMatch, fingerprint, step, teamInputs } from '../src/sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../src/sim/types.ts';
 import { len, sub } from '../src/sim/vec.ts';
@@ -89,8 +90,8 @@ describe('two humans in one match', () => {
       step(s, script(t));
       expect(s.players[s.controlled[0]].team).toBe(0);
       expect(s.players[s.controlled[1]].team).toBe(1);
-      expect(s.players[s.controlled[0]].role).not.toBe('GK');
-      expect(s.players[s.controlled[1]].role).not.toBe('GK');
+      // A keeper only while he has the ball, it is coming to him, or he takes a restart: the human distributes it.
+      for (const team of [0, 1] as const) if (s.players[s.controlled[team]].role === 'GK') expect(keeperControllable(s, s.players[s.controlled[team]])).toBe(true);
     }
   });
 

@@ -11,10 +11,13 @@
  * is flagged instead of silently showing a different match.
  *   1  six-a-side on boards (until 2026-10)
  *   2  eleven-a-side, full pitch, Laws 8, 11, 12, 13-17 (restarts, offside, fouls, cards)
- *   3  nine formations and five mentalities that change how the CPU defends,
- *      presses and supports the ball (src/sim/ai.ts TACTICS)
+ *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
+ *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
+ *   4  nine formations and five mentalities that change how the CPU defends,
+ *      presses and supports the ball (src/sim/ai.ts TACTICS); CPU shot selection and
+ *      long-shot error; mentality changes from the pause menu (HumanInput.tactic)
  */
-export const SIM_VERSION = 3;
+export const SIM_VERSION = 4;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;

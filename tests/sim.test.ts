@@ -283,7 +283,8 @@ describe('CPU', () => {
   test('skill matters on its own: identical squads, sharp CPU beats sloppy CPU', () => {
     let sharp = 0;
     let sloppy = 0;
-    for (let i = 0; i < 10; i++) {
+    // Twenty one-minute-a-half matches: many are drawn, so ten is too few to judge.
+    for (let i = 0; i < 20; i++) {
       const squad = generateSquad(makeRng(700 + i), 62);
       const lineup = autoLineup(squad);
       const a = toTeamSetup(id('A'), squad, lineup, 0.9);
@@ -295,7 +296,7 @@ describe('CPU', () => {
       if (gb > ga) sloppy++;
     }
     expect(sharp).toBeGreaterThan(sloppy * 2);
-    expect(sharp).toBeGreaterThanOrEqual(5);
+    expect(sharp).toBeGreaterThanOrEqual(10);
   });
 
   test('a cloned mid-match state replays identically (the AI keeps no hidden state)', () => {

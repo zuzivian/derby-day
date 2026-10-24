@@ -69,6 +69,21 @@ export interface MatchPlayer {
   sentOff: boolean;
   /** Scratch memory for the CPU brain in ai.ts. Created lazily there; nothing else reads it. */
   ai?: AiMemory;
+  /** A keeper's dive in progress (match.ts keeperDives), or absent. Renderers can read it for the dive pose. */
+  dive?: KeeperDive | null;
+}
+
+/** A goalkeeper diving to meet a shot: committed for `ticks` more ticks, then on the floor for a moment. */
+export interface KeeperDive {
+  /** Unit vector, the way he is diving (horizontal). */
+  dir: Vec;
+  /** Speed across the ground, m/s. */
+  speed: number;
+  /** Ticks of the dive left: `travel` of them flying across, then stretched out on the floor, hands still up. */
+  ticks: number;
+  travel: number;
+  /** Height of the ball where he expects to meet it: under 0.6 a low dive, over 1.6 a high one. */
+  z: number;
 }
 
 export interface AiMemory {
@@ -108,6 +123,14 @@ export interface Ball {
   kickedBy: number;
   /** A keeper is holding it, or a thrower has it above the head. */
   inHands: boolean;
+  /** Ticks a keeper has held it in his hands (Law 12: about six seconds, KEEPER_HOLD_TICKS in match.ts). */
+  handTicks?: number;
+  /** A player who stretched for this ball and missed it: no second try with his feet until someone touches it (his body still blocks it). */
+  whiff?: number;
+  /** The opponent whose shot the keeper last parried (until anyone else touches it), so a parry that goes in is his goal. */
+  parriedFrom?: number;
+  /** Tick the ball last changed course (kicked, headed, deflected): keepers react from here. */
+  redirectedAt?: number;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
@@ -237,6 +260,8 @@ export interface TeamStats {
   goalKicks: number;
   freeKicks: number;
   penalties: number;
+  /** Passes played (ground passes, lofted balls, crosses, throw-ins and keeper distribution); `passes` counts the ones a teammate took. */
+  passAttempts: number;
 }
 
 /** A pass by `team` with these players in an offside position when it was played (Law 11). */
@@ -298,6 +323,36 @@ export interface MatchState {
   aiPlans?: [AiTeamPlan | null, AiTeamPlan | null];
   /** CPU set-piece positions for the restart in progress, owned by ai.ts (refreshed every 15 ticks). */
   aiRestart?: { key: number; kind: RestartKind; team: 0 | 1; targets: (Vec | null)[] };
+  /**
+   * Team in possession for the stats: the last team to control the ball, kept while it is in
+   * flight between teammates, -1 before anyone has it. Only live-ball ticks are counted.
+   */
+  poss?: -1 | 0 | 1;
+  /**
+   * Per team: the human has not moved the pointer since control last passed to a new player
+   * automatically (a pass received, the auto-switch). While set, the player holds still with
+   * the ball, or plays like the CPU without it, instead of running back to a stale pointer.
+   */
+  ctlHold?: [boolean, boolean];
+  /** Per team: ticks the pointer has really moved since the hold began (it ends at HOLD_MOVES, human.ts). */
+  ctlHoldMoves?: [number, number];
+  /** Per team: a first-time kick queued while a pass was on its way to the human's player (human.ts). */
+  queued?: [QueuedKick | null, QueuedKick | null];
+  /** Per team: this tick's pointer aim of a human (headers at goal go toward it), or null. */
+  humanAim?: [Vec | null, Vec | null];
+}
+
+/** A click made before the ball arrived: played the moment the receiver has it. */
+export interface QueuedKick {
+  kind: 'pass' | 'shoot';
+  /** Where it goes (the pointer at the click). */
+  target: Vec;
+  /** The player who will play it. */
+  player: number;
+  /** The teammate the click picked (the pass goes to him wherever he has got to), or -1. */
+  receiver: number;
+  /** Tick after which it lapses. */
+  until: number;
 }
 
 export interface AiInterception {
@@ -385,6 +440,16 @@ export interface HumanInput {
   sprint?: boolean;
   /** Key scheme: switch to the player nearest the ball. */
   switchPlayer?: boolean;
+  /**
+   * Pointer scheme, on a kick or select tick: the point the kick goes to, when it is not the
+   * cursor (a click aims where the button went down, see src/client/input.ts). Defaults to `cursor`.
+   */
+  aim?: Vec;
+  /**
+   * Pointer scheme: the pointer really moved this tick (on screen, not just the camera sliding
+   * the pitch under it). Ends the hold after an automatic change of player (MatchState.ctlHold).
+   */
+  moved?: boolean;
 }
 
 /** Input for both teams in one tick: index 0 is the home side, 1 the away side. */
@@ -413,6 +478,11 @@ export type Action =
    * `power` (0..1) also sets how high it flies. `loftPlan()` previews it.
    */
   | { kind: 'loft'; target: Vec; power: number }
+  /**
+   * Goalkeeper's long kick: a punt from the hands, or a long goal kick. Lands on `target`, up
+   * to the range `power` (0..1) allows (puntPlan in kicks.ts).
+   */
+  | { kind: 'punt'; target: Vec; power: number }
   /** `slide`: a committed lunge that reaches further but leaves the tackler on the floor for a moment. */
   | { kind: 'tackle'; target: Vec; slide?: boolean };
 
