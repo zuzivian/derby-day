@@ -44,7 +44,16 @@ export interface Prefs {
   controls: ControlStyle;
   /** false while first-run setup is unfinished; missing means an older save that never saw it. */
   onboarded?: boolean;
+  /**
+   * Coach tips already shown (src/client/coach.ts). Present only for a club that went through
+   * the first-run flow; a player who predates it has none and sees no tips.
+   */
+  coachSeen?: string[];
+  /** Tabs already pointed out with a coach mark. Present only after the first-run flow, like coachSeen. */
+  marks?: string[];
 }
+
+const strings = (v: unknown): string[] | undefined => (Array.isArray(v) && v.every((x) => typeof x === 'string') ? (v as string[]) : undefined);
 
 const BACKUP_KEY = `${SAVE_KEY}.bak`;
 const CORRUPT_KEY = `${SAVE_KEY}.corrupt`;
@@ -266,6 +275,8 @@ export function loadPrefs(): Prefs {
       halfSeconds: testHalfSeconds(p.halfSeconds) ?? HALF_SECONDS,
       controls: p.controls === 'keys' ? 'keys' : 'mouse',
       ...(typeof p.onboarded === 'boolean' ? { onboarded: p.onboarded } : {}),
+      ...(strings(p.coachSeen) ? { coachSeen: strings(p.coachSeen) } : {}),
+      ...(strings(p.marks) ? { marks: strings(p.marks) } : {}),
     };
   } catch {
     return { halfSeconds: HALF_SECONDS, controls: 'mouse' };

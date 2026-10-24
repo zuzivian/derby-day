@@ -1,4 +1,6 @@
-import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type LadderClub } from '../meta/club.ts';
+import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { warmupTeam } from '../meta/warmup.ts';
+import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
 import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
@@ -10,7 +12,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
 import { announce, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
-import { setCrest, setKit } from '../meta/identity.ts';
+import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
 import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
 import { mountMatch } from './matchView.ts';
@@ -18,7 +20,8 @@ import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
-import { mountOnboarding } from './onboarding.ts';
+import { mountAfterMatch, mountWelcome } from './onboarding.ts';
+import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { setBusyProbe } from './tabguard.ts';
 import { openSettings } from './settings.ts';
@@ -62,6 +65,8 @@ let app = boot(existing ?? newGame(freshSeed()));
 // First run (no save) gets setup; an older save that predates setup skips it.
 if (!existing && !loaded.newer) app.prefs.onboarded = false;
 else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
+// A first match already recorded means setup is over, whatever the flag says (a reload on the celebration screen).
+if (existing && app.prefs.onboarded === false && app.save.history.length > 0) app.prefs.onboarded = true;
 writePrefs(app.prefs);
 let saved = writeSaveResult(app.save) !== 'blocked';
 /** True while a match, setup or the training ground owns #app. */
@@ -111,6 +116,7 @@ function render() {
   pendingFocus = null;
   root.innerHTML = shell(app, screens[app.screen](app));
   const levelUp = !app.result && levelUpOpen(app.save);
+  syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
   else if (levelUp && !hadLevelUp) {
     levelOrigin = key;
@@ -120,22 +126,57 @@ function render() {
   else restoreFocus(root, key, '#main');
 }
 
+/**
+ * Tab marks (coach.ts): a tab a level-up just revealed gets a spotlight and a card, once. Only while no dialog is open;
+ * opening the tab (or Esc, or "Got it") counts as seeing it. Players who predate the first-run flow have no `marks`
+ * and never see one. The card is inserted right after the tab bar so it follows the tabs in focus order, is scrolled
+ * into view only when it first appears (never on scroll), and is announced once per mark, not once per render.
+ */
+let spokenMark: string | null = null;
+function syncMark(clear: boolean) {
+  const marks = app.prefs.marks;
+  if (!marks || !clear) return;
+  if (acknowledge(marks, app.screen)) writePrefs(app.prefs);
+  const mark = pendingMark(app.save, marks, app.screen);
+  if (!mark) {
+    spokenMark = null;
+    return;
+  }
+  root.querySelector('.tabs')?.insertAdjacentHTML('afterend', markHtml(mark));
+  const first = spokenMark !== mark.screen;
+  placeMark(root, first);
+  if (first) {
+    spokenMark = mark.screen;
+    announce(`${mark.title}. ${mark.text}`);
+  }
+}
+window.addEventListener('resize', () => placeMark(root, false));
+window.addEventListener('scroll', () => placeMark(root, false), { passive: true });
+
 /** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
 function focusMain(keepScroll = false) {
   root.querySelector<HTMLElement>('#main')?.focus({ preventScroll: keepScroll });
   if (keepScroll) window.scrollTo({ top: 0 });
 }
 
+/**
+ * First run: one welcome, one Kick off. Nothing is asked before the first match, and the first match stays pending
+ * (prefs.onboarded false) until it is played to the end: leaving it, or reloading, brings the welcome and the same
+ * easy opponent back, so nobody loses the payoff by closing the tab.
+ */
 function startOnboarding() {
   takeover = true;
   hideToast();
-  const stop = mountOnboarding(root, {
+  const opp = warmupTeam(app.save, true);
+  const stop = mountWelcome(root, {
     save: app.save,
-    prefs: app.prefs,
-    nextOpp: app.nextOpp,
-    persist,
-    savePrefs: () => writePrefs(app.prefs),
-    onDone: () => {
+    opp: opp.id,
+    onKickOff: () => {
+      stop();
+      startFirstMatch(opp);
+    },
+    onSkip: () => {
+      // "I've played before": no first-run flow, so no tips or tab marks either.
       stop();
       takeover = false;
       app.prefs.onboarded = true;
@@ -145,6 +186,54 @@ function startOnboarding() {
       if (!root.querySelector('.modal')) focusMain(true);
     },
   });
+}
+
+/** The first match, against an easy club, with coach tips. It counts as a friendly: XP, no Elo. */
+function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
+  const s = app.save;
+  // From here on the coach is on: tips are remembered one by one, and each tab a level reveals is pointed out once.
+  app.prefs.coachSeen ??= [];
+  app.prefs.marks ??= openTabs(s);
+  writePrefs(app.prefs);
+  const finish = (m: MatchState, forfeited: boolean, away: TeamSetup) => {
+    const [gf, ga] = m.score;
+    if (forfeited) {
+      // Left the first match early: nothing recorded; the welcome comes back with the same opponent.
+      startOnboarding();
+      return;
+    }
+    // Everything the first match changes is final, and written, before the celebration renders (see firstrun.ts).
+    const { summary, opened } = completeFirstMatch(s, app.prefs, { gf, ga, scorers: m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`), opponent: { name: away.name, short: away.short } });
+    persist();
+    writePrefs(app.prefs);
+    takeover = true;
+    const stop = mountAfterMatch(root, {
+      save: s,
+      opp: opp.id,
+      gf,
+      ga,
+      xp: summary.xp,
+      opened,
+      persist,
+      onDone: () => {
+        stop();
+        takeover = false;
+        app.screen = 'home';
+        render();
+        if (!root.querySelector('.modal')) focusMain(true);
+      },
+    });
+    window.scrollTo({ top: 0 });
+  };
+  if (!playLive(opp.away, opp.id.crest, 'Friendly', finish, 'Leave match')) {
+    startOnboarding();
+  }
+}
+
+/** Kick off before ranked opens (level 3): a warm-up friendly against a gentle generated club. Earns XP, no Elo. */
+function startWarmup() {
+  const w = warmupTeam(app.save);
+  playLive(w.away, w.id.crest, 'Warm-up', (m, forfeited, away) => endMatch(m, forfeited, false, null, away, w.id.crest, 'easy', 'Warm-up friendly'));
 }
 
 /** First completion of the training ground (setup or Replay tutorial) earns its milestone XP. */
@@ -229,6 +318,17 @@ function playLive(
     label,
     forfeitText,
     controls: app.prefs.controls,
+    // The input mode the player settled on becomes their preference (the first-run flow no longer asks).
+    onControls: (mode) => {
+      if (app.prefs.controls !== mode) {
+        app.prefs.controls = mode;
+        writePrefs(app.prefs);
+      }
+    },
+    // Coach tips only for a club that went through the first-run flow (prefs.coachSeen); each is shown once, ever.
+    coach: app.prefs.coachSeen
+      ? { seen: app.prefs.coachSeen, onSeen: (id) => { if (!app.prefs.coachSeen!.includes(id)) { app.prefs.coachSeen!.push(id); writePrefs(app.prefs); } } }
+      : undefined,
     onEnd: (m, forfeited) => {
       unmount();
       takeover = false;
@@ -291,7 +391,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
   });
 }
 
-function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest'], practice: PracticeLevel = 'normal') {
+function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: LadderClub | null, away: TeamSetup, crest: LadderClub['crest'], practice: PracticeLevel = 'normal', warmup?: string) {
   const s = app.save;
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
@@ -300,7 +400,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const scorersAgainst = forfeited ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
-  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, undefined, forfeited, practice);
+  const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, warmup, forfeited, practice);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
@@ -366,6 +466,7 @@ root.addEventListener('click', (e) => {
       break;
     }
     case 'level-open':
+      if (!screenUnlocked(s, 'club')) return; // the club tab opens at level 3
       app.screen = 'club';
       pendingFocus = { elId: 'level-title', data: {}, index: 0 };
       break;
@@ -380,11 +481,21 @@ root.addEventListener('click', (e) => {
       } else pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     }
+    case 'mark-ok':
+      if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(el.dataset.screen)) {
+        app.prefs.marks.push(el.dataset.screen);
+        writePrefs(app.prefs);
+      }
+      pendingFocus = { elId: `tab-${el.dataset.screen}`, data: {}, index: 0 };
+      break;
     case 'replay-tutorial':
       startTraining();
       return;
     case 'play-ranked':
-      startMatch(true, app.nextOpp);
+      if (isUnlocked(s, 'ranked')) startMatch(true, app.nextOpp);
+      return;
+    case 'play-warmup':
+      startWarmup();
       return;
     case 'play-practice': {
       const level = PRACTICE.find((p) => p.id === el.dataset.level);
@@ -445,6 +556,8 @@ root.addEventListener('click', (e) => {
       clearSave();
       app = boot(newGame(freshSeed()));
       app.prefs.onboarded = true;
+      if (app.prefs.marks) app.prefs.marks = ['home']; // the new club is level 1 again
+      writePrefs(app.prefs);
       persist();
       pendingFocus = keyFor({ action: 'play-ranked' });
       toast(`${app.save.club.name} founded.`);
@@ -499,7 +612,35 @@ root.addEventListener('keydown', (e) => {
     }
   }
 });
+root.addEventListener('submit', (e) => {
+  const form = e.target as HTMLFormElement;
+  if (form.dataset.form !== 'rename' || takeover) return;
+  e.preventDefault();
+  const input = form.querySelector<HTMLInputElement>('#club-rename')!;
+  const check = validateClubName(input.value);
+  if (!check.ok) {
+    toast(check.error, false);
+    input.focus();
+    return;
+  }
+  setClubName(app.save, check.name);
+  persist();
+  toast(`Club renamed to ${app.save.club.name}.`);
+  pendingFocus = { elId: 'club-rename', data: {}, index: 0 };
+  render();
+});
+
 document.addEventListener('keydown', (e) => {
+  // Esc dismisses a tab mark (it counts as seen), when no dialog is open.
+  const markEl = root.querySelector<HTMLElement>('.tab-mark');
+  if (!takeover && e.key === 'Escape' && markEl && !root.querySelector('.modal') && app.prefs.marks) {
+    const screen = markEl.dataset.mark!;
+    if (!app.prefs.marks.includes(screen)) app.prefs.marks.push(screen);
+    writePrefs(app.prefs);
+    pendingFocus = { elId: `tab-${screen}`, data: {}, index: 0 };
+    render();
+    return;
+  }
   const levelUp = !app.result && levelUpOpen(app.save);
   const review = !app.result && !levelUp && reviewOpen(app.save);
   if (takeover || (!app.result && !levelUp && !review)) return;
