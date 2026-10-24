@@ -1,0 +1,151 @@
+{
+ "checks_run": "Setup: fetched derby main and assets/feedback, made a detached worktree at /tmp/rt/screens/repo on derby/main 97c8145, ran bun run build, and read README, ROADMAP, briefs/ui.md, briefs/view.md and the owner's result-dialog PNG. `bun run check` passes: tsc clean, 352 pass / 0 fail across 19 files, build 1056 KB.\n\nBrowser scripts live in /tmp/rt/screens/out/*.cjs (helpers in lib.cjs). They run headless Chromium with SwiftShader. Matches use prefs.halfSeconds 3-8 with instant replays off, and goals are injected through window.__derbyMatch. I looked at every screenshot in /tmp/rt/screens/out/shots before describing it.\n- tabs.cjs (dark and light): all 7 tabs at 1280x800, 390x844 and 768x1024. Page scrollWidth equals innerWidth everywhere, so there is no page-level horizontal scroll.\n- transfers390.cjs, tr390.cjs, ladder360.cjs: scroll and clip measurements for the tables inside .table-scroll.\n- result.cjs, result390.cjs, fold.cjs (390x844, 375x667, 412x915), forfeit.cjs: result dialogs for ranked win/draw/loss, forfeit, practice and level-up 3->4, plus the level-up modal.\n- longnames.cjs: renamed the club through the UI to the 28-character single word 'Llanfairpwllgwyngyllgogerych'. Ladder clubs and players got the longest generated names; a bun scan of 400 seeds found 'Benedikt Brenningsteiner' (24 chars), the word 'Kesselingsteiner' and the club 'Port Marborough Academical FC' (29 chars). Covers club, home, ladder, squad, training, transfers, match and result at 3 widths. No page overflow.\n- season.cjs (1280 dark, 390 light): set week 7, played 3 ranked matches into the season rollover and opened the Season 1 review. Also captured header, hero and form chips before and after each match, then Club and Squad after the review.\n- comps.cjs (1280 dark, 390 dark, 768 light): started cup and league, won a cup QF, lost league matchday 1, checked bracket and table. An uppercase-money scan found 1 hit.\n- shootout.cjs, so2.cjs: drawn cup QF into a live shootout (intro, kick, end, result, bracket) at 360 to 1280 px.\n- pause.cjs: pause menu at 3 widths. board.cjs: lineup-board overlap check (only 6 px at 768).\n- train390.cjs, tabbar.cjs, toast.cjs: tap and visibility checks.\n- stale.cjs: market and ladder refresh after a match.\n- contrast.cjs: WCAG contrast of every text node on every tab in both themes. Only hit was a false positive (gradient background on .magnet).\n- watch.cjs: Watch goals / Copy code from the result dialog. The 'recorded on a different version' warning there came from my goal injection; replay.e2e covers data-verified=true, so I dropped it.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Transfers and Ladder tables hide the Sign/Sell buttons, the Price/Offer column and the Elo column on phones and tablets",
+   "area": "transfers / ladder (responsive tables)",
+   "evidence": "Measured on the Transfers tab, level 99 save:\n- 390x844: the Sell table is scrollWidth 452 in a clientWidth 340 box. The first Sell button is at left 409, right of the box edge (365), so 0 px of it is visible; Offer shows as '\u019235l'. The market table is scrollWidth 376 / clientWidth 340, so only 36.75 of the 55 px Sign button shows ('Si').\n- 768x1024 (iPad portrait): the market table is scrollWidth 931 / clientWidth 710. Price and Sign sit past 10 attribute columns and 0 px of the Sign button is visible.\n- Ladder at 360x740: scrollWidth 347 / clientWidth 310, last cell right 364 vs box right 335. The Elo column the ladder is sorted by shows as '13', '10', '9'.\n- .table-scroll has backgroundImage none, so nothing hints at the sideways scroll.\n- Cause: .tbl .opt is hidden only at max-width 600px (src/client/styles.css:392-393), and the Price + Sign cells are the last cells in each row (src/client/ui.ts:300, 304, 312, 316).\nScreenshots: /tmp/rt/screens/out/shots/tr-sell-390.png (no Sell buttons, Offer clipped), /tmp/rt/screens/out/shots/tr-market-768.png (no Price/Sign), /tmp/rt/screens/out/shots/transfers-390-dark.png, /tmp/rt/screens/out/shots/transfers-768-dark.png, /tmp/rt/screens/out/shots/ladder-table-360.png.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/transfers390.cjs (prints scrollW/clientW and how many px of the first Sign/Sell button are visible at 390, 360 and 768), node /tmp/rt/screens/out/tr390.cjs (element screenshots), node /tmp/rt/screens/out/ladder360.cjs. Manually: open dist/index.html at a 390 px or 768 px viewport with a level 6+ save, open Transfers.",
+   "suggested_fix": "In src/client/styles.css:\n- Make the action column and the price/offer cell sticky on the right (e.g. `.tbl td:last-child, .tbl th:last-child { position: sticky; right: 0; background: var(--surface) }`).\n- Raise the .opt breakpoint from 600 px to about 1000 px.\n- Add a scroll-shadow background to .table-scroll, as .tabs already has.\n- At 640 px and below, consider rendering the market and sell rows as cards (name, pos, OVR, price, button).\nIn src/client/ui.ts transfersScreen, move Price/Offer next to OVR. In ladderScreen, mark P/W/D/L as .opt (or drop their padding) so Elo always fits at 360 px.",
+   "files": [
+    "src/client/styles.css",
+    "src/client/ui.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Result dialog on phones: Elo, prize money, XP and the level-up flourish all sit below the fold, and the XP animation plays where nobody sees it",
+   "area": "result dialog",
+   "evidence": "The 1280 layout is good, but at 720 px and below .rs-body becomes one column (src/client/styles.css:668), with stats first and rewards after.\n- 390x844: .rs-rewards top = 604 and the XP card top = 812, but the scroll area ends at 702, where the sticky footer starts. Only the 'Rewards' heading and part of the Elo chip show.\n- 375x667 (iPhone SE): rewards top 604 vs visible bottom 525, so no reward is visible at all.\n- With player growth chips the inner scroller is scrollHeight 1021 vs clientHeight 663.\n- The XP fill and level-up animations are time-based from open (src/client/levels.css:76-107: xp-fill starts at .45s, lv-pop/xp-shine at 1.35s). They finish before a phone player could scroll there. That undoes the brief's 'animated XP bar and a level-up flourish' for phone players.\nScreenshots: /tmp/rt/screens/out/shots/fold-375x667.png (stats only, no rewards), /tmp/rt/screens/out/shots/fold-390x844.png, /tmp/rt/screens/out/shots/result-390-dark.png, /tmp/rt/screens/out/shots/r390-dark-b.png (the rewards you only see after scrolling).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/fold.cjs. It plays a 3 s-half ranked match at 390x844, 375x667 and 412x915 and prints rewardsTop / xpTop / visible bottom.",
+   "suggested_fix": "In src/client/styles.css, inside the max-width 720px block (line 667), give .rs-rewards `order: -1` so rewards come before the stats, or collapse the stats into a <details>. Alternatively, add a one-line rewards strip (Elo delta, +XP, LEVEL UP badge) to the .rs-hero in resultModal (src/client/ui.ts). In src/client/levels.ts / levels.css, start the XP card animation when the card scrolls into view (IntersectionObserver adding an .is-visible class), not on open.",
+   "files": [
+    "src/client/styles.css",
+    "src/client/ui.ts",
+    "src/client/levels.css",
+    "src/client/levels.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Training on phones and tablets: tapping a player seems to do nothing because his attribute panel is far below the fold",
+   "area": "training",
+   "evidence": "Below 860 px .training-grid stacks to one column (src/client/styles.css:656), with the 18+ row roster above the trainee panel. At 390x844, after tapping the 4th roster row: scrollY stays 0 and .panel.trainee top = 1074 > innerHeight 844. The only visible change is the row highlight. The Train buttons are about 900 px further down. Training each player means tap, scroll down, Train, scroll back up. The same happens at 768x1024: the panel starts at about y=1045. The click handler only sets app.trainee (src/client/main.ts:523-525).\nScreenshots: /tmp/rt/screens/out/shots/train390-after-tap.png (row 4 highlighted, no attributes on screen), /tmp/rt/screens/out/shots/training-390-dark.png, /tmp/rt/screens/out/shots/training-768-light.png.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/train390.cjs. It prints {scrollY:0, traineeTop:1074, innerHeight:844} after tapping a roster row.",
+   "suggested_fix": "In src/client/main.ts case 'trainee', when the grid is stacked (matchMedia('(max-width: 860px)')), set pendingFocus to the trainee heading and scroll .panel.trainee into view after render. Better on phones: show the trainee panel first, or as a bottom sheet over the roster, and turn the roster into a horizontal chip strip or a <select> (src/client/ui.ts trainingScreen, src/client/styles.css .training-grid).",
+   "files": [
+    "src/client/main.ts",
+    "src/client/ui.ts",
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "On phones the toast covers the result dialog's primary button and eats the tap for 3.6 s",
+   "area": "modal / toast z-index",
+   "evidence": "The .toast is position fixed, bottom 20px, z-index 70, pointer-events auto (src/client/styles.css:464-469). The modal is z-index 40 and the toast lasts 3600 ms (src/client/a11y.ts:48).\n- 390x844, after 'Copy replay code' in the result dialog: toast spans y 778-824 and 'Back to the club' spans y 767-819. document.elementFromPoint at the button centre returns 'toast ok'. A mouse click there leaves the result modal open (count 1).\n- At 1280 and 768 the toast sits below the button and the click works.\nThe same strip covers Sign/Train buttons near the bottom of the screen after those actions.\nScreenshot: /tmp/rt/screens/out/shots/copy-390.png (the toast sits on the orange BACK TO THE CLUB button).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/toast.cjs",
+   "suggested_fix": "Give .toast `pointer-events: none`; it carries no actions. On narrow screens, or while a .modal is open, move it to the top (top: calc(12px + env(safe-area-inset-top))) or lift it above the dialog footer (src/client/styles.css .toast).",
+   "files": [
+    "src/client/styles.css",
+    "src/client/a11y.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "The active tab is cut off in the phone and tablet tab bar after navigating, because the bar scroll resets on every render",
+   "area": "shell / tab bar",
+   "evidence": "Measured after clicking each tab, waiting 1.2 s:\n- 390x844, Training tab: .tabs scrollLeft 0 (max 364); the active tab spans 309-414 against a bar right edge of 374, so it reads 'TRAIN'.\n- 768x1024, Competitions tab: scrollLeft 0; the tab right edge is 774 vs the bar's 752. At scrollLeft 0 the Club tab is entirely hidden.\nCause: shell() re-creates .tabs with innerHTML on each render (src/client/ui.ts:136-143), so the scroll position resets. Only coach.ts:330 scrolls a tab into view, and only for spotlight marks.\nScreenshots: /tmp/rt/screens/out/shots/train390-after-tap.png and /tmp/rt/screens/out/shots/training-390-dark.png (active 'TRAIN' clipped), /tmp/rt/screens/out/shots/transfers-768-dark.png (COMPETITIONS clipped, CLUB hidden).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/tabbar.cjs. Look for activeVisible:false.",
+   "suggested_fix": "In render() (src/client/main.ts), after root.innerHTML = shell(...), run root.querySelector('.tab.on')?.scrollIntoView({ inline: 'nearest', block: 'nearest' }), or save and restore .tabs scrollLeft across re-renders. Consider a short condensed label set (e.g. 'Comps') below 420 px (src/client/ui.ts TABS).",
+   "files": [
+    "src/client/main.ts",
+    "src/client/ui.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Cup header shows the prize as 'EARNED \u0191130K': uppercase CSS turns the florin sign into a capital F-hook",
+   "area": "cups (number formatting)",
+   "evidence": "src/client/competitions.ts:153 puts formatMoney(cup.earned) inside <span class=\"eyebrow\">, and .eyebrow has text-transform: uppercase (src/client/styles.css:270). That turns \u0192 (U+0192) into \u0191 (U+0191) and 'k' into 'K'. A DOM scan for \u0192 under uppercase on the Competitions tab found exactly ['span.eyebrow: Semi-final \u00b7 earned \u0192130k'] at 390, 768 and 1280. Everywhere else money reads '\u0192130k'.\nScreenshot: /tmp/rt/screens/out/shots/comp-after-league-1280-dark.png (top right of the Cup 1 panel).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/comps.cjs 1280x800 dark. Its final 'UPPER' line lists the hit.",
+   "suggested_fix": "Wrap the amount in a span with text-transform: none (e.g. a .money class in src/client/styles.css), or move 'earned \u0192130k' out of the eyebrow into the panel body (src/client/competitions.ts:153).",
+   "files": [
+    "src/client/competitions.ts",
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Signed numbers are formatted inconsistently across screens (-17 vs \u221217, +0 vs \u00b10)",
+   "area": "number formatting",
+   "evidence": "The result dialog and season review use a true minus and \u00b10/0: '\u221217', '\u00b10', '(\u22121)' (the signed() helper in resultModal, src/client/ui.ts; src/client/review.ts:15). Other screens use ASCII hyphen-minus and '+0':\n- the Club tab Recent list: ui.ts:176 \u2192 '-4', '-17', '+0'\n- club news: src/meta/game.ts:347 \u2192 '(Elo -4)'\n- the league table GD: src/client/competitions.ts:253 \u2192 '-1'\nThe same loss reads '\u221217' on /tmp/rt/screens/out/shots/season-result1-1280.png and '-17' on /tmp/rt/screens/out/shots/after-review-club-1280.png. A draw reads '\u00b10' in the dialog and '+0' on /tmp/rt/screens/out/shots/club-replays-390.png.",
+   "repro": "Play a ranked loss, compare the result dialog Elo chip with Club tab \u2192 Recent and Club news. NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/season.cjs 1280x800 dark produces both screenshots.",
+   "suggested_fix": "Export one signed-number formatter (e.g. signed() next to formatMoney in src/meta/game.ts). Use it in ui.ts formChips, game.ts news lines, competitions.ts GD, review.ts and resultModal.",
+   "files": [
+    "src/client/ui.ts",
+    "src/meta/game.ts",
+    "src/client/competitions.ts",
+    "src/client/review.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Shootout intro card is squeezed into the canvas height on phones and opens scrolled inside a nested scroller",
+   "area": "cups / penalty shootout",
+   "evidence": ".so-overlay is absolutely positioned over the canvas stage with overflow:auto (src/client/styles.css:951), so the card cannot be taller than the canvas.\n- 390x844: overlay clientHeight 269 vs card scrollHeight 354. Focus on 'Start the shootout' scrolls it, so the title and first sentence are hidden on open; the card begins mid-sentence 'kicks each, then sudden death.'\n- 360x740: overlay 246 px vs 392 px of content; at scrollTop 0 the Start button is hidden.\nIn both cases about 380 px of empty page sits below. Desktop is fine (470/470 at 1280x800).\nScreenshots: /tmp/rt/screens/out/shots/so-intro-390.png (cut-off top under the scoreboard), /tmp/rt/screens/out/shots/so-intro-360x740.png (Start button out of view, empty space below).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/so2.cjs (prints overlay/card heights per viewport) or /tmp/rt/screens/out/shootout.cjs",
+   "suggested_fix": "At max-width 640px, make #so-intro and #so-end fixed full-screen sheets (position: fixed; inset: 0; align-items: safe center), or let the overlay grow past the stage (min-height: 100%, overflow: visible). Shorten the how-to text on touch (coarse pointer) and drop the mouse/keys wording there (src/client/styles.css .so-overlay/.so-card, src/client/shootout.ts intro markup).",
+   "files": [
+    "src/client/styles.css",
+    "src/client/shootout.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Replay code size ('CODE 1.2 KB') is shown to players in the result footer and the Recent replays list",
+   "area": "result dialog / club replays",
+   "evidence": "resultReplayHtml (src/client/replayView.ts:41) renders formatSize(codeSize(last.code)) as a chip beside the buttons and right above the primary button. Recent replays rows also read 'Ranked \u00b7 2 goals \u00b7 1.2 KB'. It is developer information that means nothing to a player, and it crowds the footer, which is part of the owner's 'not nice looking' complaint.\nScreenshots: /tmp/rt/screens/out/shots/result-1280-dark.png, /tmp/rt/screens/out/shots/result-390-dark.png (its own 'CODE 1.2 KB' row on phone), /tmp/rt/screens/out/shots/after-review-club-1280.png.",
+   "repro": "Finish any ranked match with replays unlocked (level 3+) and look at the result footer.",
+   "suggested_fix": "Remove the size span from resultReplayHtml and the Recent replays row in src/client/replayView.ts. Keep the size, if anywhere, in the 'Replay code copied (1.2 KB)' toast that already states it.",
+   "files": [
+    "src/client/replayView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Long generated surnames are cut mid-word with no ellipsis on the lineup board",
+   "area": "squad (long names)",
+   "evidence": "The generator produces surnames up to 16 letters ('Kesselingsteiner', 'Brenningsteiner'; bun scan of 400 seeds in /tmp/rt/screens/out/names.ts). At 1280x800 the board's select pills clip them hard: '59 \u00b7 Brenningsteine', '52 \u00b7 Kesselingstein', '51 \u00b7 Kesselingstein' with the chevron overlapping.\nScreenshot: /tmp/rt/screens/out/shots/long-squad-1280.png. Everything else handled long names well: the 28-char one-word club name breaks inside the result hero and home hero, and nothing overflows the page.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/screens/out/longnames.cjs, then open long-squad-1280.png",
+   "suggested_fix": "In src/client/styles.css (.slot-label select), add text-overflow: ellipsis with a slightly wider min-width. Or in squadScreen (src/client/ui.ts), show the rating and surname in a span over a transparent select, so the label can ellipsize properly.",
+   "files": [
+    "src/client/styles.css",
+    "src/client/ui.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "At the level-99 cap the header XP bar still counts toward a non-existent level 100 ('Level 99 \u00b7 0 / 9,900 XP')",
+   "area": "header / club level",
+   "evidence": "levelForXp (src/meta/levels.ts:55) sets maxed only when level === MAX_LEVEL and intoLevel >= needed. A club that has just reached 99 therefore shows 'Level 99 \u00b7 0 / 9,900 XP' with an empty bar in the header and the result XP card. Meanwhile the Club level panel says 'EVERYTHING UNLOCKED \u00b7 Keep going: level 99 is the cap.'\nScreenshots: /tmp/rt/screens/out/shots/club-1280-dark.png (header vs panel), /tmp/rt/screens/out/shots/long-result-1280.png ('Level 99 \u00b7 90 / 9,900 XP').",
+   "repro": "Open the app with save.xp = 485100 (totalXpForLevel(99)) and look at the header.",
+   "suggested_fix": "In src/meta/levels.ts, treat level === MAX_LEVEL as maxed. In levelChip / xpCardHtml (src/client/levels.ts), render 'Max level' with a full bar.",
+   "files": [
+    "src/meta/levels.ts",
+    "src/client/levels.ts"
+   ]
+  }
+ ],
+ "good": [
+  "The result dialog fixes everything in the owner's 2026-10-24 screenshot. There is no focus ring on the programmatically focused title (outline none), and each scorer sits under his own crest. Stats are two-sided bars (possession through cards), rewards are chips with an Elo badge, and the animated XP card has a LEVEL UP 3\u21924 badge. There is one primary button, and the whole dialog fits 1280x800 without scrolling (scroller 595/595).",
+  "No page-level horizontal scroll on any tab at 390, 768 or 1280, in light or dark, even with a 28-character single-word club name and the longest generated club and player names.",
+  "No text-contrast failures on any management screen in either theme (automated scan).",
+  "The season rollover after week 10 works end to end. The review shows record, goals, Elo, who changed, retirements, academy intake with stars and potential ranges, and ladder movers, and its 'Start season 2' button stays visible on phones.",
+  "No stale data after a match. Header Elo, XP, sessions, money, ladder position and week update; so do the home hero's next opponent, form chips and sparkline, the transfer market, the ladder, club news and recent replays.",
+  "Competitions read well at all three widths. The cup bracket shows penalty notes and YOU pills; the league table shows promotion/relegation keys and a fixture grid with your games highlighted. The drawn tie goes to a live shootout and then to a result with a '1\u20133 on penalties' pill.",
+  "The level-up modal and pause menu look polished. Forfeit and practice results have sensible empty states ('No stats: the match was abandoned', 'No XP for a forfeit').",
+  "bun run check is green: tsc clean, 352 unit tests pass, build OK."
+ ]
+}

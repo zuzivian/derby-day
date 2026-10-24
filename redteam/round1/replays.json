@@ -1,0 +1,157 @@
+{
+ "checks_run": "Setup: fetched derby main and assets/feedback, made a detached worktree at /tmp/rt/replays/repo (e2649c8), and read README, ROADMAP, the view and ui briefs and research-mouse-and-pace.md. `bun run check`: typecheck clean, 319 tests passed, 0 failed, build 1042 KB. I checked the open PR diffs (#2, #5, #6, #7, #8) and left out anything they rework, such as PR #8's click threshold, One Euro filter and pointer speed curve. All scripts are in /tmp/rt/replays/out. Run them with `cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node <script>`, or `/root/.bun/bin/bun run` from bun/. I read every screenshot.\n\n- **fidelity.cjs:** a natural goal, with the scene set up more than 5 s before so the buffer holds it. structuredClone was hooked and a setter on `tick` logged every tick of the live state and of the replay clone. Result: 298 ticks compared (330 to 627), max ball difference 0, max player difference 0. The replay started at goal+156 ticks and play resumed on the held tick.\n- **shots.cjs / shots2.cjs:** screenshots through a goal replay at 1280x800 and at 390x844 (touch): low side camera, then behind the goal in slow motion, then live again.\n- **probeB.cjs:** elementFromPoint over the HUD buttons during a replay, Menu click, wheel, context menu, and mashing Space or double-clicking into a human free kick. The Space and double-click leak was dropped: bun stats show replays start in the whistle or setup stage, where the sim ignores kicks.\n- **probeTouch.cjs:** Pass, Shoot, Menu and zoom are all under `.replay-skip` on a phone.\n- **bun/cost.ts:** full 22,815-tick match. Step 0.071 ms/tick, buffer push 0.026 ms/tick, end-of-match state 37 KB JSON, 4.07 replay-code chars per tick, about 93K chars per match. Deflate saves only 30%.\n- **clonecost.cjs (Chromium):** structuredClone of the live state 0.41 ms; 25 snapshots take 154 KB of heap.\n- **bun/orchestrate.ts:** matchView's replay scheduling, 30 CPU-v-CPU matches. 5.3 replays per match, 31.7 s per 360 s match, all 118 goals replayed.\n- **bun/shelf.test.ts:** the repo's own scripted mouse at HALF_SECONDS=180 gives codes of 110,003 to 117,463 chars; the shelf keeps 2 of 5 (test FAILS).\n- **codesize.cjs / codesize2.cjs (browser):** a still mouse costs about 1.2 KB in total; a moving mouse about 2.4 chars/tick at roughly 40 Hz pointer updates.\n- **flow.cjs:** a full 2x45 s match at 1280. Events, banners and a screenshot at the first of each stoppage kind.\n- **bun/pace.ts:** CPU-v-CPU ball in play 83.4%; median 1.67 s from restart awarded to taker ready.\n- **fulltime.cjs:** Esc then Forfeit after the final whistle.\n- **probeMouse.cjs:** pause mid-charge, window blur mid-hold, touch drag with controls set to keys and to mouse.\n- **fling.cjs:** a trackpad-style wheel fling.\n- **phoneHud.cjs:** HUD boxes at 390x844 and 844x390.\n- **viewer.cjs / viewerFull.cjs:** the Watch-goals viewer at 1280 and 390, keyboard driving, and a whole-match seek (930 ms).",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Recent replays keeps only 2-3 full-length matches, not the 5 advertised, and replay codes are about 90-117 KB, too long to share",
+   "area": "replays",
+   "evidence": "src/meta/replay.ts:723 sets KEEP_CHARS = 300_000. replayStore.ts:42 scales that cap by slot count, so level perks keep the same ratio. bun/shelf.test.ts uses the repo's own scripted() mouse from tests/replay.test.ts at the shipped HALF_SECONDS=180: code sizes [112003, 111084, 112974, 110210, 110182, 117463] chars, kept 2 of 5, expect(5) fails. bun/cost.ts with a cursor that changes every tick (what a mouse-steered player produces, because input.ts re-projects the pointer every tick) gives 92,952 chars, 4.07 chars/tick, so 3 fit. The browser (codesize2.cjs, 2D, moving mouse at about 40 Hz) measured 2.4 chars/tick. The existing test 'real replays: five fit well under the cap' (tests/replay.test.ts:367-376) passes only because it plays 60 s halves (playLive(seed, 60)), a third of a real match. README:75 promises 'The last five replays are kept' and 'a short `OVR1.\u2026` string'. An 89 KB code pasted fine (viewerFull.cjs), but it exceeds Discord (2,000), Slack (40,000) and WhatsApp (65,536) message limits, and the copy dialog says 'send it to a friend'.",
+   "repro": "cd /tmp/rt/replays/out/bun && /root/.bun/bin/bun test ./shelf.test.ts   (prints the code sizes and 'kept 2 of 5'; the test fails). Also: /root/.bun/bin/bun run cost.ts",
+   "suggested_fix": "Size the shelf from real codes. Raise KEEP_CHARS in src/meta/replay.ts to about 120K per slot (about 600K for 5; localStorage holds about 5M chars), or store each replay under its own key. Make the code smaller with a format bump: delta-of-delta coding for cursor runs, or a coarser recorded cursor (for example 5 cm) quantised identically in quantiseInput so the sim stays deterministic. Change tests/replay.test.ts:370 to use HALF_SECONDS so the test reflects a real match. Fix README:75's 'short' claim, or offer sharing by file or link instead of chat text.",
+   "files": [
+    "src/meta/replay.ts",
+    "src/client/replayStore.ts",
+    "tests/replay.test.ts",
+    "README.md"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Landscape phone: the pitch uses under half the screen width",
+   "area": "touch input / match layout",
+   "evidence": "src/client/hud.css:2 sets `.match .pitch-wrap { width: min(100%, calc((100vh - 120px) * 1.531)) }`, which reserves 120 px of a 390 px-tall landscape viewport for the hint line below. phoneHud.cjs at 844x390 (isMobile, hasTouch) measured #pitch at [215,20,629,297], so 414x277 css px is 49% of the width, with 215 px dead bands left and right. The 66 px Pass and Shoot buttons, radar, mute and zoom cover a large part of that small pitch, and touch steering has to happen on it. Screenshot /tmp/rt/replays/out/phone-844x390-charging.png shows a small boxed pitch in the middle of the screen, the HUD crowding it, and the controls hint below. No orientation or fullscreen handling exists: a grep for requestFullscreen/landscape found only hud.css:107, which is a portrait rule. With a Safari toolbar (about 340 px tall) the same formula gives about 337 px, 40% of the width.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node phoneHud.cjs   (prints the HUD boxes for 390x844 and 844x390 and saves phone-844x390-charging.png)",
+   "suggested_fix": "In hud.css add a landscape rule for coarse pointers and short viewports, e.g. @media (pointer: coarse) and (orientation: landscape) and (max-height: 500px): .match .pitch-wrap { width: min(100%, calc(100vh * 1.531)) }, hide or overlay the controls hint, and put Pass/Shoot in the side bands outside the pitch. Optionally call requestFullscreen on the first touch of a match (src/client/matchView.ts).",
+   "files": [
+    "src/client/hud.css",
+    "src/client/styles.css",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A yellow or red card shows over the offender for the whole card replay, seconds before the foul happens in it",
+   "area": "replay fidelity",
+   "evidence": "renderer3d.ts:480-481 calls aim.card(player, color, clock + 3) on the live card event. aim3d.ts:457 keeps the sprite visible while f.time < c.until, where time is the sim-tick animation clock. A replay re-draws an earlier tick, so its clock is always below that `until`, and the card stays up from the replay's first frame. The same holds for cardFace (renderer3d.ts:480, 509), so the referee keeps facing the booked player. Natural case in flow.cjs: yellow card at tick 949, replay opened at 769. Screenshot /tmp/rt/replays/out/flow-1280-replay-yellow.png, with the HUD clock at 12:11 (about tick 781, 2.8 s before the foul), shows the yellow card already floating over H. Benbadaad while he is still dribbling.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node flow.cjs   (needs a natural card; this run's log is flow-1280.log, and the screenshot is flow-1280-replay-yellow.png)",
+   "suggested_fix": "In Renderer3D.draw, clear aim card sprites, cardFace and celebrate when the drawn state object changes (`jumped` / lastState !== s). Or store `until` as an absolute sim tick and hide the sprite when s.tick < the tick the card was shown. Files: src/client/r3d/renderer3d.ts and src/client/r3d/aim3d.ts (add a clearCards()).",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/aim3d.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "During an instant replay the Menu, camera, mute and zoom buttons (and Pass/Shoot on phones) are under the skip layer: clicking Menu skips the replay instead of opening the menu",
+   "area": "replay controls / keyboard",
+   "evidence": "hud.css:79 makes .replay-skip `inset:0; z-index:3` over the HUD, and matchView.ts:228-236 appends it to .pitch-wrap. probeB.cjs at 1280x800, mid-replay: elementFromPoint at the centres of #pause-btn, #cam-btn and .juice-mute all return .replay-skip. Clicking 'Esc MENU' gave `pause visible = false, replay still on = false`, so the replay was skipped and no menu opened. probeTouch.cjs at 390x844 (touch): #pad-pass, #pad-shoot, #pause-btn and .pitch-zoom button are all covered by replay-skip. Esc also skips instead of opening the menu the button advertises (aria-keyshortcuts=\"Escape P\"); only P pauses during a replay.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node probeB.cjs   (first line: what is under each HUD button; second line: what clicking Menu did)",
+   "suggested_fix": "In src/client/hud.css put .hud-tr, .juice-mute and .pitch-zoom above .replay-skip (z-index 4, like .pause), or make the skip layer cover only the canvas. Mention 'Esc or Space' in the REPLAY label (matchView.ts startReplay).",
+   "files": [
+    "src/client/hud.css",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "After the final whistle, Esc still opens the pause menu and Forfeit turns a finished win into a recorded 0-3 defeat",
+   "area": "match flow (full time)",
+   "evidence": "matchView.ts:393 waits 1100 ms (setTimeout(() => finish(false), 1100)) after phase === 'fulltime'. setPaused (matchView.ts:145) only checks `done`, which is still false, and #forfeit (matchView.ts:173) calls finish(true) unconditionally. fulltime.cjs (ranked, 2D, halfSeconds 3, score set to 3-0): Esc right after the whistle showed the pause menu (true). Clicking Forfeit then produced the result 'RANKED \u00b7 FORFEITED DEFEAT ... 0 \u2013 3', 'No stats: the match was abandoned before full-time', Elo 1000\u2192957. The same run with Esc only recorded the 3-0 win, Elo 1000\u21921032. Screenshot /tmp/rt/replays/out/fulltime-esc-then-forfeit.png.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node fulltime.cjs",
+   "suggested_fix": "In src/client/matchView.ts, ignore setPaused(true) and the forfeit click once s.phase === 'fulltime' (or set a `ending` flag where the full-time branch starts the 1.1 s timer).",
+   "files": [
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "One trackpad two-finger swipe moves the camera zoom from one limit to the other",
+   "area": "mouse/touchpad",
+   "evidence": "renderer.ts:176 says one step per notch 'so a trackpad fling doesn't jump from one limit to the other', but the only guard is a 70 ms throttle (renderer.ts:182). An inertial swipe sends wheel events for about 0.5-1.5 s, i.e. 7 to 20 steps, and the full range is ln(1.45/0.6)/ln(1.12) = 7.8 steps (camera3d.ts ZOOM_MIN/MAX/STEP). fling.cjs (45 decaying wheel events at 16 ms, 3D): zoom 1 \u2192 1.45 after one swipe down, then \u2192 0.6 after one swipe up.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node fling.cjs",
+   "suggested_fix": "In mountCameraToggle (src/client/renderer.ts), treat wheel events closer than about 200 ms as one gesture (one step per gesture), or accumulate deltaY in pixel mode and step once per about 100 px with a cap of 1-2 steps per gesture.",
+   "files": [
+    "src/client/renderer.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Touch never switches input to pointer mode: with controls set to keys, dragging on the pitch does nothing",
+   "area": "touch input",
+   "evidence": "input.ts:103 sets mode='mouse' only for pointerType 'mouse', and the touch pointerdown branch (input.ts:108) returns before setting it. take() steers by the cursor only when mode === 'mouse', and select needs it too. probeMouse.cjs C (hasTouch, CDP touch drag 24 m north): controls=keys left the player at y 34 \u2192 34.00; controls=mouse moved him 34 \u2192 20.62. Two ways in on main: the first-run setup offers 'Keyboard' on every device (onboarding.ts:106), and on a touch laptop or tablet a single WASD or arrow press switches mode to keys for the rest of the match. PR #2's remembered input mode (onControls) would carry it into later matches; PR #8 does not change these lines.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node probeMouse.cjs   (lines 'C touch drag north with controls=keys/mouse')",
+   "suggested_fix": "In src/client/input.ts set this.mode = 'mouse' (pointer steering) on canvas pointerdown and pointermove for touch and pen as well, keeping the touchTap logic. Do the same in src/client/pads.ts if touch is meant to drive P1.",
+   "files": [
+    "src/client/input.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A kick released while paused fires the moment play resumes, and losing window focus does not pause",
+   "area": "mouse/pause",
+   "evidence": "InputController keeps press timers and queued one-shots while the match loop is not calling take(). probeMouse.cjs A: holding right with the ball, then Esc, releasing during the pause and clicking Resume gave a ball at speed 25.28 m/s with owner -1, 400 ms after Resume. The shot fired straight away even though it was released inside the pause menu. The same mechanism holds a charge through an instant replay, because take() is skipped while replay is set (matchView.ts frame()). Separately, matchView.ts:174-175 pauses only on visibilitychange. probeMouse.cjs B: after a window blur the match kept running (`paused:false`, ticks advancing), so a click on another monitor or a notification leaves the pointer-steered player running on. The blur handler at input.ts:157 correctly drops the charge, so there is no stuck charge.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node probeMouse.cjs   (lines 'A pause mid-charge' and 'B blur mid-hold')",
+   "suggested_fix": "Add InputController.reset() in src/client/input.ts: clear leftStart, shotStart, loftKeyStart, pass, loft, shoot, tackle, select and switchReq. Expose it through MatchInputSource and call it from setPaused(true/false), startReplay and endReplay in src/client/matchView.ts. Also pause on window 'blur' (single-human matches only), next to the visibilitychange handler.",
+   "files": [
+    "src/client/input.ts",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Right-clicking over the in-match HUD buttons opens the browser context menu",
+   "area": "mouse/context menu",
+   "evidence": "contextmenu is prevented only on the canvas (input.ts:127) and on the replay layer. probeB.cjs logged contextmenu events: right-click on the pitch gave {t:'pitch-3d', prevented:true}; right-click on the Menu button gave {t:'hud-menu', prevented:false}, which opens the native menu. The same applies to the Cam chip, the mute button, the zoom buttons and the margin round the pitch. On Windows, contextmenu fires on mouse-up under the pointer, so a right-hold shot charged on the pitch and released over one of these buttons should also pop the menu; I could not run Windows here, so that path is reasoned, not reproduced.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node probeB.cjs   (line 'contextmenu events')",
+   "suggested_fix": "Prevent contextmenu on the whole .match section (or .pitch-wrap) in src/client/matchView.ts, not only on the canvas.",
+   "files": [
+    "src/client/input.ts",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "On phones the power bar sits under the Shoot button",
+   "area": "touch HUD",
+   "evidence": "hud.css:88 (@media pointer:coarse) sets .hud-power bottom: 92px, but hud.css:102 (@media max-width:640px), which comes later, resets it to bottom: 8px. phoneHud.cjs at 390x844: .hud-power [298,446,368,456] and #pad-shoot [298,388,364,454]. elementFromPoint at the bar's centre returns pad-shoot. Screenshot /tmp/rt/replays/out/phone-390x844-charging.png, taken while holding Pass to charge a loft, shows the green fill peeking out under the Shoot circle, where the thumb also is. The radar [159..231] also runs under Pass [222..288].",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node phoneHud.cjs",
+   "suggested_fix": "In src/client/hud.css, move the coarse-pointer offset into the max-width block (or after it), e.g. .hud-power { bottom: 84px } for (pointer: coarse) and (max-width: 640px). Shift the radar left of the Pass button on coarse pointers.",
+   "files": [
+    "src/client/hud.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "The KICK-OFF label is drawn on top of the radar",
+   "area": "match flow (kick-off)",
+   "evidence": "fx.ts:23 places .juice-label at `bottom: 11%`, centred, which is where the radar sits (hud.css .hud-radar bottom 8px, centred, about 15% wide). Screenshot /tmp/rt/replays/out/flow-1280-kickoff-ready-team0.png shows 'KICK-OFF' printed across the minimap.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node flow.cjs   (first screenshot, flow-1280-kickoff-ready-team0.png)",
+   "suggested_fix": "In src/client/fx.ts move .juice-label above the radar (e.g. bottom: calc(16% + 24px), or top: 24%), or reuse the HUD's big centre word (hud.word) for the kick-off.",
+   "files": [
+    "src/client/fx.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Scrubbing a whole-match replay straight to the end freezes the page for about 0.9 s",
+   "area": "replay viewer perf",
+   "evidence": "ReplaySeeker.seek (replay.ts:284) re-simulates synchronously from the newest keyframe that exists. Right after opening, warm() has not filled keyframes yet, so a jump to the end runs about 22,500 sim steps on the main thread. viewerFull.cjs (89 KB full-length code pasted, PgUp to Whole match, scrub set to max-10): seekToEndMs 930.",
+   "repro": "cd /tmp/rt/replays/out && NODE_PATH=/opt/node22/lib/node_modules node viewerFull.cjs   (needs /tmp/rt/replays/out/fullcode.txt from `bun run bun/fullcode.ts`)",
+   "suggested_fix": "In src/client/replayView.ts, while the seeker is not warmed, clamp a scrub to the warmed range (show 'loading\u2026' on the bar), or seek in time-sliced chunks across frames. Alternatively, warm keyframes before enabling the Whole-match scrub.",
+   "files": [
+    "src/client/replayView.ts",
+    "src/meta/replay.ts"
+   ]
+  }
+ ],
+ "good": [
+  "Instant replays re-simulate exactly: 298 ticks compared, zero difference in ball and all 22 player positions between live and replay; the live sim is held and resumes on the tick it stopped.",
+  "Recording is cheap: snapshot clone 0.41 ms every 30 ticks in Chromium; 25 snapshots take about 154 KB of heap; buffer push 0.026 ms/tick on average.",
+  "Replay scheduling is well judged: 5.3 replays per CPU-v-CPU match, 31.7 s of a 360 s match, every goal replayed, at most one per stoppage, a 90 s gap for minor moments, none in two-tab lockstep.",
+  "Replay cameras look good at 1280x800 and 390x844: a low side shot, then behind the goal for the half-speed finish; REPLAY tag and label readable; P pauses mid-replay; Space, Enter, Esc and click skip after 400 ms.",
+  "No stuck charge: window blur mid-hold drops the charge; context menu is suppressed on the canvas and the replay layer.",
+  "Pace is brisk: ball in play 83% of a CPU-v-CPU match; median 1.67 s from a restart being awarded to the taker being ready; input reaches the sim on the next 60 Hz tick.",
+  "Watch-goals viewer works by keyboard at 1280 and 390 (PgUp/PgDn/S/Space/Esc), returns focus, no horizontal scroll, and verifies the re-simulated final hash.",
+  "bun run check passes: 319 tests, 0 failures."
+ ]
+}

@@ -1,0 +1,171 @@
+{
+ "checks_run": "Worktree /tmp/rt/a11y/repo at derby/main 97c8145. `bun run check`: 352 pass, 0 fail, build 1056 KB. Repo e2e: \"keyboard\" filter 4/4 PASS and \"Escape pauses\" 1/1 PASS. None of these tests presses Space inside the pause menu.\n\nScratch Playwright scripts are in /tmp/rt/a11y/out (Chromium with SwiftShader, `__e2e` hook on, 3D renderer unless noted):\n- taborder.cjs and focusscan.cjs: Tab order and focus rings on every tab at 1280 and 390 px. No missing or off-screen rings. At 390 px, 83 focus stops are under 44 px.\n- kbflow.cjs, kbmove.cjs, pausespace2.cjs, spacekeys.cjs: a keyboard-only run from Home through a full match to the result dialog and back.\n- matchtab.cjs, axscan.cjs: the CDP accessibility tree on all 7 screens and in the match. No unnamed controls; pad buttons are focusable inside aria-hidden.\n- announce.cjs, viewer.cjs, goalrm.cjs: a MutationObserver on #sr-announcer.\n- sim/cards.ts, sim/cards2.ts (bun): 40 and 120 headless CPU matches run through the real refereeCall().\n- contrast.cjs: HUD text measured against screenshot pixels with the HUD hidden. textcontrast.cjs and dlgcontrast.cjs: computed-style contrast on every screen, the pause menu and the result dialog, light and dark. Minimum 5.03:1, so they pass.\n- kits.cjs plus py/cvd.py and py/simimg.py: Machado 2009 protan/deutan matrices with CIEDE2000, applied to all 132 ordered kit pairs after avoidClash, and to screenshots.\n- pointer3.cjs: pixel contrast of the pointer ring.\n- phonetargets.cjs: target sizes and a near-miss tap at 390x844 touch.\n- zoom200.cjs, z200result.cjs: 640x400 at DPR 2, equivalent to 200% zoom. reflow.cjs, reflow2.cjs: 320 px. forced.cjs: forced-colors mode.\n- goalrm.cjs also runs with reducedMotion reduce and with no preference.\n\nI looked at every screenshot cited below, plus the owner's 2026-10-24 live-match screenshot.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Space key is swallowed during a match: pause-menu buttons and the instant-replays checkbox can't be used with Space, and the press is replayed as a pass or tackle on resume",
+   "area": "keyboard / dialogs",
+   "evidence": "src/client/input.ts:129-143. The window keydown handler calls e.preventDefault() for ' ' on line 136 and sets this.pass or this.tackle on lines 140-142. It never checks the event target or whether the game is paused. Native activation of the focused control is blocked, and the press is kept as game input.\n\npausespace2.cjs output:\n- Resume without Space: ball still at feet (owner 9, speed 0).\n- Space on the focused Resume button: pauseAfterSpace true (the menu stays open). After resuming with Enter: owner -1, ball speed 12.3 m/s, i.e. a pass fired by itself.\n- In 3D, the checkbox reads 'true -> true' after Space, but a mouse click toggles it.\n\nspacekeys.cjs output:\n- Checkbox after Enter: true. After Space: true. Stored value: null. Keydown on the checkbox is defaultPrevented by the game.\n- Space on the focused Menu button does not open the pause menu.\n- Space on 'All controls': aria-expanded stays false. Enter works.\n\nThe 'Instant replays' checkbox is therefore not keyboard-operable at all (WCAG 2.1.1). Enter never toggles a checkbox and Space is blocked.\n\nScreenshot /tmp/rt/a11y/out/kb-pause.png shows the pause card with Resume focused.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/pausespace2.cjs\nNODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/spacekeys.cjs\n\nBy hand: start a match, press Esc, press Space on the focused Resume button. Nothing happens. Press Enter: play resumes and your player immediately passes or tackles.",
+   "suggested_fix": "In src/client/input.ts keydown, return early without preventDefault or action when e.target is a BUTTON, INPUT, SELECT, TEXTAREA or A other than the canvas. This is the same pattern as shootout.ts:421/434 ('if (onButton) return; // let the focused button take it'). Also pass an isPaused() callback and ignore game keys while paused.\n\nIn src/client/matchView.ts setPaused (line 156), clear queued one-shot inputs (pass, tackle, shoot, loft, switch) when pausing.\n\nAdd an e2e test in tests/e2e/match.e2e.cjs: pause, Space on Resume closes the menu and the ball stays at feet; Space on #opt-replays toggles it.",
+   "files": [
+    "src/client/input.ts",
+    "src/client/matchView.ts",
+    "tests/e2e/match.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Screen readers never hear most cards: 56% of yellows and 78% of reds are overwritten by the free-kick announcement in the same tick",
+   "area": "screen reader / aria-live",
+   "evidence": "How it happens:\n- src/client/a11y.ts:38-43 announce() empties the region, clears the previous 60 ms timer and starts a new one. A second call within 60 ms cancels the first message.\n- src/sim/rules.ts judgeFoul pushes the card event(s) (issueCard) and then awardRestart's 'restart' event in the same tick.\n- src/client/matchView.ts:389-392 calls announce(refereeCall(...)) once per event in a loop, so 'Free kick to X' or 'Penalty to X' replaces the card.\n\nHeadless sim, /tmp/rt/a11y/out/sim/cards2.ts over 120 CPU matches: 321 yellow calls, 180 never heard (56%). 27 red calls, 21 never heard. Example: seed 26 tick 11450, 'Second yellow, red card: K. Oberegger' replaced by 'Free kick to \u00c5sstead Athletic'.\n\nIn the browser, announce.cjs injects a foul, card and restart in the same shape the sim produces. The announcer log shows only 'Free kick to Port Selhamn Town', while the HUD shows 'YELLOW CARD / L. HARTINGFELD' (/tmp/rt/a11y/out/announce-card.png). Sendings-off, which leave a side a man short, are almost never announced.",
+   "repro": "cd /tmp/rt/a11y/out/sim && /root/.bun/bin/bun run cards2.ts\nNODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/announce.cjs 2d",
+   "suggested_fix": "Make announce() in src/client/a11y.ts merge rather than replace. If a message is still pending, set pending = pending + ' ' + text and keep the same timer.\n\nAlternatively, in matchView.ts collect this frame's calls (cards first) plus the goal and half/full-time lines, and announce them once, joined, e.g. 'Yellow card: L. Hartingfeld. Free kick to Port Selhamn Town.'\n\nAdd a unit test that two announce() calls within 60 ms both reach the region text.",
+   "files": [
+    "src/client/a11y.ts",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Colour-blind players can't tell the teams apart in about 1 in 10 kit pairings (crimson/green, red/green, green/orange); avoidClash only checks RGB distance",
+   "area": "colour-blind safety / kits",
+   "evidence": "src/meta/names.ts:269-273 has 12 KIT_COLORS. src/client/main.ts:264-274 avoidClash swaps kits only when the plain RGB Euclidean distance between primaries is under 120.\n\n/tmp/rt/a11y/out/py/cvd.py (Machado 2009 matrices, CIEDE2000), all 132 ordered home/away pairs after avoidClash, pairs below \u0394E00 12:\n- normal vision: 0/132\n- deuteranopia: 10/132\n- protanopia: 6/132\n\nWorst pairs:\n- #9f1239 vs #166534: normal 62.6, deutan 2.8\n- #0b7a3e vs #9f1239: deutan 4.5\n- #c8102e vs #166534: protan 6.3\n- #0b7a3e vs #ea580c: protan 8.1\n- #166534 vs #7c2d12: deutan 8.4\n\nThat is 7 of 66 unordered pairings.\n\nIn a live 3D match (kits.cjs, club #166534/#ffffff vs ladder #9f1239/#93c5fd), /tmp/rt/a11y/out/cvd-greencrimson-deutan.png and -zoom.png show normal vision on top and deutan below. Both sides become dark-olive shirts with light shorts.\n\nThe only non-colour cue is the 1-2 px orange stamina bar over your own team. It is hidden outside play/kickoff/restart phases (aim3d.ts:308, 435) and in replays. Red vs green under protanopia: /tmp/rt/a11y/out/cvd-redgreen-protan.png. The radar is fine because it uses dots vs triangles.",
+   "repro": "python3 -I /tmp/rt/a11y/out/py/cvd.py 12\nNODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/kits.cjs '#166534' '#ffffff' '#9f1239' '#93c5fd' greencrimson\npython3 -I /tmp/rt/a11y/out/py/simimg.py /tmp/rt/a11y/out/kits-greencrimson-1280.png /tmp/rt/a11y/out/cvd-greencrimson-deutan.png deutan 119,180,1161,717",
+   "suggested_fix": "Replace the RGB test in avoidClash (src/client/main.ts) with a perceptual one. Clash if min(\u0394E under normal, protan and deutan simulation) < ~20, or the lightness difference is < ~15. Then try the away secondary and the neutral kits under the same test.\n\nAlso add a cheap non-colour team cue: a small home/away shape over every player, such as a dot vs a chevron like the radar, or a 'colour-blind kits' toggle. Optionally retune the clashing greens and crimsons in KIT_COLORS (src/meta/names.ts).",
+   "files": [
+    "src/client/main.ts",
+    "src/meta/names.ts",
+    "src/client/r3d/aim3d.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Phone HUD targets are far below 44 px and tightly stacked: Menu is 76x23, the Cam chip 71x16 sits 4 px below it, and a near-miss tap on Menu flips the camera",
+   "area": "touch targets",
+   "evidence": "phonetargets.cjs at 390x844 (touch, isMobile):\n- #pause-btn: 76x23 at y22-45\n- #cam-btn: 71x16 at y49-65\n- zoom \u2212/+ buttons: 32x32 at y69-101\n- #juice-mute: 28x28\n\nRules responsible: hud.css:21-38, 97, 100, 105.\n\nA tap 6 px under Menu's bottom edge printed 'paused? false camera broadcast -> end'. It switched to the end-to-end camera instead of pausing. Phones have no Esc key, so Menu is the only way to pause or forfeit. Crop: /tmp/rt/a11y/out/phone-hudtr-crop.png. The Pass/Shoot pads are 66x66, which is fine.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/phonetargets.cjs",
+   "suggested_fix": "In src/client/hud.css under @media (pointer: coarse):\n- give .hud-menu, .pitch-cam, .pitch-zoom button and .pitch-wrap .juice-mute at least 44x44 hit areas (min-height/min-width, or a ::before with inset:-10px)\n- keep at least 8 px between them, e.g. put Cam and zoom in a row left of Menu\n- hide the 'Esc' kbd on touch",
+   "files": [
+    "src/client/hud.css",
+    "src/client/fx.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "The mouse cursor is hidden on the pitch, and its replacement, the orange ground ring, has 1.15:1 contrast against the grass (1.08:1 for protanopia)",
+   "area": "pitch overlay contrast / colour-blind",
+   "evidence": "styles.css:615 sets '#pitch { cursor: none }'. aim3d.ts:193 draws the pointer as RingGeometry(0.42, 0.56) in ORANGE #ff8a1c (aim3d.ts:36) with no dark edge. Name tags get an 8 px black stroke and the triangle a dark rim; the ring has neither.\n\npointer3.cjs, no ball, on /tmp/rt/a11y/out/pointer-noball.png:\n- ring pixels mean rgb(235,142,32) vs grass rgb(74,173,60): 1.15:1 (WCAG 1.4.11 needs 3:1)\n- protanopia: ring (171,151,0) vs grass (177,158,46): 1.08:1\n- deuteranopia: 1.32-1.74:1\n\n/tmp/rt/a11y/out/pointer-noball-protan.png shows the ring nearly vanishing. With the ball, the white reticle helps. Without it (tackling, switching, steering) the ring is the only cursor for the main control scheme.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/pointer3.cjs\npython3 -I /tmp/rt/a11y/out/py/simimg.py /tmp/rt/a11y/out/pointer-noball-crop.png /tmp/rt/a11y/out/pointer-noball-protan.png protan",
+   "suggested_fix": "In src/client/r3d/aim3d.ts, draw a dark outline ring (rgba(0,0,0,.7), about 0.06 m wider on each side) under the orange pointer ring, and/or a thin white inner ring, as the name tags already do. Alternatively, show a small OS cursor on the pitch (cursor: crosshair in styles.css:615) as a fallback.",
+   "files": [
+    "src/client/r3d/aim3d.ts",
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "On phones the Shoot pad covers the power bar and the Pass pad covers the edge of the radar",
+   "area": "touch layout / HUD",
+   "evidence": "hud.css:87-88 '@media (pointer: coarse) { .hud-power { bottom: 92px } }' is overridden by the later max-width:640px block at hud.css:102 ('.hud-power { ... bottom: 8px; right: 6px }').\n\nMeasured at 390x844:\n- .hud-power x298-368, y446-456 sits under #pad-shoot x298-364, y388-454.\n- .hud-radar x159-231 overlaps #pad-pass x222-288.\n\nSee /tmp/rt/a11y/out/phone-pads-crop.png and match-phone.png.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/phonetargets.cjs, then view /tmp/rt/a11y/out/phone-pads-crop.png",
+   "suggested_fix": "In src/client/hud.css, move the coarse-pointer rule after the max-width:640px block, or add '@media (max-width:640px) and (pointer:coarse) { .hud-power { bottom: 84px } }'. Shift the radar left or shrink the pads so nothing overlaps.",
+   "files": [
+    "src/client/hud.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "HUD text with no backing plate fails contrast: team codes under the crests and the KICK-OFF label",
+   "area": "contrast / HUD",
+   "evidence": "contrast.cjs samples pixels behind each element with the HUD hidden.\n\n.hud-club b (hud.css:10, 94), white 11 px / 9 px bold with only a 0 1px 2px shadow:\n- 1280x800 over the crowd: min 1.74, p10 3.98\n- 390x844: 1.61:1, where it sits on the pale sky band (/tmp/rt/a11y/out/crop-phone-hud.png)\n\nThe owner's screenshot shows the same 'CPT DRE' codes lost in the crowd.\n\n.juice-label 'KICK-OFF' (fx.ts, white at .85 on grass): 1.33-3.31:1. By contrast, the score, clock, Menu and Cam chips all measure at least 5.6:1 on their plates.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/contrast.cjs 1280x800\nNODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/contrast.cjs 390x844",
+   "suggested_fix": "Give .hud-club b the same rgba(8,12,11,.66) pill as .hud-bar, or drop it, since the scoreboard already shows both codes. Add a dark pill or 2 px dark stroke to .juice-label in src/client/fx.ts.",
+   "files": [
+    "src/client/hud.css",
+    "src/client/fx.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "At 200% zoom the result dialog's stats and rewards can't be scrolled by keyboard once focus leaves the title",
+   "area": "zoom / dialogs",
+   "evidence": "z200result.cjs at 640x400, DPR 2:\n- .rs-scroll scrollHeight 924 vs clientHeight 249\n- PageDown from the initially focused title scrolls (162)\n- Tab stops are only 'Copy replay code' and 'BACK TO THE CLUB'\n- PageDown with focus on the button leaves scrollTop at 5\n- #result-title is tabindex=-1 (ui.ts:465), so it can't be re-reached\n\n/tmp/rt/a11y/out/z200-result.png shows the stats cut off at POSSESSION.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/z200result.cjs",
+   "suggested_fix": "In src/client/ui.ts resultModal, give .rs-scroll tabindex=\"0\", role=\"region\" and aria-label=\"Match stats and rewards\" so it is a Tab stop. trapTab's FOCUSABLE in src/client/a11y.ts already includes [tabindex].",
+   "files": [
+    "src/client/ui.ts",
+    "src/client/a11y.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Management-screen touch targets on phones are 28-35 px",
+   "area": "touch targets",
+   "evidence": "focusscan.cjs at 390x844 found 83 focus stops under 44 px on Home, Squad, Transfers and Training:\n- tabs 35 px tall\n- level badge 28x28\n- market role chips 47-61x32\n- Sign 55x32, Sell 50x32, Train 59x32\n- formation select 74x28\n- lineup selects 214x34\n- trainee rows 324x41\n\nOutput is in /tmp/rt/a11y/out/focusscan.txt.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/focusscan.cjs, then grep SMALL /tmp/rt/a11y/out/focusscan.txt",
+   "suggested_fix": "In src/client/styles.css, under @media (pointer: coarse), set min-height: 44px on .btn.small, chips, select and .tab. Give the level badge (src/client/levels.css .level-badge) a ::before hit-area expander.",
+   "files": [
+    "src/client/styles.css",
+    "src/client/levels.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "At 320 px (400% zoom) the Home League card heading overflows and the page scrolls sideways",
+   "area": "zoom / reflow",
+   "evidence": "reflow2.cjs at 320x568: scrollWidth 324 vs innerWidth 320. The overflowing element is 'H3.mode-title right 324.1 \"LEAGUE\"' (styles.css:1098 and 1159, 20 px uppercase with letter-spacing). /tmp/rt/a11y/out/home-320-league.png shows LEAGUE running into the card edge. Every other screen fits at 320 px.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/reflow2.cjs 99",
+   "suggested_fix": "In src/client/styles.css, below about 360 px: reduce .mode-title font-size and letter-spacing, allow overflow-wrap:anywhere, or make .mode-grid a single column.",
+   "files": [
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Pass and Shoot buttons are focusable inside aria-hidden=\"true\"",
+   "area": "screen reader / ARIA",
+   "evidence": "src/client/matchView.ts:141-143 wraps #pad-pass and #pad-shoot (focusable buttons) in '<div class=\"touch-pad\" aria-hidden=\"true\">'. Phone Tab order (matchtab.cjs phone) stops on both, at stops 5 and 6. This breaks the axe rule aria-hidden-focus.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/matchtab.cjs phone",
+   "suggested_fix": "Add tabindex=\"-1\" to both pad buttons, since they are pointer-only, or remove aria-hidden and give Shoot an aria-label like Pass's.",
+   "files": [
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "In-match labels and hints name the wrong input",
+   "area": "accessible names / hints",
+   "evidence": "- The HUD menu button's accessible name is 'Esc MENU' (AX tree), and it shows an Esc keycap on phones (hud.ts:57).\n- The instant-replay hint says 'click to skip' even for keyboard players, who can also skip with Space, Enter or Esc (matchView.ts:256; seen in /tmp/rt/a11y/out/replay-reduce.png).\n- The screen-reader line 'Replay. Goal \u00b7 T. Thornton 1'.' never says how to skip (matchView.ts:260).\n- On touch devices the canvas aria-label still describes only mouse and keys (matchView.ts:128).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/matchtab.cjs desk (AX names)\nNODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/goalrm.cjs reduce (announcements)",
+   "suggested_fix": "- In hud.ts, set aria-label=\"Menu\" with the kbd aria-hidden, and hide the kbd under pointer:coarse.\n- In matchView.ts, use 'click or press Space to skip' for non-coarse pointers and announce 'Replay \u2026 Press Escape to skip.'\n- Use TOUCH_HINT wording for the canvas aria-label on coarse pointers.",
+   "files": [
+    "src/client/hud.ts",
+    "src/client/matchView.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "With prefers-reduced-motion, instant replays still start automatically with a pitch-level tracking camera and hard cuts",
+   "area": "reduced motion",
+   "evidence": "goalrm.cjs with reducedMotion 'reduce' logs camera modes [\"broadcast\",\"replay-low\",\"replay-goal\",\"broadcast\"]. The replay plays in full.\n\ncamera3d.ts replayShot puts the eye 7 m up and 24 m off the ball, tracking it, then cuts behind the goal. instantReplaysPref() (matchView.ts:50) ignores prefers-reduced-motion.\n\nShake and confetti are correctly suppressed: no .pitch-wrap animation under reduce; with no preference it is waapi 520 ms.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/a11y/out/goalrm.cjs reduce",
+   "suggested_fix": "In src/client/matchView.ts instantReplaysPref(), return false when there is no stored preference and prefers-reduced-motion matches. The pause-menu toggle still turns replays on. Alternatively, under reduce, play replays from the broadcast camera with no cuts (src/client/r3d/camera3d.ts).",
+   "files": [
+    "src/client/matchView.ts",
+    "src/client/r3d/camera3d.ts"
+   ]
+  }
+ ],
+ "good": [
+  "Keyboard-only flow works: Tab reaches Kick off in 4 presses (skip link, level badge, Home tab, Kick off), WASD and Space play the match, and after full time focus lands on the result title with no ring.",
+  "Result dialog: Tab stays inside it, Esc closes it, and focus goes back to the control that started the match. Level-up and season-review dialogs use the same code.",
+  "Pause dialog: focus moves to Resume, Tab is trapped, Esc toggles it, and focus returns to the pitch canvas.",
+  "Replay viewer: a proper modal with a labelled scrubber, aria-keyshortcuts, a focus trap, and Esc returning focus to the 'Watch goals' button.",
+  "All 7 management screens, the pause menu and the result dialog have no unnamed controls and text contrast of at least 5.03:1 in light and dark. Focus rings are visible on every stop.",
+  "Goals, half-time, full-time, offsides and replays are announced through a persistent polite live region outside #app. Result stat rows carry screen-reader sentences, and the dialog is described by a score line.",
+  "Reduced motion: no screen shake or confetti, CSS animations are neutralised globally, and the camera moves more slowly.",
+  "The radar tells teams apart by shape (dots vs triangles), and name tags and stamina bars have dark outlines.",
+  "No horizontal scroll at 390 px or at 200% zoom on any screen, and forced-colors mode stays usable."
+ ]
+}

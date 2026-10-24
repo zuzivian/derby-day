@@ -1,0 +1,138 @@
+{
+ "checks_run": "Worktree /tmp/rt/camera/repo at derby/main e2649c8. Built with `bun run build` (1042 KB). All scripts and screenshots are in /tmp/rt/camera/out; I looked at every screenshot. Headless Chromium used SwiftShader at 3-9 fps, so feel measurements ran two other ways: (a) bun harnesses that drive the real MatchCamera from src/client/r3d/camera3d.ts with the renderer's focus logic at 60 Hz, and (b) the real page with a virtual 60 fps clock (/tmp/rt/camera/out/vclock.cjs patches performance.now and requestAnimationFrame), so the sim and the camera both step 1/60 s per frame.\n\nOpen-play framing:\n- Width at the ball: 49.7 m at 1280x800, 44.8 m at 390x844, 45.5 m at 844x390, 50.6 m at 1920x1080 (s1.cjs, s4-sizes.cjs).\n- Three CPU matches, 37,923 live frames per viewport (bun/dyn.ts): the ball was never off-screen. Ball under a HUD element: 0.20% at 1280 (radar), 0% at 390 portrait, 6.45% at 844x390 landscape (radar 4.96%, Pass button 0.87%, power bar 0.56%), 0.05% at 1920. Nearest home outfielder off-screen: 0.26% / 0% / 0.45% / 0.26%.\n- Stationary ball at 805 spots, zoom 0.6, 1.0 and 1.45 (bun/framing.ts): 0 under the HUD on desktop and portrait; 4 to 17 spots under the power bar in landscape, all at the right goal mouth.\n- Near-touchline throw-ins (bun/throwin.ts): no overlap with the HUD at 1280 or 390; 1 of 33 spots in landscape.\n- Jitter (bun/jitter.ts): 0.2 camera velocity reversals per minute, max pan 23.8 m/s, high-frequency RMS 0.157 m. No jitter.\n\nStill-pointer drift:\n- bun/drift.ts: pointer held still 3 to 14 m from the dribbler. He travelled 15 to 56 m with the live camera, against 2.6 to 9.6 m with the cursor frozen in the world.\n- Real page at virtual 60 fps (s3-drift-vclock.cjs):\n  - aim 6 m ahead: stopped after 5.5 m.\n  - aim 10 m ahead: 18.5 m in 5 s and still walking at 3.1 m/s.\n  - aim 14 m ahead: ran 52.6 m, from x=40 to x=92.6.\n  - aim 9 m toward the near touchline: dribbled 37 m and out of play (phase became restart, ball lost). The cursor slid from y=44 to 74 with the camera.\n\nLong view (s6-long.cjs and s6b-long.cjs with the sim paused; bun/longcov.ts; bun/fkcount.ts):\n- Own-half free kick at (40,60) at 1280x800: ball projects to canvas (-4, 914) and the taker to (-30, 915) on a 697 px tall canvas, so both are off-screen. The free kick at (30,65) behaves the same way.\n- Desktop long views hide 75 to 97% of the near strip (y of 50 m and more). The bottom edge of the frame is at y = 50 to 54 m, while the far stand fills the top 20 to 27%.\n- Over 20 CPU matches, 20 of 98 own-half free kicks had the ball off-screen.\n\nOther checks:\n- End camera (s8-end.cjs, s8-end2.cjs, bun/dyn-end.ts, bun/endstatic.ts).\n- Off-screen switch (s10b.cjs).\n- Wheel and trackpad (s11-wheel.cjs).\n- Pinch (s13-pinch.cjs).\n- Aim wedge at click, loft and shot (s7-aim.cjs).\n- HUD rects and coverage (s5-hudrects.cjs): HUD boxes cover 5.7% of the pitch at 1280, 16.2% at 390 portrait, 38.4% at 844 landscape, 4.6% at 1920.\n- 2D renderer and the WebGL-disabled launch (--disable-webgl --disable-3d-apis): both fall back to 2D with no page errors. Radar overlap in 2D measured with bun/r2dradar.ts.\n- WebGL context loss and restore (s12-ctxloss.cjs): rendering resumes.\n- Replays (s9-replay.cjs).",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Long view on an own-half free kick hides the human's own taker and the ball (and near-side teammates in every long view on desktop)",
+   "area": "camera / long view (ask 9)",
+   "evidence": "In /tmp/rt/camera/out/fk-wide-1280.png the free kick is at (40,60), it is the human's (restart ready, taker = controlled #8) and data-camera='long'. The frame shows x of about 21 to 105 and y of 10 to 50. The ball projects to canvas (-4, 914) and the taker to (-30, 915) on a 697 px tall canvas, so neither the ball, the taker nor the aim wedge is on screen. A free kick at (30,65) projects to (-51, 1054). In /tmp/rt/camera/out/fk-own-1280.png (free kick at 28,40), the near-side players #6 at (16,47), #15 at (21,63) and #7 at (47,63) are off-screen while the top fifth of the frame is crowd. In /tmp/rt/camera/out/gk-1280.png, #15 at (23,64) and #14 at (47,56) are off-screen. bun/longcov.ts at 1280x800 and 1920x1080 gives a bottom-centre ground point of y=50 for free kicks and y=54 for goal kicks; 97% (free kick) or 75% (goal kick) of the y\u226550 strip is hidden; the far touchline sits 20 to 27% down the frame. bun/fkcount.ts: in 20 CPU matches, 20 of 98 own-half free kicks (about 0.5 per human per match) leave the ball off-screen. Cause: renderer3d.ts:108 returns y: HALF_H whatever the ball's y and pushes x 0.32\u00d7width upfield, and camera3d.ts:197 sets tz = lv.z - width*0.12, which biases the frame toward the far stand.",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s6b-long.cjs '[{\"name\":\"fk-wide-1280\",\"w\":1280,\"h\":800,\"kind\":\"freekick\",\"spot\":{\"x\":40,\"y\":60}}]' then look at fk-wide-1280.png. This sets s.restart to a home free kick, waits for stage 'ready', pauses with P and hides #pause so the camera settles. Counts: /root/.bun/bin/bun bun/fkcount.ts and bun/longcov.ts.",
+   "suggested_fix": "In src/client/r3d/renderer3d.ts longView(), keep the restart spot in the result and do not push the centre 0.32\u00d7width upfield when that would lose the ball. In src/client/r3d/camera3d.ts (long branch, lines 189-206), pick tx and tz so the ball stays at least about 12% inside every frame edge, and so both touchlines fit at desktop aspect: drop the -width*0.12 far bias, and raise LONG_ELEV or widen the frame as needed. Add a test in tests/view.test.ts that projects the restart spot and every outfield teammate up to 20 m past halfway through MatchCamera at 1041x697 and 358x448, for goal kicks and for own-half free kicks at y = 5..63, and asserts all are inside the frustum.",
+   "files": [
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/camera3d.ts",
+    "tests/view.test.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "With a still mouse the player never reaches the pointer: the camera follow and the per-tick re-projection feed each other, and he can dribble out of play",
+   "area": "camera follow / mouse aiming (ask 11)",
+   "evidence": "The real page at a virtual 60 fps (s3-drift-vclock.cjs), with the human on the ball at (40,34) and the mouse not moved after placing it:\n- 10 m ahead: 18.5 m travelled in 5 s and still walking at 3.1 m/s. The cursor world point slid from 49.8 to 61.2 m, always about 2.7 m ahead.\n- 14 m ahead: ran 52.6 m, from x=40 to 92.6, at a steady 5.9 m/s (vdrift-ax14.log).\n- 9 m toward the near touchline: dribbled 37 m to y=68 and out of play. Phase became 'restart' and the ball was lost (vdrift-ay9.log); the cursor slid from y=44 to 74.\n- 6 m ahead: stopped after 5.5 m.\nbun/drift.ts with the same camera code: aims of 3, 5, 6, 8, 10 and 14 m give 15, 22, 35, 39, 51 and 56 m of travel, against 2.6 to 9.6 m when the world cursor is frozen. Removing the camera's velocity lead (drift-nolead.ts) still gives 34 to 50 m, so the dead zone (DEAD_X 0.09 \u00d7 56 m \u2248 5 m, camera3d.ts:63) is the limit. input.ts:238-241 re-projects the last client point every tick. This contradicts the README line 'a still pointer stays on the same grass while your player weaves' and the 'runs to the pointer' model for any run longer than about 6 m.",
+   "repro": "cd /tmp/rt/camera/out && AX=0 AY=9 T=10 NODE_PATH=/opt/node22/lib/node_modules node s3-drift-vclock.cjs (takes several minutes; prints the player and cursor each sim second). Quick version: AX=10 /root/.bun/bin/bun bun/drift.ts",
+   "suggested_fix": "In src/client/input.ts take(), stop re-projecting the stored client point while the pointer is still. Latch the world cursor on pointermove and re-project only when the client position changes. The canvas hides the OS cursor (cursor: none), so the orange ring staying on its grass is consistent. Optionally carry the camera's pan into the next move so the ring does not jump. Alternatively, in src/client/r3d/camera3d.ts, follow the human's own carrier only when he nears the frame edges (dead zone about 0.25 of the width) and drop the attack and velocity lead for him. Add a bun test: client pointer still 10 m ahead, camera and sim at 60 Hz, player must stop within 1 m of the grass point.",
+   "files": [
+    "src/client/input.ts",
+    "src/client/r3d/camera3d.ts",
+    "README.md"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Phone landscape: the pitch is a 413x277 box in the middle of an 844x390 screen, and the HUD covers about 38% of it",
+   "area": "phone landscape layout / HUD overlap",
+   "evidence": "In /tmp/rt/camera/out/phone-landscape-touch.png (844x390, touch, dpr 3) the canvas is 413x277 CSS px at x=215, using 49% of the screen width, with 215 px of empty space on each side. The desktop-size HUD sits on it: score bar 252x57 (61% of the canvas width), right stack 102x118 (menu, 'You vs AI', CAM, \u2212/+), power bar in the middle right at y 172-185, radar 100x65, and Pass and Shoot at 66 px each. The HUD boxes cover 38.4% of the canvas (5.7% at 1280). Over 37,923 live frames of CPU play (bun/dyn.ts) the ball is under a HUD element 6.45% of the time (radar 4.96%). A stationary ball at the right goal mouth sits under the power bar (bun/framing.ts). With the end camera the stationary carrier's feet are under the radar (bun/endstatic.ts). Cause: hud.css:2 sets .match .pitch-wrap width to min(100%, (100vh-120px)*1.531), which is (390-120)*1.531 = 413 px. The compact HUD rules only apply at max-width 640px (hud.css:90), so they skip landscape phones.",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s4-sizes.cjs '[{\"name\":\"phone-landscape-touch\",\"w\":844,\"h\":390,\"touch\":1,\"dpr\":3}]' then open phone-landscape-touch.png; coverage numbers come from s5-hudrects.cjs and /root/.bun/bin/bun bun/dyn.ts",
+   "suggested_fix": "In src/client/hud.css, add @media (pointer: coarse) and (orientation: landscape): let the 3D pitch fill the viewport (pitch-wrap width 100%; #pitch.pitch-3d with aspect-ratio auto and height about calc(100dvh - 16px); the 3D camera already handles any aspect). Hide .controls-hint and #hint-more there. Apply the compact HUD sizes under (max-height: 500px) as well as (max-width: 640px). Move the coarse-pointer power bar out of the goal-mouth band, for example above the Shoot button.",
+   "files": [
+    "src/client/hud.css",
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Phone portrait: the power bar sits under the Shoot button (CSS cascade), Pass overlaps the radar, and 350 px under the pitch stay empty",
+   "area": "phone portrait layout / HUD overlap (ask 7 bar)",
+   "evidence": "390x844 touch, measured with getBoundingClientRect (s4-sizes.cjs):\n- Shoot button: x 298-364, y 388-454. Power bar: x 298-368, y 446-456, so the bar is overlapped by the button.\n- Pass button: x 222-288. Radar: x 159-231, y 412-459, so Pass covers the radar's right edge.\n- In /tmp/rt/camera/out/phone-crop-power.png the bar's fill is visibly tinted under the translucent red Shoot circle.\n- The canvas ends at y=464 and the one-line hint at 494; y 494-844 (41% of the screen) is empty while the touch buttons sit on the pitch.\nCause: hud.css:87-89 `@media (pointer: coarse) { .hud-power { bottom: 92px } }` is overridden by the later hud.css:102 `.hud-power { \u2026 bottom: 8px; right: 6px }` inside @media (max-width: 640px), so every phone in portrait gets bottom: 8px. The 2D fallback at 390 has the same overlap (nogl-390.png).",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s4-sizes.cjs '[{\"name\":\"phone-portrait-touch\",\"w\":390,\"h\":844,\"touch\":1,\"dpr\":3}]' and compare the printed power and shoot rects; open phone-portrait-touch.png and phone-crop-power.png",
+   "suggested_fix": "In src/client/hud.css, move the coarse-pointer .hud-power rule after the max-width:640px block, or add `@media (pointer: coarse) and (max-width: 640px) { .hud-power { bottom: 84px; right: 6px } }`. Shift .hud-radar left of the pad on coarse pointers. In portrait, either give #pitch.pitch-3d a taller aspect ratio (about 3/5 instead of 4/5, hud.css:108) or place .touch-pad (styles.css:646) in the free space under the canvas so the buttons stop covering the pitch.",
+   "files": [
+    "src/client/hud.css",
+    "src/client/styles.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A cone click can hand you a teammate who is off-screen, with no indicator",
+   "area": "camera / controlled-player visibility",
+   "evidence": "s10b.cjs: opponents have the ball at (56,36), you steer a striker at (64,30), and the other teammates are at x 8-14. Left-clicking near the left edge of the canvas switches control to #6, whose screen x is then -282 px (about 12 m beyond the edge). Over the next 1.2 s his screen x runs -282, -186, -88, 26, so you steer a man you cannot see for about 74 ticks. No switch ring is visible before the click (offpick2-before.png), because pickTeammate's 40-degree cone (src/sim/human.ts:78-103) has no distance or visibility limit, and aim3d.ts draws no off-screen marker. The camera follows the ball, not the controlled man.",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s10b.cjs (prints the controlled player's screen x over time; see offpick2-before.png and offpick2-after.png)",
+   "suggested_fix": "In src/client/r3d/aim3d.ts / renderer3d.ts, when the controlled player (or the switch candidate) projects outside the frustum, draw an edge-of-screen arrow with his name. Alternatively, have input.ts switchCandidate/select ignore candidates the renderer reports as off-screen, which needs a small isOnScreen(worldPos) on MatchRenderer.",
+   "files": [
+    "src/client/r3d/aim3d.ts",
+    "src/client/r3d/renderer3d.ts",
+    "src/client/input.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A gentle trackpad scroll slams the zoom to its limit in about a quarter of a second",
+   "area": "zoom",
+   "evidence": "s11-wheel.cjs dispatches 40 wheel events of deltaY=3 px over about 0.65 s on #pitch, which is 120 px of trackpad scroll. Zoom after every 8 events: 1.254, 1.45, 1.45, 1.45, 1.45, so it hits ZOOM_MAX within about 16 events. renderer.ts:178-185 steps ZOOM_STEP (1.12) for any event with |deltaY| \u2265 1, rate-limited to one per 70 ms (14 steps/s). The whole 0.6 to 1.45 range is only ln(2.42)/ln(1.12) = 7.8 steps, so on laptop trackpads (and with momentum scrolling) zoom is effectively min or max. Also, the wheel over the mute button scrolls the match page 17 px at 1280x800 (page height 817 > 800).",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s11-wheel.cjs",
+   "suggested_fix": "In src/client/renderer.ts onWheel, accumulate deltaY (normalised by deltaMode) and apply zoom continuously, for example setZoom(zoom * Math.exp(dy * 0.0012)), or one step per 100 px accumulated. Keep the per-notch step only for deltaMode=1 or large deltas. Also add the wheel listener to .pitch-wrap rather than the canvas, so the HUD buttons and the mute button don't scroll the page.",
+   "files": [
+    "src/client/renderer.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Pinch-to-zoom on a phone also steers your player toward a finger",
+   "area": "zoom (touch) / steering",
+   "evidence": "s13-pinch.cjs, 390x844 touch: two touch pointers start either side of your player and spread for 1 s. Zoom went 1.0 to 0.6 (clamped), and your player ran 8.3 m in 80 ticks, from (40,34) to (45.6,40.2), toward the second finger. input.ts:102-116 sets this.cursor from every touch pointer's pointerdown and pointermove, primary or not, while renderer.ts:186-213 treats the same two pointers as a pinch.",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s13-pinch.cjs",
+   "suggested_fix": "In src/client/input.ts, ignore non-primary touch pointers for steering and suspend steering (keep the last world cursor) while two touches are down. Expose a 'pinching' flag from mountCameraToggle (src/client/renderer.ts) or track touch count in InputController.",
+   "files": [
+    "src/client/input.ts",
+    "src/client/renderer.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "End camera shows only about 5 m behind the man on the ball, who stands on the radar; back passes leave the frame",
+   "area": "camera / end view",
+   "evidence": "In /tmp/rt/camera/out/end-1280-settled.png (stationary carrier, settled) his yellow ring touches the top edge of the radar (feet at canvas y 568 against radar top 588, bun/endstatic.ts). At kick-off, in end-1280.png, his feet and ring are under the radar. bun/dyn-end.ts over 37,923 live frames at 1280: ball off-screen 3.57% of the time (up to 1.23 s at a time), ball under the radar 5.68%, nearest home outfielder off-screen 10.18%. The side view gives 0%, 0.20% and 0.26%. In landscape 844x390 the stationary carrier's feet are under the radar. Cause: camera3d.ts:184 targets 9 m ahead of the focus, plus the attack lead.",
+   "repro": "Set localStorage derby-camera=end: cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s8-end2.cjs; /root/.bun/bin/bun bun/dyn-end.ts",
+   "suggested_fix": "In src/client/r3d/camera3d.ts end branch, reduce the look-ahead (d*9 to about d*5) or raise the elevation so the carrier sits at about 65% of the frame height. With mode 'end', move .hud-radar out of the bottom centre (hud.css; the renderer can expose its mode as a data attribute on #pitch, as data-camera already does).",
+   "files": [
+    "src/client/r3d/camera3d.ts",
+    "src/client/hud.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "2D renderer (the no-WebGL fallback): the radar duplicates the full-pitch view and covers the near touchline at halfway; the pause menu advertises a zoom that 2D lacks",
+   "area": "2D renderer / WebGL fallback",
+   "evidence": "In /tmp/rt/camera/out/r2d-1280.png and nogl-1280.png (--disable-webgl --disable-3d-apis) the 2D top-down view already shows the whole pitch, and the radar (page 562-718 x 608-709) sits over pitch x 44-61 m, y 59.7-68 m. bun/r2dradar.ts over 10 CPU matches: the ball is in that region 2.19% of live play, and 6 of 32 throw-ins are taken from under the radar. nogl-390.png: on a phone the 2D pitch is 358x240 and the Pass and Shoot buttons cover the right penalty area. matchView.ts:127 always shows 'Mouse wheel or + / \u2212 zooms the camera' in the pause menu, but mountCameraToggle returns early for 2D (renderer.ts:123), so nothing zooms.",
+   "repro": "cd /tmp/rt/camera/out && NODE_PATH=/opt/node22/lib/node_modules node s4-sizes.cjs '[{\"name\":\"r2d-1280\",\"w\":1280,\"h\":800,\"q\":\"?renderer=2d\"}]'; NOGL=1 NODE_PATH=/opt/node22/lib/node_modules node s4-sizes.cjs '[{\"name\":\"nogl-390\",\"w\":390,\"h\":844,\"q\":\"\",\"touch\":1,\"dpr\":2}]'; /root/.bun/bin/bun bun/r2dradar.ts",
+   "suggested_fix": "Hide the radar when the renderer is 2D: in src/client/matchView.ts / hud.ts, skip it when renderer.kind === '2d', or use CSS `.pitch-wrap:not(:has(.pitch-3d)) .hud-radar { display: none }`. Render the zoom sentence of the pause hint (matchView.ts:127) only when the renderer is 3D.",
+   "files": [
+    "src/client/matchView.ts",
+    "src/client/hud.ts",
+    "src/client/hud.css"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "The 'Advantage' word, up to 104 px high, covers the middle of the pitch while play goes on",
+   "area": "HUD overlapping play",
+   "evidence": "In /tmp/rt/camera/out/open-1280x800.png, 'ADVANTAGE / SELDAL VALE WANDERERS' spans about 440x80 px across the centre band of the pitch (page y about 260-340) with players under it. Advantage is the one referee call where play continues. hud.css:44-47 places .hud-word at top: 40% at clamp(38px, 9vw, 104px), and matchView.ts:372 shows every referee word for 1.5 s, including Advantage.",
+   "repro": "Play any ranked match at 1280x800 until the referee plays advantage, or see open-1280x800.png from s1.cjs (the kick-off scene happened to show it)",
+   "suggested_fix": "In src/client/hud.ts refereeWord / matchView.ts, show 'Advantage' as a small tag at the top (styled like .hud-replay in hud.css) instead of the big centre word, or shrink and raise .hud-word for calls made during live play.",
+   "files": [
+    "src/client/hud.ts",
+    "src/client/hud.css",
+    "src/client/matchView.ts"
+   ]
+  }
+ ],
+ "good": [
+  "Open-play broadcast framing is solid. Over 37,923 live frames per viewport the ball was never off-screen at 1280x800, 390x844 or 1920x1080, it sat under the HUD only 0.2% of the time at 1280, and the nearest home outfielder was off-screen 0.26% of the time.",
+  "Width at the ball is 49.7 m on desktop and 44.8 m in phone portrait, inside the brief's 45-60 m band; zoom spans 0.6 to 1.45 and is remembered.",
+  "The camera is smooth: 0.2 pan reversals per minute and 0.16 m RMS of high-frequency motion over a full CPU match, so no jitter.",
+  "Near-touchline throw-ins stay clear of the HUD at every desktop and portrait size tested.",
+  "The aim wedge works as a power gauge (ask 7) and matches the HUD bar: green for a click pass, amber or red for a charged shot, and the loft shows its flight dots and a landing ring (aim-d1280-*.png).",
+  "WebGL-disabled Chromium falls back to 2D cleanly with no page errors; WebGL context loss followed by restore resumes rendering.",
+  "1920x1080 frames well, with readable players and no HUD collisions."
+ ]
+}
