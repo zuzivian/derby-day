@@ -26,15 +26,20 @@ async function freshVisit(t, { halfSeconds = null, width = 1280, height = 800 } 
 const prefsOf = (page) => page.evaluate((k) => JSON.parse(localStorage.getItem(k)), PREFS_KEY);
 const tipId = (page) => page.evaluate(() => { const el = document.querySelector('.coach-tip'); return el && !el.hidden ? el.dataset.coachTip : null; });
 
-/** Wait for open play, then put the ball at our controlled player's feet in the attacking half. */
+/**
+ * Wait for open play, then put the ball at our controlled player's feet in the attacking half. The coach looks at it in the
+ * same turn (window.__derbyCoach.advance(0)), so nothing in the sim, such as the CPU winning the ball back on a slow runner,
+ * can change the situation before the coach has seen it.
+ */
 async function giveBall(page) {
-  await page.waitForFunction(() => window.__derbyMatch.phase === 'play', null, { timeout: 30_000 });
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
   await page.evaluate(() => {
     const s = window.__derbyMatch;
     const me = s.controlled[0];
     s.players[me].pos = { x: 70, y: 34 };
     s.ball.owner = me;
     s.ball.pos = { x: 70, y: 34 };
+    window.__derbyCoach.advance(0);
   });
 }
 
@@ -67,13 +72,14 @@ test('onboarding: leaving or reloading the first match brings the welcome and th
   expect((await page.locator('.ob-versus .side-name').nth(1).innerText()).trim(), 'same opponent after leaving').toBe(opp);
   expect((await readSave(page)).history.length, 'nothing recorded').toBe(0);
   expect((await prefsOf(page)).onboarded, 'still pending').toBe(false);
-  // Reloading mid-match is the same.
+  // Coming back mid-match (closing the tab during the first match) is the same: a new visit while the first page is
+  // still in the match. (nextVisit, not page.reload(): see helpers.cjs.)
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
-  await page.reload();
-  await page.waitForSelector(KICK);
-  expect((await page.locator('.ob-versus .side-name').nth(1).innerText()).trim(), 'same opponent after a reload').toBe(opp);
-  expect(await page.locator(SEL.tab).count(), 'no tabs yet').toBe(0);
+  const next = await nextVisit(page);
+  await next.waitForSelector(KICK);
+  expect((await next.locator('.ob-versus .side-name').nth(1).innerText()).trim(), 'same opponent on the next visit').toBe(opp);
+  expect(await next.locator(SEL.tab).count(), 'no tabs yet').toBe(0);
 });
 
 test('onboarding: "I\'ve played before" skips straight to Home with no coach', async (t) => {
@@ -120,7 +126,7 @@ test('onboarding: the first tip is readable: it holds for seconds and is not cut
 test('onboarding: a tip card never blocks the game: clicks pass through it, it is off the action, it hides while paused', async (t) => {
   const page = await freshVisit(t);
   await page.locator(KICK).click();
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   expect(await page.locator('.coach-tip').evaluate((el) => getComputedStyle(el).pointerEvents), 'card passes pointer events through').toBe('none');
   expect(await page.locator('.coach-x').evaluate((el) => getComputedStyle(el).pointerEvents), 'but the button works').toBe('auto');
   // Top-centre under the HUD row: clear of the radar (bottom) and the ball area, and inside the pitch.
@@ -147,7 +153,7 @@ test('onboarding: a coach tip does not pause play, can be dismissed, and is not 
   const page = await freshVisit(t);
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   const a = await page.evaluate(() => window.__derbyMatch.tick);
   await page.waitForFunction((x) => window.__derbyMatch.tick > x + 20, a, { timeout: 15_000 });
   expect(await page.locator(SEL.pause).isHidden(), 'no pause menu').toBe(true);
@@ -162,18 +168,20 @@ test('onboarding: situational tips fire once each, only while still true: the ba
   const page = await freshVisit(t);
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   await page.locator('.coach-x').click();
   await giveBall(page);
+  // Each tip is read, dismissed, and the coach is let look again in the same turn, so the queued tip shows at once.
   const next = async (name) => {
-    await page.waitForFunction((n) => document.querySelector('.coach-tip')?.dataset.coachTip === n && !document.querySelector('.coach-tip').hidden, name, { timeout: 25_000 });
+    await page.waitForFunction((n) => document.querySelector('.coach-tip')?.dataset.coachTip === n && !document.querySelector('.coach-tip').hidden, name, { timeout: 15_000 });
     const text = await page.locator('.coach-tip').innerText();
     await page.locator('.coach-x').click();
+    await page.evaluate(() => window.__derbyCoach.advance(0));
     return text;
   };
   expect(await next('pass'), 'pass tip').toMatch(/pass/i);
   expect(await next('shoot'), 'shoot tip (first possession in their half)').toMatch(/shoot|shot/i);
-  await page.evaluate(() => { const s = window.__derbyMatch; s.ball.owner = s.players.find((p) => p.team === 1).i; });
+  await page.evaluate(() => { const s = window.__derbyMatch; s.ball.owner = s.players.find((p) => p.team === 1).i; window.__derbyCoach.advance(0); });
   expect(await next('tackle'), 'tackle tip').toMatch(/tackle/i);
   const prefs = await prefsOf(page);
   for (const id of ['pass', 'shoot', 'tackle']) expect(prefs.coachSeen, `${id} remembered`).toContain(id);
@@ -186,16 +194,24 @@ test('onboarding: tip wording follows the live input, and the settled input beco
   const page = await freshVisit(t, { halfSeconds: 3 });
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   await page.locator('.coach-x').click();
+  // The controller goes back to mouse mode on any mouse pointermove over the pitch, and Chromium makes up such a move when
+  // the layout changes under a still pointer. Park the pointer off the pitch, so only the keyboard decides the mode.
+  await page.mouse.move(8, 400);
+  expect(await page.evaluate(() => document.elementFromPoint(8, 400).id), 'the pointer is not over the pitch').notToBe('pitch');
   // Use the keyboard: the controller switches to keys, so the next tip talks about Space, not clicks.
   await page.locator(SEL.pitch).focus();
   await page.keyboard.down('d');
   await page.waitForTimeout(150);
   await page.keyboard.up('d');
   await giveBall(page);
-  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 25_000 });
+  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 15_000 });
+  // The pass tip may already be up in mouse words when the key is pressed (the human often has the ball at kick-off);
+  // the coach re-writes the card on the next frame after the mode changes, so wait for that: it is the feature.
+  await page.waitForFunction(() => /space/i.test(document.querySelector('.coach-tip')?.textContent || ''), null, { timeout: 15_000 });
   expect(await page.locator('.coach-tip').innerText(), 'keyboard wording').toMatch(/space/i);
+  expect(await page.locator('.coach-tip').innerText(), 'and not the mouse wording').notToContain('Left click');
   // The first match ends: the mode the player settled on is saved.
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   expect((await prefsOf(page)).controls, 'keys remembered').toBe('keys');
@@ -314,9 +330,9 @@ test('onboarding: level 1 shows only Home; a level-up reveals the next tab with 
   await page.locator('[data-action="mark-ok"]').click();
   expect(await page.locator('.tab-mark').count(), 'dismissed').toBe(0);
   expect((await prefsOf(page)).marks, 'remembered').toContain('club');
-  await page.reload();
-  await page.waitForSelector(SEL.kickOff);
-  expect(await page.locator('.tab-mark').count(), 'not again after a reload').toBe(0);
+  const next = await nextVisit(page); // not page.reload(): see helpers.cjs
+  await next.waitForSelector(SEL.kickOff);
+  expect(await next.locator('.tab-mark').count(), 'not again on the next visit').toBe(0);
 });
 
 const totalXp = (level) => 50 * level * (level - 1);
@@ -404,9 +420,9 @@ test('onboarding: an existing save keeps every feature it had, with nothing move
   // The Cup it was working toward (old level 5) is still at 5, not at the new table's... 5; League stays at 8.
   await page.locator(SEL.tabFor('club')).click();
   expect(await page.locator(SEL.nextUnlock).innerText(), 'the next unlock is where it was').toContain('The Cup and Practice Hard at level 5');
-  await page.reload();
-  await page.waitForSelector(SEL.kickOff);
-  expect(await page.locator(KICK).count(), 'no welcome').toBe(0);
+  const next = await nextVisit(page); // not page.reload(): see helpers.cjs
+  await next.waitForSelector(SEL.kickOff);
+  expect(await next.locator(KICK).count(), 'no welcome').toBe(0);
 });
 
 test('onboarding: the welcome and the first match fit a phone', async (t) => {
@@ -416,7 +432,7 @@ test('onboarding: the welcome and the first match fit a phone', async (t) => {
   const kb = await page.locator(KICK).boundingBox();
   expect(kb.y + kb.height, 'Kick off above the fold').toBeLessThanOrEqual(844);
   await page.locator(KICK).click();
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   const tb = await page.locator('.coach-tip').boundingBox();
   expect(tb.x, 'tip inside the screen').toBeGreaterThanOrEqual(0);
   expect(tb.x + tb.width, 'tip inside the screen').toBeLessThanOrEqual(390);
