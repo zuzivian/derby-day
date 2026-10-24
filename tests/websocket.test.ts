@@ -306,7 +306,11 @@ describe('websocket transport over the relay core', () => {
 });
 
 describe('Bun relay over real sockets', () => {
-  const relay = startRelay({ port: 0, host: '127.0.0.1', quiet: true });
+  // These tests run lockstep as fast as the machine allows, about ten times real time, so the
+  // per-socket rate limit (150 messages/s, sized for 60 ticks/s of play) is raised here. With the
+  // production limits the relay correctly closes such a socket after its 300-message burst, which
+  // used to make this test pass or stall depending on how fast the machine was.
+  const relay = startRelay({ port: 0, host: '127.0.0.1', quiet: true, limits: { ratePerSec: 100_000, burst: 100_000, bytesPerSec: 1e9, byteBurst: 1e9 } });
   afterAll(() => relay.stop());
   const url = `ws://127.0.0.1:${relay.port}/ws`;
   const until = async (ok: () => boolean, ms = 3000) => {
@@ -346,6 +350,8 @@ describe('Bun relay over real sockets', () => {
     guest.drop();
     await run(300);
     await Bun.sleep(100);
+    expect(host.error).toBeNull();
+    expect(guest.error).toBeNull();
     expect(guest.resumes).toBe(1);
     expect(peers[0].s.tick).toBe(300);
     expect(peers[1].s.tick).toBe(300);
@@ -354,7 +360,8 @@ describe('Bun relay over real sockets', () => {
     host.close();
     guest.close();
     await until(() => relay.core.stats().sockets === 0);
-  });
+    // Under a second on a laptop; the bound leaves room for a busy CI runner (the run loops give up at 10 s each).
+  }, 25_000);
 
   test('origin allow-list refuses other origins', async () => {
     const strict = startRelay({ port: 0, host: '127.0.0.1', quiet: true, allowedOrigins: ['https://derby.natwong.dev'] });
