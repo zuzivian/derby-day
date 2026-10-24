@@ -11,8 +11,10 @@
  * is flagged instead of silently showing a different match.
  *   1  six-a-side on boards (until 2026-10)
  *   2  eleven-a-side, full pitch, Laws 8, 11, 12, 13-17 (restarts, offside, fouls, cards)
+ *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
+ *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
  */
-export const SIM_VERSION = 2;
+export const SIM_VERSION = 3;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;

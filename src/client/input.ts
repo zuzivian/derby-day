@@ -4,9 +4,13 @@
 // Your player runs toward the pointer, and the further away the pointer is the
 // faster: a walk close in, a full sprint from 12 m out. No sprint key.
 //   With the ball
-//     Left click           ground pass that rolls to the pointer
-//     Left press and hold  lofted ball that lands at the pointer; the longer the hold, the higher and further
+//     Left click           ground pass: to the teammate at or toward the pointer, else to the point.
+//                          Any press shorter than CLICK_MS (300 ms; 360 ms for touch and pen) is a
+//                          click, so a click is always a ground pass, never a lofted ball.
+//     Left press and hold  lofted ball that lands at the pointer; the charge shows from CLICK_MS and is
+//                          full at CLICK_MS + LOFT_RAMP_MS (900 ms in all); the longer, the higher and further
 //     Right click          shot toward the pointer; hold right for more power, release to strike
+//     (keeper)             left click rolls it out, left hold throws or kicks it high, right click punts
 //   Without the ball
 //     Left click           switch to the teammate under the pointer, else the nearest one in that direction
 //     Right click          tackle toward the pointer: standing when it is near, a slide when it is far
@@ -16,6 +20,11 @@
 // Touch: drag to run toward your finger; Pass button: tap to pass, hold to loft (without the ball it
 // picks a player toward your finger); Shoot button: shoot (without the ball, tackle). Tapping a
 // player on the pitch without the ball picks him.
+//
+// A click aims where the button went down (if the pointer moved less than AIM_DRIFT_PX before it came up),
+// not where it is when it comes up. The run target is the pointer through a One Euro filter (calm when still,
+// no lag when it moves fast); kicks use the raw point. `moved` tells the sim the pointer really moved (not
+// just the camera sliding the pitch under it), which ends the hold after an automatic change of player.
 //
 // This file reaches a renderer only through toWorld (see WorldPicker). What a renderer needs to draw
 // aim feedback is public: `cursor` (pointer in world metres, null until it has moved), `mode`
@@ -35,16 +44,68 @@ export interface WorldPicker {
   screenDir?(d: Vec): Vec;
 }
 
-/** A left press shorter than this is a click (pass); longer is a loft being charged. */
-export const TAP_MS = 200;
-/** How long past TAP_MS it takes to charge a loft to full. */
-export const LOFT_FULL_MS = 800;
+/**
+ * A left press shorter than this is a click (pass); longer is a loft being charged. Research
+ * (feedback/research-mouse-and-pace.md section 1): a press under about 220-250 ms is a normal
+ * click; slow clicks and trackpad taps run longer, so 300 ms leaves a margin and a test
+ * clicks for 60 to 260 ms and always gets a ground pass.
+ */
+export const CLICK_MS = 300;
+/** Touch screens and pens: taps are slower still. */
+export const TOUCH_CLICK_MS = 360;
+/** How long past the click threshold it takes to charge a loft to full (full at about 900 ms; research: 700-900 ms). */
+export const LOFT_RAMP_MS = 600;
+/** A click aims where the button went down unless the pointer moved further than this before release (research: ignore drift up to about 8 px). */
+export const AIM_DRIFT_PX = 8;
+/** On-screen pointer travel in one tick that counts as really moving it. */
+export const MOVE_PX = 2;
 /** A quick right click is a shot at this power; holding builds it to 1 over SHOT_FULL_MS. */
 export const SHOT_MIN = 0.55;
 export const SHOT_FULL_MS = 800;
 
-/** Hold time to loft power, 0..1. A hold at the tap threshold is the lowest, flattest loft. */
-export const loftPower = (heldMs: number): number => Math.min(1, Math.max(0, (heldMs - TAP_MS) / LOFT_FULL_MS));
+/** Hold time to loft power, 0..1. A hold at the click threshold is the lowest, flattest loft. */
+export const loftPower = (heldMs: number, clickMs = CLICK_MS): number => Math.min(1, Math.max(0, (heldMs - clickMs) / LOFT_RAMP_MS));
+
+/** What a left release with the ball does: a ground pass for anything shorter than the click threshold, else a loft with this power. */
+export function leftRelease(heldMs: number, pointerType = 'mouse'): { pass: true } | { loft: number } {
+  const click = pointerType === 'mouse' ? CLICK_MS : TOUCH_CLICK_MS;
+  return heldMs < click ? { pass: true } : { loft: loftPower(heldMs, click) };
+}
+
+/**
+ * One Euro filter (Casiez et al.): a low-pass whose cutoff rises with speed, so a still
+ * pointer is calm and a fast one has no lag. Research: beta 0 first, lower min_cutoff until
+ * calm, then raise beta until fast moves feel lag-free. Pure, for tests.
+ */
+export class OneEuro {
+  private x: Vec | null = null;
+  private dx: Vec = { x: 0, y: 0 };
+  constructor(
+    private minCutoff = 4,
+    private beta = 0.15,
+    private dCutoff = 1,
+  ) {}
+  private static alpha(cutoff: number, dt: number): number {
+    const tau = 1 / (2 * Math.PI * cutoff);
+    return 1 / (1 + tau / dt);
+  }
+  reset(): void {
+    this.x = null;
+    this.dx = { x: 0, y: 0 };
+  }
+  filter(v: Vec, dt: number): Vec {
+    if (!this.x) {
+      this.x = { ...v };
+      return { ...v };
+    }
+    const raw = { x: (v.x - this.x.x) / dt, y: (v.y - this.x.y) / dt };
+    const ad = OneEuro.alpha(this.dCutoff, dt);
+    this.dx = { x: this.dx.x + ad * (raw.x - this.dx.x), y: this.dx.y + ad * (raw.y - this.dx.y) };
+    const a = OneEuro.alpha(this.minCutoff + this.beta * Math.hypot(this.dx.x, this.dx.y), dt);
+    this.x = { x: this.x.x + a * (v.x - this.x.x), y: this.x.y + a * (v.y - this.x.y) };
+    return { ...this.x };
+  }
+}
 /** Hold time to shot power: SHOT_MIN for a click, 1 after SHOT_FULL_MS. */
 export const shotPower = (heldMs: number): number => SHOT_MIN + (1 - SHOT_MIN) * Math.min(1, Math.max(0, heldMs / SHOT_FULL_MS));
 
@@ -71,6 +132,13 @@ export class InputController {
   private loft: number | null = null;
   /** Left button (or the Pass button) down with the ball: when, or null. */
   private leftStart: number | null = null;
+  /** Where that press was (world and client pixels) and with what, for aim-at-press and the click threshold. */
+  private press: { world: Vec | null; x: number; y: number; type: string } | null = null;
+  /** The aim of the kick or select being sent this tick. */
+  private aim: Vec | null = null;
+  /** On-screen pointer travel since the last tick, CSS pixels. */
+  private travel = 0;
+  private smooth = new OneEuro();
   /** Right button, Shoot button or F down with the ball. */
   private shotStart: number | null = null;
   /** C down with the ball: a loft with no tap-to-pass (unlike the left button). */
@@ -101,6 +169,7 @@ export class InputController {
     });
     on(canvas, 'pointermove', (e) => {
       if (e.pointerType === 'mouse') this.mode = 'mouse';
+      if (this.client) this.travel += Math.hypot(e.clientX - this.client.x, e.clientY - this.client.y);
       this.cursor = toWorld(e);
     });
     on(canvas, 'pointerdown', (e) => {
@@ -108,9 +177,11 @@ export class InputController {
       if (e.pointerType !== 'mouse') {
         // Touch steers by dragging; a quick tap with no ball picks a player (checked on release).
         this.touchTap = { t: performance.now(), x: e.clientX, y: e.clientY, id: e.pointerId };
+        this.travel += MOVE_PX;
         return;
       }
       this.mode = 'mouse';
+      this.press = { world: this.cursor, x: e.clientX, y: e.clientY, type: e.pointerType };
       if (e.button === 0) this.pressLeft();
       if (e.button === 2) this.pressRight();
     });
@@ -152,6 +223,7 @@ export class InputController {
       if (k === 'c' && this.loftKeyStart !== null) {
         this.loft = loftPower(performance.now() - this.loftKeyStart);
         this.loftKeyStart = null;
+        this.aim = this.cursor;
       }
     });
     on(window, 'blur', () => {
@@ -162,12 +234,25 @@ export class InputController {
 
   private pressLeft(): void {
     if (this.hasBall()) this.leftStart = performance.now();
-    else this.select = true;
+    else {
+      this.select = true;
+      this.aim = this.cursor;
+    }
   }
 
   private pressRight(): void {
     if (this.hasBall()) this.shotStart = performance.now();
-    else this.tackle = true;
+    else {
+      this.tackle = true;
+      this.aim = this.cursor;
+    }
+  }
+
+  /** The point a kick released now goes to: where the button went down, unless the pointer has wandered since. */
+  private releaseAim(): Vec | null {
+    const p = this.press;
+    if (p?.world && this.client && Math.hypot(this.client.x - p.x, this.client.y - p.y) <= AIM_DRIFT_PX) return p.world;
+    return this.cursor;
   }
 
   /** Left button up: a quick click is a pass, a hold is a loft. */
@@ -175,14 +260,21 @@ export class InputController {
     if (this.leftStart === null) return;
     const held = performance.now() - this.leftStart;
     this.leftStart = null;
-    if (held < TAP_MS) this.pass = true;
-    else this.loft = loftPower(held);
+    const r = leftRelease(held, this.press?.type ?? 'mouse');
+    if ('pass' in r) {
+      this.pass = true;
+      this.aim = this.releaseAim();
+    } else {
+      this.loft = r.loft;
+      this.aim = this.cursor;
+    }
   }
 
   private releaseShot(): void {
     if (this.shotStart === null) return;
     this.shoot = shotPower(performance.now() - this.shotStart);
     this.shotStart = null;
+    this.aim = this.cursor;
   }
 
   /** On-screen buttons for touch screens. */
@@ -195,7 +287,10 @@ export class InputController {
       e.preventDefault();
       fn();
     };
-    passBtn.addEventListener('pointerdown', down(() => this.pressLeft()));
+    passBtn.addEventListener('pointerdown', down(() => {
+      this.press = { world: null, x: 0, y: 0, type: 'touch' };
+      this.pressLeft();
+    }));
     passBtn.addEventListener('pointerup', end(() => this.releaseLeft()));
     passBtn.addEventListener('pointercancel', end(() => this.releaseLeft()));
     shootBtn.addEventListener('pointerdown', down(() => this.pressRight()));
@@ -208,7 +303,7 @@ export class InputController {
     const now = performance.now();
     if (this.shotStart !== null) return { kind: 'shot', power: shotPower(now - this.shotStart) };
     if (this.loftKeyStart !== null) return { kind: 'loft', power: loftPower(now - this.loftKeyStart) };
-    if (this.leftStart !== null && now - this.leftStart >= TAP_MS) return { kind: 'loft', power: loftPower(now - this.leftStart) };
+    if (this.leftStart !== null && now - this.leftStart >= this.clickMs()) return { kind: 'loft', power: loftPower(now - this.leftStart, this.clickMs()) };
     return { kind: null, power: 0 };
   }
 
@@ -217,8 +312,12 @@ export class InputController {
     const now = performance.now();
     if (this.shotStart !== null) return Math.min(1, Math.max(0.04, (now - this.shotStart) / SHOT_FULL_MS));
     if (this.loftKeyStart !== null) return Math.min(1, Math.max(0.04, loftPower(now - this.loftKeyStart)));
-    if (this.leftStart !== null && now - this.leftStart >= TAP_MS) return Math.min(1, Math.max(0.04, loftPower(now - this.leftStart)));
+    if (this.leftStart !== null && now - this.leftStart >= this.clickMs()) return Math.min(1, Math.max(0.04, loftPower(now - this.leftStart, this.clickMs())));
     return 0;
+  }
+
+  private clickMs(): number {
+    return (this.press?.type ?? 'mouse') === 'mouse' ? CLICK_MS : TOUCH_CLICK_MS;
   }
 
   /**
@@ -240,8 +339,11 @@ export class InputController {
       this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
     }
     const pointer = this.mode === 'mouse' && this.cursor;
-    if (pointer) input.cursor = this.cursor!;
-    else {
+    if (pointer) {
+      input.cursor = this.smooth.filter(this.cursor!, 1 / 60);
+      if (this.travel >= MOVE_PX) input.moved = true;
+    } else {
+      this.smooth.reset();
       const k = this.keys;
       const d = {
         x: (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0),
@@ -256,8 +358,11 @@ export class InputController {
     if (this.select && pointer) input.select = true;
     if (this.keys.has('shift')) input.sprint = true;
     if (this.switchReq) input.switchPlayer = true;
+    if (pointer && this.aim && (input.pass || input.loft !== undefined || input.shoot !== undefined || input.select || input.tackle)) input.aim = this.aim;
     this.pass = this.tackle = this.select = this.switchReq = false;
     this.loft = this.shoot = null;
+    this.aim = null;
+    this.travel = 0;
     // Lose the ball mid-charge and the charge is dropped.
     if (!this.hasBall()) this.leftStart = this.shotStart = this.loftKeyStart = null;
     return input;

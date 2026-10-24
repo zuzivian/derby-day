@@ -28,7 +28,7 @@ let favouriteWins = 0;
 let draws = 0;
 const sum: Record<keyof TeamStats, number> = {
   shots: 0, onTarget: 0, passes: 0, tackles: 0, possessionTicks: 0, fouls: 0, yellows: 0, reds: 0,
-  corners: 0, offsides: 0, throwIns: 0, goalKicks: 0, freeKicks: 0, penalties: 0,
+  corners: 0, offsides: 0, throwIns: 0, goalKicks: 0, freeKicks: 0, penalties: 0, passAttempts: 0,
 };
 const t0 = performance.now();
 for (let i = 0; i < n; i++) {
@@ -52,7 +52,7 @@ const per = (k: keyof TeamStats) => sum[k] / Math.max(1, played);
 const goalsPer = goals / Math.max(1, played);
 const msPer = ms / Math.max(1, played);
 console.log(`\n${played} matches in ${(ms / 1000).toFixed(1)}s (${msPer.toFixed(0)} ms each)`);
-console.log(`goals/match ${goalsPer.toFixed(2)}  shots ${per('shots').toFixed(1)} (${per('onTarget').toFixed(1)} on target)  passes ${per('passes').toFixed(0)}  tackles ${per('tackles').toFixed(1)}`);
+console.log(`goals/match ${goalsPer.toFixed(2)}  shots ${per('shots').toFixed(1)} (${per('onTarget').toFixed(1)} on target)  passes ${per('passes').toFixed(0)} of ${per('passAttempts').toFixed(0)}  tackles ${per('tackles').toFixed(1)}`);
 console.log(`fouls ${per('fouls').toFixed(1)}  yellows ${per('yellows').toFixed(2)}  reds ${per('reds').toFixed(2)}  penalties ${per('penalties').toFixed(2)}`);
 console.log(`corners ${per('corners').toFixed(1)}  offsides ${per('offsides').toFixed(1)}  throw-ins ${per('throwIns').toFixed(1)}  goal kicks ${per('goalKicks').toFixed(1)}  free kicks ${per('freeKicks').toFixed(1)}`);
 console.log(`favourite won ${favouriteWins}, draws ${draws}, upsets ${played - favouriteWins - draws}`);
