@@ -265,7 +265,7 @@ test('Online: a hostile guest cannot inject markup or script into the host page'
   }
 });
 
-test('Online: a brand-new player who opens an invite link goes straight into the match', async (t) => {
+test('Online: a brand-new player who opens an invite link plays the first match, then joins the friend', async (t) => {
   const relay = await startRelay();
   try {
     const query = `relay=${encodeURIComponent(`ws://127.0.0.1:${relay.port}/ws`)}`;
@@ -276,18 +276,33 @@ test('Online: a brand-new player who opens an invite link goes straight into the
     await host.locator(SEL.onlineCode).waitFor({ state: 'visible', timeout: 10_000 });
     const link = await host.locator(SEL.onlineLink).inputValue();
 
-    // No save, no welcome seen, club level 1: the invite still works, with no first-run screen in the way.
+    // No save at all: the welcome comes first, as for any new player, and says the invite is waiting.
     const fresh = await t.newPage({ viewport: { width: 390, height: 844 } });
+    await fresh.addInitScript((key) => {
+      if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify({ halfSeconds: 3 }));
+    }, 'derbyday.prefs.v1');
     await fresh.goto(`${link}&renderer=2d`);
+    await fresh.waitForSelector('#ob-kickoff');
+    await fresh.waitForFunction(() => /invited you to an online friendly/i.test(document.body.innerText), null, { timeout: 5000 });
+    expect(await fresh.evaluate(() => location.search), 'join code taken out of the address').notToContain('join=');
+    await fresh.locator('#ob-kickoff').click();
+    await fresh.waitForSelector('.ob-celebrate', { timeout: 90_000 });
+    await fresh.locator('.ob-celebrate [data-ob="skip"]').click();
+
+    // Straight from the celebration into the friend's match.
     await Promise.all([host.waitForSelector(SEL.netMatch, { timeout: 20_000 }), fresh.waitForSelector(SEL.netMatch, { timeout: 20_000 })]);
     expect(await fresh.locator(SEL.netMatch).getAttribute('data-side'), 'the newcomer is the away side').toBe('1');
-    // The welcome is still owed for their next visit.
-    const prefs = await fresh.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}'), 'derbyday.prefs.v1');
-    expect(prefs.onboarded, 'first-run flow still pending').toBe(false);
     await fresh.keyboard.press('Escape');
     await fresh.locator('#net-leave').click();
     await host.locator(SEL.netStop).waitFor({ state: 'visible', timeout: 5000 });
   } finally {
     relay.stop();
   }
+});
+
+test('Online: an invite to a club that cannot play online yet explains when it can', async (t) => {
+  // Played before (welcome skipped) but still level 1: vs Player isn't open, so the link says so instead of joining.
+  const page = await openApp(t, { level: null, query: 'relay=ws%3A%2F%2F127.0.0.1%3A9%2Fws&join=ABCDEF', renderer: '2d' });
+  await page.waitForFunction(() => /vs Player opens at club level \d/.test(document.body.innerText), null, { timeout: 5000 });
+  expect(await page.locator(SEL.onlineLobby).count(), 'no lobby').toBe(0);
 });

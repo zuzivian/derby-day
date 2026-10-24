@@ -24,6 +24,8 @@ Online play stays switched off until a relay is deployed and its URL is baked in
 
 The relay never looks inside the game messages. It checks frame size and rate, pairs sockets under a room code, compares build versions, and forwards envelopes verbatim.
 
+**Invite links.** `https://derby.natwong.dev/?join=CODE` opens the online lobby with the code filled in and joins at once, if the club can play online (vs Player is open, the same unlock as the Online button). A brand-new player gets the normal welcome and first match first, with a note that a friend's invite is waiting. The code is kept in `sessionStorage`, so a reload doesn't lose it, and the lobby opens as soon as that first match is over. A club that still can't play online gets a message saying at which level it can. The host's room waits up to 30 minutes for them.
+
 ## Protocol
 
 Messages are JSON text frames, one object per frame, told apart by `t`. Types live in `src/net/relay.ts`, which the client and the server share.
