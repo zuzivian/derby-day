@@ -647,7 +647,10 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   $('net-stop-back').addEventListener('click', () => finish('left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
-  const onHide = () => ls.leave();
+  const onHide = () => {
+    ls.leave();
+    o.link?.close(); // the relay tells the opponent at once too
+  };
   window.addEventListener('pagehide', onHide);
 
   const ro = new ResizeObserver(() => renderer.resize());
@@ -658,8 +661,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
   const offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
 
+  /** Stopped with a message (desync, the opponent left, the link died): the match no longer moves. */
+  let halted = false;
   const stop = (text: string) => {
-    if (ended) return;
+    if (ended || halted) return;
+    halted = true;
     $('net-wait').hidden = true;
     $('net-stop-text').textContent = text;
     $('net-stop').hidden = false;
@@ -699,7 +705,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let stallEvents = 0;
   const startedAt = performance.now();
   function pump() {
-    if (ended || !ls.running) return;
+    if (ended || halted || !ls.running) return;
     const now = performance.now();
     acc += Math.min(250, now - last);
     last = now;
@@ -754,13 +760,14 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     $('sb-min').textContent = `${matchMinute(s)}'`;
     $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : `${label} · ${s.half === 1 ? '1st' : '2nd'} half`;
     const link = o.link;
-    const pres = ls.running ? watch.update({ now, stalled: ls.stalled, lastHeardAt: ls.lastHeardAt, away: !!link && (link.peer === 'away' || link.status === 'reconnecting') }) : { state: 'ok' as const };
+    const live = ls.running && !halted;
+    const pres = live ? watch.update({ now, stalled: ls.stalled, lastHeardAt: ls.lastHeardAt, away: !!link && (link.peer === 'away' || link.status === 'reconnecting') }) : { state: 'ok' as const };
     if (pres.state === 'abandoned') {
       abandon();
       return;
     }
     const lost = pres.state === 'lost' ? Math.ceil(pres.remainingMs / 1000) : 0;
-    const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && ls.running);
+    const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
     const waitText = lost ? (link?.status === 'reconnecting' ? `Connection lost, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';

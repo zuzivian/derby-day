@@ -16,6 +16,7 @@
 
 import { DEFAULT_LIMITS, RelayCore, type RelayLimits, type RelaySocket } from './relay-core.ts';
 import { PROTOCOL } from '../src/net/relay.ts';
+import { originAllowed } from './origin.ts';
 
 export interface ServeOptions {
   port?: number;
@@ -39,12 +40,6 @@ export function limitsFromEnv(env: Record<string, string | undefined>): Partial<
     out[k] = n;
   }
   return out;
-}
-
-/** Origin check. An empty list allows everything. */
-export function originAllowed(origin: string | null, allowed: string[]): boolean {
-  if (!allowed.length) return true;
-  return origin !== null && allowed.includes(origin);
 }
 
 interface WsData {

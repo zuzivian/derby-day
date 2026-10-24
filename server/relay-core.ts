@@ -25,7 +25,7 @@ export interface RelaySocket {
 }
 
 export interface RelayLimits {
-  /** Largest frame accepted, bytes. A lockstep input batch is under 8 KB; a room start with two full squads is about 12 KB. */
+  /** Largest frame accepted, bytes. A room start with two full squads is about 4.5 KB; a worst-case lockstep batch (120 unacknowledged inputs) about 17 KB. */
   maxFrameBytes: number;
   maxRooms: number;
   maxSockets: number;
