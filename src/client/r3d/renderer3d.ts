@@ -1,13 +1,14 @@
 // three.js match renderer. Reads sim state only, like the 2D PitchRenderer,
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
+import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer } from './aim3d.ts';
-import { LONG_WIDTH, MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
+import { MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
@@ -81,32 +82,50 @@ export interface ReplayShot {
 /**
  * Should the camera pull back to the long view? When the human's side has a goal kick, or a free
  * kick in its own half, or the human's keeper holds the ball: the player is about to distribute it
- * and needs to see who is free up to and beyond halfway. Returns the sim point to centre on and the
- * width to show, or null. Pure, for tests.
+ * and needs to see who is free up to and beyond halfway. Returns the ball's spot and the sim points
+ * the frame must show (the ball, a little behind it, and touchline to touchline out to LONG_PAST
+ * beyond halfway), or null. Pure, for tests.
  */
-export function longView(s: MatchState, me: 0 | 1): { x: number; y: number; width: number } | null {
+export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
   const dir = attackDir(me);
   const r = s.restart;
   const b = s.ball;
-  const half = HALF_W;
-  let from: number | null = null;
-  let width = LONG_WIDTH;
+  // Corners, either side's: the taker, the goal and the whole box (review of #15: the broadcast view
+  // showed stands and sky, with the goal off the edge of the frame).
+  if (r && r.kind === 'corner' && r.stage !== 'whistle') {
+    const gx = r.spot.x < HALF_W ? 0 : HALF_W * 2;
+    const inX = gx === 0 ? BOX_DEPTH : HALF_W * 2 - BOX_DEPTH;
+    const pen = gx === 0 ? PEN_SPOT : HALF_W * 2 - PEN_SPOT;
+    return {
+      kind: 'corner',
+      ball: { x: r.spot.x, y: r.spot.y },
+      points: [{ x: r.spot.x, y: r.spot.y }, { x: gx, y: HALF_H - BOX_W / 2 }, { x: gx, y: HALF_H + BOX_W / 2 }, { x: inX, y: HALF_H - BOX_W / 2 }, { x: inX, y: HALF_H + BOX_W / 2 }, { x: pen + (gx === 0 ? 4 : -4), y: HALF_H }],
+    };
+  }
+  let ball: Vec | null = null;
   if (r && r.team === me && r.stage !== 'whistle') {
-    const own = dir > 0 ? r.spot.x < half : r.spot.x > half;
-    if (r.kind === 'goalkick') from = r.spot.x;
-    else if (r.kind === 'freekick' && own) {
-      from = r.spot.x;
-      width = LONG_WIDTH * 0.8;
-    }
+    const own = dir > 0 ? r.spot.x < HALF_W : r.spot.x > HALF_W;
+    if (r.kind === 'goalkick' || (r.kind === 'freekick' && own)) ball = r.spot;
   } else if (s.phase === 'play' && b.inHands && b.owner >= 0) {
     const k = s.players[b.owner];
-    if (k.team === me && k.role === 'GK') from = k.pos.x;
+    if (k.team === me && k.role === 'GK') ball = k.pos;
   }
-  if (from === null) return null;
-  // Centre a good way upfield of the ball, so the frame runs from the ball to beyond halfway.
-  return { x: from + dir * width * 0.32, y: HALF_H, width };
+  if (!ball) return null;
+  const back = Math.max(0, Math.min(HALF_W * 2, ball.x - dir * 4));
+  const past = HALF_W + dir * LONG_PAST;
+  const near = HALF_H * 2 - LONG_TOUCH;
+  return {
+    kind: 'long',
+    ball: { x: ball.x, y: ball.y },
+    points: [{ x: ball.x, y: ball.y }, { x: back, y: LONG_TOUCH }, { x: back, y: near }, { x: past, y: LONG_TOUCH }, { x: past, y: near }],
+  };
 }
+
+/** The long view shows this far past halfway, metres. */
+export const LONG_PAST = 20;
+/** And touchline to touchline, but for this strip along each (where nobody stands at a set piece). */
+export const LONG_TOUCH = 3;
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
 function ballGeometry(): IcosahedronGeometry {
@@ -286,7 +305,17 @@ export class Renderer3D implements MatchRenderer {
     return this.prefMode;
   }
 
+  private cutCount = 0;
+  /** While performance.now() is before this, the view is being re-framed on its own (a zoom, the long view coming or going). */
+  private reframeUntil = 0;
+
+  /** WorldPicker.cuts: bumped on a cut and on every frame of an automatic re-framing (see input.ts). */
+  cuts(): number {
+    return this.cutCount;
+  }
+
   setCameraMode(m: CameraMode): void {
+    this.cutCount++;
     this.prefMode = m;
     this.cam.mode = m;
     this.cam.snap();
@@ -305,6 +334,7 @@ export class Renderer3D implements MatchRenderer {
   /** Set the zoom (clamped to ZOOM_MIN..ZOOM_MAX) and remember it in this browser. Returns the new value. */
   setZoom(z: number): number {
     this.cam.zoom = clampZoom(z);
+    this.reframeUntil = performance.now() + 1200;
     try {
       localStorage.setItem(ZOOM_KEY, this.cam.zoom.toFixed(3));
     } catch {
@@ -321,7 +351,7 @@ export class Renderer3D implements MatchRenderer {
   /** Instant replays: the replay camera to use, or null for the normal match cameras. */
   replayShot: ReplayShot | null = null;
 
-  private longHold: { x: number; y: number; width: number; until: number } | null = null;
+  private longHold: { ball: Vec; points: Vec[]; kind: 'long' | 'corner'; until: number } | null = null;
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
@@ -451,7 +481,10 @@ export class Renderer3D implements MatchRenderer {
     if (jumped || this.clock === null) {
       this.clock = tickTime;
       this.rate = 1;
-      if (jumped) this.cam.snap();
+      if (jumped) {
+        this.cam.snap();
+        this.cutCount++;
+      }
     } else {
       const adv = (s.tick - this.lastTick) / 60;
       const inst = dt > 0 ? adv / dt : 1;
@@ -638,8 +671,10 @@ export class Renderer3D implements MatchRenderer {
     if (lv) this.longHold = { ...lv, until: clock + 0.9 };
     else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
     else this.longHold = null;
+    if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
+    if (t0 < this.reframeUntil) this.cutCount++;
     this.longViewOn = !!lv;
-    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? 'long' : this.cam.mode;
+    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
     const rs = this.replayShot;
     this.cam.update(
       dt,
@@ -653,7 +688,7 @@ export class Renderer3D implements MatchRenderer {
         phase: s.phase,
         close: cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
         humanDir: attackDir(this.me) as 1 | -1,
-        long: lv ? { x: sx(lv.x), z: sz(lv.y), width: lv.width } : null,
+        long: lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null,
         replay: rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null,
       },
       this.cssW / this.cssH,
@@ -692,6 +727,7 @@ export class Renderer3D implements MatchRenderer {
     this.sun.target.updateMatrixWorld();
 
     this.aim?.update({ s, x, heads: this.heads, ball: this.ball.position, time: clock, reduced: this.reduced, camDist });
+    this.edgeMarks(s, !!x.noAim);
 
     this.gl.render(this.scene, this.cam.camera);
 
@@ -726,6 +762,56 @@ export class Renderer3D implements MatchRenderer {
     o.traverse((c) => c.layers.set(shown ? 0 : 1));
   }
 
+  private marks: HTMLElement[] = [];
+  private markV = new Vector3();
+
+  /**
+   * The man a human steers is sometimes off-screen (a cone click can pick a teammate the camera
+   * isn't showing): then an arrow with his name sits on the frame edge, pointing at him.
+   */
+  private edgeMarks(s: MatchState, hide: boolean): void {
+    const wrap = this.canvas.parentElement;
+    if (!wrap) return;
+    const both = s.humans[0] && s.humans[1];
+    for (const t of [0, 1] as const) {
+      const i = s.humans[t] ? s.controlled[t] : -1;
+      let el = this.marks[t];
+      const p = i >= 0 ? s.players[i] : null;
+      const head = i >= 0 ? this.heads[i] : null;
+      const v = this.markV;
+      let off = false;
+      if (p && head && !hide && !p.sentOff) {
+        v.copy(head).project(this.cam.camera);
+        // Behind the camera, the projection mirrors: flip it so the arrow still points the right way.
+        if (v.z > 1) v.set(-v.x, -v.y, v.z);
+        off = Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
+      }
+      if (!off) {
+        if (el) el.hidden = true;
+        continue;
+      }
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'edge-mark';
+        el.setAttribute('aria-hidden', 'true');
+        el.innerHTML = '<i></i><span></span>';
+        wrap.appendChild(el);
+        this.marks[t] = el;
+      }
+      // Push the point onto the inset frame edge along the line from the centre.
+      const k = Math.max(Math.abs(v.x) / 0.9, Math.abs(v.y) / 0.82);
+      const ex = v.x / k;
+      const ey = v.y / k;
+      el.hidden = false;
+      el.style.left = `${((ex + 1) / 2) * this.cssW}px`;
+      el.style.top = `${((1 - ey) / 2) * this.cssH}px`;
+      el.style.setProperty('--a', `${Math.atan2(-v.y, v.x)}rad`);
+      el.style.setProperty('--c', both && t === 1 ? '#22d3ee' : '#ff8a1c');
+      const name = el.querySelector('span')!;
+      if (name.textContent !== p!.name) name.textContent = p!.name;
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
@@ -751,5 +837,6 @@ export class Renderer3D implements MatchRenderer {
     this.gl.dispose();
     this.gl.forceContextLoss();
     delete this.canvas.dataset.renderer;
+    for (const m of this.marks) m?.remove();
   }
 }

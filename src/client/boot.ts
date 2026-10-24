@@ -81,14 +81,14 @@ function newerSave(): boolean {
 }
 
 /**
- * Test-only escape hatch: when the e2e harness sets BOTH window.__e2e and window.__e2eSkipTabGuard (its
- * nextVisit() helper opens the next visit as a second page while the first stays open), the guard does nothing,
- * exactly as before it existed. Either flag alone leaves the guard on, so the guard's own tests still run it.
+ * Test-only escape hatch: when the e2e harness sets window.__e2eSkipTabGuard (its openApp/nextVisit helpers open a
+ * second page while the first stays open and owns the club), the guard does nothing for that page, exactly as before
+ * the guard existed. It is a flag of its own, separate from window.__e2e, so the guard's own tests (which never set it)
+ * still run the real guard. Nothing in the shipped page sets it.
  */
 function guardSkippedForTests(): boolean {
   try {
-    const w = window as unknown as { __e2e?: unknown; __e2eSkipTabGuard?: unknown };
-    return !!(w.__e2e && w.__e2eSkipTabGuard);
+    return (window as unknown as { __e2eSkipTabGuard?: unknown }).__e2eSkipTabGuard === true;
   } catch {
     return false;
   }

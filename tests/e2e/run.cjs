@@ -83,22 +83,28 @@ async function main() {
       async newPage(contextOptions = {}) {
         const ctx = await browser.newContext(contextOptions);
         contexts.push(ctx);
+        // Fonts are blocked for every page of the context, including pages opened later in it (nextVisit, openApp's second page).
+        await ctx.route(FONT_HOST, (route) => route.abort());
+        const attach = async (p) => {
+          p.setDefaultTimeout(20_000);
+          // E2E_CPU_THROTTLE=6 slows the page's CPU like a busy CI runner, to shake out timing races.
+          const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
+          if (throttle > 1) {
+            const cdp = await ctx.newCDPSession(p);
+            await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+          }
+          p.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
+          p.on('console', (m) => {
+            if (m.type() !== 'error') return;
+            const url = m.location().url || '';
+            if (FONT_HOST.test(url) || FONT_HOST.test(m.text()) || ROOT_ASSET.test(url)) return;
+            problems.push(`console.error: ${m.text()}`);
+          });
+        };
         const page = await ctx.newPage();
-        page.setDefaultTimeout(20_000);
-        // E2E_CPU_THROTTLE=6 slows the page's CPU like a busy CI runner, to shake out timing races.
-        const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
-        if (throttle > 1) {
-          const cdp = await ctx.newCDPSession(page);
-          await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
-        }
-        await page.route(FONT_HOST, (route) => route.abort());
-        page.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
-        page.on('console', (m) => {
-          if (m.type() !== 'error') return;
-          const url = m.location().url || '';
-          if (FONT_HOST.test(url) || FONT_HOST.test(m.text()) || ROOT_ASSET.test(url)) return;
-          problems.push(`console.error: ${m.text()}`);
-        });
+        await attach(page);
+        // A page opened later in the same context gets the same watch, so an error there still fails the test.
+        ctx.on('page', (p) => void attach(p));
         return page;
       },
     };

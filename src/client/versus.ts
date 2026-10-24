@@ -831,7 +831,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
 
     while (lastEvent < s.events.length) {
       const w = refereeWord(s, s.events[lastEvent++]);
-      if (w) banner(w.word, 1500, w.sub);
+      if (w?.live) hud.tag(w.word, 1800, w.sub);
+      else if (w) banner(w.word, 1500, w.sub);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];

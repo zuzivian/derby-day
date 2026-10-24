@@ -63,6 +63,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-power" aria-hidden="true"><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
+      <div class="hud-tag" hidden role="status"></div>
     </div>`;
 }
 
@@ -75,6 +76,8 @@ export interface Hud {
   update(s: MatchState, charge: number, gauge?: Gauge | null): void;
   /** The REPLAY tag over an instant replay (top centre), or null to hide it. */
   replay(text: string | null): void;
+  /** A small tag at the top for a call made while play goes on (Advantage), for `ms`. */
+  tag(text: string, ms: number, sub?: string): void;
   /** Big centre word, with an optional smaller line under it. */
   word(text: string, ms: number, sub?: string): void;
   dispose(): void;
@@ -84,13 +87,14 @@ export interface Hud {
  * The big HUD word for a referee's call (goals, half and full time are shown by the match view
  * from s.goals and the phase), with a smaller line under it.
  */
-export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string } | null {
+export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string; live?: boolean } | null {
   const name = (i: number) => (i >= 0 && s.players[i] ? s.players[i].name : undefined);
   switch (e.kind) {
     case 'offside':
       return { word: 'Offside', sub: name(e.player) };
     case 'foul':
-      if (e.advantage) return { word: 'Advantage', sub: s.teams[e.team === 0 ? 1 : 0].name };
+      // Play goes on under it, so it is a small tag at the top, not the big centre word.
+      if (e.advantage) return { word: 'Advantage', sub: s.teams[e.team === 0 ? 1 : 0].name, live: true };
       return e.penalty ? { word: 'Penalty', sub: s.teams[e.team === 0 ? 1 : 0].name } : { word: 'Foul', sub: name(e.player) };
     case 'card':
       // A second yellow is followed by its red in the same tick; the red is the word left showing.
@@ -120,6 +124,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   let lastHold: number | null = null;
   const tick = power.querySelector('b') as HTMLElement;
   const replayTag = q('.hud-replay');
+  const callTag = q('.hud-tag');
+  let tagUntil = 0;
   let lastGauge = '';
   const ctx = radar.getContext('2d');
   let until = 0;
@@ -223,6 +229,10 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         hold.classList.toggle('hot', left !== null && left <= 2);
       }
       drawRadar(s);
+      if (tagUntil && performance.now() > tagUntil) {
+        callTag.hidden = true;
+        tagUntil = 0;
+      }
       if (until && performance.now() > until) {
         banner.hidden = true;
         until = 0;
@@ -236,6 +246,11 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
       void banner.offsetWidth;
       banner.style.animation = '';
       until = performance.now() + ms;
+    },
+    tag(text, ms, sub) {
+      callTag.innerHTML = `<b>${esc(text)}</b>${sub ? ` ${esc(sub)}` : ''}`;
+      callTag.hidden = false;
+      tagUntil = performance.now() + ms;
     },
     replay(text) {
       replayTag.hidden = text === null;

@@ -187,7 +187,8 @@ test('onboarding: situational tips fire once each, only while still true: the ba
   for (const id of ['pass', 'shoot', 'tackle']) expect(prefs.coachSeen, `${id} remembered`).toContain(id);
   await giveBall(page);
   await page.waitForTimeout(800);
-  expect(await page.locator(TIP).count(), 'nothing new for the same situation').toBe(0);
+  // The match goes on, so a different first-time tip (a restart that is ours) may rightly appear; the three seen ones must not.
+  expect(['pass', 'shoot', 'tackle'].includes(await tipId(page)), 'none of the three is shown again for the same situation').toBe(false);
 });
 
 test('onboarding: tip wording follows the live input, and the settled input becomes the preference', async (t) => {

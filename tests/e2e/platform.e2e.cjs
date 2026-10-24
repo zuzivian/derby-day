@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, goTab, readSave, skipOnboarding, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
+const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, nextVisit, goTab, readSave, skipOnboarding, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const DIST = path.resolve(__dirname, '..', '..', 'dist');
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
@@ -59,11 +59,32 @@ async function tabStates(...pages) {
   return { guards, games };
 }
 
+/**
+ * A level-99 club that this page really owns: its storage is seeded before the page's first boot (once per page), so
+ * nothing reloads, and the page does NOT carry window.__e2eSkipTabGuard, so the tab guard is live for it and for any
+ * other tab opened in its context. (openApp's page skips the guard by design: the page that seeded the club keeps it.)
+ */
+async function ownerClub(t, prefsExtra = {}) {
+  const seed = await openApp(t); // a throwaway context: only its seeded storage text is used
+  const save = await seed.evaluate((k) => localStorage.getItem(k), SAVE_KEY);
+  const prefs = JSON.stringify({ controls: 'mouse', onboarded: true, ...prefsExtra });
+  const page = await t.newPage();
+  await page.addInitScript(([k, pk, s, p]) => {
+    if (sessionStorage.getItem('__seeded')) return;
+    sessionStorage.setItem('__seeded', '1');
+    localStorage.setItem(k, s);
+    localStorage.setItem(pk, p);
+  }, [SAVE_KEY, PREFS_KEY, save, prefs]);
+  await page.goto(APP_URL);
+  await page.waitForSelector(SEL.tab);
+  return page;
+}
+
 const toastText = (page) => page.locator(SEL.toast).first().innerText();
 
 test('a second tab shows the "open in another tab" screen and never touches the save', async (t) => {
   const problems = [];
-  const a = await openApp(t);
+  const a = await ownerClub(t);
   const before = await readSave(a);
   const b = await secondTab(a, problems);
   await b.waitForSelector('#guard-title');
@@ -79,7 +100,7 @@ test('a second tab shows the "open in another tab" screen and never touches the 
 
 test('"Play here instead" moves the club to the new tab and parks the old one', async (t) => {
   const problems = [];
-  const a = await openApp(t);
+  const a = await ownerClub(t);
   const name = (await readSave(a)).club.name;
   const b = await secondTab(a, problems);
   await b.waitForSelector('#guard-here');
@@ -104,7 +125,7 @@ test('"Play here instead" moves the club to the new tab and parks the old one', 
 
 test('a match in progress is never taken away: the other tab waits, and the result is saved first', async (t) => {
   const problems = [];
-  const a = await openApp(t, { prefs: { halfSeconds: 3, controls: 'mouse' } });
+  const a = await ownerClub(t, { halfSeconds: 3 });
   const before = (await readSave(a)).club.played;
   const b = await secondTab(a, problems);
   await b.waitForSelector('#guard-here');
@@ -124,7 +145,7 @@ test('a match in progress is never taken away: the other tab waits, and the resu
 
 test('a guest tab boots the game read-only: nothing it does is saved', async (t) => {
   const problems = [];
-  const a = await openApp(t);
+  const a = await ownerClub(t);
   const b = await secondTab(a, problems);
   await b.waitForSelector('#guard-guest');
   await b.locator('#guard-guest').click();
@@ -145,11 +166,12 @@ test('a corrupt save is replaced by the previous good one, with a message', asyn
     localStorage.setItem(k + '.bak', localStorage.getItem(k));
     localStorage.setItem(k, '{"version":1,"squad":[');
   }, SAVE_KEY);
-  await page.reload();
-  await page.waitForSelector(SEL.toast);
-  expect(await toastText(page), 'toast').toMatch(/damaged/i);
-  expect((await readSave(page)).club.name, 'club restored').toBe(name);
-  expect(await page.evaluate((k) => localStorage.getItem(k + '.corrupt'), SAVE_KEY), 'corrupt text kept').toBe('{"version":1,"squad":[');
+  // The player's next visit, as a second page with the first left open (a reload can drop the storage the page just wrote).
+  const next = await nextVisit(page);
+  await next.waitForSelector(SEL.toast);
+  expect(await toastText(next), 'toast').toMatch(/damaged/i);
+  expect((await readSave(next)).club.name, 'club restored').toBe(name);
+  expect(await next.evaluate((k) => localStorage.getItem(k + '.corrupt'), SAVE_KEY), 'corrupt text kept').toBe('{"version":1,"squad":[');
 });
 
 test('a full disk shows a friendly toast instead of losing progress silently', async (t) => {
@@ -353,6 +375,9 @@ test('offline: the page opens with no network after one visit, and a new deploy 
   const { server, origin } = await serveDist(state);
   try {
     const page = await t.newPage();
+    // A static same-origin page kept open, so the origin's localStorage survives the reloads this test is about.
+    const anchor = await page.context().newPage();
+    await anchor.goto(origin + '/icons/favicon.svg');
     await page.goto(origin + '/');
     await page.waitForSelector(SEL.app + ' *');
     await skipOnboarding(page);
@@ -399,7 +424,7 @@ test('offline: the page opens with no network after one visit, and a new deploy 
 
 test('a guest tab cannot restore a backup over the owner, and a damaged backup is refused in the owner tab', async (t) => {
   const problems = [];
-  const a = await openApp(t);
+  const a = await ownerClub(t);
   const name = (await readSave(a)).club.name;
   const b = await secondTab(a, problems);
   await b.locator('#guard-guest').click();
@@ -488,25 +513,24 @@ test('a club the game cannot open offers to restore the previous one, and a newe
   }
 });
 
-test('the test-only flag lifts the tab guard only when BOTH __e2e and __e2eSkipTabGuard are set', async (t) => {
-  const owner = await openApp(t);
+test('the test-only flag lifts the tab guard for a page, and without it the guard is on (also with __e2e alone)', async (t) => {
+  const owner = await ownerClub(t);
   const open = async (flags) => {
     const p = await owner.context().newPage();
     p.setDefaultTimeout(20_000);
-    await p.route(FONT_HOST, (r) => r.abort());
     await p.addInitScript((f) => Object.assign(window, f), flags);
     await p.goto(APP_URL);
     await p.waitForSelector('#guard-title, #app *'); // a parked tab draws the guard overlay, not the game
     return p;
   };
-  const only = await open({ __e2e: true });
-  expect(await only.locator('#guard-title').count(), '__e2e alone: guard still parks the tab').toBe(1);
-  const skipOnly = await open({ __e2eSkipTabGuard: true });
-  expect(await skipOnly.locator('#guard-title').count(), '__e2eSkipTabGuard alone: guard still parks the tab').toBe(1);
-  const both = await open({ __e2e: true, __e2eSkipTabGuard: true });
-  await skipOnboarding(both);
-  expect(await both.locator('#guard-title').count(), 'both flags: no guard').toBe(0);
-  expect(await both.locator(SEL.tab).count(), 'both flags: the game runs').toBeGreaterThan(0);
+  const plain = await open({});
+  expect(await plain.locator('#guard-title').count(), 'no flag: the guard parks the tab').toBe(1);
+  const hook = await open({ __e2e: true });
+  expect(await hook.locator('#guard-title').count(), '__e2e alone does not lift the guard').toBe(1);
+  const skip = await open({ __e2eSkipTabGuard: true });
+  await skipOnboarding(skip);
+  expect(await skip.locator('#guard-title').count(), '__e2eSkipTabGuard: no guard').toBe(0);
+  expect(await skip.locator(SEL.tab).count(), '__e2eSkipTabGuard: the game runs').toBeGreaterThan(0);
   expect(await owner.locator('#guard-title').count(), 'and the owner was not parked').toBe(0);
 });
 
