@@ -6,6 +6,7 @@ import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
 import { humanPass, loftPlan, pointerPass } from '../../sim/kicks.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
+import { GAUGE_COLORS, kickGauge } from '../power.ts';
 import type { RenderExtras } from '../render.ts';
 import { clamp01, sx, sz } from './space.ts';
 import {
@@ -57,9 +58,27 @@ function wedgeGeometry(): BufferGeometry {
   return g;
 }
 
+/**
+ * The aim wedge doubles as the power gauge (src/client/power.ts): lit in the band's colour from the
+ * player out to `fill` of its length, a faint white track beyond, a bright line at the fill's head
+ * and a small notch where the sweet spot ends.
+ */
 const WEDGE_FRAG = `
-uniform vec3 color; uniform float opacity; varying vec2 vUv;
-void main(){ float a = opacity * (0.85 - 0.6 * vUv.x) * smoothstep(0.0, 0.08, vUv.x); float edge = 1.0 - abs(vUv.y - 0.5) * 2.0; gl_FragColor = vec4(color, a * (0.55 + 0.45 * smoothstep(0.0, 0.35, edge))); }`;
+uniform vec3 color; uniform vec3 track; uniform float opacity; uniform float fill; uniform float tick; varying vec2 vUv;
+void main(){
+  float x = vUv.x;
+  float edge = 1.0 - abs(vUv.y - 0.5) * 2.0;
+  float body = smoothstep(0.0, 0.06, x) * (0.55 + 0.45 * smoothstep(0.0, 0.35, edge));
+  float lit = 1.0 - smoothstep(fill - 0.01, fill + 0.01, x);
+  float head = (1.0 - smoothstep(0.0, 0.018, abs(x - fill))) * step(0.02, fill);
+  float notch = (1.0 - smoothstep(0.0, 0.006, abs(x - tick))) * step(tick, 0.99) * step(0.6, 1.0 - edge);
+  vec3 c = mix(track, color, max(lit, head));
+  c = mix(c, vec3(1.0), notch * 0.9);
+  float a = opacity * body * mix(0.38, 1.0, lit);
+  a = max(a, head * 0.95 * opacity + 0.0);
+  a = max(a, notch * 0.8);
+  gl_FragColor = vec4(c, a);
+}`;
 const UV_VERT = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }';
 
 /** Stamina bars: camera-facing quads, one instance per player, fill per instance. */
@@ -192,7 +211,7 @@ export class AimLayer {
 
     this.wedgeMat = keepM(
       new ShaderMaterial({
-        uniforms: { color: { value: new Color('#ffffff') }, opacity: { value: 0.5 } },
+        uniforms: { color: { value: new Color('#ffffff') }, track: { value: new Color('#ffffff') }, opacity: { value: 0.5 }, fill: { value: 0 }, tick: { value: 1 } },
         vertexShader: UV_VERT,
         fragmentShader: WEDGE_FRAG,
         transparent: true,
@@ -288,12 +307,12 @@ export class AimLayer {
     const ctrl = s.controlled[me] >= 0 && s.humans[me] ? s.players[s.controlled[me]] : null;
     const live = s.phase === 'play' || s.phase === 'kickoff' || s.phase === 'restart';
     // A human taking a set piece aims it like any other kick.
-    const hasBall = !!ctrl && s.ball.owner === ctrl.i && (s.phase === 'play' || (s.phase === 'restart' && s.restart?.stage === 'ready'));
+    const hasBall = !x.noAim && !!ctrl && s.ball.owner === ctrl.i && (s.phase === 'play' || (s.phase === 'restart' && s.restart?.stage === 'ready'));
     const cursor = x.cursor;
     // World overlays grow a little with camera distance so they stay readable when zoomed out.
     const k = Math.max(0.8, Math.min(1.5, f.camDist / 40));
 
-    this.pointer.visible = !!cursor && x.showCursor && live;
+    this.pointer.visible = !!cursor && x.showCursor && live && !x.noAim;
     if (cursor && this.pointer.visible) {
       this.pointer.position.set(sx(cursor.x), 0.04, sz(cursor.y));
       this.pointer.scale.setScalar(k);
@@ -312,30 +331,30 @@ export class AimLayer {
     this.switchRing.visible = false;
     let tx = 0;
     let ty = 0;
-    let wedgeColor = '#ffffff';
-    let wedgeAlpha = 0.42;
+    let wedgeAlpha = 0.6;
+    const gauge = hasBall ? kickGauge(s, x) : null;
     if (ctrl && hasBall && aimAt) {
       tx = aimAt.x;
       ty = aimAt.y;
+      showWedge = true;
+      showRet = pointerOn;
       if (armed?.kind === 'loft') {
-        // Lofted ball: the real flight as dots in the air, and the landing ring.
+        // Lofted ball: the real flight as dots in the air, and the landing ring. The wedge under it
+        // runs to the landing spot, lit as far as the hold has charged.
         const plan = loftPlan(s.ball.pos, aimAt, armed.power);
         this.chipArc(s.ball.pos, plan.landing, plan.speed, plan.vz);
         tx = plan.landing.x;
         ty = plan.landing.y;
+        showRet = false;
+        wedgeAlpha = 0.75;
       } else if (armed?.kind === 'shot') {
-        // Shot: a firmer wedge toward the pointer that warms to red past the sweet spot.
-        showWedge = true;
-        showRet = pointerOn;
-        wedgeColor = armed.power > 0.85 ? '#ff5a3c' : '#ffffff';
-        wedgeAlpha = 0.3 + 0.5 * x.charge;
+        // Shot: a firmer wedge toward the pointer, filling with power, green to amber to red.
+        wedgeAlpha = 0.85;
       } else {
-        // A click (or Space) would pass here.
+        // A click (or Space) would pass here, at the pace the wedge shows.
         const r = pointerOn && cursor ? pointerPass(s, ctrl, cursor) : humanPass(s, ctrl, aimAt);
         tx = r.target.x;
         ty = r.target.y;
-        showWedge = true;
-        showRet = pointerOn;
         if (r.receiver >= 0) {
           const m = s.players[r.receiver];
           this.recvRing.visible = true;
@@ -349,12 +368,16 @@ export class AimLayer {
         const dz = sz(ty) - oz;
         const L = Math.max(0.5, Math.hypot(dx, dz));
         this.wedge.position.set(ox, 0.035, oz);
-        this.wedge.scale.set(L, 1, Math.min(2.2, 0.6 + L * 0.06));
+        this.wedge.scale.set(L, 1, Math.min(2.4, 0.7 + L * 0.06) * Math.max(1, k * 0.9));
         this.wedge.rotation.y = -Math.atan2(dz, dx);
-        this.wedgeMat.uniforms.color.value.set(wedgeColor);
-        this.wedgeMat.uniforms.opacity.value = wedgeAlpha;
+        const u = this.wedgeMat.uniforms;
+        u.color.value.set(gauge ? GAUGE_COLORS[gauge.band] : '#ffffff');
+        u.fill.value = gauge ? gauge.fill : 0;
+        u.tick.value = gauge ? gauge.tick : 1;
+        u.opacity.value = wedgeAlpha;
+        (this.chipRing.material as MeshBasicMaterial).color.set(gauge && armed?.kind === 'loft' ? GAUGE_COLORS[gauge.band] : '#8cdcff');
       }
-    } else if (ctrl && !hasBall && pointerOn && cursor && s.phase === 'play') {
+    } else if (ctrl && !hasBall && pointerOn && cursor && s.phase === 'play' && !x.noAim) {
       // No ball: who a left click would switch to.
       const pick = x.switchTo ?? pickTeammate(s, me, cursor);
       if (pick >= 0 && pick !== ctrl.i) {

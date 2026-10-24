@@ -4,6 +4,8 @@
 
 import { describe, expect, test } from 'bun:test';
 import { CLICK_MS, leftRelease, loftPower, OneEuro, TOUCH_CLICK_MS } from '../src/client/input.ts';
+import { kickGauge, PASS_FULL } from '../src/client/power.ts';
+import { longView } from '../src/client/r3d/renderer3d.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { decodeReplay, encodeReplay, finalHash, quantiseInput, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT } from '../src/sim/constants.ts';
@@ -174,6 +176,14 @@ describe('a click pass is firm and arrives quickly at a controllable pace (ask 3
       expect(t / 60).toBeLessThan(0.3 + d / 9);
       expect(arrival).toBeGreaterThan(5.5);
       void me;
+    }
+  });
+
+  test('the power cone shows the pace the click will really be kicked at', () => {
+    const { s, me, mate } = passScene({ x: 30, y: 30 }, { x: 45, y: 30 });
+    for (const aim of [mate.pos, { x: 40, y: 45 }]) {
+      const g = kickGauge(s, { cursor: aim, charge: 0, showCursor: true })!;
+      expect(g.fill).toBeCloseTo(pointerPass(s, me, aim).speed / PASS_FULL, 6);
     }
   });
 
@@ -672,6 +682,17 @@ describe("the human's keeper (ask 8)", () => {
     }
     expect(land!.x - 6).toBeGreaterThan(PUNT_MIN_RANGE);
     expect(b.s.stats[0].shots).toBe(0);
+  });
+
+  test('the long view stays up the whole time he holds it, and lets go once he has played it', () => {
+    const { s, gk } = keeperHas();
+    let t = 0;
+    while (s.ball.owner === gk.i && s.ball.inHands && t++ < KEEPER_HOLD_TICKS + 120) {
+      expect(longView(s, 0)).not.toBeNull();
+      step(s, { cursor: { x: 40, y: 30 } });
+    }
+    expect(t).toBeGreaterThan(KEEPER_HOLD_TICKS - 30);
+    expect(longView(s, 0)).toBeNull();
   });
 
   test('Law 12: after about six seconds in his hands the CPU plays it for the human', () => {
