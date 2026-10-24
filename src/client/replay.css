@@ -1,0 +1,60 @@
+/* Replays: the goal-highlights viewer, the recent list and the paste box (src/client/replayView.ts) */
+.replay-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; }
+
+.replays { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.replay-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rp-row { display: grid; grid-template-columns: 26px 44px minmax(0, 1fr) auto; gap: 6px 10px; align-items: center; font-variant-numeric: tabular-nums; }
+.rp-row .res-opp { display: flex; flex-direction: column; white-space: normal; line-height: 1.25; min-width: 0; }
+.rp-row .res-opp .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-btns { display: flex; gap: 6px; }
+.replay-paste { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.replay-paste-row { display: flex; gap: 8px; }
+.replay-paste input {
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  border: 1.5px solid var(--control-line); border-radius: 6px; padding: 5px 8px;
+}
+.replay-msg { margin: 0; min-height: 1.3em; color: var(--muted); }
+.replay-msg.bad, .rp-status.bad { color: var(--bad); font-weight: 600; }
+
+/* Layers sit on <body>, above the result modal (z-index 40). */
+.replay-layer {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(10, 16, 14, .72); overflow-y: auto;
+  padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+}
+.replay-card {
+  width: min(880px, 100%); background: var(--surface); color: var(--ink); border-radius: 12px; border: 1px solid var(--line);
+  padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow); font-family: var(--font-body);
+}
+.replay-codebox { width: min(520px, 100%); }
+.rp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.rp-heading { min-width: 0; }
+.rp-heading p { margin: 2px 0 0; }
+.rp-title { font-size: 28px; text-transform: uppercase; }
+.rp-title:focus { outline: none; }
+.replay-canvas { cursor: default; width: min(100%, calc((100vh - 300px) * 1.493)); margin: 0 auto; }
+.rp-scrub { display: flex; align-items: center; gap: 12px; }
+.rp-scrub input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); cursor: pointer; }
+.rp-time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); white-space: nowrap; min-width: 8.5em; text-align: right; }
+.rp-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.rp-controls .btn { min-width: 92px; }
+.rp-controls .btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.rp-status { margin: 0; min-height: 1.3em; color: var(--muted); }
+.rp-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+.rp-keys { margin-left: auto; }
+.replay-code { width: 100%; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--control-line); border-radius: 6px; padding: 8px; resize: vertical; word-break: break-all; }
+
+@media (max-width: 640px) {
+  .replay-card { padding: 12px; gap: 10px; }
+  .rp-title { font-size: 22px; }
+  .replay-canvas { width: 100%; }
+  .rp-controls { display: grid; grid-template-columns: 1fr 1fr; }
+  .rp-controls .btn { min-width: 0; }
+  .rp-time { min-width: 0; font-size: 12px; }
+  .rp-keys { display: none; }
+  .rp-row { grid-template-columns: 26px 40px minmax(0, 1fr); }
+  .rp-btns { grid-column: 1 / -1; }
+  .rp-btns .btn { flex: 1 1 0; }
+}
+@media (pointer: coarse) {
+  .rp-keys { display: none; }
+}

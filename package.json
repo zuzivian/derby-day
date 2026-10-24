@@ -1,0 +1,16 @@
+{
+  "name": "derby-day",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser football club manager where you also play the matches yourself, mouse-first.",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run scripts/build.ts --watch",
+    "build": "bun run scripts/build.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p .",
+    "check": "bun run typecheck && bun test && bun run build",
+    "balance": "bun run scripts/balance.ts",
+    "e2e": "bun run build && node tests/e2e/run.cjs"
+  }
+}

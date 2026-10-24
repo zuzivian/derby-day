@@ -1,0 +1,198 @@
+// Shared e2e helpers. ALL selectors live in SEL (and the small helpers below) so that
+// when the UI changes there is exactly one place to fix. Prefer data-action / data-screen
+// attributes and ids over text and class names.
+
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+
+const SAVE_KEY = 'derbyday.save.v1';
+const PREFS_KEY = 'derbyday.prefs.v1';
+const DIST = path.resolve(__dirname, '..', '..', '..', 'dist', 'index.html');
+// E2E_RENDERER=2d or 3d pins the match renderer (default: whatever the browser supports).
+const APP_URL = pathToFileURL(DIST).href + (process.env.E2E_RENDERER ? `?renderer=${process.env.E2E_RENDERER}` : '');
+
+const SEL = {
+  app: '#app',
+  tab: '[data-action="nav"][data-screen]',
+  tabFor: (screen) => `[data-action="nav"][data-screen="${screen}"]`,
+  screen: 'main',
+  toast: '.toast',
+  modal: '.modal',
+  modalClose: '.modal [data-action="close-result"]',
+  header: '.topbar',
+  // Club level (src/client/levels.ts)
+  levelBadge: '[data-action="level-open"]',
+  xpText: '#xp-text',
+  xpBar: '.topbar [role="progressbar"]',
+  levelPanel: '.level-panel',
+  nextUnlock: '#next-unlock',
+  levelUp: '[aria-labelledby="levelup-title"]',
+  levelUpTitle: '#levelup-title',
+  levelUpGo: '[data-action="levelup-go"]',
+  levelUpClose: '[data-action="levelup-close"]',
+  xpGain: '.modal .xp-gain',
+  // Home screen (src/client/home.ts): the hero Kick off and the play-mode cards.
+  // Screen ids: 'home' is the first view, 'club' the secondary Club tab (news, replays, club level).
+  homeScreen: 'home',
+  clubScreen: 'club',
+  kickOff: '#kick-off',
+  playRanked: '[data-action="play-ranked"]',
+  playPractice: '[data-action="play-practice"]',
+  hero: '.hero[data-mode="cpu"]',
+  modeCard: '.mode-grid [data-mode]',
+  modeCardFor: (mode) => `.mode-grid [data-mode="${mode}"]`,
+  lockedCard: '.mode-card.locked',
+  statusStrip: '.topbar .status-strip',
+  // Club tab
+  newsTitle: '#news-title',
+  // Training
+  train: '[data-action="train"]',
+  // Transfers
+  buy: '[data-action="buy"]',
+  sell: (id) => `[data-action="sell"][data-id="${id}"]`,
+  sellConfirm: (id) => `[data-action="sell-confirm"][data-id="${id}"]`,
+  sellAny: '[data-action="sell"]',
+  sellConfirmAny: '[data-action="sell-confirm"]',
+  // Squad
+  slot: (n) => `[data-change="slot"][data-slot="${n}"]`,
+  // Two humans (versus.ts)
+  playLocal2p: '[data-action="play-local2p"]',
+  playLink: '[data-action="play-link"]',
+  l2pOpp: '#l2p-opp',
+  l2pStart: '#l2p-start',
+  linkHost: '#link-host',
+  linkCode: '#link-code',
+  linkCodeInput: '#link-code-input',
+  linkJoin: '#link-join',
+  linkStatus: '#link-status',
+  linkUnsupported: '#link-unsupported',
+  netMatch: '#net-match',
+  netWait: '#net-wait',
+  netStop: '#net-stop',
+  resultNote: '.modal .result-note',
+  // Match
+  pitch: '#pitch',
+  pause: '#pause',
+  resume: '#resume',
+  forfeit: '#forfeit',
+  // Onboarding (best effort; another change owns this flow). Any match is clicked.
+  onboardingSkip: [
+    '[data-action="skip-onboarding"]',
+    '[data-action="onboarding-skip"]',
+    '[data-action="skip-tour"]',
+    '[data-action="skip-intro"]',
+    '[data-action="dismiss-onboarding"]',
+    '[data-action="finish-onboarding"]',
+    '[data-screen="onboarding"] [data-action="skip"]',
+    '[data-onboarding] [data-action="skip"]',
+    '.onboarding [data-action="skip"]',
+  ].join(', '),
+};
+
+/** Elo as shown in the header ("Elo 1000"). Reads text so markup changes do not matter. */
+async function headerElo(page) {
+  const text = await page.locator(SEL.header).first().innerText();
+  const m = /Elo\s*(\d+)/i.exec(text);
+  if (!m) throw new Error(`No Elo in header text: ${JSON.stringify(text)}`);
+  return Number(m[1]);
+}
+
+/** Dismiss the first-run onboarding if the build has one. Never throws, never waits long. */
+async function skipOnboarding(page) {
+  for (let i = 0; i < 6; i++) {
+    const el = page.locator(SEL.onboardingSkip).first();
+    let visible = false;
+    try {
+      visible = await el.isVisible();
+    } catch {
+      /* page navigating */
+    }
+    if (!visible) return;
+    try {
+      await el.click({ timeout: 2000 });
+    } catch {
+      return;
+    }
+    await page.waitForTimeout(120);
+  }
+}
+
+const readSave = (page) =>
+  page.evaluate((k) => {
+    const raw = localStorage.getItem(k);
+    return raw ? JSON.parse(raw) : null;
+  }, SAVE_KEY);
+
+/** Total XP to reach `level` (the curve in src/meta/levels.ts: 100 * L to clear level L). */
+const totalXpForLevel = (level) => 50 * level * (level - 1);
+
+/**
+ * Open the app in a fresh context.
+ *   colorScheme  'light' | 'dark'
+ *   width/height viewport
+ *   prefs        object stored under derbyday.prefs.v1 (e.g. { halfSeconds: 3 })
+ *   mutateSave   (save) => void, applied to the stored save before the real test starts.
+ *                Must be self-contained: it is serialised and run in the page.
+ *   level        club level to start at (default 99, so every tab and button is unlocked).
+ *                null leaves the fresh level-1 save alone. Everything up to the level counts
+ *                as already seen, so no level-up dialog is waiting.
+ *   xp           exact total XP instead of `level` (e.g. just short of a level boundary).
+ *   renderer     '2d' or '3d': pin the match renderer (?renderer=). Tests that map world metres to
+ *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
+ */
+async function openApp(t, opts = {}) {
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer } = opts;
+  const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
+  // Runs in the page, so it can only use its arguments.
+  const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
+  const userSrc = userMutate ? `(${userMutate.toString()})(save);` : '';
+  const mutateSrc = levelMutate || userSrc ? `${levelMutate || ''}${userSrc}` : null;
+  const mutateSave = mutateSrc ? true : null;
+  const page = await t.newPage({ colorScheme, viewport: { width, height } });
+  // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
+  if (e2eHook) await page.addInitScript(() => { window.__e2e = true; });
+  await page.goto(renderer ? `${APP_URL.split('?')[0]}?renderer=${renderer}` : APP_URL);
+  await page.waitForSelector(SEL.app + ' *');
+  await skipOnboarding(page);
+  if (prefs || mutateSave) {
+    await page.evaluate(
+      ([saveKey, prefsKey, prefsObj, fnSrc]) => {
+        if (prefsObj) localStorage.setItem(prefsKey, JSON.stringify(prefsObj));
+        if (fnSrc) {
+          const save = JSON.parse(localStorage.getItem(saveKey));
+          new Function('save', fnSrc)(save);
+          localStorage.setItem(saveKey, JSON.stringify(save));
+        }
+      },
+      [SAVE_KEY, PREFS_KEY, prefs || null, mutateSrc],
+    );
+    await page.reload();
+    await page.waitForSelector(SEL.app + ' *');
+    await skipOnboarding(page);
+  }
+  return page;
+}
+
+async function goTab(page, screen) {
+  await page.locator(SEL.tabFor(screen)).click();
+  await page.waitForSelector(`${SEL.tabFor(screen)}[aria-current]`).catch(() => {});
+}
+
+async function tabScreens(page) {
+  return page.$$eval(SEL.tab, (els) => [...new Set(els.map((e) => e.getAttribute('data-screen')))]);
+}
+
+/** Start a ranked match with the home screen's Kick off, then wait for the pitch. */
+async function startRanked(page) {
+  await goTab(page, SEL.homeScreen);
+  await page.locator(SEL.playRanked).click();
+  await page.waitForSelector(SEL.pitch);
+}
+
+const pageWidths = (page) =>
+  page.evaluate(() => {
+    const de = document.documentElement;
+    return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
+  });
+
+module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
