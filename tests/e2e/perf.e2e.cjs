@@ -111,3 +111,53 @@ test(
   },
   { timeoutMs: 180_000 },
 );
+
+for (const quality of ['low', 'high']) test(
+  `Perf: prepare() compiles every shader a ${quality}-quality match uses, so a card, a goal and its replay compile none mid-match`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, query: `debug3d&quality=${quality}` });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
+    await page.waitForFunction(() => window.__derby3d && window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    // Every program compiled from here on, sampled each frame (a program no longer used can be released again).
+    const before = await page.evaluate(() => {
+      const gl = window.__derby3d.gl;
+      const seen = new Set(gl.info.programs.map((p) => p.cacheKey));
+      window.__newPrograms = [];
+      const watch = () => {
+        for (const p of gl.info.programs) if (!seen.has(p.cacheKey)) seen.add(p.cacheKey), window.__newPrograms.push(`${p.name} ${p.cacheKey.slice(0, 60)}`);
+        requestAnimationFrame(watch);
+      };
+      requestAnimationFrame(watch);
+      return gl.info.programs.length;
+    });
+    // A yellow card over a player (a sprite with no texture), shown for a few seconds.
+    await page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const p = s.players.find((q) => q.team === 1 && q.role !== 'GK');
+      s.events.push({ kind: 'card', color: 'yellow', player: p.i, team: 1, tick: s.tick, minute: 1, name: p.name });
+    });
+    await page.waitForTimeout(1500);
+    // A goal: net ripple, celebration, then the instant replay with its cameras.
+    await page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const b = s.ball;
+      b.owner = -1;
+      for (const k of s.players) if (k.team === 1 && k.role === 'GK') k.pos = { x: 100, y: 40 };
+      b.pos = { x: 95, y: 31.5 };
+      b.vel = { x: 26, y: 0 };
+      b.z = 0.3;
+      b.vz = 0.5;
+      b.lastTouch = s.controlled[0];
+      s.stats[0].shots++;
+    });
+    await page.waitForFunction(() => window.__derbyMatch.score[0] === 1, null, { timeout: 30_000 });
+    await page.waitForFunction(() => document.querySelector('#pitch').dataset.replay === 'goal', null, { timeout: 30_000 });
+    await page.waitForTimeout(2000);
+    const added = await page.evaluate(() => window.__newPrograms);
+    expect(added.join(' | ') || 'none', `no shader compiled after prepare() (${before} programs)`).toBe('none');
+  },
+  { timeoutMs: 150_000 },
+);

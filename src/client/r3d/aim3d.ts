@@ -127,6 +127,18 @@ function triangleTexture(): CanvasTexture {
   return t;
 }
 
+function whiteTexture(): CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 2;
+  c.height = 2;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, 2, 2);
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
 function nameTexture(text: string): { tex: CanvasTexture; aspect: number } {
   const c = document.createElement('canvas');
   const g = c.getContext('2d')!;
@@ -183,6 +195,8 @@ export class AimLayer {
   private names = new Map<number, Sprite>();
   private nameTex: CanvasTexture[] = [];
   private cards = new Map<number, { sprite: Sprite; until: number }>();
+  /** Plain white, so a card sprite shares the textured sprite program prepare() compiles (no mid-match compile on the first booking). */
+  private white = whiteTexture();
   private m4 = new Matrix4();
 
   constructor(nPlayers: number) {
@@ -288,7 +302,7 @@ export class AimLayer {
   card(player: number, color: 'yellow' | 'red', until: number): void {
     let c = this.cards.get(player);
     if (!c) {
-      const mat = new SpriteMaterial({ color: color === 'red' ? '#e11d2e' : '#ffd60a', depthTest: false, toneMapped: false });
+      const mat = new SpriteMaterial({ map: this.white, color: color === 'red' ? '#e11d2e' : '#ffd60a', depthTest: false, toneMapped: false });
       this.mats.push(mat);
       c = { sprite: new Sprite(mat), until };
       c.sprite.scale.set(0.32, 0.45, 1);
@@ -491,6 +505,7 @@ export class AimLayer {
     for (const m of this.mats) m.dispose();
     for (const g of this.geos) g.dispose();
     for (const t of this.nameTex) t.dispose();
+    this.white.dispose();
     this.bars.dispose();
     this.chipDots.dispose();
     this.group.removeFromParent();
