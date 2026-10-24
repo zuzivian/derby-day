@@ -91,23 +91,30 @@ test('onboarding: the first tip is readable: it holds for seconds and is not cut
   const page = await freshVisit(t);
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
-  await page.waitForSelector(TIP, { timeout: 20_000 });
+  await page.waitForSelector(TIP, { timeout: 40_000 });
   expect(await tipId(page), 'the first tip is about running').toBe('run');
   expect(await page.locator(TIP).innerText(), 'text').toMatch(/run/i);
-  await page.waitForFunction(() => /^Tip\./.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
-  // The human has the ball (as at a real kick-off): 'pass' is queued behind 'run', and must wait its turn.
+  await page.waitForFunction(() => /^Tip\./.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 5000 });
+  // The human has the ball (as at a real kick-off): 'pass' is queued behind 'run' and must wait its turn. The ball is
+  // held there on every step. Time is the coach's own tip clock (window.__derbyCoach), not wall time, which a slow
+  // software renderer stretches: advance it in steps and look at the card after each.
   await giveBall(page);
-  const seen = [];
-  const start = Date.now();
-  while (Date.now() - start < 4200) {
-    seen.push(await tipId(page));
-    await page.waitForTimeout(200);
+  const hold = () => page.evaluate(() => { const s = window.__derbyMatch; s.ball.owner = s.controlled[0]; return window.__derbyCoach.state(); });
+  let st = await hold();
+  expect(st.queue, "'pass' is waiting behind 'run'").toContain('pass');
+  expect(st.minMs, 'a tip holds for at least five seconds').toBeGreaterThanOrEqual(5000);
+  while (st.age + 250 < st.minMs) {
+    await page.evaluate(() => window.__derbyCoach.advance(250));
+    st = await hold();
+    expect(st.shown, `'run' is still up at ${Math.round(st.age)} ms of tip time, before its ${st.minMs} ms are up`).toBe('run');
   }
-  expect(seen.every((x) => x === 'run'), `'run' stays up for 4 s with a pass tip queued; saw ${JSON.stringify([...new Set(seen)])}`).toBe(true);
-  // Not remembered until it has really been up for a few seconds (frame time, so a slow software renderer takes longer); then it is.
-  await page.waitForFunction((k) => (JSON.parse(localStorage.getItem(k)).coachSeen || []).includes('run'), PREFS_KEY, { timeout: 15_000 });
-  // After its time, the queued tip takes over, if it is still true.
-  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 40_000 });
+  // Counted as shown once it has been up for 4 s of tip time (and so remembered), well before it may be replaced.
+  expect(st.counted, 'counted as shown after 4 s').toBe(true);
+  expect((await prefsOf(page)).coachSeen, 'and remembered').toContain('run');
+  // Once its reading time is up, the queued tip takes over, because it is still true.
+  await page.evaluate(() => window.__derbyCoach.advance(300));
+  await page.evaluate(() => { const s = window.__derbyMatch; s.ball.owner = s.controlled[0]; window.__derbyCoach.advance(0); });
+  expect(await tipId(page), 'then the queued tip takes over').toBe('pass');
 });
 
 test('onboarding: a tip card never blocks the game: clicks pass through it, it is off the action, it hides while paused', async (t) => {
