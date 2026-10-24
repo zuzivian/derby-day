@@ -237,7 +237,8 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
       for (const p of s.players) p.stun = 1e7;
       Object.assign(me, { stun: 0, tackleCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
-      Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 } });
+      // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
+      Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
       opp.attrs.dribbling = 0;
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
