@@ -12,7 +12,8 @@
 // ground pass over about 24 m/s is hard to take). Lofts: how much of the
 // distance to the pointer the hold reaches.
 
-import { groundPassPlan, humanPass, loftRange, pointerPass } from '../sim/kicks.ts';
+import { passSpeed } from '../sim/ai.ts';
+import { humanPass, loftRange, pointerPass } from '../sim/kicks.ts';
 import type { MatchState } from '../sim/types.ts';
 import type { RenderExtras } from './render.ts';
 
@@ -79,6 +80,9 @@ export function kickGauge(s: MatchState, x: RenderExtras): Gauge | null {
     const want = Math.hypot(aim.x - s.ball.pos.x, aim.y - s.ball.pos.y);
     return loftGauge(a.power, loftRange(a.power), want);
   }
-  const target = pointer ? pointerPass(s, p, pointer).target : humanPass(s, p, aim).target;
-  return passGauge(groundPassPlan(Math.hypot(target.x - s.ball.pos.x, target.y - s.ball.pos.y)).speed);
+  // The pace the sim will really kick it at: pointerPass's own speed (firm to a teammate, weighted
+  // to the spot into space); a Space pass goes at the CPU's pace for the distance (match.ts applyAction).
+  if (pointer) return passGauge(pointerPass(s, p, pointer).speed);
+  const target = humanPass(s, p, aim).target;
+  return passGauge(passSpeed(Math.hypot(target.x - s.ball.pos.x, target.y - s.ball.pos.y), p.attrs.passing));
 }

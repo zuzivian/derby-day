@@ -181,6 +181,63 @@ test('mouse with the ball: holding left lofts it to the pointer, and a longer ho
   expect((await tracked(page)).peak, 'a click stays on the floor').toBeLessThan(0.1);
 });
 
+test('mouse with the ball: a slow click (250 ms, a trackpad tap) is still a ground pass, firm to the teammate under the pointer', async (t) => {
+  const page = await openMatch(t);
+  const me = await carrier(page, { x: 20, y: 20 });
+  const mate = await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const m = s.players.find((p) => p.team === 0 && p.role === 'MID' && p.i !== s.controlled[0]);
+    Object.assign(m, { stun: 0, pos: { x: 34, y: 24 }, vel: { x: 0, y: 0 } });
+    // Hold him where he stands, so the scene does not depend on the CPU's ideas.
+    const pin = () => {
+      if (window.__derbyMatch.ball.owner === m.i) return;
+      m.pos = { x: 34, y: 24 };
+      m.vel = { x: 0, y: 0 };
+      requestAnimationFrame(pin);
+    };
+    pin();
+    return m.i;
+  });
+  await startTracking(page);
+  await hold(page, { x: 34.6, y: 24.4 }, 250);
+  await afterKick(page, me);
+  const b = await ball(page);
+  expect(b.receiver, 'the pass is to the teammate under the pointer').toBe(mate);
+  expect(Math.hypot(b.vx, b.vy), 'played firmly (over 9 m/s)').toBeGreaterThan(9);
+  await page.waitForFunction((m) => window.__derbyMatch.ball.owner === m, mate, { polling: 'raf', timeout: 6000 });
+  expect((await tracked(page)).peak, 'it never left the floor').toBeLessThan(0.05);
+});
+
+test("mouse: the human's keeper holds the ball for the human, with a countdown, and a click plays it out", async (t) => {
+  const page = await openMatch(t);
+  const gk = await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const g = s.players.find((p) => p.team === 0 && p.role === 'GK');
+    for (const p of s.players) if (p !== g) p.stun = 1e7;
+    Object.assign(g, { stun: 0, pos: { x: 6, y: 34 }, vel: { x: 0, y: 0 } });
+    const opp = s.players.find((p) => p.team === 1 && p.role === 'FWD');
+    Object.assign(s.ball, { owner: -1, pos: { x: 13, y: 34 }, vel: { x: -9, y: 0 }, z: 0, vz: 0, receiver: -1, passFrom: -1, kickedBy: -1, lastTouch: opp.i, touch: 0, inHands: false });
+    s.ball.noPickup.fill(0);
+    return g.i;
+  });
+  await page.waitForFunction((g) => window.__derbyMatch.ball.owner === g, gk, { polling: 'raf', timeout: 6000 });
+  expect(await page.evaluate(() => window.__derbyMatch.ball.inHands), 'caught').toBe(true);
+  expect(await page.evaluate(() => window.__derbyMatch.controlled[0]), 'control goes to the keeper').toBe(gk);
+  await page.waitForSelector('.hud-hold:not([hidden])', { timeout: 3000 });
+  expect(await page.locator('.hud-hold').innerText(), 'a countdown shows').toMatch(/keeper/i);
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate((g) => window.__derbyMatch.ball.owner === g, gk), 'he waits for the human: no auto-distribution').toBe(true);
+  const mate = await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const m = s.players.find((p) => p.team === 0 && p.role === 'DEF');
+    Object.assign(m, { stun: 0, pos: { x: 18, y: 22 }, vel: { x: 0, y: 0 } });
+    return m.i;
+  });
+  await click(page, { x: 18, y: 22 });
+  await page.waitForFunction(() => window.__derbyMatch.ball.owner === -1, null, { polling: 'raf', timeout: 4000 });
+  expect((await ball(page)).receiver, 'rolled out to the defender clicked on').toBe(mate);
+});
+
 test('mouse with the ball: right click shoots at the pointer, hold right for power', async (t) => {
   const page = await openMatch(t);
   const target = { x: 52, y: 6 };

@@ -15,7 +15,7 @@
 
 import type { HumanInput, TeamInputs } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
-import { loftPower, shotPower, SHOT_FULL_MS, TAP_MS, type WorldPicker } from './input.ts';
+import { CLICK_MS, leftRelease, loftPower, MOVE_PX, shotPower, SHOT_FULL_MS, type WorldPicker } from './input.ts';
 
 export interface PadKeys {
   up: string[];
@@ -87,7 +87,7 @@ class Pad {
   charge(): number {
     const now = performance.now();
     if (this.shotStart !== null) return Math.min(1, Math.max(0.04, (now - this.shotStart) / SHOT_FULL_MS));
-    if (this.loftStart !== null && (!this.loftIsClick || now - this.loftStart >= TAP_MS)) return Math.min(1, Math.max(0.04, loftPower(now - this.loftStart)));
+    if (this.loftStart !== null && (!this.loftIsClick || now - this.loftStart >= CLICK_MS)) return Math.min(1, Math.max(0.04, loftPower(now - this.loftStart)));
     return 0;
   }
 
@@ -101,8 +101,12 @@ class Pad {
     if (this.loftStart === null) return;
     const held = performance.now() - this.loftStart;
     this.loftStart = null;
-    if (this.loftIsClick && held < TAP_MS) this.pass = true;
-    else this.loft = loftPower(held);
+    if (this.loftIsClick) {
+      // The mouse's left button: a click (anything under CLICK_MS) is always a ground pass.
+      const r = leftRelease(held);
+      if ('pass' in r) this.pass = true;
+      else this.loft = r.loft;
+    } else this.loft = loftPower(held);
     this.loftIsClick = false;
   }
 }
@@ -116,6 +120,8 @@ export class HotseatInput {
   private cleanup: (() => void)[] = [];
   /** Last pointer position, client pixels: re-projected each tick, since a 3D camera moves under a still mouse. */
   private client: { x: number; y: number } | null = null;
+  /** Player 1's on-screen pointer travel since the last tick (HumanInput.moved). */
+  private travel = 0;
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -178,6 +184,7 @@ export class HotseatInput {
     on(canvas, 'pointermove', (e) => {
       if (e.pointerType !== 'mouse') return;
       this.mouse = true;
+      if (this.client) this.travel += Math.hypot(e.clientX - this.client.x, e.clientY - this.client.y);
       this.cursor = toWorld(e);
     });
     on(canvas, 'pointerdown', (e) => {
@@ -222,8 +229,11 @@ export class HotseatInput {
       this.cursor = this.picker.toWorld(this.client.x - r.left, this.client.y - r.top);
     }
     const pointer = team === 0 && this.mouse && this.cursor;
-    if (pointer) input.cursor = this.cursor!;
-    else input.dir = { x: (p.has(k.right) ? 1 : 0) - (p.has(k.left) ? 1 : 0), y: (p.has(k.down) ? 1 : 0) - (p.has(k.up) ? 1 : 0) };
+    if (pointer) {
+      input.cursor = this.cursor!;
+      if (this.travel >= MOVE_PX) input.moved = true;
+      this.travel = 0;
+    } else input.dir = { x: (p.has(k.right) ? 1 : 0) - (p.has(k.left) ? 1 : 0), y: (p.has(k.down) ? 1 : 0) - (p.has(k.up) ? 1 : 0) };
     if (p.pass) input.pass = true;
     if (p.loft !== null) input.loft = p.loft;
     if (p.shoot !== null) input.shoot = p.shoot;

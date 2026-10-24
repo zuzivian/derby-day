@@ -136,6 +136,15 @@ export class AnimDirector {
     if (b.owner === p.i && this.ownerPrev !== p.i && this.ballSpeedPrev > 7 && time - sn.lastDive > 0.6) {
       ev.push({ kind: 'catch', t0: time - 0.12, height: b.z });
     }
+    // The sim's own dive (match.ts keeperDives), when there is one: the way he really went.
+    if (p.dive && p.dive.ticks > 0 && time - sn.lastDive > 0.6) {
+      const fx = p.facing.x || (p.team === 0 ? 1 : -1);
+      const across = p.dive.dir.y * Math.sign(fx);
+      sn.lastDive = time;
+      ev.push({ kind: 'dive', t0: time - 0.05, side: across >= 0 ? 1 : -1, height: p.dive.z, reach: p.dive.speed * (p.dive.travel / 60) + 0.6 });
+      return;
+    }
+    if (p.dive !== undefined) return; // this sim reports dives: no guessing
     if (b.owner >= 0 || s.phase !== 'play' || speed < 9 || time - sn.lastDive < 1.4) return;
     if (!inOwnBox(p.team, p.pos)) return;
     const towardOwn = p.team === 0 ? b.vel.x < 0 : b.vel.x > 0;
