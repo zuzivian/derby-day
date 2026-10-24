@@ -44,7 +44,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - **Original world.** Ten fictional name styles and nations, blocklists against famous real players and clubs.
 
 **First run and access**
-- Five-step onboarding with a coached training-ground tutorial on the real engine, skippable at every step.
+- Gradual onboarding: a single welcome with one Kick off into a real first match (coach tips taught in play: running, passing, shooting, tackling, restarts), a celebration with the first XP, an optional club naming step, then menus revealed level by level. The training-ground drills are an optional Practice skills entry from level 3.
 - WCAG 2.1 AA pass: skip link, ARIA tabs, focus restored after every render, live announcements for goals and results, dialogs with focus traps, contrast fixed in both themes, team markers that don't rely on colour alone.
 
 Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; two tabs can overwrite each other); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
@@ -127,7 +127,7 @@ How it works: `MatchState` has per-team control (`humans`, `controlled`), and `s
 
 ## Club levels (October 2026)
 
-The club opens up as it gains experience. A new player starts with the Home and Club screens, the Squad, ranked matches, two practice levels and both ways to play another human (vs Player); everything else arrives with club levels 2 to 10, and small perks keep the levels meaningful up to 99. The rules are in `src/meta/levels.ts` (pure, unit-tested in `tests/levels.test.ts`), the UI in `src/client/levels.ts`. Match controls (sprint, through ball, chip) are never gated.
+The club opens up as it gains experience. A new player starts with Home and one big Kick off (a first match against an easy CPU club, with light coach tips) and nothing else: no tabs. Squad arrives at level 2, Club (with replays and Practice skills) at 3, Training and Practice at 4, Transfers and vs Player at 5, the Ladder at 6, the Cup at 7 and the League at 8 (calendar and academy at 10); each new tab is introduced once with a coach mark. Saves from before this table keep every feature the old one had opened for them (`unlocksV`). Everything else arrives with club levels 2 to 10, and small perks keep the levels meaningful up to 99. The rules are in `src/meta/levels.ts` (pure, unit-tested in `tests/levels.test.ts`), the UI in `src/client/levels.ts`. Match controls (sprint, through ball, chip) are never gated.
 
 **The curve.** Clearing level L takes 100 × L XP: level 1 → 2 is 100, 2 → 3 is 200, 98 → 99 is 9,800. Reaching level L takes 50 × L × (L − 1) in total, so level 99 is 485,100 XP. Level 99 is the cap: its bar is 9,900 long and reads "Max level" when full, and XP keeps counting for a future prestige. Functions: `xpToClear(level)`, `levelForXp(totalXp)` → `{ level, intoLevel, needed, maxed }`, `totalXpForLevel(level)`.
 
@@ -135,18 +135,20 @@ The club opens up as it gains experience. A new player starts with the Home and 
 
 | Level | Kind | Unlock | What it does |
 |---|---|---|---|
-| 1 | Feature | Home and Club | Kick off your next match from Home; club news and this list live under Club. |
-| 1 | Feature | Squad | See your players and pick the starting eleven. |
+| 1 | Feature | Home and Kick off | Kick off your next match from Home. Everything else opens as the club levels up. |
 | 1 | Feature | Ranked matches | Play ladder clubs near your Elo, live. |
-| 1 | Feature | Practice (Easy, Normal) | Friendlies against the CPU. No Elo. |
-| 1 | Feature | Local 2P | vs Player on one screen: two humans, one keyboard. Nothing recorded. |
-| 1 | Feature | Link two tabs | vs Player in two tabs of this browser, in lockstep. Nothing recorded. |
-| 2 | Feature | Training | Spend the sessions you earn on player attributes. |
-| 3 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
-| 4 | Feature | Ladder | The full Elo table of all 16 clubs. |
-| 5 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
-| 5 | Feature | Practice Hard | A tougher CPU friendly: the Veterans Select. |
-| 6 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
+| 2 | Feature | Squad | See your players and pick the starting eleven. |
+| 3 | Feature | Club | Club news, your club level and every unlock still to come. |
+| 3 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
+| 3 | Feature | Practice skills | The training-ground drills: run, pass, shoot and tackle, any time you like. |
+| 4 | Feature | Training | Spend the sessions you earn on player attributes. |
+| 4 | Feature | Practice (Easy, Normal) | Friendlies against the CPU. No Elo. |
+| 5 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
+| 5 | Feature | Local 2P | vs Player on one screen: two humans, one keyboard. Nothing recorded. |
+| 5 | Feature | Link two tabs | vs Player in two tabs of this browser, in lockstep. Nothing recorded. |
+| 6 | Feature | Ladder | The full Elo table of all 16 clubs. |
+| 7 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
+| 7 | Feature | Practice Hard | A tougher CPU friendly: the Veterans Select. |
 | 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
 | 10 | Feature | Season calendar and academy | Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive. |
 | 15 | Perk | Squad of 25 | Room for one more player (24 to 25). |

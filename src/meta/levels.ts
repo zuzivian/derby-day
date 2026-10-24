@@ -70,8 +70,8 @@ export function levelText(p: LevelProgress): string {
 // Unlocks and perks: the one table
 
 export type UnlockId =
-  | 'club' | 'squad' | 'ranked' | 'practice'
-  | 'training' | 'transfers' | 'ladder' | 'cup' | 'practice-hard' | 'replays' | 'local2p' | 'league' | 'calendar' | 'link'
+  | 'home' | 'club' | 'squad' | 'ranked' | 'practice'
+  | 'training' | 'transfers' | 'ladder' | 'cup' | 'practice-hard' | 'replays' | 'local2p' | 'league' | 'calendar' | 'link' | 'drills'
   | 'squad-15' | 'crest' | 'market-20' | 'kit' | 'scouting' | 'badge-silver' | 'squad-30' | 'win-bonus' | 'replays-40'
   | 'squad-50' | 'badge-gold' | 'replays-65' | 'badge-platinum' | 'market-80' | 'badge-legend';
 
@@ -91,18 +91,20 @@ export interface Unlock {
 }
 
 export const UNLOCKS: readonly Unlock[] = [
-  { id: 'club', level: 1, kind: 'feature', name: 'Home and Club', text: 'Kick off your next match from Home; club news and this list live under Club.' },
-  { id: 'squad', level: 1, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting eleven.' },
+  { id: 'home', level: 1, kind: 'feature', name: 'Home and Kick off', text: 'Kick off your next match from Home. Everything else opens as the club levels up.' },
   { id: 'ranked', level: 1, kind: 'feature', name: 'Ranked matches', text: 'Play ladder clubs near your Elo, live.' },
-  { id: 'practice', level: 1, kind: 'feature', name: 'Practice (Easy, Normal)', text: 'Friendlies against the CPU. No Elo.' },
-  { id: 'local2p', level: 1, kind: 'feature', name: 'Local 2P', text: 'vs Player on one screen: two humans, one keyboard. Nothing recorded.' },
-  { id: 'link', level: 1, kind: 'feature', name: 'Link two tabs', text: 'vs Player in two tabs of this browser, in lockstep. Nothing recorded.' },
-  { id: 'training', level: 2, kind: 'feature', name: 'Training', text: 'Spend the sessions you earn on player attributes.', go: { screen: 'training', label: 'Go to Training' } },
-  { id: 'transfers', level: 3, kind: 'feature', name: 'Transfers', text: 'Sign players from the market and sell to CPU clubs.', go: { screen: 'transfers', label: 'Go to Transfers' } },
-  { id: 'ladder', level: 4, kind: 'feature', name: 'Ladder', text: 'The full Elo table of all 16 clubs.', go: { screen: 'ladder', label: 'Go to the Ladder' } },
-  { id: 'cup', level: 5, kind: 'feature', name: 'The Cup', text: 'The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy.', go: { screen: 'competitions', label: 'Go to Competitions' } },
-  { id: 'practice-hard', level: 5, kind: 'feature', name: 'Practice Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-hard' } },
-  { id: 'replays', level: 6, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
+  { id: 'squad', level: 2, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting eleven.', go: { screen: 'squad', label: 'Go to Squad' } },
+  { id: 'club', level: 3, kind: 'feature', name: 'Club', text: 'Club news, your club level and every unlock still to come.', go: { screen: 'club', label: 'Go to Club' } },
+  { id: 'replays', level: 3, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
+  { id: 'drills', level: 3, kind: 'feature', name: 'Practice skills', text: 'The training-ground drills: run, pass, shoot and tackle, any time you like.', go: { screen: 'club', label: 'Show me', focusId: 'replay-tutorial' } },
+  { id: 'training', level: 4, kind: 'feature', name: 'Training', text: 'Spend the sessions you earn on player attributes.', go: { screen: 'training', label: 'Go to Training' } },
+  { id: 'practice', level: 4, kind: 'feature', name: 'Practice (Easy, Normal)', text: 'Friendlies against the CPU. No Elo.', go: { screen: 'home', label: 'Show me', focusId: 'practice-easy' } },
+  { id: 'transfers', level: 5, kind: 'feature', name: 'Transfers', text: 'Sign players from the market and sell to CPU clubs.', go: { screen: 'transfers', label: 'Go to Transfers' } },
+  { id: 'local2p', level: 5, kind: 'feature', name: 'Local 2P', text: 'vs Player on one screen: two humans, one keyboard. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-local2p' } },
+  { id: 'link', level: 5, kind: 'feature', name: 'Link two tabs', text: 'vs Player in two tabs of this browser, in lockstep. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-link' } },
+  { id: 'ladder', level: 6, kind: 'feature', name: 'Ladder', text: 'The full Elo table of all 16 clubs.', go: { screen: 'ladder', label: 'Go to the Ladder' } },
+  { id: 'cup', level: 7, kind: 'feature', name: 'The Cup', text: 'The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy.', go: { screen: 'competitions', label: 'Go to Competitions' } },
+  { id: 'practice-hard', level: 7, kind: 'feature', name: 'Practice Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-hard' } },
   { id: 'league', level: 8, kind: 'feature', name: 'League season', text: 'An 8-club round robin over 7 matchdays, with prize money for every place.', go: { screen: 'competitions', label: 'Go to Competitions', focusId: 'comp-start-season' } },
   { id: 'calendar', level: 10, kind: 'feature', name: 'Season calendar and academy', text: 'Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive.', go: { screen: 'club', label: 'Show me', focusId: 'news-title' } },
   { id: 'squad-15', level: 15, kind: 'perk', name: 'Squad of 25', text: 'Room for one more player (24 to 25).', go: { screen: 'squad', label: 'Go to Squad' } },
@@ -121,6 +123,20 @@ export const UNLOCKS: readonly Unlock[] = [
   { id: 'market-80', level: 80, kind: 'perk', name: 'Scouting network', text: 'Two more players on the transfer market (12 to 14).', go: { screen: 'transfers', label: 'Go to Transfers' } },
   { id: 'badge-legend', level: 99, kind: 'perk', name: 'Legend badge', text: 'Level 99. The bar keeps counting toward a future prestige.' },
 ];
+
+/**
+ * Version of the unlock table. Version 2 (gradual onboarding) moved Squad,
+ * Club, Practice, vs Player and the rest later. A save made before it
+ * (`unlocksV` missing) keeps every feature the old table had opened for it:
+ * see ensureLevelFields.
+ */
+export const UNLOCKS_VERSION = 2;
+
+/** Where the version-1 table opened each feature, for saves that predate version 2. */
+const V1_LEVEL: Partial<Record<UnlockId, number>> = {
+  home: 1, club: 1, squad: 1, ranked: 1, practice: 1, local2p: 1, link: 1, drills: 1,
+  training: 2, transfers: 3, ladder: 4, cup: 5, 'practice-hard': 5, replays: 6, league: 8, calendar: 10,
+};
 
 const BY_ID = new Map(UNLOCKS.map((u) => [u.id, u]));
 
@@ -239,8 +255,10 @@ export const XP = {
   league: [800, 400, 200, 200, 100, 100, 50, 50],
 } as const;
 
-export type MilestoneId = 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';
+export type MilestoneId = 'first-match' | 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';
 export const MILESTONES: Record<MilestoneId, { xp: number; label: string }> = {
+  // Enough on top of an Easy friendly (30) that even a first-match defeat reaches level 2.
+  'first-match': { xp: 80, label: 'first match' },
   tutorial: { xp: 100, label: 'training ground done' },
   'first-win': { xp: 100, label: 'first ranked win' },
   'first-signing': { xp: 50, label: 'first signing' },
@@ -410,5 +428,13 @@ export function ensureLevelFields(save: Save): void {
   if (!Array.isArray(save.unlocksSeen)) {
     const level = clubLevel(save);
     save.unlocksSeen = UNLOCKS.filter((u) => u.level <= level || inUse(save, u.id)).map((u) => u.id);
+  }
+  // A save from before the gradual unlock table keeps everything the old table gave it.
+  if (save.unlocksV !== UNLOCKS_VERSION) {
+    const level = clubLevel(save);
+    const seen = new Set(save.unlocksSeen);
+    for (const u of UNLOCKS) if ((V1_LEVEL[u.id] ?? Infinity) <= level) seen.add(u.id);
+    save.unlocksSeen = UNLOCKS.filter((u) => seen.has(u.id)).map((u) => u.id);
+    save.unlocksV = UNLOCKS_VERSION;
   }
 }

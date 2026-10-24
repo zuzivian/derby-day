@@ -21,7 +21,7 @@ import {
 import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
 import type { SeasonReview } from './progression.ts';
-import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
+import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, UNLOCKS_VERSION, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
 export const SAVE_VERSION = 1;
@@ -90,6 +90,8 @@ export interface Save {
   unlocksSeen?: UnlockId[];
   /** First-time milestones already claimed. */
   milestones?: MilestoneId[];
+  /** Version of the unlock table this save has been migrated to (UNLOCKS_VERSION in levels.ts). */
+  unlocksV?: number;
   /** The club's formation (FORMATIONS in sim/constants.ts). Default 4-4-2. The lineup is in its slot order. */
   formation?: FormationId;
 }
@@ -117,7 +119,8 @@ export function newGame(seed: number): Save {
     review: null,
     offers: [],
     xp: 0,
-    unlocksSeen: ['club', 'squad', 'ranked', 'practice'],
+    unlocksSeen: [],
+    unlocksV: UNLOCKS_VERSION,
     milestones: [],
     news: [`${identity.name} founded. The board has given you ${formatMoney(1_200_000)} to build a squad.`],
   };
