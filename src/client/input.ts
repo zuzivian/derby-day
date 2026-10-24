@@ -51,20 +51,31 @@ export interface WorldPicker {
 }
 
 /**
+ * Does the focused control use this key itself, so the game should leave it alone? Text fields keep
+ * every key; radios, sliders and selects keep Space, Enter and the arrows; buttons, checkboxes and
+ * links keep only Space and Enter. Everything else (WASD, the arrows on a button, the shoot and
+ * switch keys) still reaches the game, so a keyboard player who Tabs onto a HUD button keeps moving.
+ */
+export function controlKeepsKey(t: EventTarget | null, canvas: unknown, key: string): boolean {
+  const el = t as { tagName?: string; type?: string; isContentEditable?: boolean; getAttribute?: (n: string) => string | null } | null;
+  if (!el || el === canvas || !el.tagName) return false;
+  const tag = el.tagName;
+  const type = (el.type ?? '').toLowerCase();
+  const role = el.getAttribute?.('role') ?? '';
+  if (el.isContentEditable || tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT' && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/.test(type)) return true;
+  const press = key === ' ' || key === 'Enter';
+  const arrow = key.startsWith('Arrow');
+  if (tag === 'SELECT' || (tag === 'INPUT' && (type === 'radio' || type === 'range')) || role === 'radio' || role === 'slider') return press || arrow;
+  if (/^(BUTTON|INPUT|A|SUMMARY)$/.test(tag) || role === 'button' || role === 'checkbox' || role === 'link' || role === 'switch') return press;
+  return false;
+}
+
+/**
  * The world point for a pointer event, keeping the latched point when the pointer hasn't moved on
  * screen since it was taken (a click with a still mouse goes where the ring and wedge show, even if
  * the camera has panned since). Shared by InputController and the hot-seat HotseatInput.
  */
-/** Is this event target a control that should keep its own keys (a button, input, link…), not the pitch? */
-export function focusIsControl(t: EventTarget | null, canvas: unknown): boolean {
-  const el = t as { tagName?: string; isContentEditable?: boolean; getAttribute?: (n: string) => string | null } | null;
-  if (!el || el === canvas || !el.tagName) return false;
-  if (el.isContentEditable) return true;
-  if (/^(BUTTON|INPUT|SELECT|TEXTAREA|A|SUMMARY)$/.test(el.tagName)) return true;
-  const role = el.getAttribute?.('role');
-  return role === 'button' || role === 'checkbox' || role === 'link' || role === 'switch';
-}
-
 export function latchedPoint(prev: Vec | null, client: { x: number; y: number } | null, e: { clientX: number; clientY: number }, project: () => Vec): Vec {
   if (prev && client && Math.abs(client.x - e.clientX) < 0.5 && Math.abs(client.y - e.clientY) < 0.5) return prev;
   return project();
@@ -271,9 +282,9 @@ export class InputController {
         if (!e.repeat) this.onPause();
         return;
       }
-      // A focused button, checkbox or link (the pause menu, the HUD) takes its own keys: Space presses
-      // it rather than passing. And nothing is queued for the game while it is paused.
-      if (this.paused() || focusIsControl(e.target, canvas)) return;
+      // A focused control (the pause menu, the HUD) takes the keys it uses: Space presses a button
+      // rather than passing, but WASD still moves. Nothing is queued for the game while it is paused.
+      if (this.paused() || controlKeepsKey(e.target, canvas, e.key)) return;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
       if (e.repeat) return;
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) this.mode = 'keys';

@@ -64,3 +64,43 @@ test('in the pause menu Space presses the focused button and checkbox, and nothi
   expect(b.owner, 'still on the ball').toBe(owner);
   expect(b.v, 'not kicked').toBeLessThan(4);
 });
+
+test('with the HUD Menu button focused, WASD and the arrows still move the player; Enter opens the menu', async (t) => {
+  // Review of #19: a focused HUD button swallowed every game key, so a keyboard player who had Tabbed
+  // onto Mute, Menu or Cam could not move.
+  const page = await openApp(t, { prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d' });
+  await startRanked(page);
+  await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play');
+  const freeze = () =>
+    page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const me = s.players[s.controlled[0]];
+      for (const p of s.players) if (p !== me) p.stun = 1e7;
+      me.pos = { x: 52, y: 34 };
+      me.vel = { x: 0, y: 0 };
+      s.ball.owner = me.i;
+      s.ball.pos = { x: 52.4, y: 34 };
+      s.ball.vel = { x: 0, y: 0 };
+      return me.i;
+    });
+  const posOf = (i) => page.evaluate((i) => ({ ...window.__derbyMatch.players[i].pos }), i);
+  await page.locator('#pause-btn').focus();
+  // Without a key he stays put (so the movement below is the key's).
+  const i0 = await freeze();
+  const a0 = await posOf(i0);
+  await page.waitForTimeout(700);
+  const b0 = await posOf(i0);
+  expect(Math.hypot(b0.x - a0.x, b0.y - a0.y), 'no key, no run').toBeLessThan(0.5);
+  for (const key of ['d', 'ArrowLeft']) {
+    const i = await freeze();
+    const a = await posOf(i);
+    await page.keyboard.down(key);
+    await page.waitForTimeout(700);
+    await page.keyboard.up(key);
+    const b = await posOf(i);
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'the Menu button still has focus').toBe('pause-btn');
+    expect(Math.hypot(b.x - a.x, b.y - a.y), `${key} moves him with the Menu button focused`).toBeGreaterThan(1);
+  }
+  await page.keyboard.press('Enter');
+  await page.locator(SEL.pause).waitFor({ state: 'visible', timeout: 3000 });
+});
