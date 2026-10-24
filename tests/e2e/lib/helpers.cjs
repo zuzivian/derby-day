@@ -173,6 +173,19 @@ async function openApp(t, opts = {}) {
   return page;
 }
 
+/**
+ * The player's next visit: a new page in the same browser context, at the app's URL, returned ready for use.
+ * Use it instead of page.reload() to check what survived a visit: a Chromium in-memory context (Playwright's)
+ * can drop localStorage across page.reload() now and then, even for a static page that only writes a key.
+ */
+async function nextVisit(page) {
+  const next = await page.context().newPage();
+  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await next.goto(APP_URL);
+  await next.waitForSelector(SEL.app + ' *');
+  return next;
+}
+
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
   await page.waitForSelector(`${SEL.tabFor(screen)}[aria-current]`).catch(() => {});
@@ -195,4 +208,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { nextVisit, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

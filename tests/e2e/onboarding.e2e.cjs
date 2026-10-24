@@ -3,7 +3,7 @@
 // match stays pending until it is played to the end, and existing saves keep what they had.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SEL, PREFS_KEY, openApp, readSave, tabScreens } = require('./lib/helpers.cjs');
+const { APP_URL, SEL, PREFS_KEY, nextVisit, openApp, readSave, tabScreens } = require('./lib/helpers.cjs');
 
 const KICK = '#ob-kickoff';
 const TIP = '.coach-tip:not([hidden])';
@@ -255,12 +255,8 @@ test('onboarding: coming back while the celebration is up does not replay the we
   expect(p.onboarded, 'setup is over').toBe(true);
   expect(p.coachSeen, 'and the coach prefs are kept').toBeTruthy();
   expect(p.marks, 'with the tab marks').toContain('squad');
-  // The next visit is a second page in the same browser context. (Not page.reload(): in these in-memory test
-  // contexts Chromium itself loses localStorage on a reload now and then, about 1 in 15 after ten seconds or
-  // more, even for a static page that does nothing but write a key; a new page never showed it.)
-  const next = await page.context().newPage();
-  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
-  await next.goto(APP_URL);
+  // A Chromium in-memory context can drop localStorage across page.reload(), so the next visit is a new page (see nextVisit).
+  const next = await nextVisit(page);
   await next.waitForSelector(SEL.kickOff);
   expect(await next.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
   expect(await next.locator(SEL.modal).count(), 'and no level-up dialog: the celebration already named what opened').toBe(0);
