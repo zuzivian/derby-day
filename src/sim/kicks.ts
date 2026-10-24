@@ -178,29 +178,22 @@ export function leadPoint(from: Vec, m: MatchPlayer): Vec {
   return lead;
 }
 
-/**
- * A human pass in pointer mode. When the assist finds a teammate (see PASS_ASSIST_R), the
- * ball goes to his feet, or to where he will be if he is running, firmly enough to get
- * there quickly (receiverArrival). Otherwise it goes to the grass under the pointer and
- * slows to PASS_ARRIVAL_SPEED there (receiver -1): through balls into space.
- */
-export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number } {
-  const ball = s.ball.pos;
-  let target = clampToPitch(aim, 0.5);
+/** The teammate the assist gives a pass from `from` aimed at `aim`, or -1 (see PASS_ASSIST_R). */
+export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): number {
   let receiver = -1;
-  const toAim = sub(aim, ball);
+  const toAim = sub(aim, from);
   const dAim = len(toAim);
   const radius = assistRadius(dAim);
   let bestErr = Infinity;
   for (const m of s.players) {
     // Not to a teammate who is down for longer than the pass takes.
     if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30) continue;
-    const lead = leadPoint(ball, m);
+    const lead = leadPoint(from, m);
     const near = Math.min(dist(aim, m.pos), dist(aim, lead));
     let err = Infinity;
     if (near < radius) err = near / radius;
     else if (dAim > 1) {
-      const toLead = sub(lead, ball);
+      const toLead = sub(lead, from);
       const dLead = len(toLead);
       const cos = dLead > 1 ? (toAim.x * toLead.x + toAim.y * toLead.y) / (dAim * dLead) : -1;
       if (cos > CONE_COS && dAim > 0.6 * dLead && dAim < 1.2 * dLead) err = 1 + (1 - cos) / (1 - CONE_COS);
@@ -210,9 +203,28 @@ export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: 
     if (err < bestErr) {
       bestErr = err;
       receiver = m.i;
-      target = lead;
     }
   }
+  return receiver;
+}
+
+/** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
+export function passTo(s: MatchState, m: MatchPlayer): { target: Vec; receiver: number; speed: number } {
+  const target = leadPoint(s.ball.pos, m);
+  const d = dist(s.ball.pos, target);
+  return { target, receiver: m.i, speed: groundPassPlan(d, receiverArrival(d)).speed };
+}
+
+/**
+ * A human pass in pointer mode. When the assist finds a teammate (see PASS_ASSIST_R), the
+ * ball goes to his feet, or to where he will be if he is running, firmly enough to get
+ * there quickly (receiverArrival). Otherwise it goes to the grass under the pointer and
+ * slows to PASS_ARRIVAL_SPEED there (receiver -1): through balls into space.
+ */
+export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number } {
+  const ball = s.ball.pos;
+  const receiver = assistReceiver(s, p, ball, aim);
+  let target = receiver >= 0 ? leadPoint(ball, s.players[receiver]) : clampToPitch(aim, 0.5);
   // A pointer on top of the ball: play it a couple of metres the way the player faces.
   if (dist(ball, target) < 2) {
     const way = norm(sub(target, ball));

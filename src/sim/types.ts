@@ -77,8 +77,9 @@ export interface KeeperDive {
   dir: Vec;
   /** Speed across the ground, m/s. */
   speed: number;
-  /** Ticks of the dive left. */
+  /** Ticks of the dive left: `travel` of them flying across, then stretched out on the floor, hands still up. */
   ticks: number;
+  travel: number;
   /** Height of the ball where he expects to meet it: under 0.6 a low dive, over 1.6 a high one. */
   z: number;
 }
@@ -122,6 +123,8 @@ export interface Ball {
   inHands: boolean;
   /** Ticks a keeper has held it in his hands (Law 12: about six seconds, KEEPER_HOLD_TICKS in match.ts). */
   handTicks?: number;
+  /** A player who stretched for this ball and missed it: no second try with his feet until someone touches it (his body still blocks it). */
+  whiff?: number;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
@@ -338,6 +341,8 @@ export interface QueuedKick {
   target: Vec;
   /** The player who will play it. */
   player: number;
+  /** The teammate the click picked (the pass goes to him wherever he has got to), or -1. */
+  receiver: number;
   /** Tick after which it lapses. */
   until: number;
 }

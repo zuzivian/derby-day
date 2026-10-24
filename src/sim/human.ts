@@ -24,7 +24,7 @@
 import { aiIntent } from './ai.ts';
 import { BOX_DEPTH, BOX_W, PITCH_H, SPRINT_MULT } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
-import { humanPass, pointerPass } from './kicks.ts';
+import { assistReceiver, humanPass, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
@@ -191,8 +191,10 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     if (input.select || input.pass || input.tackle) {
       const target = aim ?? heading;
       const kind = input.tackle && pointer ? 'shoot' : 'pass';
+      // Who the click picks is settled now, from where he will receive it.
+      const receiver = kind === 'pass' && pointer ? assistReceiver(s, p, p.pos, target) : -1;
       if (!s.queued) s.queued = [null, null];
-      s.queued[team] = { kind, target: { ...target }, player: p.i, until: s.tick + QUEUE_TICKS };
+      s.queued[team] = { kind, target: { ...target }, player: p.i, receiver, until: s.tick + QUEUE_TICKS };
     }
     return meetBall(s, p);
   }
@@ -208,7 +210,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     if (q && q.player === p.i && !s.ball.inHands) {
       s.queued![team] = null;
       if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT } };
-      const r = pointerPass(s, p, q.target);
+      const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
+      const r = mate && !mate.sentOff ? passTo(s, mate) : pointerPass(s, p, q.target);
       return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
     }
     const keeper = p.role === 'GK';

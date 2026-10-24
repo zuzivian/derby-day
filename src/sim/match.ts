@@ -288,6 +288,7 @@ function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigm
   b.z = 0;
   b.vz = 0;
   b.setPiece = null;
+  b.whiff = -1;
   p.kickCd = 18;
   // Law 11: offside positions are judged now.
   noteBallPlayed(s, p);
@@ -510,7 +511,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     const tLine = Math.abs((ownGoal(gk.team).x - b.pos.x) / (b.vel.x || 1e-6));
     const side = penaltyDive(s, gk, b.pos.y + b.vel.y * tLine);
     // He commits as it is struck: a dive to that side (or he stays up in the middle).
-    if (side !== 0) gk.dive = { dir: { x: 0, y: side }, speed: diveSpeed(gk), ticks: DIVE_TICKS + DIVE_HOLD, z: 0.9 };
+    if (side !== 0) gk.dive = { dir: { x: 0, y: side }, speed: diveSpeed(gk), ticks: DIVE_TICKS + DIVE_HOLD, travel: DIVE_TICKS, z: 0.9 };
   }
 }
 
@@ -524,7 +525,8 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
       // Committed to the dive: it carries him across the goal whatever he wanted, he stays
       // stretched out on the floor for a moment, then he gets up.
       p.dive.ticks--;
-      p.vel = p.dive.ticks >= DIVE_HOLD ? scale(p.dive.dir, p.dive.speed) : { x: 0, y: 0 };
+      p.vel = p.dive.travel > 0 ? scale(p.dive.dir, p.dive.speed) : { x: 0, y: 0 };
+      if (p.dive.travel > 0) p.dive.travel--;
       p.pos = { x: p.pos.x + p.vel.x * DT, y: p.pos.y + p.vel.y * DT };
       if (p.dive.ticks === 0) {
         p.stun = Math.max(p.stun, DIVE_DOWN);
@@ -777,15 +779,15 @@ const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.9
 /** Ticks after a kick before an opponent can stretch for the ball (about 0.2 s); until then only his body is in the way. */
 const REACT_TICKS = 12;
 
-/** A keeper's dive: the longest it carries him, how long he stays stretched out (hands still up), how long he is down after, how fast. */
+/** A keeper's dive: the longest it carries him, how long he stays stretched out (hands still up) at least, how long he is down after, how fast. */
 export const DIVE_TICKS = 27;
 const DIVE_HOLD = 8;
 const DIVE_DOWN = 24;
-export const diveSpeed = (gk: MatchPlayer): number => 3.9 + 2.0 * gk.attrs.goalkeeping;
+export const diveSpeed = (gk: MatchPlayer): number => 2.2 + 2.2 * gk.attrs.goalkeeping;
 /** How far his hands reach past his body along a dive. */
-export const diveArm = (gk: MatchPlayer): number => 0.8 + 0.3 * gk.attrs.goalkeeping;
+export const diveArm = (gk: MatchPlayer): number => 0.7 + 0.3 * gk.attrs.goalkeeping;
 /** Standing, his hands cover this radius up to 1.9 m (and a little less above, up to KEEPER_REACH_Z). */
-export const standReach = (gk: MatchPlayer, z: number): number => (z <= 1.9 ? 1.0 + 0.4 * gk.attrs.goalkeeping : 0.7 + 0.3 * gk.attrs.goalkeeping);
+export const standReach = (gk: MatchPlayer, z: number): number => (z <= 1.9 ? 0.75 + 0.3 * gk.attrs.goalkeeping : 0.55 + 0.25 * gk.attrs.goalkeeping);
 /** Law 12: a keeper may hold the ball for about six seconds. Then the CPU plays it for a human. */
 export const KEEPER_HOLD_TICKS = 6 * TICK_HZ;
 
@@ -828,15 +830,27 @@ function segSeg(a: Vec, b: Vec, c: Vec, d: Vec): { d: number; pt: Vec; t: number
   return best;
 }
 
+/**
+ * How close this tick's ball path (from -> to) comes to `p`, counted only once the ball has
+ * come level with him (its closest approach falls in this tick) or is right at him: a ball
+ * is played as it reaches a player, not from a metre in front of him.
+ */
+function approach(p: Vec, from: Vec, to: Vec): number {
+  const c = closestOn(p, from, to);
+  const d = dist(c.pt, p);
+  return c.t < 1 || dist(to, p) < BODY_R + BALL_R + 0.1 ? d : Infinity;
+}
+
 /** A keeper's hands as a segment and radius: around him standing, or out along his dive. */
 export function keeperReach(gk: MatchPlayer, z: number): { a: Vec; b: Vec; r: number } {
-  if (gk.dive && gk.dive.ticks > 0) return { a: gk.pos, b: add(gk.pos, scale(gk.dive.dir, diveArm(gk))), r: 0.3 };
+  if (gk.dive && gk.dive.ticks > 0) return { a: gk.pos, b: add(gk.pos, scale(gk.dive.dir, diveArm(gk))), r: 0.15 };
   return { a: gk.pos, b: gk.pos, r: standReach(gk, z) };
 }
 
 /** Someone other than the last player on it touched the ball: what that resets. */
 function touched(s: MatchState, p: MatchPlayer): void {
   const b = s.ball;
+  b.whiff = -1;
   if (b.setPiece && b.lastTouch !== p.i) b.setPiece = null;
   if (b.passFrom >= 0 && b.passFrom !== p.i) b.passFrom = -1;
   b.lastTouch = p.i;
@@ -884,7 +898,7 @@ function contacts(s: MatchState, from: Vec): void {
   for (const p of s.players) {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || !keeperHands(s, p) || z > KEEPER_REACH_Z) continue;
     const hr = keeperReach(p, z);
-    const c = segSeg(from, b.pos, hr.a, hr.b);
+    const c = hr.a === hr.b ? { d: approach(p.pos, from, b.pos), pt: p.pos, t: 0 } : segSeg(from, b.pos, hr.a, hr.b);
     if (c.d < hr.r + BALL_R && (!keeper || c.d < keeper.d)) keeper = { p, pt: c.pt, t: c.t, d: c.d };
   }
   if (keeper) {
@@ -900,8 +914,8 @@ function contacts(s: MatchState, from: Vec): void {
   let bestD = Infinity;
   let bestReach = 0;
   for (const p of s.players) {
-    if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p)) continue;
-    const d = distToSegment(p.pos, from, b.pos);
+    if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
+    const d = approach(p.pos, from, b.pos);
     let reach: number;
     if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
     else if (z <= (p.team === lastTeam ? CUSHION_Z : CHEST_Z)) reach = CHEST_REACH;
@@ -964,6 +978,7 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
     b.setPiece = null;
     b.inHands = false;
     b.handTicks = 0;
+    b.whiff = -1;
     // The man it was meant for takes it cleanly; a loose ball, or one on the chest, takes longer to settle.
     b.touch = receiver && !chest ? clamp(Math.round(speed * 0.6), 3, 8) : clamp(Math.round(speed * 1.2), chest ? 8 : 4, 14);
     b.vz = 0;
@@ -978,7 +993,8 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
   if (!receiver && d > body && reach > body) {
     const touchChance = (1 - (d - body) / (reach - body)) * (0.45 + 0.45 * p.attrs.defending);
     if (next(s.rng) > touchChance) {
-      b.noPickup[p.i] = 10;
+      // He can't get a foot to it this time; if it is coming at his body it will still hit him.
+      b.whiff = p.i;
       return;
     }
   }
@@ -997,7 +1013,7 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
   const diving = !!p.dive && p.dive.ticks > 0;
   let limit = 10 + 12 * gk;
   if (diving) limit *= 0.8 - 0.3 * along; // at full stretch, fingertips: a parry
-  else if (gap < 0.45) limit *= 1.35; // into his body
+  else if (gap < 0.5) limit *= 1.35; // into his body
   if (b.z > 2.0) limit *= 0.7;
   else if (b.z < 0.3) limit *= 1.1;
   if (offsideOnTouch(s, p, false)) return;
@@ -1010,6 +1026,7 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
     b.setPiece = null;
     b.inHands = true;
     b.handTicks = 0;
+    b.whiff = -1;
     b.touch = 4;
     b.vz = 0;
     p.holdTicks = 0;
@@ -1022,30 +1039,32 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
     }
     return;
   }
-  // Parried. At full stretch he tips it round the post (turning it away from the goal, it
-  // keeps much of its pace); into his body it rebounds back out; a high one goes over the bar.
+  // Parried. A ball heading just inside the post that he reaches at full stretch is tipped
+  // round it; anything else he palms back out, away from goal and wide.
   touched(s, p);
   const out = attackDir(p.team);
-  const stretched = diving ? along > 0.55 : gap > 0.6;
-  if (stretched) {
-    const outside = Math.sign(b.pos.y - (diving ? p.pos.y : PITCH_H / 2)) || 1;
-    const v = len(b.vel);
-    // Turn the velocity toward the outside of the goal by 17-46 degrees.
+  const g = ownGoal(p.team);
+  const tLine = Math.abs(b.vel.x) > 1e-6 ? (g.x - b.pos.x) / b.vel.x : -1;
+  const yLine = tLine > 0 ? b.pos.y + b.vel.y * tLine : b.pos.y;
+  const nearPost = Math.abs(yLine - PITCH_H / 2) > GOAL_W / 2 - 1.2;
+  const outside = Math.sign(yLine - PITCH_H / 2) || Math.sign(b.pos.y - PITCH_H / 2) || 1;
+  const v = len(b.vel);
+  if (b.z > 1.8) {
+    // Up near the bar: tipped over it, still carrying toward the goal line (a corner).
+    b.vel = { x: b.vel.x * 0.6, y: b.vel.y * 0.6 + outside * range(s.rng, 0, 2) };
+  } else if (diving && along > 0.6 && nearPost) {
+    // Turn it 45-80 degrees toward the outside of the post, at half its pace.
     const cur = Math.atan2(b.vel.y, b.vel.x);
-    const turn = range(s.rng, 0.3, 0.8) * outside * (Math.sign(b.vel.x) || 1);
-    b.vel = { x: Math.cos(cur + turn) * v * 0.55, y: Math.sin(cur + turn) * v * 0.55 };
+    const turn = range(s.rng, 0.8, 1.4) * outside * (Math.sign(b.vel.x) || 1);
+    b.vel = { x: Math.cos(cur + turn) * v * 0.5, y: Math.sin(cur + turn) * v * 0.5 };
   } else {
-    const n = awayFrom(s, pt);
-    const vn = dot(b.vel, n);
-    if (vn < 0) b.vel = sub(b.vel, scale(n, 1.35 * vn));
-    b.vel = scale(b.vel, 0.7);
-    if (b.vel.x * out < 0) b.vel.x *= -1;
-    b.vel = add(b.vel, { x: 0, y: (b.pos.y < PITCH_H / 2 ? -1 : 1) * range(s.rng, 1, 3.5) });
+    // Palmed: the part of its pace toward goal is turned back (restitution 0.25-0.45), and it goes wide.
+    const e = range(s.rng, 0.25, 0.45);
+    const vx = b.vel.x * out < 0 ? -b.vel.x * e : b.vel.x;
+    b.vel = { x: vx, y: b.vel.y * 0.5 + outside * range(s.rng, 1.5, 4.5) };
   }
-  if (b.z > 1.9) {
-    b.vz = range(s.rng, 2.5, 4.5);
-    b.vel = scale(b.vel, 0.7);
-  } else b.vz = Math.max(Math.abs(b.vz) * 0.3, range(s.rng, 0.3, 2.5));
+  if (b.z > 1.8) b.vz = range(s.rng, 3.5, 5.5);
+  else b.vz = Math.max(Math.abs(b.vz) * 0.3, range(s.rng, 0.3, 2.5));
   b.z = Math.max(b.z, 0.05);
   const gapR = BODY_R + BALL_R + 0.02;
   if (dist(b.pos, pt) < gapR) b.pos = add(pt, scale(awayFrom(s, pt), gapR));
@@ -1092,31 +1111,34 @@ function keeperDives(s: MatchState): void {
     const yLine = b.pos.y + b.vel.y * tLine;
     const zAt = (t: number) => (b.z > 0 || b.vz > 0 ? Math.max(0, b.z + b.vz * t - 0.5 * GRAVITY * t * t) : 0);
     if (Math.abs(yLine - PITCH_H / 2) > GOAL_W / 2 + 0.6 || zAt(tLine) > GOAL_BAR_H + 0.4) continue;
-    // Reaction time after the strike: 6 ticks (0.1 s) for the best keeper, 13 for the worst.
+    // Reaction time after the strike: 9 ticks (0.15 s) for the best keeper, 17 for the worst.
     const k = b.kickedBy >= 0 ? s.players[b.kickedBy] : null;
-    if (k && k.team !== team && k.kickCd > 0 && 18 - k.kickCd < Math.round(13 - 7 * gk.attrs.goalkeeping)) continue;
+    if (k && k.team !== team && k.kickCd > 0 && 18 - k.kickCd < Math.round(17 - 8 * gk.attrs.goalkeeping)) continue;
     const dir = scale(b.vel, 1 / v);
     const along = dot(sub(gk.pos, b.pos), dir);
     if (along < 0) continue;
     const t = timeToTravel(b, along);
-    // Where he reads it will pass him; a weaker keeper misreads it by more (seeded).
-    const misread = gauss(s.rng) * 0.35 * (1.1 - gk.attrs.goalkeeping);
-    const meet = add(add(b.pos, scale(dir, along)), { x: -dir.y * misread, y: dir.x * misread });
-    const off = sub(meet, gk.pos);
-    const dl = len(off);
     const z = zAt(t);
-    if (dl <= standReach(gk, z) * 0.85 || z > KEEPER_REACH_Z) continue;
+    const truly = add(b.pos, scale(dir, along));
+    // Coming at him (he can take it where he stands), or over his reach: no dive.
+    if (dist(truly, gk.pos) <= standReach(gk, z) * 0.85 || z > KEEPER_REACH_Z) continue;
+    // Where he reads it will pass him: a weaker keeper misreads it by more, and so does
+    // anyone with less time to see it (seeded).
+    const misread = gauss(s.rng) * 0.8 * (1.25 - gk.attrs.goalkeeping) * clamp(0.6 / Math.max(t, 0.1), 0.4, 1.5);
+    const meet = add(truly, { x: -dir.y * misread, y: dir.x * misread });
+    const off = sub(meet, gk.pos);
+    const dl = Math.max(len(off), 1e-3);
     // Too far to reach and wide anyway: let it go.
     const arm = diveArm(gk);
     const top = diveSpeed(gk);
     const maxReach = arm + top * Math.min(DIVE_TICKS / TICK_HZ, t) + 0.3;
     if (dl > maxReach && !inGoalMouth(yLine)) continue;
-    // Far enough to get his hands to the line of the ball, no further (he must not fly past
-    // it). He goes as late as he can: when the ball is about as far off as the dive takes.
+    // He commits as soon as he has read it: far enough to get his hands to the line of the
+    // ball, no further (he must not fly past it), and stays stretched out until it arrives.
     const travel = clamp(dl - 0.5 * arm, 0.2, top * (DIVE_TICKS / TICK_HZ));
     const ticks = Math.ceil((travel / top) * TICK_HZ);
-    if (t > ticks / TICK_HZ + 0.1) continue;
-    gk.dive = { dir: scale(off, 1 / dl), speed: top, ticks: ticks + DIVE_HOLD, z };
+    const hold = clamp(Math.ceil(t * TICK_HZ) - ticks + 4, DIVE_HOLD, 40);
+    gk.dive = { dir: scale(off, 1 / dl), speed: top, ticks: ticks + hold, travel: ticks, z };
   }
 }
 
@@ -1423,8 +1445,14 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   separate(s);
   updateBall(s, s.phase === 'play');
   if (s.phase === 'play') tickAdvantage(s);
-  // The keeper let it go this tick: hand the human an outfielder now, not next tick.
+  // The keeper let it go this tick: hand the human an outfielder now, not next tick. And
+  // whoever took the ball this tick is the human's now, not next tick.
   fixControlled(s);
+  const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+  if (owner && s.humans[owner.team] && s.controlled[owner.team] !== owner.i) {
+    s.controlled[owner.team] = owner.i;
+    if (s.ctlHold) s.ctlHold[owner.team] = true;
+  }
 
   const b = s.ball;
   if (b.owner >= 0 && b.inHands && s.players[b.owner].role === 'GK') b.handTicks = (b.handTicks ?? 0) + 1;
