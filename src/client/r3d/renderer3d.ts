@@ -533,6 +533,12 @@ export class Renderer3D implements MatchRenderer {
       this.clock = tickTime;
       this.rate = 1;
       if (jumped) {
+        // A different state or a seek (an instant replay starting or ending): booking cards, the
+        // referee's turn and a celebration belong to the old timeline (a card replay used to show
+        // the card over the offender before the foul had happened in it).
+        this.aim?.clearCards();
+        this.cardFace = null;
+        this.celebrate = null;
         this.cam.snap();
         this.cutCount++;
       }
@@ -733,7 +739,12 @@ export class Renderer3D implements MatchRenderer {
     else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
     else this.longHold = null;
     if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
-    if (t0 < this.reframeUntil) this.cutCount++;
+    // A re-framing (a zoom easing in, the long view coming or going) re-takes a still pointer's point
+    // once, when it has settled, rather than every frame while it moves (which let a runner drift).
+    if (this.reframeUntil && t0 >= this.reframeUntil) {
+      this.reframeUntil = 0;
+      this.cutCount++;
+    }
     this.longViewOn = !!lv;
     const camName = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
     if (this.canvas.dataset.camera !== camName) this.canvas.dataset.camera = camName;

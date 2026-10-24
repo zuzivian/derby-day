@@ -189,7 +189,7 @@ export class AimLayer {
   readonly group = new Group();
   private mats: Material[] = [];
   private geos: BufferGeometry[] = [];
-  private pointer: Mesh;
+  private pointer: Group;
   private reticle: Group;
   private wedge: Mesh;
   private wedgeMat: ShaderMaterial;
@@ -215,8 +215,14 @@ export class AimLayer {
     const keepG = <T extends BufferGeometry>(g: T) => (this.geos.push(g), g);
 
     // Orange ring at the pointer.
-    this.pointer = flat(new Mesh(keepG(new RingGeometry(0.42, 0.56, 40)), keepM(overlay(ORANGE, 0.95))), 0.04) as Mesh;
-    this.pointer.renderOrder = 5;
+    // The pointer: a light ring with a dark outline, so it reads on any grass (the plain orange ring was
+    // 1.15:1 against the pitch, 1.08:1 for protanopia; the OS cursor is hidden over the pitch).
+    this.pointer = new Group();
+    const ptrDark = flat(new Mesh(keepG(new RingGeometry(0.34, 0.66, 40)), keepM(overlay('#000000', 0.7))), 0.039);
+    const ptrLight = flat(new Mesh(keepG(new RingGeometry(0.42, 0.57, 40)), keepM(overlay('#ffe2b8', 1))), 0.041);
+    ptrDark.renderOrder = 5;
+    ptrLight.renderOrder = 6;
+    this.pointer.add(ptrDark, ptrLight);
 
     // White reticle: circle with four ticks.
     this.reticle = new Group();
@@ -311,6 +317,14 @@ export class AimLayer {
   }
 
   /** Show a booking over this player for a while. */
+  /** Hide every booking card (a jump in the timeline: an instant replay starts or ends). */
+  clearCards(): void {
+    for (const c of this.cards.values()) {
+      c.until = -Infinity;
+      c.sprite.visible = false;
+    }
+  }
+
   card(player: number, color: 'yellow' | 'red', until: number): void {
     let c = this.cards.get(player);
     if (!c) {
@@ -340,7 +354,7 @@ export class AimLayer {
 
     this.pointer.visible = !!cursor && x.showCursor && live && !x.noAim;
     if (cursor && this.pointer.visible) {
-      this.pointer.position.set(sx(cursor.x), 0.04, sz(cursor.y));
+      this.pointer.position.set(sx(cursor.x), 0, sz(cursor.y));
       this.pointer.scale.setScalar(k);
     }
 

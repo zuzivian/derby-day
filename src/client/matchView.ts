@@ -48,10 +48,14 @@ const REPLAYS_KEY = 'derby-instant-replays';
 
 /** The player's instant-replay setting (on unless turned off in the pause menu). */
 export function instantReplaysPref(): boolean {
+  // With prefers-reduced-motion, replays (a pitch-level tracking camera, hard cuts) are off until
+  // the player turns them on in the pause menu.
+  const reduce = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   try {
-    return localStorage.getItem(REPLAYS_KEY) !== 'off';
+    const v = localStorage.getItem(REPLAYS_KEY);
+    return v === null ? !reduce : v !== 'off';
   } catch {
-    return true;
+    return !reduce;
   }
 }
 
@@ -88,6 +92,8 @@ export interface MatchInputSource {
   /** The input scheme in use right now, when the source has one (mouse or keys); it follows whatever the player touches. */
   mode?(): 'mouse' | 'keys';
   extras(): RenderExtras;
+  /** Drop queued kicks and charges (pause, resume, replays): nothing pressed then fires afterwards. */
+  reset?(): void;
   dispose(): void;
 }
 
@@ -127,7 +133,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, Esc to pause."></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, Esc to pause.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -141,8 +147,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         </div>
       </div>
       <div class="touch-pad" aria-hidden="true">
-        <button class="pad-btn" id="pad-pass" aria-label="Pass: tap to pass, hold to loft">Pass</button>
-        <button class="pad-btn shoot" id="pad-shoot">Shoot</button>
+        <button class="pad-btn" id="pad-pass" tabindex="-1">Pass</button>
+        <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
       </div>
     </div>
     <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
@@ -158,9 +164,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let paused = false;
   let done = false;
   let focusBeforePause: HTMLElement | null = null;
+  /** The final whistle has gone: no pause menu and no forfeit any more (the result stands). */
+  let ending = false;
   const setPaused = (v: boolean) => {
     if (done || v === paused) return;
+    if (v && (ending || s.phase === 'fulltime')) return;
     paused = v;
+    input.reset?.();
     $('pause').hidden = !v;
     coach?.setPaused(v);
     juice.setPaused(v);
@@ -176,8 +186,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   function defaultInput(): MatchInputSource {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
+    c.paused = () => paused;
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), mode: () => c.mode, extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -188,9 +199,19 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
-  $('forfeit').addEventListener('click', () => finish(true));
+  $('forfeit').addEventListener('click', () => {
+    if (!ending && s.phase !== 'fulltime') finish(true);
+  });
   const onVis = () => document.hidden && setPaused(true);
   document.addEventListener('visibilitychange', onVis);
+  // Losing focus (another window, an alert) pauses a one-human match, as hiding the tab does.
+  const onBlur = () => {
+    if (!(s.humans[0] && s.humans[1])) setPaused(true);
+  };
+  window.addEventListener('blur', onBlur);
+  // No browser menu on a right click anywhere over the match (the HUD buttons too, not just the canvas).
+  const onCtx = (e: Event) => e.preventDefault();
+  root.querySelector('.pitch-wrap')!.addEventListener('contextmenu', onCtx);
   const onKey = (e: KeyboardEvent) => paused && trapTab($('pause'), e);
   document.addEventListener('keydown', onKey);
 
@@ -320,19 +341,20 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     wrapEl.appendChild(skip);
     wrapEl.classList.add('replaying');
     hudEl.classList.add('replaying');
+    input.reset?.();
     replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
     // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
     r3.replayShot = { kind: 'low', goalX: h.goalX };
-    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-    hud.replay(`${h.label} · ${coarse ? 'tap' : 'click'} to skip`);
+    hud.replay(`${h.label} · ${coarsePointer() ? 'tap to skip' : hotseat ? 'click or Esc to skip' : 'click, Space or Esc to skip'}`);
     canvas.dataset.replay = h.kind;
     lastReplayTick = s.tick;
     shownThisStop = true;
-    announce(`Replay. ${h.label}.`);
+    announce(`Replay. ${h.label}. Press Escape to skip.`);
   }
 
   function endReplay() {
     if (!replay) return;
+    input.reset?.();
     replay.skip.remove();
     replay = null;
     wrapEl.classList.remove('replaying');
@@ -484,6 +506,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       bannerUntil = 0;
     }
     if (s.phase === 'fulltime') {
+      ending = true;
       banner('Full time', 99999);
       announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
@@ -505,6 +528,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     ro.disconnect();
     renderer.dispose();
     document.removeEventListener('visibilitychange', onVis);
+    window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('keydown', onReplayKey, true);
     replay?.skip.remove();

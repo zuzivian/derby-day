@@ -54,12 +54,16 @@ export const ZOOM_STEP = 1.12;
 export const LONG_MIN = 70;
 /** Long view tilt, degrees down: steeper than the broadcast view, so a wide frame keeps its depth. */
 export const LONG_ELEV = 46;
+/** On upright screens the long view looks more steeply down, so less of the frame is stand and car park. */
+export const LONG_ELEV_NARROW = 60;
 
 /** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
 const VFOV = 40;
 
 /** On upright screens the long view only needs this far either side of the ball across the pitch, m. */
 export const NARROW_BAND = 20;
+/** And reaches at most this far along the pitch from the ball (about 8 m past halfway from a goal kick). */
+export const NARROW_REACH = 56;
 
 /** The long view keeps every point it must show at least this far inside the frame (NDC, 0.88 = 12% in). */
 export const LONG_MARGIN = 0.88;
@@ -88,7 +92,10 @@ function placeBroadcast(cam: PerspectiveCamera, x: number, z: number, width: num
  * LONG_MARGIN inside its edges. Returns the camera's target and width. Points are scene x/z on the
  * ground. Used for the long view: the ball, the taker and his teammates up to past halfway.
  */
-export function fitLong(points: { x: number; z: number }[], aspect: number, elevDeg = LONG_ELEV, margin = LONG_MARGIN): { x: number; z: number; width: number } {
+export function fitLong(points: { x: number; z: number }[], aspect: number, elevDeg = LONG_ELEV, margin = LONG_MARGIN, top = margin): { x: number; z: number; width: number } {
+  // The points' box is centred between -margin (bottom, left, right) and `top`, which can be lower
+  // to keep the top of the frame clear (the HUD sits there on a phone).
+  const cy = (top - margin) / 2;
   let x = points.reduce((a, p) => a + p.x, 0) / points.length;
   let z = points.reduce((a, p) => a + p.z, 0) / points.length;
   let width = 40;
@@ -106,12 +113,12 @@ export function fitLong(points: { x: number; z: number }[], aspect: number, elev
         box.y1 = Math.max(box.y1, fitV.y);
       }
       // Move the target by the ground offset between the screen centre and the box centre.
-      fitRay.setFromCamera({ x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 } as Vector2, fitCam);
+      fitRay.setFromCamera({ x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 - cy } as Vector2, fitCam);
       if (!fitRay.ray.intersectPlane(fitGround, fitV)) break;
       x = fitV.x;
       z = fitV.z;
     }
-    if (box.x0 >= -margin && box.x1 <= margin && box.y0 >= -margin && box.y1 <= margin) break;
+    if (box.x0 >= -margin && box.x1 <= margin && box.y0 >= -margin && box.y1 <= top) break;
     width *= 1.04;
   }
   return { x, z, width };
@@ -257,7 +264,7 @@ export class MatchCamera {
       // Long view: up and out, framed so the ball, the taker and his teammates up to past halfway
       // are all in shot (fitLong), whatever the spot. The end camera keeps its own framing, wider.
       if (this.mode === 'broadcast') {
-        elev = LONG_ELEV;
+        elev = aspect < 1 ? LONG_ELEV_NARROW : LONG_ELEV;
         const fit = this.longFit(lv.points, aspect, !lv.corner);
         width = fit.width;
         tx = fit.x;
@@ -378,12 +385,14 @@ export class MatchCamera {
     // which frame the whole box.)
     if (band && aspect < 1 && points.length) {
       const b = points[0];
-      points = points.map((p) => ({ x: p.x, z: Math.max(b.z - NARROW_BAND, Math.min(b.z + NARROW_BAND, p.z)) }));
+      points = points.map((p) => ({ x: Math.max(b.x - NARROW_REACH, Math.min(b.x + NARROW_REACH, p.x)), z: Math.max(b.z - NARROW_BAND, Math.min(b.z + NARROW_BAND, p.z)) }));
     }
-    const key = `${aspect.toFixed(3)}|${points.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
+    const key = `${aspect.toFixed(3)}|${band}|${points.map((p) => `${p.x.toFixed(1)},${p.z.toFixed(1)}`).join(';')}`;
     if (key !== this.fitKey) {
       this.fitKey = key;
-      this.fit = fitLong(points, aspect);
+      // Upright phones: steeper, and the top fifth kept clear for the HUD
+      // column (a corner taker at the top right was right under Menu and Cam).
+      this.fit = aspect < 1 ? fitLong(points, aspect, LONG_ELEV_NARROW, LONG_MARGIN, band ? 0.8 : 0.6) : fitLong(points, aspect);
     }
     return this.fit;
   }

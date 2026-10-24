@@ -6,6 +6,7 @@
 // The only places this file touches the sim are createMatch(), step() and
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
+import { pack, unpack } from './pack.ts';
 import { FORMATION_IDS, HALF_SECONDS, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
@@ -273,6 +274,11 @@ export class ReplaySeeker {
 
   get warmed(): boolean {
     return this.warmState === null;
+  }
+
+  /** How far the background pass has got, in ticks: keyframes exist up to here, so seeks below it are cheap. */
+  get warmedTo(): number {
+    return this.warmState ? this.warmState.tick : this.replay.ticks;
   }
 
   private stepOnce(s: MatchState): void {
@@ -640,8 +646,23 @@ function checksum(b: Uint8Array): number {
  * 4: inputs carry `aim` (a click aims where the button went down) and `moved` (the pointer
  * really moved); switch player moved to the extra byte to make room. Version 3 codes still
  * open (recorded on an earlier sim, so flagged as from another version).
+ * 5: the input runs (the bulk of a code) are compressed with pack.ts, an adaptive range coder:
+ * same inputs, about half the length, so five full matches fit the Recent shelf and a code is
+ * easier to share. Version 4 codes still open unchanged.
+ *
+ * Layout of a format 5 body: version byte, seed (ivar), half length in ms (uvar), human team + 1
+ * (byte), SIM_VERSION (uvar), home and away teams, label, timestamp, score, goals, final hash
+ * (u32), tick count (uvar), then the raw length of the runs (uvar), the packed length (uvar) and
+ * the packed runs. A 4-byte checksum follows the body. pack.ts compresses bytes and knows nothing
+ * about inputs, so adding a HumanInput field never touches it.
+ *
+ * Adding a field (format 6 and later): each run is a flag byte F, then an extra byte E when F has
+ * F_EXT. F bit 128 is reserved and rejected; E bits 64 and 128 are free. Give the new field an E
+ * bit (or, once those run out, make E bit 128 mean "a second extra byte follows"), write its value
+ * after the existing fields, and read it only when `version >= 6`, so older codes decode as before.
+ * Bump REPLAY_VERSION, and SIM_VERSION too if the field changes what the sim does.
  */
-export const REPLAY_VERSION = 4;
+export const REPLAY_VERSION = 5;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
@@ -665,7 +686,14 @@ export function encodeReplay(r: Replay): string {
   }
   w.u32(r.fp);
   w.uvar(r.ticks);
-  writeRuns(w, r.runs);
+  // Format 5: the runs are written to their own buffer and packed.
+  const rw = new Writer();
+  writeRuns(rw, r.runs);
+  const raw = rw.bytes();
+  const packed = pack(raw);
+  w.uvar(raw.length);
+  w.uvar(packed.length);
+  for (const b of packed) w.byte(b);
   const body = w.bytes();
   const out = new Uint8Array(body.length + 4);
   out.set(body);
@@ -724,7 +752,17 @@ function decodeBody(code: string): Replay {
   const fp = r.u32();
   const ticks = r.uvar();
   if (ticks > MAX_TICKS) throw new Error('Replay code is damaged or cut short.');
-  const runs = readRuns(r, ticks, version);
+  let runs: InputRun[];
+  if (version >= 5) {
+    const rawLen = r.uvar();
+    const packedLen = r.uvar();
+    if (rawLen > MAX_TICKS * 32 || packedLen > rawLen + 64) throw new Error('Replay code is damaged or cut short.');
+    const packed = new Uint8Array(packedLen);
+    for (let i = 0; i < packedLen; i++) packed[i] = r.byte();
+    const rr = new Reader(unpack(packed, rawLen));
+    runs = readRuns(rr, ticks, version);
+    if (!rr.done) throw new Error('Replay code is damaged or cut short.');
+  } else runs = readRuns(r, ticks, version);
   if (!r.done) throw new Error('Replay code is damaged or cut short.');
   return { seed, halfSeconds, humanTeam, home, away, ticks, runs, goals, score, fp, label, at, sim };
 }
@@ -746,8 +784,12 @@ export interface StoredReplay {
 }
 
 export const KEEP_REPLAYS = 5;
-/** Total characters of the stored JSON. */
-export const KEEP_CHARS = 300_000;
+/**
+ * Total characters of the stored JSON for KEEP_REPLAYS replays. A full match's code is about 45-70K
+ * characters since format 5 (pack.ts; it was 70-117K), so five fit with room to spare, well within
+ * a browser's roughly 5M characters of localStorage.
+ */
+export const KEEP_CHARS = 500_000;
 
 /** Newest last. Adds `entry`, then drops the oldest until there are at most `maxCount` and the JSON fits `maxChars`. */
 export function addRecent(list: StoredReplay[], entry: StoredReplay, maxCount = KEEP_REPLAYS, maxChars = KEEP_CHARS): StoredReplay[] {
