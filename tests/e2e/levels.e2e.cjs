@@ -33,7 +33,7 @@ test('levels: a fresh club shows only Home and Kick off, with a level 1 XP bar',
   expect(await bar.getAttribute('aria-valuemin'), 'valuemin').toBe('0');
   expect(await bar.getAttribute('aria-valuemax'), 'valuemax').toBe('100');
   expect(await bar.getAttribute('aria-valuetext'), 'valuetext').toMatch(/Level 1, 0 of 100 XP/);
-  expect(await page.locator(SEL.levelBadge).innerText(), 'badge').toBe('1');
+  expect(await page.locator('.level-badge').innerText(), 'badge').toBe('1');
   // Locked controls are hidden, not disabled.
   expect(await page.locator(SEL.playPractice).count(), 'no Practice yet').toBe(0);
   expect(await page.locator(SEL.playLocal2p).count(), 'no Local 2P yet').toBe(0);

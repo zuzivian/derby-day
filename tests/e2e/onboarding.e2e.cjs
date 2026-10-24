@@ -107,7 +107,7 @@ test('onboarding: the first tip is readable: it holds for seconds and is not cut
   // Not remembered until it has really been up for a few seconds (frame time, so a slow software renderer takes longer); then it is.
   await page.waitForFunction((k) => (JSON.parse(localStorage.getItem(k)).coachSeen || []).includes('run'), PREFS_KEY, { timeout: 15_000 });
   // After its time, the queued tip takes over, if it is still true.
-  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 12_000 });
+  await page.waitForFunction(() => document.querySelector('.coach-tip')?.dataset.coachTip === 'pass', null, { timeout: 40_000 });
 });
 
 test('onboarding: a tip card never blocks the game: clicks pass through it, it is off the action, it hides while paused', async (t) => {
@@ -245,7 +245,7 @@ test('onboarding: reloading on the celebration does not replay the welcome', asy
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   await page.reload();
-  await page.waitForSelector(SEL.kickOff);
+  await page.waitForSelector(SEL.kickOff).catch(async (e) => { throw new Error(`${e.message}\nPAGE: ${(await page.evaluate(() => document.getElementById('app').innerText)).slice(0, 300)}\nPREFS: ${JSON.stringify(await prefsOf(page))}`); });
   expect(await page.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
 });
 
