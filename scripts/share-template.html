@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #2f7d4a; font-family: 'Arial Black', 'Liberation Sans', 'Helvetica Neue', Arial, sans-serif; color: #f3f6f1; position: relative; }
+  .stripes { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, #2f7d4a 0 100px, #388a54 100px 200px); }
+  .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 40%, rgba(0,0,0,0) 40%, rgba(10,24,16,.55) 100%); }
+  svg.lines { position: absolute; inset: 0; width: 1200px; height: 630px; }
+  .panel { position: absolute; left: 70px; top: 120px; width: 700px; }
+  h1 { margin: 0; font-size: 150px; line-height: .9; font-weight: 900; font-style: italic; letter-spacing: -2px; text-transform: uppercase; text-shadow: 0 8px 0 #17223a; }
+  h1 span { display: block; color: #ffd60a; }
+  p { margin: 28px 0 0; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: 700; font-size: 38px; line-height: 1.2; max-width: 640px; text-shadow: 0 3px 0 rgba(23,34,58,.7); }
+  .crest { position: absolute; right: 90px; top: 110px; width: 340px; height: 340px; filter: drop-shadow(0 18px 0 rgba(23,34,58,.55)); transform: rotate(-6deg); }
+  .url { position: absolute; left: 70px; bottom: 44px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: 700; font-size: 30px; letter-spacing: .04em; background: #17223a; padding: 10px 22px; border-radius: 10px; }
+  .tag { position: absolute; right: 70px; bottom: 44px; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: 700; font-size: 26px; background: #c22d20; padding: 10px 22px; border-radius: 10px; text-transform: uppercase; letter-spacing: .08em; }
+</style>
+<div class="stripes"></div>
+<svg class="lines" viewBox="0 0 1200 630" fill="none" stroke="rgba(243,246,241,.28)" stroke-width="6">
+  <rect x="30" y="30" width="1140" height="570"/><path d="M600 30v570"/><circle cx="600" cy="315" r="120"/>
+  <rect x="30" y="165" width="170" height="300"/><rect x="1000" y="165" width="170" height="300"/>
+</svg>
+<div class="vignette"></div>
+<div class="panel"><h1>Derby<span>Day</span></h1><p>Run a football club. Play every match yourself, with the mouse.</p></div>
+<div class="crest"><!--CREST--></div>
+<div class="url">derby.natwong.dev</div><div class="tag">Free in your browser</div>

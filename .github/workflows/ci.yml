@@ -44,6 +44,10 @@ jobs:
       - name: Build
         run: bun run build
 
+      # Fails if dist/index.html grows past its size budget (scripts/size-budget.ts) and prints the size.
+      - name: Page size budget
+        run: bun run size
+
       # Headless CPU-vs-CPU matches. --assert fails the job if goals/match leaves 1.5 to 6
       # or passes/match drops below 80, which catches broken sim tuning.
       - name: Balance smoke test

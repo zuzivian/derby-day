@@ -9,8 +9,9 @@
     "build": "bun run scripts/build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p .",
-    "check": "bun run typecheck && bun test && bun run build",
+    "check": "bun run typecheck && bun test && bun run build && bun run size",
     "balance": "bun run scripts/balance.ts",
-    "e2e": "bun run build && node tests/e2e/run.cjs"
+    "e2e": "bun run build && node tests/e2e/run.cjs",
+    "size": "bun run scripts/size-budget.ts"
   }
 }
