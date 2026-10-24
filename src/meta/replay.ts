@@ -649,6 +649,18 @@ function checksum(b: Uint8Array): number {
  * 5: the input runs (the bulk of a code) are compressed with pack.ts, an adaptive range coder:
  * same inputs, about half the length, so five full matches fit the Recent shelf and a code is
  * easier to share. Version 4 codes still open unchanged.
+ *
+ * Layout of a format 5 body: version byte, seed (ivar), half length in ms (uvar), human team + 1
+ * (byte), SIM_VERSION (uvar), home and away teams, label, timestamp, score, goals, final hash
+ * (u32), tick count (uvar), then the raw length of the runs (uvar), the packed length (uvar) and
+ * the packed runs. A 4-byte checksum follows the body. pack.ts compresses bytes and knows nothing
+ * about inputs, so adding a HumanInput field never touches it.
+ *
+ * Adding a field (format 6 and later): each run is a flag byte F, then an extra byte E when F has
+ * F_EXT. F bit 128 is reserved and rejected; E bits 64 and 128 are free. Give the new field an E
+ * bit (or, once those run out, make E bit 128 mean "a second extra byte follows"), write its value
+ * after the existing fields, and read it only when `version >= 6`, so older codes decode as before.
+ * Bump REPLAY_VERSION, and SIM_VERSION too if the field changes what the sim does.
  */
 export const REPLAY_VERSION = 5;
 
