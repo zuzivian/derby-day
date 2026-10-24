@@ -34,12 +34,21 @@ const toastRegion = () =>
   });
 
 let announceTimer = 0;
-/** Say something to screen readers without showing it. Repeating the same text still announces. */
+let pending: string[] = [];
+/**
+ * Say something to screen readers without showing it. Repeating the same text still announces.
+ * Messages that arrive before the last one is spoken are joined, not replaced (a card and the free
+ * kick it brings come in the same tick; the card used to be lost).
+ */
 export function announce(text: string): void {
   const el = announcer();
+  if (!pending.includes(text)) pending.push(text);
   el.textContent = '';
   clearTimeout(announceTimer);
-  announceTimer = window.setTimeout(() => (el.textContent = text), 60);
+  announceTimer = window.setTimeout(() => {
+    el.textContent = pending.join(' ');
+    pending = [];
+  }, 60);
 }
 
 let toastTimer = 0;

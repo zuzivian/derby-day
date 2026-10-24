@@ -15,7 +15,7 @@
 
 import type { HumanInput, TeamInputs } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
-import { CLICK_MS, latchedPoint, leftRelease, loftPower, MOVE_PX, shotPower, SHOT_FULL_MS, type WorldPicker } from './input.ts';
+import { CLICK_MS, controlKeepsKey, latchedPoint, leftRelease, loftPower, MOVE_PX, shotPower, SHOT_FULL_MS, type WorldPicker } from './input.ts';
 
 export interface PadKeys {
   up: string[];
@@ -78,6 +78,15 @@ class Pad {
   /** The loft in progress began on the mouse's left button, so a quick click is a pass. */
   loftIsClick = false;
   constructor(readonly keys: PadKeys) {}
+
+  /** Drop everything queued or held (pause, resume, replays). */
+  reset(): void {
+    this.held.clear();
+    this.pass = this.tackle = this.select = this.switchReq = false;
+    this.shoot = this.loft = null;
+    this.shotStart = this.loftStart = null;
+    this.loftIsClick = false;
+  }
 
   has(list: string[]): boolean {
     return list.some((k) => this.held.has(k));
@@ -145,6 +154,8 @@ export class HotseatInput {
         if (!e.repeat) onPause();
         return;
       }
+      // A focused control (the pause menu, the HUD) keeps the keys it uses; the rest still play.
+      if (controlKeepsKey(e.target, canvas, e.key)) return;
       for (const team of [0, 1] as const) {
         const pad = this.pads[team];
         if (!all(pad).includes(e.code)) continue;
@@ -213,6 +224,11 @@ export class HotseatInput {
       if (e.button === 2) p1.releaseShot();
     });
     on(canvas, 'contextmenu', (e) => e.preventDefault());
+  }
+
+  /** Forget both players' queued kicks, charges and held keys (pause, resume, replays). */
+  reset(): void {
+    for (const p of this.pads) p.reset();
   }
 
   /** Charge progress (shot or loft) per player, 0..1. */

@@ -172,6 +172,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
         const pads = new HotseatInput(canvas, renderer, (team) => s.controlled[team] >= 0 && s.ball.owner === s.controlled[team], togglePause);
         return {
           take: () => pads.take(),
+          reset: () => pads.reset(),
           extras: () => {
             // Where each human's player is, for tests and tooling (the canvas has no DOM for players).
             for (const t of [0, 1] as const) {

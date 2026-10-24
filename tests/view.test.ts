@@ -271,7 +271,7 @@ describe('camera', () => {
         // The ball, the corners of the strip (touchline to touchline, from behind the ball to 20 m past
         // halfway), and a full-back on each touchline level with the ball.
         // On upright screens only a band 20 m either side of the ball across the pitch (NARROW_BAND).
-        const band = (q: { x: number; y: number }) => (aspect < 1 ? { x: q.x, y: Math.max(y - 20, Math.min(y + 20, q.y)) } : q);
+        const band = (q: { x: number; y: number }) => (aspect < 1 ? { x: Math.max(x - 56, Math.min(x + 56, q.x)), y: Math.max(y - 20, Math.min(y + 20, q.y)) } : q);
         const must = [{ x, y }, ...[...lv.points, { x: x + 8, y: 64 }, { x: x + 8, y: 4 }].map(band)];
         for (const p of must) {
           const v = new Vector3(p.x - PITCH_W / 2, 0, p.y - PITCH_H / 2).project(c.camera);

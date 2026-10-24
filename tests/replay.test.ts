@@ -9,6 +9,7 @@ import {
   finalHash,
   formatSize,
   inputsEqual,
+  KEEP_CHARS,
   KEYFRAME_EVERY,
   quantiseInput,
   REPLAY_VERSION,
@@ -20,6 +21,8 @@ import {
   type StoredReplay,
 } from '../src/meta/replay.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
+import { HALF_SECONDS } from '../src/sim/constants.ts';
+import { pack, unpack } from '../src/meta/pack.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
 
 function teams(seed: number) {
@@ -364,13 +367,50 @@ describe('keeping the last few', () => {
     expect(list.map((e) => e.id)).toEqual(['r2', 'r1']);
   });
 
-  test('real replays: five fit well under the cap', () => {
+  test('real replays: five full-length matches with a restless mouse fit under the cap', () => {
+    // A pointer that wanders every tick and stops now and then, as a player's does (the smooth
+    // scripted cursor compresses far better than real play, so it would flatter the codec).
+    const mouse = (seed: number) => {
+      let r = seed;
+      const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      let cx = 50, cy = 34, vx = 0, vy = 0, still = 0;
+      return (t: number): HumanInput => {
+        if (still > 0) still--;
+        else {
+          vx = vx * 0.9 + (rnd() - 0.5) * 0.25;
+          vy = vy * 0.9 + (rnd() - 0.5) * 0.25;
+          cx = Math.max(0, Math.min(105, cx + vx));
+          cy = Math.max(0, Math.min(68, cy + vy));
+          if (rnd() < 0.01) still = Math.floor(rnd() * 90);
+        }
+        const i: HumanInput = { cursor: { x: cx, y: cy } };
+        if (still === 0) i.moved = true;
+        if (t % 97 === 0) i.pass = true;
+        if (t % 400 === 0) i.shoot = 0.7;
+        return i;
+      };
+    };
     let list: StoredReplay[] = [];
+    let biggest = 0;
     for (let seed = 50; seed < 56; seed++) {
-      const { replay } = playLive(seed, 60);
-      list = addRecent(list, { id: replayId(replay), at: replay.at, code: encodeReplay(replay) });
+      const { replay } = playLive(seed, HALF_SECONDS, mouse(seed));
+      const code = encodeReplay(replay);
+      biggest = Math.max(biggest, code.length);
+      list = addRecent(list, { id: replayId(replay), at: replay.at, code });
     }
     expect(list.length).toBe(5);
-    expect(JSON.stringify(list).length).toBeLessThan(300_000);
+    expect(JSON.stringify(list).length).toBeLessThan(KEEP_CHARS);
+    expect(biggest).toBeLessThan(60_000);
+  });
+
+  test('format 5 packs the input runs and plays back exactly; random bytes round-trip through pack', () => {
+    const { s, replay } = playLive(61, 40);
+    const back = decodeReplay(encodeReplay(replay));
+    expect(back.runs).toEqual(replay.runs);
+    expect(finalHash(replayTo(back, back.ticks))).toBe(finalHash(s));
+    for (const n of [0, 1, 2, 255, 4096, 30000]) {
+      const a = new Uint8Array(n).map((_, i) => (i * 2654435761) >>> 24);
+      expect([...unpack(pack(a), n)]).toEqual([...a]);
+    }
   });
 });
