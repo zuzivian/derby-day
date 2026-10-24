@@ -107,6 +107,9 @@ test('shootout: a drawn cup tie opens a live shootout, plays through with the mo
   expect(tie.winner === save.club.id, 'winner follows the shootout').toBe(mine > theirs);
   expect(save.cup.round, 'the round was completed').toBe(1);
   expect(await page.locator(SEL.modal).innerText(), 'result mentions penalties').toMatch(/penalties/);
+  // A tie settled on penalties is a win or a defeat, never a draw.
+  expect(await page.locator('#result-title').textContent(), 'headline follows the shootout').toBe(verdict === 'win' ? 'Victory' : 'Defeat');
+  expect(await page.locator('.modal .rs-pens').textContent(), 'shootout score under the score').toBe(`${a}–${b} on penalties`);
 });
 
 test('shootout: playable by keyboard alone (arrows aim, Space strikes or dives)', async (t) => {

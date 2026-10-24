@@ -62,7 +62,7 @@ function intakeRow(s: Save, e: IntakeEntry): string {
 }
 
 function section(title: string, body: string): string {
-  return `<section class="rv-section"><h3 class="eyebrow">${title}</h3>${body}</section>`;
+  return `<section class="rv-section"><h3 class="rv-section-title">${title}</h3>${body}</section>`;
 }
 
 /** True while the season review dialog should be on screen. */
@@ -72,17 +72,25 @@ export function reviewModal(app: App): string {
   const s = app.save;
   const rv = s.review;
   if (!rv || rv.seen) return '';
+  // Hero (title and the season in numbers), then each section as a card. The
+  // middle scrolls inside the dialog so "Start season" never leaves view.
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
     <div class="modal-card review-card">
-      <div class="eyebrow">End of season</div>
-      <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
-      ${recordSection(rv)}
-      ${section('Who changed', changesBody(rv))}
-      ${rv.retired.length ? section('Retirements', `<ul class="rv-list">${rv.retired.map((e) => `<li class="rv-row"><span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age}</span></span><span class="rv-nums muted">OVR ${e.overall}</span></li>`).join('')}</ul>`) : ''}
-      ${section('Academy intake', intakeBody(s, rv))}
-      ${ladderBody(rv)}
-      <button class="btn primary big" data-action="review-close">Start season ${rv.year + 1}</button>
+      <div class="rv-scroll">
+        <header class="rv-hero">
+          <div class="rv-eyebrow">End of season</div>
+          <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
+          ${recordSection(rv)}
+        </header>
+        <div class="rv-body">
+          ${section('Who changed', changesBody(rv))}
+          ${rv.retired.length ? section('Retirements', `<ul class="rv-list">${rv.retired.map((e) => `<li class="rv-row"><span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age}</span></span><span class="rv-nums muted">OVR ${e.overall}</span></li>`).join('')}</ul>`) : ''}
+          ${section('Academy intake', intakeBody(s, rv))}
+          ${ladderBody(rv)}
+        </div>
+      </div>
+      <footer class="rv-foot"><button class="btn primary big" data-action="review-close">Start season ${rv.year + 1}</button></footer>
     </div>
   </div>`;
 }
@@ -90,12 +98,14 @@ export function reviewModal(app: App): string {
 function recordSection(rv: SeasonReview): string {
   const r = rv.record;
   const elo = r.eloEnd - r.eloStart;
-  return `<div class="rv-record" aria-label="Season record">
-    ${r.played
-      ? `<span><b>${r.won}W ${r.drawn}D ${r.lost}L</b> in ${r.played} match${r.played === 1 ? '' : 'es'}</span><span>Goals <b>${r.gf}–${r.ga}</b></span><span>Elo <b>${r.eloStart} → ${r.eloEnd}</b> <span class="${elo >= 0 ? 'up' : 'down'}">(${sign(elo)})</span></span>`
-      : `<span class="muted">No ranked or competition matches this season.</span>`}
-    ${r.trophies.length ? `<span class="rv-trophy">Trophies: <b>${r.trophies.map(esc).join(', ')}</b></span>` : ''}
-  </div>`;
+  if (!r.played) return `<p class="rv-record-empty">No ranked or competition matches this season.</p>`;
+  const tile = (label: string, value: string, sub = '', cls = '') => `<div class="rv-tile${cls}"><dt>${label}</dt><dd>${value}</dd>${sub ? `<dd class="rv-tile-sub">${sub}</dd>` : ''}</div>`;
+  return `<dl class="rv-record" aria-label="Season record">
+    ${tile('Record', `${r.won}W ${r.drawn}D ${r.lost}L`, `in ${r.played} match${r.played === 1 ? '' : 'es'}`)}
+    ${tile('Goals', `${r.gf}–${r.ga}`, `${sign(r.gf - r.ga)} difference`)}
+    ${tile('Elo', `${r.eloEnd}`, `${r.eloStart} → ${r.eloEnd} <span class="${elo >= 0 ? 'up' : 'down'}">(${sign(elo)})</span>`)}
+    ${r.trophies.length ? tile('Trophies', r.trophies.map(esc).join(', '), '', ' rv-trophy') : ''}
+  </dl>`;
 }
 
 function changesBody(rv: SeasonReview): string {

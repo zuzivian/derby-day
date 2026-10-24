@@ -1,0 +1,53 @@
+/* Coach tips over the pitch and the spotlight on a newly revealed tab (src/client/coach.ts). */
+.coach-tip {
+  position: absolute; left: 0; right: 0; top: 64px; margin-inline: auto; width: max-content; z-index: 5; display: flex; align-items: flex-start; gap: 8px;
+  max-width: min(520px, calc(100% - 20px)); padding: 9px 10px; border-radius: 8px; color: #fff; pointer-events: none;
+  background: rgba(8, 12, 11, .82); border: 1px solid rgba(255, 255, 255, .22); box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+  font: 500 13px/1.35 'Barlow', system-ui, sans-serif; opacity: 0; transform: translateY(-6px); transition: opacity .25s, transform .25s;
+}
+.coach-tip.paused { visibility: hidden; }
+.coach-tip.on { opacity: 1; transform: none; }
+.coach-tip[hidden] { display: none; }
+.coach-tip b { color: #ffb02e; margin-right: 4px; }
+.coach-icon { flex: none; width: 20px; height: 20px; border-radius: 50%; background: #ffb02e; color: #111; font: 800 13px/20px 'Barlow', system-ui, sans-serif; text-align: center; font-style: italic; }
+.coach-text { flex: 1; min-width: 0; }
+.coach-x {
+  flex: none; appearance: none; border: 1px solid rgba(255, 255, 255, .4); background: transparent; color: #fff; border-radius: 6px;
+  padding: 3px 8px; font: 700 12px/1.2 'Barlow', system-ui, sans-serif; cursor: pointer; pointer-events: auto;
+}
+.coach-x:hover { background: rgba(255, 255, 255, .16); }
+@media (max-width: 640px) {
+  .coach-tip { left: 6px; right: 6px; top: 64px; width: auto; max-width: none; font-size: 12px; padding: 7px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .coach-tip { transition: none; transform: none; }
+}
+
+/* A tab that just opened gets a ring and a card under it, once. */
+.tab.coach-spot { position: relative; box-shadow: inset 0 0 0 3px var(--accent, #ffb02e); animation: coach-pulse 1.6s ease-in-out infinite; }
+@keyframes coach-pulse { 50% { box-shadow: inset 0 0 0 3px transparent; } }
+.tab-mark {
+  position: fixed; z-index: 40; width: min(280px, calc(100vw - 16px)); display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  padding: 12px 14px; border-radius: 10px; background: var(--surface, #fff); color: var(--ink, #111); border: 2px solid var(--accent, #ffb02e);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28); font-size: 14px; line-height: 1.35;
+}
+.tab-mark::before {
+  content: ''; position: absolute; top: -9px; left: calc(var(--arrow-x, 20px) - 8px); width: 14px; height: 14px; transform: rotate(45deg);
+  background: var(--surface, #fff); border-left: 2px solid var(--accent, #ffb02e); border-top: 2px solid var(--accent, #ffb02e);
+}
+.tab-mark b { font-size: 15px; }
+@media (prefers-reduced-motion: reduce) {
+  .tab.coach-spot { animation: none; }
+}
+
+/* First-run screens (src/client/onboarding.ts) */
+.ob-celebrate .ob-title { color: var(--accent); }
+.ob-score { font-family: var(--font-display); font-weight: 900; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ob-xp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: 10px; background: var(--surface-2); }
+.ob-xp-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.ob-xp-bar i { display: block; height: 100%; background: var(--accent); }
+.ob-welcome .kickoff { display: flex; width: 100%; justify-content: center; }
+.ob-welcome .ob-kit { justify-content: center; }
+
+/* The hero's middle while there is no win-chance gauge (warm-up friendlies, the first ranked matches). */
+.hero-vs { font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: 44px; line-height: 1; color: rgba(255, 255, 255, .85); text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
