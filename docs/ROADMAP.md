@@ -93,7 +93,7 @@ Goal: two people, two browsers, one fair match.
 
 ### Multiplayer spike (October 2026)
 
-Two humans can now play one match, in two ways, from the Club tab:
+Two humans can now play one match, in two ways, from the **vs Player** card on Home (open from club level 1):
 
 - **Local 2P:** hot-seat on one keyboard against a ladder club you pick. Player 1 has W A S D, Space, F, E and Left Shift (or the mouse); player 2 has the arrows, Enter or `/`, `.`, `,` and Right Shift. No Elo, no rewards.
 - **Link two tabs:** two tabs of the same browser play each other over `BroadcastChannel`, with no server. One tab hosts and shows a 4-letter room code; the other joins with it. The host sends the seed and both team setups, both tabs build the same `MatchState`, and from then on only inputs cross between them.
@@ -126,7 +126,7 @@ How it works: `MatchState` has per-team control (`humans`, `controlled`), and `s
 
 ## Club levels (October 2026)
 
-The club opens up as it gains experience. A new player starts with the Club screen, the Squad, ranked matches and two practice levels; everything else arrives with club levels 2 to 12, and small perks keep the levels meaningful up to 99. The rules are in `src/meta/levels.ts` (pure, unit-tested in `tests/levels.test.ts`), the UI in `src/client/levels.ts`. Match controls (sprint, through ball, chip) are never gated.
+The club opens up as it gains experience. A new player starts with the Home and Club screens, the Squad, ranked matches, two practice levels and both ways to play another human (vs Player); everything else arrives with club levels 2 to 10, and small perks keep the levels meaningful up to 99. The rules are in `src/meta/levels.ts` (pure, unit-tested in `tests/levels.test.ts`), the UI in `src/client/levels.ts`. Match controls (sprint, through ball, chip) are never gated.
 
 **The curve.** Clearing level L takes 100 × L XP: level 1 → 2 is 100, 2 → 3 is 200, 98 → 99 is 9,800. Reaching level L takes 50 × L × (L − 1) in total, so level 99 is 485,100 XP. Level 99 is the cap: its bar is 9,900 long and reads "Max level" when full, and XP keeps counting for a future prestige. Functions: `xpToClear(level)`, `levelForXp(totalXp)` → `{ level, intoLevel, needed, maxed }`, `totalXpForLevel(level)`.
 
@@ -134,20 +134,20 @@ The club opens up as it gains experience. A new player starts with the Club scre
 
 | Level | Kind | Unlock | What it does |
 |---|---|---|---|
-| 1 | Feature | Club screen | Your next fixture, Elo, form and club news. |
+| 1 | Feature | Home and Club | Kick off your next match from Home; club news and this list live under Club. |
 | 1 | Feature | Squad | See your players and pick the starting six. |
 | 1 | Feature | Ranked matches | Play ladder clubs near your Elo, live. |
 | 1 | Feature | Practice (Easy, Normal) | Friendlies against the CPU. No Elo. |
+| 1 | Feature | Local 2P | vs Player on one screen: two humans, one keyboard. Nothing recorded. |
+| 1 | Feature | Link two tabs | vs Player in two tabs of this browser, in lockstep. Nothing recorded. |
 | 2 | Feature | Training | Spend the sessions you earn on player attributes. |
 | 3 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
 | 4 | Feature | Ladder | The full Elo table of all 16 clubs. |
 | 5 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
 | 5 | Feature | Practice Hard | A tougher CPU friendly: the Veterans Select. |
 | 6 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
-| 7 | Feature | Local 2P | Two humans on one keyboard. Nothing recorded. |
 | 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
 | 10 | Feature | Season calendar and academy | Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive. |
-| 12 | Feature | Link two tabs | Play another tab of this browser in lockstep. Nothing recorded. |
 | 15 | Perk | Squad of 15 | Room for one more player (14 to 15). |
 | 18 | Perk | Crest pattern | Change your crest pattern any time from Club news. |
 | 20 | Perk | Deeper market | Two extra players on the transfer market (10 to 12). |
@@ -164,7 +164,7 @@ The club opens up as it gains experience. A new player starts with the Club scre
 | 80 | Perk | Scouting network | Two more players on the transfer market (12 to 14). |
 | 99 | Perk | Legend badge | Level 99. The bar keeps counting toward a future prestige. |
 
-The schedule is the owner's, unchanged. Two notes on it: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
+The schedule is the owner's. One change since the first cut (October 2026 home redesign): Local 2P and Link two tabs moved from levels 7 and 12 to level 1, because "vs Player" is one of the home screen's play modes from the start; level-1 features never open a level-up dialog, so older saves just find them there. Two notes on it: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
 
 A feature is available when the club's level reaches it, when the save is already using it (a cup or league in progress, a trophy of that kind, a running calendar or academy offers), or when it was unlocked once before (`unlocksSeen`). So nothing is ever taken away, even if the XP table is rebalanced. Locked tabs and buttons are hidden, not disabled.
 
@@ -183,7 +183,7 @@ A feature is available when the club's level reaches it, when the save is alread
 
 XP is per match whatever the match length, like money and Elo. A cup tie settled on penalties counts as the draw it was.
 
-**Pacing.** Expected values (`levelForXp` over a modelled run): a typical ranked match against clubs near your Elo, at 45% wins, 25% draws, 30% losses, 1.6 goals scored and a clean sheet a quarter of the time, is worth 110 XP, plus about 12 more once its ~2.5 training sessions are spent. The tutorial's 100 comes first and the first win and first signing add 150 early. "Mixed" plays one cup tie in four matches from level 5 and adds league matchdays from level 8. Real time assumes 2 × 2-minute matches, about 5 minutes each with kick-off, half-time, the result and a minute in the menus.
+**Pacing.** Expected values (`levelForXp` over a modelled run): a typical ranked match against clubs near your Elo, at 45% wins, 25% draws, 30% losses, 1.6 goals scored and a clean sheet a quarter of the time, is worth 110 XP, plus about 12 more once its ~2.5 training sessions are spent. The tutorial's 100 comes first and the first win and first signing add 150 early. "Mixed" plays one cup tie in four matches from level 5 and adds league matchdays from level 8. Real time assumes the standard 2 × 3-minute match (the old length selector is gone), about 5 minutes each with kick-off, half-time, the result and a minute in the menus.
 
 | Level | Total XP | Matches, ranked only | Matches, mixed | Time (mixed) |
 |---|---|---|---|---|
@@ -200,7 +200,7 @@ So the first session reaches level 2 (finishing the training ground alone does i
 
 **Saves from before levels.** `ensureLevelFields` runs at boot. A save with no `xp` gets retro XP from what it records, using the same table: every match in its history (forfeits look like 0–3 defeats there, so they count as defeats), training sessions spent (sessions earned minus sessions left), cup runs and league seasons its history and trophies prove (a finished season without a title gets the bottom-place bonus), and the milestones it shows (first ranked win, a signing in the news, a trophy). The training-ground milestone can't be known, so it stays claimable from Replay tutorial. Everything its level reaches, plus anything it is using, is marked as seen, so an old save neither loses a feature in use nor gets a flood of level-up dialogs. New fields (`xp`, `unlocksSeen`, `milestones`) are optional and `isSave` accepts saves without them.
 
-**UI.** The header shows a level badge (a button to the Club level panel) and an XP bar ("Level 4 · 230 / 400 XP", `role="progressbar"` with `aria-valuenow`, `-min`, `-max` and `-valuetext`). The Club screen has a Club level panel: the next unlock ("The Cup and Practice Hard at level 5 — 340 XP to go"), how XP is earned, and every unlock and perk marked Unlocked, Next or its level. The result dialog lists the XP ("+150 XP: win 120, 3 goals 30") and any level gained. Crossing a level that unlocks something opens a level-up dialog after the result: it names the unlocks, is announced through the live region, traps focus, closes with Esc or Later, and its main button goes straight to the new feature.
+**UI.** The header shows a level badge (a button to the Club level panel) and an XP bar ("Level 4 · 230 / 400 XP", `role="progressbar"` with `aria-valuenow`, `-min`, `-max` and `-valuetext`). The Club tab has a Club level panel: the next unlock ("The Cup and Practice Hard at level 5 — 340 XP to go"), how XP is earned, and every unlock and perk marked Unlocked, Next or its level. The result dialog lists the XP ("+150 XP: win 120, 3 goals 30") and any level gained. Crossing a level that unlocks something opens a level-up dialog after the result: it names the unlocks, is announced through the live region, traps focus, closes with Esc or Later, and its main button goes straight to the new feature.
 
 ## Phase 4: The economy between players (4–6 weeks)
 

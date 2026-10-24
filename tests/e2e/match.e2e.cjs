@@ -72,9 +72,9 @@ test('forfeiting a ranked match records a loss', async (t) => {
   await page.locator(SEL.modal).waitFor({ state: 'detached' });
 });
 
-test('keyboard only: Tab reaches "Kick off ranked" and Enter starts a match', async (t) => {
+test('keyboard only: Tab reaches "Kick off" and Enter starts a match', async (t) => {
   const page = await openApp(t);
-  await goTab(page, 'club');
+  await goTab(page, 'home');
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   let reached = false;
   for (let i = 0; i < 40 && !reached; i++) {

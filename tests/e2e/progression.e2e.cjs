@@ -29,7 +29,7 @@ function nearSeasonEndFullSquad(save) {
 
 /** A ranked match that ends at once by forfeiting (still counted: 0-3). */
 async function forfeitRanked(page) {
-  await goTab(page, 'club');
+  await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playRanked).click();
   await page.waitForSelector(SEL.pitch);
   await page.keyboard.press('Escape');
@@ -64,7 +64,8 @@ test('the 10th counted match rolls the season over and shows the review after th
   await page.locator(R.close).click();
   await page.locator(R.review).waitFor({ state: 'detached' });
   expect((await readSave(page)).review.seen, 'dismissal is saved').toBe(true);
-  // It can be reopened from the club screen.
+  // It can be reopened from the Club tab.
+  await goTab(page, SEL.clubScreen);
   await page.locator(R.reopen).click();
   await page.locator(R.review).waitFor();
 });

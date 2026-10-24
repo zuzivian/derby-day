@@ -1,8 +1,8 @@
 // HTML templates for the management screens. Pure functions of app state.
 
 import { FORMATION, type Role } from '../sim/constants.ts';
-import { teamStrength, type LadderClub, ladderSquad, autoLineup } from '../meta/club.ts';
-import { expectedScore, kFactor } from '../meta/elo.ts';
+import { teamStrength, type LadderClub } from '../meta/club.ts';
+import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, type UnlockId } from '../meta/levels.ts';
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
@@ -15,7 +15,8 @@ import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
 
-export type Screen = 'club' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions';
+/** 'home' is the first view (kick off, play modes); 'club' holds the secondary content (news, replays, club level, tutorial, reset). */
+export type Screen = 'home' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions' | 'club';
 
 export interface ResultView {
   ranked: boolean;
@@ -55,6 +56,7 @@ export const esc = (t: string | number): string =>
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
 const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
+  home: ['club'],
   club: ['club'],
   squad: ['squad'],
   transfers: ['transfers'],
@@ -66,12 +68,13 @@ const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
 export const screenUnlocked = (save: Save, screen: Screen): boolean => TAB_UNLOCK[screen].some((id) => isUnlocked(save, id));
 
 const TABS: { id: Screen; label: string }[] = [
-  { id: 'club', label: 'Club' },
+  { id: 'home', label: 'Home' },
   { id: 'squad', label: 'Squad' },
   { id: 'transfers', label: 'Transfers' },
   { id: 'training', label: 'Training' },
   { id: 'ladder', label: 'Ladder' },
   { id: 'competitions', label: 'Competitions' },
+  { id: 'club', label: 'Club' },
 ];
 
 export const PRACTICE = [
@@ -87,23 +90,47 @@ function rankOf(save: Save): number {
   return ladderTable(save).findIndex((r) => r.you) + 1;
 }
 
+// ---------------------------------------------------------------------------
+// The status strip: the one row of club status above the tabs. It grows with
+// the club: sessions at Training (level 2), money at Transfers (3), the ladder
+// position at the Ladder (4), the season week with the calendar (10).
+
+const stripIcon = (body: string) => `<svg class="icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">${body}</svg>`;
+const COIN = stripIcon('<circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".18"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 7.5c-2.6-.6-3.6.6-3.9 2.5L9.7 16.5M8.5 11.5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>');
+const LADDER = stripIcon('<path d="M7 3v18M17 3v18M7 7h10M7 12h10M7 17h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>');
+const CAL = stripIcon('<rect x="3.5" y="5" width="17" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3.5 10h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>');
+
+/** Training sessions as pips (up to 8 drawn), with the count beside them. */
+function sessionPips(n: number): string {
+  const drawn = Math.min(n, 8);
+  return `<div class="stat sessions" title="Training sessions">
+    <span class="pips" aria-hidden="true">${Array.from({ length: Math.max(drawn, 1) }, (_, i) => `<i class="${i < drawn ? 'on' : ''}"></i>`).join('')}</span>
+    <span class="stat-num" aria-hidden="true">${n}</span><span class="sr-only">${n} training session${n === 1 ? '' : 's'}</span>
+  </div>`;
+}
+
+function statusStrip(s: Save): string {
+  const c = s.club;
+  const items = [
+    levelChip(s),
+    isUnlocked(s, 'training') ? sessionPips(s.trainingPoints) : '',
+    isUnlocked(s, 'transfers') ? `<div class="stat money" title="Club florins">${COIN}<span class="stat-num" aria-hidden="true">${formatMoney(s.budget)}</span><span class="sr-only">Money: ${formatMoney(s.budget)}</span></div>` : '',
+    isUnlocked(s, 'ladder') ? `<div class="stat rank" title="Ladder position">${LADDER}<span class="stat-num" aria-hidden="true">#${rankOf(s)}</span><span class="sr-only">Ladder position ${rankOf(s)} of ${s.ladder.length + 1}</span></div>` : '',
+    isUnlocked(s, 'calendar') ? `<div class="stat week" title="Season and week">${CAL}<span class="stat-num" aria-hidden="true">S${s.year ?? 1} · W${weekOfYear(s)}</span><span class="sr-only">Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</span></div>` : '',
+  ].filter(Boolean);
+  const chip = `<div class="club-chip">${crestSvg(c, 30)}<div class="club-chip-text"><div class="club-name">${esc(c.name)}</div><div class="club-elo">Elo <b>${c.elo}</b></div></div></div>`;
+  return `${chip}<div class="status-strip" role="group" aria-label="Club status">${items.join('')}</div>`;
+}
+
 export function shell(app: App, body: string): string {
   const s = app.save;
-  const c = s.club;
   // While the result or season review dialog is open everything behind it is inert, so focus can't leave it.
   const inert = app.result || levelUpOpen(app.save) || reviewOpen(app.save) ? ' inert' : '';
   return `
   <a class="skip-link" href="#main" data-action="skip-to-main"${inert}>Skip to main content</a>
   <header class="topbar"${inert}>
-    <div class="brand"><h1 class="wordmark">Derby Day</h1><span class="tagline">Run the club. Play the match.</span></div>
-    <div class="club-chip">
-      ${crestSvg(c, 34)}
-      <div class="club-chip-text">
-        <div class="club-name">${esc(c.name)}</div>
-        <div class="club-meta"><span>Elo <b>${c.elo}</b></span><span>#${rankOf(s)} of ${s.ladder.length + 1}</span><span title="Club florins">${formatMoney(s.budget)}</span><span>${s.trainingPoints} sessions</span></div>
-        ${levelChip(s)}
-      </div>
-    </div>
+    <h1 class="wordmark">Derby Day</h1>
+    ${statusStrip(s)}
   </header>
   <div class="tabs" role="tablist" aria-label="Sections"${inert}>
     ${TABS.filter((t) => screenUnlocked(s, t.id)).map((t) => {
@@ -148,54 +175,14 @@ function formChips(save: Save): string {
     .join('')}</ul>`;
 }
 
+/**
+ * The Club tab: everything that used to crowd the first view. Elo history and
+ * results, replays, the club level panel, club news, the tutorial and reset.
+ */
 export function clubScreen(app: App): string {
   const s = app.save;
-  const opp = app.nextOpp;
-  const oppSquad = ladderSquad(opp);
-  const ours = teamStrength(s.squad, s.lineup);
-  const theirs = teamStrength(oppSquad, autoLineup(oppSquad));
-  const p = expectedScore(s.club.elo, opp.elo);
-  const k = kFactor(s.club.played);
-  const winGain = Math.round(k * (1 - p));
-  const lossCost = Math.round(k * p);
   return `
   <div class="club-grid">
-    <article class="panel fixture">
-      <h2 class="eyebrow">Next ranked match</h2>
-      <div class="versus">
-        <div class="side">${crestSvg(s.club, 64)}<div class="side-name">${esc(s.club.name)}</div><div class="side-elo">Elo ${s.club.elo}</div></div>
-        <div class="vs">vs</div>
-        <div class="side">${crestSvg(opp, 64)}<div class="side-name">${esc(opp.name)}</div><div class="side-elo">Elo ${opp.elo}</div></div>
-      </div>
-      <div class="odds">
-        <div class="odds-bar" aria-hidden="true"><span style="width:${Math.round(p * 100)}%"></span></div>
-        <div class="odds-labels"><span>Expected score ${Math.round(p * 100)}%</span><span>Win +${winGain} · Lose −${lossCost}</span></div>
-      </div>
-      <dl class="facts">
-        <div><dt>Your XI</dt><dd>${ours}</dd></div>
-        <div><dt>Their XI</dt><dd>${theirs}</dd></div>
-        <div><dt>Format</dt><dd>6-a-side, boards</dd></div>
-      </dl>
-      <div class="actions">
-        <button class="btn primary big" data-action="play-ranked">Kick off ranked</button>
-        <label class="length">Match length
-          <select id="half-length" data-change="half">
-            ${[60, 120, 240].map((v) => `<option value="${v}"${app.prefs.halfSeconds === v ? ' selected' : ''}>${v === 60 ? '2 × 1 min' : v === 120 ? '2 × 2 min' : '2 × 4 min'}</option>`).join('')}
-          </select>
-        </label>
-      </div>
-      <div class="practice">
-        <span class="practice-label">Practice vs CPU, no Elo:</span>
-        ${PRACTICE.filter((x) => practiceUnlocked(s, x.id)).map((x) => `<button class="btn small" id="practice-${x.id}" data-action="play-practice" data-level="${x.id}">${x.label}</button>`).join('')}
-      </div>
-      ${isUnlocked(s, 'local2p') || isUnlocked(s, 'link') ? `<div class="practice">
-        <span class="practice-label">Two humans, no Elo:</span>
-        ${isUnlocked(s, 'local2p') ? '<button class="btn small" id="play-local2p" data-action="play-local2p">Local 2P</button>' : ''}
-        ${isUnlocked(s, 'link') ? '<button class="btn small" id="play-link" data-action="play-link">Link two tabs</button>' : ''}
-      </div>` : ''}
-      <p class="scribble" aria-hidden="true">your man chases the mouse → click where the ball goes</p>
-    </article>
-
     <article class="panel form">
       <h2 class="eyebrow">Elo</h2>
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
@@ -204,8 +191,6 @@ export function clubScreen(app: App): string {
       ${formChips(s)}
       ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
     </article>
-
-    ${levelPanel(s)}
 
     <article class="panel news">
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
@@ -221,6 +206,8 @@ export function clubScreen(app: App): string {
       ${identityControls(s)}
       <p class="muted small">Saved in this browser only.</p>
     </article>
+
+    ${levelPanel(s)}
   </div>`;
 }
 
