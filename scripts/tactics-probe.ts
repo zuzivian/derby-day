@@ -14,7 +14,9 @@
 //   width      out of possession, touchline-to-touchline spread of the outfielders (m)
 //   press      out of possession, players within 6 m of the ball carrier
 //   regain     where open-play regains happen, m from own goal (how high they win it back)
-//   ahead      in possession, outfielders ahead of the ball (how many commit forward)
+//   ahead      in possession, outfielders ahead of the ball
+//   fwd        in possession, outfielders in the opponents' half (how many commit forward)
+//   cmp        passes that reached a teammate (%)
 //   open       in possession, teammates within 14 m of the carrier with a clear passing lane
 // What to expect: Park the bus sits deepest, narrowest and most compact,
 // concedes fewer and scores fewer; High press holds the highest line, has the
@@ -58,9 +60,9 @@ function series(a: { formation: FormationId; mentality: Mentality }, b: { format
 
 const f1 = (v: number) => v.toFixed(1).padStart(5);
 const f2 = (v: number) => v.toFixed(2).padStart(5);
-const header = `${'side A'.padEnd(14)}   GF    GA  poss    sh   shA  pass fouls     Y  line depth width press regain ahead  open`;
+const header = `${'side A'.padEnd(14)}   GF    GA  poss    sh   shA  pass fouls     Y  line depth width press regain ahead   fwd  open   cmp`;
 const row = (label: string, m: TeamMetrics) =>
-  `${label.padEnd(14)} ${f2(m.goalsFor)} ${f2(m.goalsAgainst)} ${f1(m.possession)} ${f1(m.shots)} ${f1(m.shotsAgainst)} ${f1(m.passes)} ${f1(m.fouls)} ${f2(m.yellows)} ${f1(m.line)} ${f1(m.depth)} ${f1(m.width)} ${f2(m.pressers)} ${f1(m.regainHeight).padStart(6)} ${f2(m.ahead)} ${f2(m.openShort)}`;
+  `${label.padEnd(14)} ${f2(m.goalsFor)} ${f2(m.goalsAgainst)} ${f1(m.possession)} ${f1(m.shots)} ${f1(m.shotsAgainst)} ${f1(m.passes)} ${f1(m.fouls)} ${f2(m.yellows)} ${f1(m.line)} ${f1(m.depth)} ${f1(m.width)} ${f2(m.pressers)} ${f1(m.regainHeight).padStart(6)} ${f2(m.ahead)} ${f2(m.forward)} ${f2(m.openShort)} ${f1(m.passCompletion)}`;
 
 const t0 = performance.now();
 if (args.includes('--formations')) {

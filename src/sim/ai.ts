@@ -40,7 +40,6 @@
 import {
   AIR_DRAG,
   BOX_DEPTH,
-  mentalityOf,
   BOX_W,
   GOAL_BOTTOM,
   GOAL_TOP,
@@ -138,6 +137,8 @@ export interface Tactic {
   /** Extra players who press with the chaser (cutting passing lanes, doubling up) once the ball is beyond extraFrom (our team-x). */
   extra: number;
   extraFrom: number;
+  /** How far a defender leaves his zone to pick up a man (1 = normal). */
+  markR: number;
   /** Screening: when the carrier is within screenR m of our goal, this many players step into the line between him and it. */
   screen: number;
   screenR: number;
@@ -175,7 +176,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   park: {
     lineGap: 0.27, lineMin: 0.06, lineMax: 0.2, boxHold: 0.13, attGap: 0.4, attMin: 0.1, attMax: 0.3,
     defWidth: 0.64, squeeze: 0.26, defDepth: 0.66, attWidth: 1, attDepth: 0.78,
-    pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, screen: 2, screenR: 32, counter: 0, counterN: 0,
+    pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, markR: 0.75, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
     risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
     supporters: 2, supportR: 11, recover: 0.95,
@@ -183,7 +184,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   defensive: {
     lineGap: 0.25, lineMin: 0.05, lineMax: 0.32, boxHold: 0.15, attGap: 0.34, attMin: 0.12, attMax: 0.42,
     defWidth: 0.74, squeeze: 0.28, defDepth: 0.84, attWidth: 1.04, attDepth: 0.9,
-    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, screen: 1, screenR: 30, counter: 0, counterN: 0,
+    pressUpTo: 0.6, pressNear: 5, extra: 0, extraFrom: 2, markR: 0.9, screen: 1, screenR: 30, counter: 0, counterN: 0,
     fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 1,
     risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, clear: 0.4, direct: 0.3, tackle: 0.95, reach: 0,
     supporters: 2, supportR: 10, recover: 0.85,
@@ -191,7 +192,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   balanced: {
     lineGap: 0.24, lineMin: 0.05, lineMax: 0.42, boxHold: 0.15, attGap: 0.3, attMin: 0.14, attMax: 0.52,
     defWidth: 0.8, squeeze: 0.3, defDepth: 1, attWidth: 1.08, attDepth: 1,
-    pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, screen: 0, screenR: 0, counter: 0, counterN: 0,
+    pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, markR: 1, screen: 0, screenR: 0, counter: 0, counterN: 0,
     fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
     risk: 1, tempo: 1, urgency: 1, carry: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
     supporters: 3, supportR: 10, recover: 0.7,
@@ -199,7 +200,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
   attacking: {
     lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
     defWidth: 0.84, squeeze: 0.32, defDepth: 1, attWidth: 1.12, attDepth: 1.08,
-    pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, screen: 0, screenR: 0, counter: 90, counterN: 1,
+    pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, markR: 1, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
     supporters: 3, supportR: 10, recover: 0.75,
@@ -207,14 +208,15 @@ export const TACTICS: Record<Mentality, Tactic> = {
   press: {
     lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
     defWidth: 0.8, squeeze: 0.4, defDepth: 0.82, attWidth: 1.1, attDepth: 1.02,
-    pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, screen: 0, screenR: 0, counter: 180, counterN: 2,
+    pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, markR: 1.15, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, clear: -0.3, direct: 0, tackle: 1.3, reach: 0.25,
     supporters: 3, supportR: 9, recover: 0.9,
   },
 };
 
-export const tacticOf = (s: MatchState, team: 0 | 1): Tactic => TACTICS[mentalityOf(s.teams[team].mentality)];
+/** A team's tactic (called many times a tick, so a plain lookup; an unknown mentality plays Balanced). */
+export const tacticOf = (s: MatchState, team: 0 | 1): Tactic => TACTICS[s.teams[team].mentality ?? 'balanced'] ?? TACTICS.balanced;
 
 /** Where each sub-role stands in the formations it was tuned on; a slot higher or deeper than this shifts the player with it (a 4-2-3-1's wingers drop deeper than a 4-3-3's). */
 const CANON_X: Record<SubRole, number> = { GK: 0.02, CB: 0.18, FB: 0.2, WB: 0.22, DM: 0.34, CM: 0.41, AM: 0.49, WM: 0.4, W: 0.58, ST: 0.59 };
@@ -576,7 +578,8 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
     const free = mates.filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
-    const radius = 13 + 7 * skill;
+    // A low block marks zonally (only who comes into its zone); a pressing side follows its man further.
+    const radius = (13 + 7 * skill) * k.markR;
     for (const a of attackers) {
       let best: MatchPlayer | null = null;
       let bestCost = radius;
@@ -627,6 +630,8 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
   const depth = attacking ? k.attDepth : k.defDepth;
   // This formation's slot against where the sub-role usually stands.
   const adj = (slot.x - CANON_X[p.sub]) * (attacking ? 1.1 : 0.9);
+  // The back line narrows (or widens) with the block: Balanced's 0.8 is the width it was tuned at.
+  const narrow = k.defWidth / 0.8;
   let ny = (0.5 + (slot.y - 0.5) * width) * (1 - squeeze) + by * squeeze;
   let nx: number;
   switch (p.sub) {
@@ -634,7 +639,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
       return fromTeam(p.team, 0.03, 0.5);
     case 'CB':
       nx = L;
-      ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.5 : 0.85) + (by - 0.5) * 0.25;
+      ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.5 : 0.85 * narrow) + (by - 0.5) * 0.25;
       break;
     case 'FB':
       if (attacking && ballSide && bx > k.fbUp) {
@@ -647,7 +652,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
         ny = 0.5 + side * (k.farFbUp ? 0.36 : 0.27);
       } else {
         nx = L + (attacking ? 0.04 : 0);
-        ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.05 : 0.82) + (by - 0.5) * 0.3;
+        ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.05 : 0.82 * narrow) + (by - 0.5) * 0.3;
       }
       break;
     case 'WB':
@@ -661,7 +666,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
       } else {
         // On the ball side, or with the ball near our goal, he drops into the back five.
         nx = ballSide || bx < 0.4 ? L + 0.01 : L + Math.max(0, adj) * 0.6;
-        ny = 0.5 + (slot.y - 0.5) * 0.88 + (by - 0.5) * 0.28;
+        ny = 0.5 + (slot.y - 0.5) * 0.88 * narrow + (by - 0.5) * 0.28;
       }
       break;
     case 'DM':
@@ -1318,6 +1323,16 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
  * moves again a few times a second as the lanes close: that is the movement
  * that keeps a passing side's triangles open.
  */
+/** Is an opponent standing in the passing lane from `from` to `to`? */
+function laneShut(s: MatchState, team: 0 | 1, from: Vec, to: Vec): boolean {
+  for (const o of s.players) if (o.team !== team && !o.sentOff && distToSegment(o.pos, from, to) < 1.4) return true;
+  return false;
+}
+
+/** A supporter tries his angle and a little either side of it, short and a bit longer. */
+const SUPPORT_TURN = [-0.5, -0.25, 0, 0.25, 0.5];
+const SUPPORT_REACH = [0.75, 1, 1.25];
+
 function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, j: number): Vec {
   const team = p.team;
   const k = tacticOf(s, team);
@@ -1331,18 +1346,20 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   const noise = 0.1 + 0.6 * (1 - skill);
   let best = c;
   let bestScore = -Infinity;
-  for (const da of [-0.4, 0, 0.4]) {
-    for (const rf of [0.7, 1, 1.35]) {
+  // Opponents a moment from now: a lane someone is stepping into is already shut.
+  const opp: Vec[] = [];
+  for (const o of s.players) if (o.team !== team && !o.sentOff) opp.push({ x: o.pos.x + o.vel.x * 0.35, y: o.pos.y + o.vel.y * 0.35 });
+  for (const da of SUPPORT_TURN) {
+    for (const rf of SUPPORT_REACH) {
       let cand = clampToPitch(add(c, scale(rotate(fwd, base + da), k.supportR * rf)), 2);
       if (teamX(team, cand.x) > onsideX) cand = fromTeam(team, onsideX, cand.y / PITCH_H);
       // Never a square ball across our own six-yard box.
       if (teamX(team, cand.x) < 0.1 && cx < 0.3) cand = fromTeam(team, 0.1, cand.y / PITCH_H);
       let lane = 5;
       let space = 8;
-      for (const o of s.players) {
-        if (o.team === team || o.sentOff) continue;
-        lane = Math.min(lane, distToSegment(o.pos, c, cand));
-        space = Math.min(space, dist(o.pos, cand));
+      for (const o of opp) {
+        lane = Math.min(lane, distToSegment(o, c, cand));
+        space = Math.min(space, dist(o, cand));
       }
       let score = Math.min(lane, 4) * 1.1 + space * 0.35 - (lane < 1.6 ? 3 : 0);
       for (const m of s.players) {
@@ -1367,6 +1384,8 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   const mem = memOf(s, p);
   const sj = plan.support ? plan.support.indexOf(p.i) : -1;
   // A supporter re-reads the lanes every few ticks; everyone else holds a target longer.
+  // A supporter whose lane has just been shut moves again straight away.
+  if (sj >= 0 && carrier && mem.retarget > 2 && laneShut(s, p.team, carrier.pos, p.pos)) mem.retarget = 0;
   if (mem.target && mem.attacking && mem.retarget-- > 0 && !(sj >= 0 && mem.retarget > 12)) return mem.target;
   const skill = skillOf(s, p.team);
   const k = tacticOf(s, p.team);

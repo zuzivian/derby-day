@@ -165,11 +165,11 @@ function weighted<T>(table: [T, number][], roll: number): T {
 
 /** How often CPU clubs line up in each formation: the common back fours most, back threes and fives now and then. */
 const CPU_FORMATIONS: [FormationId, number][] = [
-  ['4-4-2', 18], ['4-3-3', 18], ['4-2-3-1', 16], ['4-1-4-1', 8], ['4-4-1-1', 8], ['3-5-2', 10], ['3-4-3', 7], ['5-3-2', 8], ['5-4-1', 7],
+  ['4-4-2', 18], ['4-3-3', 18], ['4-2-3-1', 16], ['4-1-4-1', 8], ['4-4-1-1', 8], ['3-5-2', 10], ['3-4-3', 8], ['5-3-2', 5], ['5-4-1', 4],
 ];
-/** Most CPU clubs play Balanced; a few sit deep or press high. */
+/** Most CPU clubs play Balanced or go for it (more fun to play against); a few sit deep or press high. */
 const CPU_MENTALITIES: [Mentality, number][] = [
-  ['park', 8], ['defensive', 22], ['balanced', 40], ['attacking', 20], ['press', 10],
+  ['park', 5], ['defensive', 15], ['balanced', 42], ['attacking', 26], ['press', 12],
 ];
 
 /** A stable 0..1 roll per club id and purpose. */

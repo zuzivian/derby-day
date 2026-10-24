@@ -18,6 +18,9 @@ export interface TeamMetrics {
   shots: number;
   shotsAgainst: number;
   passes: number;
+  /** Passes played in open play (completed or not), and the share that reached a teammate (%). */
+  passAttempts: number;
+  passCompletion: number;
   tackles: number;
   fouls: number;
   yellows: number;
@@ -35,6 +38,8 @@ export interface TeamMetrics {
   regains: number;
   /** In possession: average number of outfield players ahead of the ball. */
   ahead: number;
+  /** In possession: average number of outfield players in the opponents' half (how many commit forward). */
+  forward: number;
   /** In possession: average number of teammates within 14 m of the carrier with a clear lane for a pass (no opponent within 1.5 m of it). */
   openShort: number;
 }
@@ -46,13 +51,15 @@ interface Acc {
   pressers: number;
   out: number;
   ahead: number;
+  forward: number;
   openShort: number;
   inPoss: number;
   regainSum: number;
   regains: number;
+  passAttempts: number;
 }
 
-const newAcc = (): Acc => ({ line: 0, depth: 0, width: 0, pressers: 0, out: 0, ahead: 0, openShort: 0, inPoss: 0, regainSum: 0, regains: 0 });
+const newAcc = (): Acc => ({ line: 0, depth: 0, width: 0, pressers: 0, out: 0, ahead: 0, forward: 0, openShort: 0, inPoss: 0, regainSum: 0, regains: 0, passAttempts: 0 });
 
 function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const abx = bx - ax;
@@ -98,6 +105,7 @@ function sample(s: MatchState, acc: [Acc, Acc]): void {
       let ahead = 0;
       let open = 0;
       for (const p of out) {
+        if (teamX(team, p.pos.x) > 0.5) a.forward++;
         if (p.i === owner.i) continue;
         if (teamX(team, p.pos.x) > bx + 0.01) ahead++;
         const dx = p.pos.x - owner.pos.x;
@@ -121,7 +129,10 @@ export function measureMatch(o: Omit<MatchOptions, 'humanTeam' | 'humans'>): { s
   // Team holding the ball in open play, or -1 after a dead ball (a restart is not a regain).
   let holder = -1;
   while (s.phase !== 'fulltime') {
+    const kicker = s.ball.owner;
     step(s);
+    // A pass: the carrier let it go toward a teammate.
+    if (kicker >= 0 && s.ball.owner < 0 && s.ball.receiver >= 0 && s.players[s.ball.receiver].team === s.players[kicker].team) acc[s.players[kicker].team].passAttempts++;
     if (s.phase !== 'play') {
       holder = -1;
       continue;
@@ -149,6 +160,8 @@ export function measureMatch(o: Omit<MatchOptions, 'humanTeam' | 'humans'>): { s
       shots: st.shots,
       shotsAgainst: them.shots,
       passes: st.passes,
+      passAttempts: a.passAttempts,
+      passCompletion: a.passAttempts ? Math.min(100, (100 * st.passes) / a.passAttempts) : 0,
       tackles: st.tackles,
       fouls: st.fouls,
       yellows: st.yellows,
@@ -159,6 +172,7 @@ export function measureMatch(o: Omit<MatchOptions, 'humanTeam' | 'humans'>): { s
       regainHeight: per(a.regainSum, a.regains),
       regains: a.regains,
       ahead: per(a.ahead, a.inPoss),
+      forward: per(a.forward, a.inPoss),
       openShort: per(a.openShort, a.inPoss),
     };
   };
