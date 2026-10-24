@@ -4,8 +4,9 @@
 // picture has a text equivalent. Locked modes are visible teasers with a
 // padlock and the level that opens them; they are not controls.
 //
-// As the club levels up the screen gains one thing at a time: the Hard
-// practice button (level 5), the Cup card (5) and the League card (8) open.
+// As the club levels up the screen gains one thing at a time: Practice (level
+// 4), vs Player (5), the Hard practice button and the Cup card (7) and the
+// League card (8). At level 1 it is the hero and its Kick off, nothing else.
 // Everything secondary (news, replays, club level details, tutorial, reset)
 // lives on the Club tab (clubScreen in ui.ts). Styles: the "Home" section of
 // styles.css.
@@ -13,7 +14,8 @@
 import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import type { Save } from '../meta/game.ts';
-import { isUnlocked, unlockOf, type UnlockId } from '../meta/levels.ts';
+import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
+import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { HALF_SECONDS } from '../sim/constants.ts';
 import { crestSvg } from './crest.ts';
 import { esc, PRACTICE, practiceUnlocked, type App } from './ui.ts';
@@ -110,16 +112,21 @@ const lockBadge = (level: number) => `<span class="lock-badge" aria-hidden="true
 function hero(app: App): string {
   const s = app.save;
   const c = s.club;
-  const opp = app.nextOpp;
-  const p = expectedScore(c.elo, opp.elo);
+  // Until ranked opens (level 3) Kick off is a warm-up friendly against a gentle generated club: no Elo, no gauge.
+  const ranked = rankedOpen(s);
+  const opp = ranked ? app.nextOpp : warmupIdentity(s);
+  const gaugeOn = ranked && showGauge(s);
+  const p = ranked ? expectedScore(c.elo, app.nextOpp.elo) : 0.5;
   const pct = Math.round(p * 100);
   const k = kFactor(c.played);
   const gain = Math.round(k * (1 - p));
   const cost = Math.round(k * p);
+  const tag = ranked ? 'Ranked' : 'Warm-up friendly';
+  const kind = ranked ? 'Ranked match' : 'Warm-up friendly, no Elo';
   return `
   <section class="hero" data-mode="cpu" aria-labelledby="hero-title">
     <div class="hero-head">
-      <h2 id="hero-title" class="hero-title">${ICON.cpu}<span>vs CPU</span><span class="hero-tag">Ranked</span></h2>
+      <h2 id="hero-title" class="hero-title">${ICON.cpu}<span>vs CPU</span><span class="hero-tag">${tag}</span></h2>
       <span class="hero-len"><span aria-hidden="true">${MATCH_LENGTH}</span><span class="sr-only">Match length: ${MATCH_LENGTH_SPOKEN}</span></span>
     </div>
     <div class="hero-match">
@@ -130,19 +137,19 @@ function hero(app: App): string {
         ${formChips(s)}
       </div>
       <div class="hero-mid">
-        ${gauge(pct)}
+        ${gaugeOn ? `${gauge(pct)}
         <div class="stakes" role="img" aria-label="Win: plus ${gain} Elo. Defeat: minus ${cost} Elo.">
           <span class="stake up" aria-hidden="true">▲ ${gain}</span><span class="stake down" aria-hidden="true">▼ ${cost}</span>
-        </div>
+        </div>` : `<div class="hero-vs" aria-hidden="true">vs</div>`}
       </div>
       <div class="hero-side">
         ${crestSvg(opp, 84)}
         <div class="hero-name">${esc(opp.name)}</div>
-        <div class="hero-elo"><span>Elo <b>${opp.elo}</b></span></div>
+        <div class="hero-elo">${ranked ? `<span>Elo <b>${app.nextOpp.elo}</b></span>` : '<span>Friendly</span>'}</div>
       </div>
     </div>
-    <p id="hero-desc" class="sr-only">Ranked match against ${esc(opp.name)}, ${MATCH_LENGTH_SPOKEN}. Win chance ${pct}%.</p>
-    <button class="kickoff" id="kick-off" data-action="play-ranked" aria-describedby="hero-desc">${ICON.ball(30)}<span>Kick off</span></button>
+    <p id="hero-desc" class="sr-only">${kind} against ${esc(opp.name)}, ${MATCH_LENGTH_SPOKEN}.${gaugeOn ? ` Win chance ${pct}%.` : ''}</p>
+    <button class="kickoff" id="kick-off" data-action="${ranked ? 'play-ranked' : 'play-warmup'}" aria-describedby="hero-desc">${ICON.ball(30)}<span>Kick off</span></button>
   </section>`;
 }
 
@@ -152,7 +159,7 @@ function hero(app: App): string {
 function versusCard(s: Save): string {
   const local = isUnlocked(s, 'local2p');
   const link = isUnlocked(s, 'link');
-  if (!local && !link) return lockedCard('player', 'vs Player', ICON.players, 'local2p');
+  if (!local && !link) return isUnlocked(s, 'practice') ? lockedCard(s, 'player', 'vs Player', ICON.players, 'local2p') : '';
   return `
   <article class="mode-card" data-mode="player" aria-labelledby="mode-player">
     <div class="mode-top"><span class="mode-icon">${ICON.players}</span><div><h3 id="mode-player" class="mode-title">vs Player</h3><p class="mode-sub">Friendly · no Elo</p></div></div>
@@ -163,8 +170,10 @@ function versusCard(s: Save): string {
   </article>`;
 }
 
+const PRACTICE_UNLOCK: Record<string, UnlockId> = { easy: 'practice', normal: 'practice-normal', hard: 'practice-hard' };
+
 function practiceCard(s: Save): string {
-  const hard = unlockOf('practice-hard').level;
+  if (!isUnlocked(s, 'practice')) return '';
   return `
   <article class="mode-card" data-mode="practice" aria-labelledby="mode-practice">
     <div class="mode-top"><span class="mode-icon">${ICON.cone}</span><div><h3 id="mode-practice" class="mode-title">Practice</h3><p class="mode-sub">vs CPU · no Elo</p></div></div>
@@ -172,15 +181,15 @@ function practiceCard(s: Save): string {
       ${PRACTICE.map((x, i) =>
         practiceUnlocked(s, x.id)
           ? `<button class="mode-btn diff-btn" id="practice-${x.id}" data-action="play-practice" data-level="${x.id}" aria-label="Practice against ${x.label} CPU">${bars(i + 1)}<span>${x.label}</span></button>`
-          : `<span class="mode-btn diff-btn is-locked">${ICON.lock(14)}<span aria-hidden="true">${x.label}</span><b class="lvl" aria-hidden="true">${hard}</b><span class="sr-only">${x.label}: unlocks at club level ${hard}</span></span>`,
+          : `<span class="mode-btn diff-btn is-locked">${ICON.lock(14)}<span aria-hidden="true">${x.label}</span><b class="lvl" aria-hidden="true">${unlockLevel(s, PRACTICE_UNLOCK[x.id])}</b><span class="sr-only">${x.label}: unlocks at club level ${unlockLevel(s, PRACTICE_UNLOCK[x.id])}</span></span>`,
       ).join('')}
     </div>
   </article>`;
 }
 
 /** A visible teaser for a mode that is still locked: padlock and level badge, no control inside. */
-function lockedCard(mode: string, title: string, icon: string, id: UnlockId): string {
-  const level = unlockOf(id).level;
+function lockedCard(s: Save, mode: string, title: string, icon: string, id: UnlockId): string {
+  const level = unlockLevel(s, id);
   return `
   <article class="mode-card locked" data-mode="${mode}" data-locked-level="${level}" aria-labelledby="mode-${mode}">
     <div class="mode-top"><span class="mode-icon">${icon}${lockBadge(level)}</span><div><h3 id="mode-${mode}" class="mode-title">${title}</h3><p class="mode-sub"><span aria-hidden="true">Level ${level}</span><span class="sr-only">Locked. Unlocks at club level ${level}.</span></p></div></div>
@@ -188,7 +197,7 @@ function lockedCard(mode: string, title: string, icon: string, id: UnlockId): st
 }
 
 function cupCard(s: Save): string {
-  if (!isUnlocked(s, 'cup')) return lockedCard('cup', 'Cup', ICON.cup, 'cup');
+  if (!isUnlocked(s, 'cup')) return !isUnlocked(s, 'practice') ? '' : lockedCard(s, 'cup', 'Cup', ICON.cup, 'cup');
   const cup = s.cup;
   const opp = cup && !cup.done ? cupOpponent(s, cup) : null;
   const action = opp
@@ -202,7 +211,7 @@ function cupCard(s: Save): string {
 }
 
 function leagueCard(s: Save): string {
-  if (!isUnlocked(s, 'league')) return lockedCard('league', 'League', ICON.league, 'league');
+  if (!isUnlocked(s, 'league')) return !isUnlocked(s, 'practice') ? '' : lockedCard(s, 'league', 'League', ICON.league, 'league');
   const season = s.season;
   const opp = season && !season.done ? seasonOpponent(s, season) : null;
   const action = opp
@@ -217,12 +226,14 @@ function leagueCard(s: Save): string {
 
 export function homeScreen(app: App): string {
   const s = app.save;
+  // At level 1 there is only the hero and its Kick off; the other ways to play appear as they unlock.
+  const cards = `${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}`;
   return `
   <div class="home">
     ${hero(app)}
-    <section class="modes" aria-labelledby="modes-title">
+    ${cards ? `<section class="modes" aria-labelledby="modes-title">
       <h2 id="modes-title" class="sr-only">Other ways to play</h2>
-      <div class="mode-grid">${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}</div>
-    </section>
+      <div class="mode-grid">${cards}</div>
+    </section>` : ''}
   </div>`;
 }
