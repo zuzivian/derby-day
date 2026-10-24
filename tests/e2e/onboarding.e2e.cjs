@@ -240,30 +240,32 @@ test('onboarding: the naming step can be skipped', async (t) => {
   expect((await readSave(page)).club.name, 'name unchanged').toBe(name);
 });
 
-test('onboarding: reloading on the celebration does not replay the welcome', async (t) => {
+test('onboarding: coming back while the celebration is up does not replay the welcome', async (t) => {
   const page = await freshVisit(t, { halfSeconds: 3 });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
-  // What is stored before the reload: the recorded match and the prefs the first match set.
+  // What is stored when the celebration shows: the match is recorded, the milestone claimed, and setup is over.
   const before = await page.evaluate(() => {
     const save = JSON.parse(localStorage.getItem('derbyday.save.v1'));
     return { history: save.history.length, milestones: save.milestones, xp: save.xp, prefs: localStorage.getItem('derbyday.prefs.v1') };
   });
-  // Final the moment the celebration shows: the match is recorded, the milestone claimed, and setup is over.
   expect(before.history, 'the first match is saved when the celebration shows').toBe(1);
   expect(before.milestones, 'with its milestone').toContain('first-match');
   const p = JSON.parse(before.prefs);
   expect(p.onboarded, 'setup is over').toBe(true);
   expect(p.coachSeen, 'and the coach prefs are kept').toBeTruthy();
   expect(p.marks, 'with the tab marks').toContain('squad');
-  await page.reload();
-  await page.waitForSelector(SEL.kickOff).catch(async (e) => {
-    const after = await page.evaluate(() => ({ save: !!localStorage.getItem('derbyday.save.v1'), prefs: localStorage.getItem('derbyday.prefs.v1'), text: document.getElementById('app').innerText.slice(0, 160) }));
-    throw new Error(`${e.message}\nBEFORE RELOAD: ${JSON.stringify(before)}\nAFTER RELOAD: ${JSON.stringify(after)}`);
-  });
-  expect(await page.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
-  expect(await page.locator(SEL.modal).count(), 'and no level-up dialog: the celebration already named what opened').toBe(0);
-  expect((await prefsOf(page)).coachSeen, 'the coach prefs survive the reload').toBeTruthy();
+  // The next visit is a second page in the same browser context. (Not page.reload(): in these in-memory test
+  // contexts Chromium itself loses localStorage on a reload now and then, about 1 in 15 after ten seconds or
+  // more, even for a static page that does nothing but write a key; a new page never showed it.)
+  const next = await page.context().newPage();
+  await next.route(/fonts\.(googleapis|gstatic)\.com/, (route) => route.abort());
+  await next.goto(APP_URL);
+  await next.waitForSelector(SEL.kickOff);
+  expect(await next.locator(KICK).count(), 'no welcome: the match is already recorded').toBe(0);
+  expect(await next.locator(SEL.modal).count(), 'and no level-up dialog: the celebration already named what opened').toBe(0);
+  expect((await prefsOf(next)).coachSeen, 'the coach prefs survive').toBeTruthy();
+  expect((await readSave(next)).history.length, 'and so does the match').toBe(1);
 });
 
 test('onboarding: until level 3 Kick off is a warm-up friendly that earns XP and leaves Elo alone; at 3 it is ranked', async (t) => {
