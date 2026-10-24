@@ -23,7 +23,10 @@ import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
 import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
-import { clearSave, loadPrefs, loadSave, writePrefs, writeSave } from './store.ts';
+import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
+import { openSettings } from './settings.ts';
+import { telemetry } from './telemetry.ts';
+import { clubLevel } from '../meta/levels.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
@@ -55,15 +58,18 @@ function boot(save: Save): App {
 
 initLiveRegions();
 initReplayUi(root);
-const existing = loadSave();
+const loaded = loadSaveChecked();
+const existing = loaded.save;
+// A save from a newer build is never touched: this tab runs read-only until the page is reloaded onto the new build.
+if (loaded.newer) setSaveGuest(true);
 let app = boot(existing ?? newGame(freshSeed()));
 // First run (no save) gets setup; an older save that predates setup skips it.
-if (!existing) app.prefs.onboarded = false;
+if (!existing && !loaded.newer) app.prefs.onboarded = false;
 else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
 // A first match already recorded means setup is over, whatever the flag says (a reload on the celebration screen).
 if (existing && app.prefs.onboarded === false && app.save.history.length > 0) app.prefs.onboarded = true;
 writePrefs(app.prefs);
-let saved = writeSave(app.save);
+let saved = writeSaveResult(app.save) !== 'blocked';
 /** True while a match, setup or the training ground owns #app. */
 let takeover = false;
 /** Where focus goes after the next render, when it isn't simply "where it was". */
@@ -82,8 +88,11 @@ function toast(text: string, ok = true) {
 }
 
 function persist() {
-  saved = writeSave(app.save);
-  if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+  const r = writeSaveResult(app.save);
+  saved = r !== 'blocked' && r !== 'quota';
+  if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is NOT saved. Free some space, or back up your club in Club > Back up.', false);
+  telemetry.level(clubLevel(app.save));
 }
 
 function render() {
@@ -288,6 +297,7 @@ function playLive(
   matchOrigin = captureFocus(root) ?? keyFor({ action: 'play-ranked' });
   takeover = true;
   hideToast();
+  telemetry.track({ name: 'match_start', kind: label, controls: app.prefs.controls });
   const unmount = mountMatch(root, {
     seed,
     home,
@@ -312,6 +322,7 @@ function playLive(
     onEnd: (m, forfeited) => {
       unmount();
       takeover = false;
+      telemetry.track({ name: 'match_end', kind: label, score: [m.score[0], m.score[1]], forfeit: forfeited });
       onDone(m, forfeited, away);
     },
   });
@@ -424,6 +435,9 @@ root.addEventListener('click', (e) => {
   }
 
   switch (action) {
+    case 'open-backup':
+      openSettings({ getSave: () => app.save, onImported: () => location.reload() }, el);
+      return;
     case 'skip-to-main':
       e.preventDefault();
       focusMain();
@@ -683,4 +697,7 @@ if (app.prefs.onboarded === false) {
   startOnboarding();
   if (pendingJoin) toast('A friend invited you to an online friendly. Play your first match, then you will join them.');
 } else if (!openInvite()) render();
-if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
+else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
+else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
+else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

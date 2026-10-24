@@ -1,0 +1,21 @@
+/* Crash panel (errors.ts), the one-tab screen (guardView.ts) and the backup dialog (settings.ts). */
+#crash-panel, #guard { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; background: var(--bg, #e9eeec); color: var(--ink, #17223a); padding: 24px; overflow-y: auto; font-family: var(--font-body, system-ui, sans-serif); }
+#guard { z-index: 1000; }
+.crash-box, .guard-card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 14px; background: var(--surface, #f7faf8); border: 1px solid var(--line, #cbd4d1); border-radius: 12px; padding: 28px 24px; box-shadow: var(--shadow, 0 8px 24px -12px rgba(0, 0, 0, .3)); }
+.crash-box h1, .guard-card h1 { margin: 0; font-family: var(--font-display, 'Arial Narrow', sans-serif); font-size: 36px; text-transform: uppercase; letter-spacing: .02em; line-height: 1.05; }
+.crash-box p, .guard-card p { margin: 0; line-height: 1.45; }
+.crash-actions, .guard-actions, .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.crash-note { color: var(--muted, #5a6478); font-size: 14px; min-height: 1.2em; }
+.crash-details, .settings textarea { width: 100%; box-sizing: border-box; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: var(--bg, #e9eeec); color: var(--ink, #17223a); border: 1px solid var(--line, #cbd4d1); border-radius: 8px; padding: 8px; resize: vertical; }
+.crash-details { min-height: 140px; }
+.settings-card { max-height: calc(100vh - 32px); overflow-y: auto; }
+.settings-card h2 { margin: 0; font-family: var(--font-display, 'Arial Narrow', sans-serif); font-size: 30px; text-transform: uppercase; }
+.settings-card h3 { margin: 6px 0 0; }
+.settings-card p { margin: 0; }
+.settings-card label.btn { align-self: flex-start; cursor: pointer; }
+.settings-foot { display: flex; justify-content: flex-end; }
+.bk-found { padding: 10px 12px; border: 1px solid var(--line, #cbd4d1); border-radius: 8px; background: var(--bg, #e9eeec); }
+.bk-bad { color: var(--bad, #b8322a); font-weight: 600; }
+#bk-code-out { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.guard { width: 100%; display: grid; place-items: center; }
+#crash-title:focus, #guard-title:focus, .settings-card h2:focus { outline: none; }

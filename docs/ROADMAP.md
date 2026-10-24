@@ -47,7 +47,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - Gradual onboarding: a single welcome with one Kick off into a real first match (coach tips taught in play: running, passing, shooting, tackling, restarts), a celebration with the first XP, an optional club naming step, then menus revealed level by level. The training-ground drills are an optional Practice skills entry from level 3.
 - WCAG 2.1 AA pass: skip link, ARIA tabs, focus restored after every render, live announcements for goals and results, dialogs with focus traps, contrast fixed in both themes, team markers that don't rely on colour alone.
 
-Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; two tabs can overwrite each other); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
+Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; one tab owns the club at a time, and Club > Back up or restore moves it between browsers: see OPS.md); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
 
 ## Phase 1: Feel lab (2–4 weeks part-time)
 
