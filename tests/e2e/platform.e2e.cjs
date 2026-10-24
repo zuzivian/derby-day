@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, goTab, readSave, skipOnboarding, startRanked } = require('./lib/helpers.cjs');
+const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, goTab, readSave, skipOnboarding, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const DIST = path.resolve(__dirname, '..', '..', 'dist');
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
@@ -19,6 +19,29 @@ async function secondTab(page, problems) {
   p.on('pageerror', (e) => problems.push(`second tab pageerror: ${e.message}`));
   await p.goto(APP_URL);
   return p;
+}
+
+/**
+ * Like openApp() (a level-99 club with every tab open) but with `init` installed before the page's own scripts
+ * run, which openApp cannot do: for tests that must watch or break something from the very first line.
+ */
+async function openAppWith(t, init, before) {
+  const page = await t.newPage();
+  await page.addInitScript(init);
+  if (before) before(page);
+  await page.goto(APP_URL);
+  await page.waitForSelector(SEL.app + ' *');
+  await skipOnboarding(page);
+  await page.evaluate(([k, xp]) => {
+    const save = JSON.parse(localStorage.getItem(k));
+    save.xp = xp;
+    delete save.unlocksSeen;
+    localStorage.setItem(k, JSON.stringify(save));
+  }, [SAVE_KEY, totalXpForLevel(99)]);
+  await page.reload();
+  await page.waitForSelector(SEL.app + ' *');
+  await skipOnboarding(page);
+  return page;
 }
 
 const toastText = (page) => page.locator(SEL.toast).first().innerText();
@@ -210,19 +233,19 @@ test('crash panel: calm, shows once, copies details without personal data, and r
 });
 
 test('telemetry and error reporting are off: no network requests beyond the page itself, no beacons', async (t) => {
-  const page = await t.newPage();
   const requests = [];
-  page.on('request', (r) => {
-    const u = r.url();
-    if (!u.startsWith('file:') && !u.startsWith('data:') && !u.startsWith('blob:') && !FONT_HOST.test(u)) requests.push(u);
-  });
-  await page.addInitScript(() => {
-    window.__beacons = 0;
-    navigator.sendBeacon = () => (window.__beacons++, true);
-  });
-  await page.goto(APP_URL);
-  await page.waitForSelector(SEL.app + ' *');
-  await skipOnboarding(page);
+  const page = await openAppWith(
+    t,
+    () => {
+      window.__beacons = 0;
+      navigator.sendBeacon = () => (window.__beacons++, true);
+    },
+    (p) =>
+      p.on('request', (r) => {
+        const u = r.url();
+        if (!u.startsWith('file:') && !u.startsWith('data:') && !u.startsWith('blob:') && !FONT_HOST.test(u)) requests.push(u);
+      }),
+  );
   await goTab(page, 'squad');
   await page.evaluate(() => window.dispatchEvent(new ErrorEvent('error', { message: 'x', error: new Error('x') })));
   await page.waitForSelector('#crash-panel');
@@ -272,16 +295,12 @@ test('built files: share metadata, manifest and icons, robots, 404, and an artif
 });
 
 test('without WebGL the match falls back to the 2D renderer and says so', async (t) => {
-  const page = await t.newPage();
-  await page.addInitScript(() => {
+  const page = await openAppWith(t, () => {
     const get = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
       return /webgl/i.test(type) ? null : get.call(this, type, ...rest);
     };
   });
-  await page.goto(APP_URL);
-  await page.waitForSelector(SEL.app + ' *');
-  await skipOnboarding(page);
   await startRanked(page);
   expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'renderer').toBe('2d');
   expect(await page.locator(SEL.pitch).getAttribute('data-fallback'), 'fallback reason').toBe('webgl-unavailable');
