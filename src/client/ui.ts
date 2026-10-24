@@ -10,7 +10,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { crestSvg } from './crest.ts';
-import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpRewardsHtml } from './levels.ts';
+import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpCardHtml } from './levels.ts';
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
@@ -37,6 +37,8 @@ export interface ResultView {
   note?: string;
   /** Replaces "Nothing recorded for an abandoned friendly." when there is no summary. */
   unrecorded?: string;
+  /** A drawn cup tie settled by a shootout: the kicks scored by each side. Decides the headline. */
+  pens?: { you: number; opp: number };
 }
 
 export interface App {
@@ -356,40 +358,146 @@ export function ladderScreen(app: App): string {
 
 // ---------------------------------------------------------------------------
 
+// The result dialog: a score hero (both crests, each side's scorers under its
+// own crest), two-sided stat bars, the rewards as chips and the XP card, and one
+// primary button. Each stat row carries a sentence for screen readers; the bars
+// and chips are pictures of the same numbers.
+
+type Outcome = 'win' | 'draw' | 'loss';
+const OUTCOME_WORD: Record<Outcome, string> = { win: 'Victory', draw: 'Draw', loss: 'Defeat' };
+
+const rsIcon = (body: string, size = 18) => `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false">${body}</svg>`;
+const RS_BALL = rsIcon('<circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".16"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.6 15.3 10l-1.3 3.9H10L8.7 10Z" fill="currentColor"/>', 14);
+const RS_UP = rsIcon('<path d="M12 5 20 16H4Z" fill="currentColor"/>', 16);
+const RS_DOWN = rsIcon('<path d="M12 19 4 8h16Z" fill="currentColor"/>', 16);
+const RS_SESSIONS = rsIcon('<rect x="3" y="6" width="4" height="12" rx="1.2" fill="currentColor"/><rect x="10" y="6" width="4" height="12" rx="1.2" fill="currentColor"/><rect x="17" y="6" width="4" height="12" rx="1.2" fill="currentColor" opacity=".35"/>');
+const RS_GROWTH = rsIcon('<path d="M4 17 10 11l4 4 6-7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>', 16);
+
+/** "K. Ashton 12'", "K. Ashton 61'" -> one row per scorer with every minute: "K. Ashton 12' 61'". */
+function scorerRows(list: string[]): { name: string; mins: string[] }[] {
+  const rows: { name: string; mins: string[] }[] = [];
+  for (const line of list) {
+    const m = /^(.*?)\s+(\d+(?:\+\d+)?')$/.exec(line.trim());
+    const name = m ? m[1] : line;
+    const min = m ? m[2] : '';
+    const row = rows.find((r) => r.name === name);
+    if (row) row.mins.push(min);
+    else rows.push({ name, mins: min ? [min] : [] });
+  }
+  return rows;
+}
+
+function scorerList(list: string[], club: string): string {
+  if (!list.length) return '';
+  return `<ul class="rs-scorers" aria-label="${esc(`${club} scorers`)}">${scorerRows(list)
+    .map((r) => `<li>${RS_BALL}<span class="rs-scorer">${esc(r.name)}</span>${r.mins.length ? ` <span class="rs-min">${r.mins.map(esc).join(' ')}</span>` : ''}</li>`)
+    .join('')}</ul>`;
+}
+
+/** One two-sided stat bar. `a` is us, `b` them; the larger side is highlighted. */
+function statRow(label: string, a: number, b: number, us: string, them: string, show: (v: number) => string = String): string {
+  const total = a + b;
+  const pa = total > 0 ? (a / total) * 100 : 50;
+  const lead = a > b ? ' lead-a' : b > a ? ' lead-b' : '';
+  return `<li class="rs-stat${total ? '' : ' empty'}${lead}">
+    <span class="sr-only">${esc(`${label}: ${us} ${show(a)}, ${them} ${show(b)}.`)}</span>
+    <span class="rs-va" aria-hidden="true">${show(a)}</span><span class="rs-label" aria-hidden="true">${esc(label)}</span><span class="rs-vb" aria-hidden="true">${show(b)}</span>
+    <span class="rs-bar" aria-hidden="true"><i style="width:${pa.toFixed(1)}%"></i><i style="width:${(100 - pa).toFixed(1)}%"></i></span>
+  </li>`;
+}
+
+function cardsRow(a: TeamStats, b: TeamStats, us: string, them: string): string {
+  const ya = a.yellows ?? 0, ra = a.reds ?? 0, yb = b.yellows ?? 0, rb = b.reds ?? 0;
+  const ta = ya + ra, tb = yb + rb;
+  const total = ta + tb;
+  const pa = total > 0 ? (ta / total) * 100 : 50;
+  const glyphs = (y: number, r: number) => `<span class="rs-cards"><i class="card-y"></i>${y}${r ? `<i class="card-r"></i>${r}` : ''}</span>`;
+  const words = (y: number, r: number) => `${y} yellow${r ? `, ${r} red` : ''}`;
+  return `<li class="rs-stat rs-stat-cards${total ? '' : ' empty'}${ta > tb ? ' lead-a' : tb > ta ? ' lead-b' : ''}">
+    <span class="sr-only">${esc(`Cards: ${us} ${words(ya, ra)}, ${them} ${words(yb, rb)}.`)}</span>
+    <span class="rs-va" aria-hidden="true">${glyphs(ya, ra)}</span><span class="rs-label" aria-hidden="true">Cards</span><span class="rs-vb" aria-hidden="true">${glyphs(yb, rb)}</span>
+    <span class="rs-bar" aria-hidden="true"><i style="width:${pa.toFixed(1)}%"></i><i style="width:${(100 - pa).toFixed(1)}%"></i></span>
+  </li>`;
+}
+
+function rewardChip(cls: string, icon: string, label: string, main: string, sub = ''): string {
+  return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main">${main}</b></li>`;
+}
+
 function resultModal(app: App): string {
   const r = app.result!;
   const c = app.save.club;
-  const outcome = r.gf > r.ga ? 'Win' : r.gf === r.ga ? 'Draw' : 'Defeat';
+  const outcome: Outcome = r.pens
+    ? r.pens.you > r.pens.opp ? 'win' : 'loss'
+    : r.gf > r.ga ? 'win' : r.gf === r.ga ? 'draw' : 'loss';
   const d = r.eloAfter - r.eloBefore;
-  const stat = (label: string, a: number | string, b: number | string) => `<div class="stat"><span class="num">${a}</span><span class="stat-label">${label}</span><span class="num">${b}</span></div>`;
+  const [a, b] = r.stats;
+  const us = c.short;
+  const them = r.opp.short;
+  const sum = r.summary;
+  const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
+  const chips = sum
+    ? [
+        r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d >= 0 ? RS_UP : RS_DOWN, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
+        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`) : '',
+        sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`) : '',
+      ].filter(Boolean)
+    : [];
+  const dev = sum?.developments ?? [];
+  const pens = r.pens ? `<span class="rs-pens">${r.pens.you}–${r.pens.opp} on penalties</span>` : '';
   return `
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="result-title">
-    <div class="modal-card">
-      <div class="eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · full-time${r.forfeited ? ' · forfeited' : ''}</div>
-      <h2 id="result-title" class="result-title" tabindex="-1">${outcome}</h2>
-      <div class="result-score">
-        <div class="side">${crestSvg(c, 44)}<span>${esc(c.short)}</span></div>
-        <div class="big-score">${r.gf}<span>–</span>${r.ga}</div>
-        <div class="side">${crestSvg(r.opp, 44)}<span>${esc(r.opp.short)}</span></div>
+  <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
+    <div class="modal-card result-card" data-outcome="${outcome}">
+      <header class="rs-hero">
+        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · Full-time${r.forfeited ? ' · Forfeited' : ''}</div>
+        <h2 id="result-title" class="result-title" tabindex="-1">${OUTCOME_WORD[outcome]}</h2>
+        <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
+        <div class="result-score">
+          <div class="rs-team">
+            <span class="rs-crest">${crestSvg(c, 64)}</span>
+            <span class="rs-name"><span class="rs-full">${esc(c.name)}</span><span class="rs-code" aria-hidden="true">${esc(c.short)}</span></span>
+            ${scorerList(r.scorersFor, c.name)}
+          </div>
+          <div class="rs-mid">
+            <div class="big-score" aria-hidden="true"><span class="${r.gf >= r.ga ? 'hi' : 'lo'}">${r.gf}</span><span class="rs-dash">–</span><span class="${r.ga >= r.gf ? 'hi' : 'lo'}">${r.ga}</span></div>
+            ${pens}
+          </div>
+          <div class="rs-team">
+            <span class="rs-crest">${crestSvg(r.opp, 64)}</span>
+            <span class="rs-name"><span class="rs-full">${esc(r.opp.name)}</span><span class="rs-code" aria-hidden="true">${esc(r.opp.short)}</span></span>
+            ${scorerList(r.scorersAgainst, r.opp.name)}
+          </div>
+        </div>
+        ${r.note ? `<p class="result-note">${esc(r.note)}</p>` : ''}
+      </header>
+      <div class="rs-body">
+        ${r.forfeited
+          ? `<section class="rs-panel rs-stats-panel" aria-label="Match stats"><p class="rs-empty">No stats: the match was abandoned before full-time.</p></section>`
+          : `<section class="rs-panel rs-stats-panel" aria-labelledby="rs-stats-title">
+          <h3 id="rs-stats-title" class="rs-section"><span>${esc(us)}</span><span>Match stats</span><span>${esc(them)}</span></h3>
+          <ul class="rs-stats">
+            ${statRow('Possession', r.possession[0], r.possession[1], us, them, (v) => `${v}%`)}
+            ${statRow('Shots', a.shots, b.shots, us, them)}
+            ${statRow('On target', a.onTarget, b.onTarget, us, them)}
+            ${statRow('Passes', a.passes, b.passes, us, them)}
+            ${statRow('Tackles won', a.tackles, b.tackles, us, them)}
+            ${statRow('Fouls', a.fouls ?? 0, b.fouls ?? 0, us, them)}
+            ${cardsRow(a, b, us, them)}
+          </ul>
+        </section>`}
+        <section class="rs-panel rs-rewards" aria-labelledby="rs-rewards-title">
+          <h3 id="rs-rewards-title" class="rs-section"><span>Rewards</span></h3>
+          ${sum
+            ? `${chips.length ? `<ul class="rs-chips">${chips.join('')}</ul>` : ''}
+              ${dev.length ? `<div class="rs-growth"><span class="rs-growth-title">${RS_GROWTH}<span>Player growth</span></span><ul>${dev.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+              ${xpCardHtml(app.save, sum.xp, r.forfeited)}`
+            : `<p class="rs-empty">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
+        </section>
       </div>
-      ${r.note ? `<p class="result-note">${esc(r.note)}</p>` : ''}
-      ${r.scorersFor.length || r.scorersAgainst.length ? `<div class="scorers"><div>${r.scorersFor.map(esc).join('<br>')}</div><div>${r.scorersAgainst.map(esc).join('<br>')}</div></div>` : ''}
-      ${r.forfeited ? '' : `<div class="stats">
-        ${stat('Possession', `${r.possession[0]}%`, `${r.possession[1]}%`)}
-        ${stat('Shots', r.stats[0].shots, r.stats[1].shots)}
-        ${stat('On target', r.stats[0].onTarget, r.stats[1].onTarget)}
-        ${stat('Passes', r.stats[0].passes, r.stats[1].passes)}
-        ${stat('Tackles won', r.stats[0].tackles, r.stats[1].tackles)}
-      </div>`}
-      ${r.summary ? `<ul class="rewards">
-        ${r.ranked ? `<li><b class="${d >= 0 ? 'up' : 'down'}">${d >= 0 ? '+' : ''}${d} Elo</b> → ${r.eloAfter}</li>` : ''}
-        ${r.summary.money > 0 ? `<li>+${formatMoney(r.summary.money)} prize money</li>` : ''}
-        <li>+${r.summary.trainingPoints} training session${r.summary.trainingPoints === 1 ? '' : 's'}</li>
-        ${r.summary.developments.map((x) => `<li>${esc(x)}</li>`).join('')}
-        ${xpRewardsHtml(r.summary.xp, r.forfeited)}
-      </ul>` : `<p class="muted">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
-      ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
-      <button class="btn primary big" data-action="close-result">Back to the club</button>
+      <footer class="rs-foot">
+        ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
+        <button class="btn primary big rs-close" data-action="close-result">Back to the club</button>
+      </footer>
     </div>
   </div>`;
 }
