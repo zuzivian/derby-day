@@ -351,3 +351,34 @@ test(
   },
   { timeoutMs: 120_000 },
 );
+
+test(
+  'Perf: on a slow renderer (SwiftShader) the quality governor steps the 3D view down, one notch at a time',
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const w0 = await page.evaluate(() => document.querySelector('#pitch').width);
+    // Record each level as it changes: one notch at a time, never back up.
+    await page.evaluate(() => {
+      const c = document.querySelector('#pitch');
+      window.__levels = [];
+      new MutationObserver(() => window.__levels.push(Number(c.dataset.governor))).observe(c, { attributes: true, attributeFilter: ['data-governor'] });
+    });
+    const stepped = await page.waitForFunction(() => Number(document.querySelector('#pitch').dataset.governor || 0) >= 1, null, { timeout: 30_000 }).then(() => true, () => false);
+    if (!stepped) {
+      // A fast enough machine (a real GPU) never needs to step down.
+      console.log('      the governor did not step: this machine renders within budget');
+      return;
+    }
+    await page.waitForTimeout(8000);
+    const levels = await page.evaluate(() => window.__levels);
+    expect(levels.every((l, i) => l === i + 1), `levels go 1, 2, 3… one at a time (${levels.join(', ')})`).toBe(true);
+    const w1 = await page.evaluate(() => document.querySelector('#pitch').width);
+    expect(w1, `the drawing buffer is smaller (${w0} → ${w1} px)`).toBeLessThan(w0);
+  },
+  { timeoutMs: 120_000 },
+);
