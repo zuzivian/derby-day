@@ -135,6 +135,11 @@ export function stageDrill(s: MatchState, id: DrillId, fresh = true): Drill {
     s.phaseTicks = 0;
     s.controlled[0] = HUMAN;
     s.switchTimer[0] = 30;
+  } else if (id === 'pass' && s.ball.owner !== HUMAN) {
+    // Flowing on from "move": if the ball got away on the run to the marker, hand it back,
+    // or the first click of the pass drill would pick a teammate instead of passing.
+    giveBall(s, HUMAN);
+    s.controlled[0] = HUMAN;
   }
   const d: Drill = { id, frozen, marker: id === 'move' ? { ...MARKER } : null, base: baseline(s), looseTicks: 0, lastTackleCd: s.players[HUMAN].tackleCd };
   holdFrozen(s, d);
