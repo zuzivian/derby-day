@@ -191,7 +191,7 @@ function copyCode(code: string, opener: HTMLElement | null) {
   }
   p.then(
     () => {
-      showToast(`Replay code copied (${formatSize(codeSize(code))}).`);
+      showToast('Replay code copied.');
       announce('Replay code copied.');
     },
     () => fallback(),

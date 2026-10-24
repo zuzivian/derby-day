@@ -389,20 +389,27 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Short tables (Sell): the name takes the spare width, the numbers sit together on the right. */
 .tbl.compact td.name { width: 100%; }
 /* Phones: the player tables keep #, name, position, OVR and the money column; the detail columns go. */
-/* Narrower than a laptop the detail columns go, so the money column and the
-   Sign/Sell button always fit; the action column also sticks to the right edge. */
+/* Column tiers. The transfer tables (.has-action) lose their detail columns below
+   1000 px, so the money column and the Sign/Sell button always fit; the Squad
+   table keeps its attributes down to 600 px and scrolls. Phones also drop the
+   Sell table's number, and the narrowest phones move the position chip under
+   the name. Every table fits its box from 320 px up, with no sideways scroll. */
+.tbl .only-narrow { display: none; }
 @media (max-width: 1000px) {
-  .tbl .opt { display: none; }
-  .tbl.has-action td:last-child, .tbl.has-action th:last-child { position: sticky; right: 0; background: var(--surface); box-shadow: -8px 0 8px -8px rgba(0, 0, 0, .25); }
+  .tbl.has-action .opt { display: none; }
 }
 @media (max-width: 600px) {
-  .tbl th, .tbl td { padding-left: 6px; padding-right: 6px; }
-  .tbl td.name { white-space: normal; min-width: 9ch; }
+  .tbl .opt, .tbl .opt-phone { display: none; }
+  .tbl th, .tbl td { padding-left: 5px; padding-right: 5px; }
+  .tbl td.name { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
   /* Starters already carry the accent edge; the XI pill stays for screen readers only. */
   .tbl td.name .pill { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tbl .btn.small { padding-left: 10px; padding-right: 10px; }
 }
 @media (max-width: 420px) {
   .tbl .opt-narrow { display: none; }
+  .tbl .only-narrow { display: table; margin-top: 3px; }
+  .tbl td.name { font-size: var(--fs-sm); }
 }
 .tbl .name { font-weight: 600; }
 .tbl .ovr { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-lg); }
@@ -471,7 +478,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Toast ------------------------------------------------------------------------- */
 .toast {
-  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 70;
+  position: fixed; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 70;
   display: flex; align-items: center; gap: 10px; width: max-content; max-width: min(520px, calc(100vw - 32px));
   padding: 10px 18px 10px 10px; border-radius: var(--r-pill); background: var(--ink); color: var(--surface); font-weight: 700; line-height: 1.3; pointer-events: none;
   box-shadow: var(--shadow-3); animation: toast-in .28s var(--ease-out);
@@ -482,11 +489,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .toast.bad { background: var(--bad); color: var(--on-status); }
 .toast.bad::before { content: '!'; background: var(--on-status); color: var(--bad); }
-@keyframes toast-in { from { transform: translate(-50%, 14px); opacity: 0; } }
-/* On phones a dialog's main button sits where the toast would: show the toast at the top instead. */
-@media (max-width: 640px) {
-  body:has(.modal) .toast { bottom: auto; top: calc(12px + env(safe-area-inset-top, 0px)); }
-}
+/* At the top, never over a dialog's buttons or a table's last row. */
+@keyframes toast-in { from { transform: translate(-50%, -14px); opacity: 0; } }
 /* Money never goes through text-transform: uppercase turns the florin sign into a different letter. */
 .money { text-transform: none; }
 
@@ -511,6 +515,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .result-card { width: min(780px, 100%); max-height: 100%; padding: 0; gap: 0; overflow: clip; }
 /* Hero, stats and rewards scroll inside the card; the footer button never leaves view. */
 .rs-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* It takes focus when the dialog opens: no ring for that, a quiet inset one for the keyboard. */
+.rs-scroll:focus { outline: none; }
+.rs-scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
 .result-card[data-outcome="win"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #2b8a52 0%, #14492d 52%, #0a2416 100%); --rs-title: #ffd60a; --rs-glow: rgba(255, 214, 10, .35); }
 .result-card[data-outcome="draw"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #44566a 0%, #212d3a 55%, #111820 100%); --rs-title: #f3f6f1; --rs-glow: rgba(255, 255, 255, .2); }
 .result-card[data-outcome="loss"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #8a3126 0%, #4a1813 55%, #210b09 100%); --rs-title: #ffd3ca; --rs-glow: rgba(255, 123, 95, .3); }
@@ -608,6 +615,24 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .rs-foot .replay-actions { justify-content: center; }
 .rs-close { width: 100%; }
+/* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
+@media (max-height: 500px), (max-width: 360px) {
+  .rs-foot { gap: var(--sp-2); padding: 10px var(--sp-3) 12px; }
+  .rs-foot .replay-actions { flex-wrap: nowrap; gap: var(--sp-2); }
+  .rs-foot .replay-actions .btn { flex: 1 1 0; min-width: 0; padding: 6px 8px; font-size: var(--fs-sm); min-height: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rs-foot .btn.big { min-height: 44px; padding-top: 8px; padding-bottom: 8px; font-size: var(--fs-lg); }
+}
+@media (max-height: 500px) {
+  .result-card .rs-hero { padding: 10px var(--sp-4) 12px; }
+  .result-card .rs-eyebrow { font-size: var(--fs-2xs); }
+  .result-card .result-title { font-size: 34px; margin-bottom: 6px; }
+  .result-card .big-score { font-size: 48px; }
+  .result-card .rs-crest .crest { width: 38px; height: 42px; }
+  .result-card .rs-name { font-size: 15px; }
+  .rs-foot { flex-direction: row; align-items: center; }
+  .rs-foot .replay-actions { flex: 1 1 auto; }
+  .rs-foot .rs-close { width: auto; flex: 1 1 auto; }
+}
 .modal-foot { position: sticky; bottom: calc(-1 * var(--sp-6)); margin: 0 calc(-1 * var(--sp-6)) calc(-1 * var(--sp-6)); padding: var(--sp-4) var(--sp-6) var(--sp-6); background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl); display: flex; flex-direction: column; gap: var(--sp-3); }
 
 /* Match ------------------------------------------------------------------------ */

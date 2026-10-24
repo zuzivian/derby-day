@@ -231,13 +231,17 @@ function attrCell(v: number): string {
   return `<td class="num attr opt t-${tier}">${v}</td>`;
 }
 
+/** The name, and (shown only on the narrowest phones, where the Pos column goes) the position chip under it. */
+const nameCell = (p: Player): string =>
+  `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>`;
+
 function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
   return `<tr${starter ? ' class="starter"' : ''}>
     <td class="num${showNumber ? '' : ' muted opt'}">${showNumber ? p.number : '–'}</td>
-    <td class="name">${esc(fullName(p))}${starter ? ' <span class="pill">XI</span>' : ''}</td>
+    <td class="name">${nameCell(p)}${starter ? ' <span class="pill">XI</span>' : ''}</td>
     <td class="opt">${esc(nation(p))}</td>
     <td class="num opt">${p.age}</td>
-    <td><span class="pos pos-${p.role}">${p.role}</span></td>
+    <td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td>
     <td class="num ovr">${overall(p)}</td>
     <td class="num muted opt">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
@@ -276,7 +280,7 @@ export function squadScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
       </table></div>
     </article>
@@ -299,7 +303,7 @@ export function transfersScreen(app: App): string {
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl has-action">
-        <thead><tr><th class="num opt">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
+        <thead><tr><th class="num opt">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
@@ -311,10 +315,10 @@ export function transfersScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</h2>
       <div class="table-scroll"><table class="tbl compact has-action">
-        <thead><tr><th class="num">#</th><th>Name</th><th>Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
-        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num">${p.number}</td><td class="name">${esc(fullName(p))}</td><td><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
+        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
+        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm sale</button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone"> sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
         }</td></tr>`).join('')}</tbody>
       </table></div>
@@ -463,7 +467,7 @@ function resultModal(app: App): string {
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
-      <div class="rs-scroll" tabindex="0" role="region" aria-label="Match stats and rewards">
+      <div class="rs-scroll" tabindex="0" role="region" aria-labelledby="result-title">
       <header class="rs-hero">
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : OUTCOME_WORD[outcome]}</h2>
