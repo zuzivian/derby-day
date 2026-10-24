@@ -258,3 +258,19 @@ describe('training-ground drills, keyboard and edge cases', () => {
     if (!r.done) expect(r.hint).toBe('too-far');
   });
 });
+
+describe('drill hand-over', () => {
+  // Regression: the pass drill flows on from "move" without restaging, so a ball lost on the
+  // run to the marker left the player with nothing to pass, and the first click picked a
+  // teammate instead (seen as a CI timeout in the training-ground e2e test).
+  test('the pass drill hands the ball back if it got away during the move drill', () => {
+    const s = training();
+    stageDrill(s, 'move');
+    s.ball.owner = -1;
+    s.ball.pos = { x: 10, y: 30 };
+    s.ball.vel = { x: 3, y: 0 };
+    stageDrill(s, 'pass', false);
+    expect(s.ball.owner).toBe(HUMAN);
+    expect(s.controlled[0]).toBe(HUMAN);
+  });
+});

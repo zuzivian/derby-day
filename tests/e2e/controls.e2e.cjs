@@ -309,7 +309,12 @@ test('training ground: the move and pass drills are done with the pointer', asyn
   // Drill 2: left click a teammate. The CPU moves them about, so hold them where they stand.
   await page.waitForFunction(() => /Pass to a teammate/.test(document.querySelector('#coach-title').textContent), null, { timeout: 10_000 });
   expect(await page.locator('#coach-text').innerText(), 'pass drill text').toMatch(/left click/i);
-  await page.waitForTimeout(1300);
+  // Wait until the drill is live and our player has the ball, rather than for a fixed time.
+  await page.waitForFunction(() => {
+    const s = window.__derbyMatch;
+    return s && s.ball.owner === s.controlled[0];
+  }, null, { timeout: 10_000 });
+  await page.waitForTimeout(300);
   const mate = await page.evaluate(() => {
     const s = window.__derbyMatch;
     const mates = s.players.filter((p) => p.team === 0 && p.role !== 'GK' && p.i !== s.controlled[0]);

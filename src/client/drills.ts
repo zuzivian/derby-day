@@ -176,6 +176,11 @@ export function stageDrill(s: MatchState, id: DrillId, fresh = true): Drill {
     s.phaseTicks = 0;
     s.controlled[0] = HUMAN;
     s.switchTimer[0] = 30;
+  } else if (id === 'pass' && s.ball.owner !== HUMAN) {
+    // Flowing on from "move": if the ball got away on the run to the marker, hand it back,
+    // or the first click of the pass drill would pick a teammate instead of passing.
+    giveBall(s, HUMAN);
+    s.controlled[0] = HUMAN;
   }
   const pinned = new Map<number, Vec>();
   if (id !== 'tackle') for (const [k, v] of Object.entries(id === 'shoot' ? OUR_ATTACK : OUR_SHAPE)) if (k !== '0') pinned.set(Number(k), { ...v });
