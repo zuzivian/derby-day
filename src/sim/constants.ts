@@ -26,8 +26,9 @@
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
+ *   9  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
  */
-export const SIM_VERSION = 8;
+export const SIM_VERSION = 9;
 
 export const TICK_HZ = 60;
 

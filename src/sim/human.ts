@@ -187,6 +187,17 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
     return { move: norm(to), throttle: 1, sprint: v > 4 };
   }
   const onLine = add(b.pos, scale(dir, along));
+  // Played ahead of him as he runs its way (a ball into his path): keep running along its line
+  // and let it catch him, easing only to a pace it can still catch, rather than stopping on the
+  // line to wait for it.
+  const pace = dot(p.vel, dir);
+  if (pace > 2.5) {
+    // Slow enough that it closes the gap to him in about 0.6 s.
+    const keep = Math.max(0, Math.min(pace, v - along / 0.6));
+    const go = sub(add(onLine, scale(dir, Math.max(1.5, keep * 0.5))), p.pos);
+    const effort = clamp(keep / 6.5, 0.3, SPRINT_MULT);
+    return effort > 1 ? { move: norm(go), throttle: effort / SPRINT_MULT, sprint: true } : { move: norm(go), throttle: effort };
+  }
   const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
   const to = sub(target, p.pos);
   const d = len(to);
