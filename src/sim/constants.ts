@@ -14,8 +14,11 @@
  *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
  *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
  *   4  Law 12: opponents standing close can't touch the keeper's release
+ *   5  controls feel: no hold on a steered man's pickup, tackles by the carrier's distance and slides
+ *      judged as they travel, lofts with a receiver and a softer bounce, rising human shots,
+ *      header aim relative to the striker, restart clicks kept, double clicks ignored
  */
-export const SIM_VERSION = 4;
+export const SIM_VERSION = 5;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;
