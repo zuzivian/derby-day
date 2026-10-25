@@ -11,7 +11,7 @@
 // Which tips and marks were shown is kept in prefs (coachSeen, marks), so a
 // returning player, whose prefs hold neither, never sees any. Styles: coach.css.
 
-import { PITCH_W } from '../sim/constants.ts';
+import { PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
 import { announce } from './a11y.ts';
@@ -33,16 +33,16 @@ export const TIPS: Record<TipId, Tip> = {
   run: {
     id: 'run',
     title: 'Run',
-    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrow keys.',
+    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrows.',
     keys: 'Use WASD or the arrow keys to run, and hold Shift to sprint. With a mouse, your player runs to the pointer instead.',
-    touch: 'Drag on the pitch and your player runs toward your finger. The further away it is, the faster he runs.',
+    touch: 'Drag on the pitch: your player runs to your finger, faster the further it is.',
   },
   pass: {
     id: 'pass',
     title: 'You have the ball',
-    mouse: 'Left click to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running. Hold the button for a lofted ball: the dots show where it lands.',
-    keys: 'Press Space to pass to the teammate you are facing.',
-    touch: 'Tap Pass to pass to where you are aiming. Hold it a little longer to loft the ball.',
+    mouse: 'Left click to kick off and to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running. Hold the button for a lofted ball: the dots show where it lands.',
+    keys: 'Press Space to kick off and to pass to the teammate you are facing.',
+    touch: 'Tap Pass to kick off or pass where you aim. Hold it to loft.',
   },
   shoot: {
     id: 'shoot',
@@ -63,12 +63,20 @@ export const TIPS: Record<TipId, Tip> = {
     title: 'Your restart',
     mouse: 'Play is stopped and your player takes it. Left click to pass where you want it. If you wait, the CPU takes it for you.',
     keys: 'Your player takes it. Press Space to pass. If you wait, the CPU takes it for you.',
-    touch: 'Play is stopped and your player takes it. Tap Pass to play it. If you wait, the CPU takes it for you.',
+    touch: 'Your player takes it: tap Pass. If you wait, the CPU takes it.',
   },
 };
 
-/** The run tip is the first thing a new player sees, a moment after the whistle. */
+/** The first tip of a first match starts by saying which player is you and which way you attack (team 0 always attacks the right-hand goal). */
+export const INTRO = 'You are the player with the yellow ring, attacking the goal on the right.';
+/** The same, short enough for a one-line banner: on a narrow phone the card has no room for the long sentence (coach.css). */
+export const INTRO_SHORT = 'You are the yellow ring, attacking right →';
+
+/** Tips start a moment after the whistle. */
 const RUN_AT_TICK = 45;
+
+/** A shot tip is only worth it when the goal is this close (metres): the sim's shots reach about 35 m and a new player should not be shooting from the halfway line. */
+export const SHOOT_RANGE = 28;
 
 /**
  * Watches a match and says which tips have just become relevant, in the order
@@ -100,23 +108,33 @@ export class CoachTracker {
     const ownerTeam = owner >= 0 ? s.players[owner].team : null;
     const live = s.phase === 'play';
 
-    // Running comes first: nothing else is offered until the run tip has been (or was, in an earlier match).
-    if (s.tick >= RUN_AT_TICK && s.phase !== 'fulltime') this.offer('run');
-    const ready = this.offered.has('run');
+    // Which tip comes first depends on the situation: a player on the ball is told about the ball (pass) before how to run,
+    // because that is what is on his mind; a player without it is told how to run. The kick-off is a kick (Law 8): taking it is
+    // the first pass, so the pass tip is due as soon as he stands over the ball and the click is waiting. Everything else
+    // starts a moment after the whistle.
+    const started = s.tick >= RUN_AT_TICK && s.phase !== 'fulltime';
+    const withBall = me >= 0 && owner === me;
+    const kickoffRestart = s.restart?.kind === 'kickoff' && s.phase !== 'fulltime'; // the match opens in phase 'kickoff', then 'restart'
+    const kickoff = kickoffRestart && s.restart!.stage === 'ready';
+    if (withBall && (kickoff || (started && live))) this.offer('pass');
+    // At his own kick-off the run tip waits for the pass tip: the click is what is wanted of him first.
+    const toTake = kickoffRestart && s.restart!.taker === me && !kickoff;
+    if (started && !toTake) this.offer('run');
 
-    // The kick-off is a kick (Law 8): taking it is the first pass, so say how to pass.
-    const kickoff = s.phase === 'restart' && s.restart?.kind === 'kickoff' && s.restart.stage === 'ready';
-    if (ready && (live || kickoff) && me >= 0 && owner === me) {
-      this.offer('pass');
-      // The first time with the ball in the attacking half is the time to say how to shoot.
-      const x = s.players[me].pos.x;
-      if (attackDir(s, human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
-    }
+    // Shooting is only worth saying when a shot is on: the ball at his feet in open play and the goal within range.
+    if (started && live && withBall && this.inShootingRange(s, human, me)) this.offer('shoot');
     // Lost it: the human's team had the ball and the other side has it now.
-    if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
+    if (started && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
     if (owner >= 0 || live) this.prevOwnerTeam = ownerTeam ?? this.prevOwnerTeam;
-    if (ready && this.restartIsMine(s, human)) this.offer('restart');
+    if (started && this.restartIsMine(s, human)) this.offer('restart');
     return this.queue.slice(before);
+  }
+
+  /** Within SHOOT_RANGE metres of the centre of the goal the human's team attacks. */
+  private inShootingRange(s: MatchState, human: 0 | 1, me: number): boolean {
+    const goalX = attackDir(s, human) > 0 ? PITCH_W : 0;
+    const p = s.players[me].pos;
+    return Math.hypot(p.x - goalX, p.y - PITCH_H / 2) < SHOOT_RANGE;
   }
 
   private restartIsMine(s: MatchState, human: 0 | 1): boolean {
@@ -128,12 +146,14 @@ export class CoachTracker {
   relevant(id: TipId, s: MatchState, human: 0 | 1 = 0): boolean {
     const me = s.controlled[human];
     const owner = s.ball.owner;
+    const withBall = me >= 0 && owner === me;
     switch (id) {
       case 'run':
         return s.phase !== 'fulltime';
       case 'pass':
+        return withBall && (s.phase === 'play' || s.restart?.kind === 'kickoff');
       case 'shoot':
-        return me >= 0 && owner === me;
+        return withBall && s.phase === 'play' && this.inShootingRange(s, human, me);
       case 'tackle':
         return s.phase === 'play' && (owner < 0 || s.players[owner].team !== human);
       case 'restart':
@@ -166,7 +186,7 @@ export interface CoachOptions {
   /** Tip ids already shown on this browser. */
   seen: string[];
   /** A tip has really been shown (read for a few seconds, or dismissed): remember it so it never comes back. */
-  onSeen: (id: TipId) => void;
+  onSeen: (id: string) => void;
   /** 0 or 1: which side the human plays. */
   human?: 0 | 1;
 }
@@ -188,9 +208,10 @@ export const minTipMs = (text: string): number => Math.max(5000, text.trim().spl
 const autoHideMs = (text: string): number => Math.max(10_000, minTipMs(text) + 4000);
 
 /** The words of a tip for the way the player is playing right now: touch first, then whichever input was used last. */
-export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean): string {
+export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean, intro = false): string {
   const t = TIPS[id];
-  return touch ? t.touch : mode === 'keys' ? t.keys : t.mouse;
+  const body = touch ? t.touch : mode === 'keys' ? t.keys : t.mouse;
+  return intro ? `${INTRO} ${body}` : body;
 }
 
 export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
@@ -201,8 +222,18 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   el.hidden = true;
   el.setAttribute('data-coach-tip', '');
   host.appendChild(el);
+  // Narrow portrait phones show the intro as this banner above the Pass pad instead of inside the card (coach.css).
+  const banner = document.createElement('div');
+  banner.className = 'coach-intro';
+  banner.hidden = true;
+  banner.setAttribute('aria-hidden', 'true'); // the card says it for a screen reader
+  banner.textContent = INTRO_SHORT;
+  host.appendChild(banner);
   const touch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let shown: TipId | null = null;
+  // The first tip a player ever reads also says which player is you; 'intro' is remembered with the tips already seen.
+  let introPending = !o.seen.includes('intro');
+  let introTip: TipId | null = null;
   let text = '';
   let age = 0;
   let counted = false;
@@ -211,27 +242,42 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     if (shown && !counted) {
       counted = true;
       o.onSeen(shown);
+      if (introTip === shown) o.onSeen('intro');
     }
   };
   const hide = () => {
     // Cut short before it could be read: not counted, and it may be offered again.
-    if (shown && !counted) tracker.forget(shown);
+    if (shown && !counted) {
+      tracker.forget(shown);
+      if (introTip === shown) {
+        introPending = true; // cut short before it could be read: its intro line comes back with it
+        introTip = null;
+      }
+    }
     shown = null;
     el.hidden = true;
     el.classList.remove('on');
+    banner.hidden = true;
   };
   const draw = (id: TipId) => {
     const tip = TIPS[id];
-    text = tipText(id, o.mode(), touch());
+    text = tipText(id, o.mode(), touch(), introTip === id);
+    const lead = introTip === id ? `<span class="coach-lead">${INTRO} </span>` : '';
     el.dataset.coachTip = id;
-    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${text}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
+    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${lead}${tipText(id, o.mode(), touch())}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
   };
   const show = (id: TipId) => {
     shown = id;
     age = 0;
     counted = false;
+    // The first tip of a first match also says which player is you and which way you attack.
+    if (introPending) {
+      introTip = id;
+      introPending = false;
+    }
     draw(id);
     el.hidden = false;
+    banner.hidden = introTip !== id;
     // Next frame, so the fade-in runs.
     requestAnimationFrame(() => el.classList.add('on'));
     announce(`Tip. ${TIPS[id].title}. ${text}`);
@@ -245,30 +291,36 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   el.addEventListener('click', onClick);
 
   let lastState: MatchState | null = null;
+  let frozen = false; // e2e only: frames do not move the tip clock, only hook.advance does
+  const step = (s: MatchState, dtMs: number, redraw = dtMs > 0) => {
+    lastState = s;
+    tracker.observe(s, human);
+    if (shown) {
+      age += dtMs;
+      if (!counted && age >= SEEN_AFTER_MS) countSeen();
+      if (redraw && text !== tipText(shown, o.mode(), touch(), introTip === shown)) draw(shown); // the player switched input: say it their way
+      if (age >= autoHideMs(text)) hide();
+      // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
+      else if (tracker.queue.length && age >= minTipMs(text)) hide();
+    }
+    if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
+      const id = tracker.take(s, human);
+      if (id) show(id);
+    }
+  };
   const handle: CoachHandle = {
     update(s, dtMs) {
-      lastState = s;
-      tracker.observe(s, human);
-      if (shown) {
-        age += dtMs;
-        if (!counted && age >= SEEN_AFTER_MS) countSeen();
-        if (dtMs > 0 && text !== tipText(shown, o.mode(), touch())) draw(shown); // the player switched input: say it their way
-        if (age >= autoHideMs(text)) hide();
-        // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
-        else if (tracker.queue.length && age >= minTipMs(text)) hide();
-      }
-      if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
-        const id = tracker.take(s, human);
-        if (id) show(id);
-      }
+      step(s, frozen ? 0 : dtMs, dtMs > 0);
     },
     setPaused(paused) {
       el.classList.toggle('paused', paused);
+      banner.classList.toggle('paused', paused);
     },
     dismiss: hide,
     dispose() {
       el.removeEventListener('click', onClick);
       el.remove();
+      banner.remove();
       if (e2eHook && (globalThis as { __derbyCoach?: unknown }).__derbyCoach === hook) delete (globalThis as { __derbyCoach?: unknown }).__derbyCoach;
     },
   };
@@ -279,7 +331,11 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   const hook = {
     state: () => ({ shown, age, counted, minMs: shown ? minTipMs(text) : 0, seenAfterMs: SEEN_AFTER_MS, queue: [...tracker.queue] }),
     advance: (ms: number) => {
-      if (lastState) handle.update(lastState, ms);
+      if (lastState) step(lastState, ms);
+    },
+    // Hold the tip clock still, so a slow runner's wall time between test steps cannot age or replace a tip.
+    freeze: () => {
+      frozen = true;
     },
   };
   if (e2eHook) (globalThis as { __derbyCoach?: unknown }).__derbyCoach = hook;
@@ -303,7 +359,7 @@ const MARKS: { screen: string; unlock: UnlockId; title: string; text: string }[]
   { screen: 'training', unlock: 'training', title: 'New: Training', text: 'Spend the sessions you earn on player attributes.' },
   { screen: 'competitions', unlock: 'cup', title: 'New: Competitions', text: 'The Cup is open: eight clubs, three rounds, a trophy.' },
   { screen: 'transfers', unlock: 'transfers', title: 'New: Transfers', text: 'Sign players from the market and sell to CPU clubs.' },
-  { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 16.' },
+  { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 32.' },
 ];
 
 /** The first revealed tab that has not been pointed out yet, or null. `marks` undefined means the player predates marks: none. */

@@ -33,7 +33,7 @@ const CLAIM_GRACE_MS = 800;
 /** If the browser's lock manager does not answer at all within this long, stop waiting for it and use the lease instead. */
 const LOCK_ANSWER_MS = 3000;
 
-type Msg = { type: 'ask' | 'yield' | 'busy' | 'claim' | 'ping' | 'alive'; from: string; to?: string };
+type Msg = { type: 'ask' | 'yield' | 'busy' | 'claim' | 'ping' | 'alive'; from: string; to?: string; sig?: string };
 interface Lease {
   id: string;
   t: number;
@@ -65,6 +65,8 @@ let waiting: ((m: Msg) => void) | null = null;
 let pinging: (() => void) | null = null;
 /** This browser did hand out a Web Lock for the club (so the lease is not needed). */
 let useLocks = false;
+/** What the owner said it left in storage when it yielded (see storageSig). */
+let yieldSig: string | undefined;
 let releaseLock: (() => void) | null = null;
 
 // ---------------------------------------------------------------------------
@@ -214,7 +216,7 @@ function onMessage(m: Msg): void {
     else {
       // Everything is saved as it changes, so letting go is just stopping.
       release();
-      post({ type: 'yield', to: m.from });
+      post({ type: 'yield', to: m.from, sig: storageSig() });
       hooks.onLost();
     }
   } else if (waiting && (m.type === 'yield' || m.type === 'busy')) waiting(m);
@@ -301,6 +303,114 @@ function release(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Hand-over check
+
+const SAVE_KEY = 'derbyday.save.v1';
+const REPLAYS_KEY = 'derbyday.replays.v1';
+const PRE_IMPORT_KEY = 'derbyday.save.v1.pre-import';
+/**
+ * Kept in the page's history entry (history.state): it survives the reload that follows a hand-over or a restore, is not
+ * shared with other tabs or origins, and does not go through the storage that the check is there to distrust (sessionStorage
+ * was seen to lose its last writes at an unload just as localStorage does).
+ */
+const EXPECT_KEY = 'derbyday.handover';
+const readExpect = (): unknown => {
+  try {
+    return (history.state as Record<string, unknown> | null)?.[EXPECT_KEY] ?? null;
+  } catch {
+    return null;
+  }
+};
+const writeExpect = (v: unknown): void => {
+  try {
+    const rest = { ...((history.state as Record<string, unknown> | null) ?? {}) };
+    if (v) rest[EXPECT_KEY] = v;
+    else delete rest[EXPECT_KEY];
+    history.replaceState(rest, '');
+  } catch {
+    /* no history here: the check is skipped */
+  }
+};
+/** An expectation older than this is forgotten: the hand-over it belonged to is long over. */
+const EXPECT_TTL_MS = 30000;
+/** How long a taker waits for the storage it reads to catch up with what the owner left. */
+const HANDOVER_WAIT_MS = 2000;
+
+const sum = (s: string): string => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+  return `${s.length}:${(h >>> 0).toString(36)}`;
+};
+
+/** A short fingerprint of the club and the replays as this tab reads them now (length and a checksum of each). */
+export function storageSig(): string {
+  try {
+    return [SAVE_KEY, REPLAYS_KEY].map((k) => sum(localStorage.getItem(k) ?? '')).join('|');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * The tab that took the club reloads, and Chromium now and then starts that page on storage that is a moment behind
+ * what the other tab last wrote: a save missing the last result, or no save at all (a new club, which would then
+ * overwrite the real one). The owner's yield carries what it left, and this keeps it across the reload.
+ */
+function expectFromOwner(sig: string | undefined): void {
+  writeExpect(sig ? { sig, t: Date.now() } : null);
+}
+
+/**
+ * A restore (or an undo of one) has just written the club and is about to reload. The same check applies to the page after
+ * the reload, and it also keeps the club that was written, so that if the browser lost the write the page can put it back
+ * instead of opening the old club.
+ */
+export function expectRestore(): void {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) writeExpect({ sig: storageSig(), t: Date.now(), restore: raw, pre: localStorage.getItem(PRE_IMPORT_KEY) });
+  } catch {
+    /* storage unavailable: the check is skipped */
+  }
+}
+
+/**
+ * After a hand-over: resolves true when what this page reads is what the previous owner left (or when there is nothing to
+ * check), waiting up to waitMs for storage to catch up. False means it never did: the caller must not start the game or
+ * write the club. The expectation is kept (until it expires) so that a retry checks again.
+ */
+export async function handoverReady(waitMs = HANDOVER_WAIT_MS): Promise<boolean> {
+  const want = readExpect() as { sig: string; t: number; restore?: string; pre?: string | null } | null;
+  if (!want || typeof want !== 'object' || typeof want.sig !== 'string' || typeof want.t !== 'number' || Math.abs(Date.now() - want.t) > EXPECT_TTL_MS) {
+    writeExpect(null);
+    return true;
+  }
+  const until = Date.now() + waitMs;
+  for (;;) {
+    if (storageSig() === want.sig) {
+      writeExpect(null);
+      return true;
+    }
+    if (Date.now() >= until) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  // A restore that the browser lost: write the club it was meant to make (the only case where this page writes before it matches).
+  if (typeof want.restore === 'string') {
+    try {
+      if (typeof want.pre === 'string') localStorage.setItem(PRE_IMPORT_KEY, want.pre);
+      localStorage.setItem(SAVE_KEY, want.restore);
+      if (storageSig() === want.sig) {
+        writeExpect(null);
+        return true;
+      }
+    } catch {
+      /* storage refuses: fall through */
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 
 /**
@@ -350,6 +460,7 @@ export type TakeResult = 'taken' | 'busy';
 
 /** Ask the owner to let go. 'none' when nobody answers in time. */
 function ask(): Promise<'yield' | 'busy' | 'none'> {
+  yieldSig = undefined;
   return new Promise((resolve) => {
     const finish = (r: 'yield' | 'busy' | 'none') => {
       clearTimeout(timer);
@@ -357,7 +468,10 @@ function ask(): Promise<'yield' | 'busy' | 'none'> {
       resolve(r);
     };
     const timer = setTimeout(() => finish('none'), ASK_MS);
-    waiting = (m) => finish(m.type === 'busy' ? 'busy' : 'yield');
+    waiting = (m) => {
+      yieldSig = m.sig;
+      finish(m.type === 'busy' ? 'busy' : 'yield');
+    };
     post({ type: 'ask' });
   });
 }
@@ -370,6 +484,7 @@ export async function take(): Promise<TakeResult> {
   if (owner) return 'taken'; // a steal that the lock manager answered late already made this tab the owner
   const answer = await ask();
   if (answer === 'busy') return 'busy';
+  expectFromOwner(answer === 'yield' ? yieldSig : undefined);
   if (useLocks) {
     // The owner let go, or did not answer in time (busy with a load, frozen, or gone: if it died, its lock is released at
     // once). Either way wait for the lock to come free, and only then take it by force.

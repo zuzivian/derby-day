@@ -7,7 +7,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
-import { KICKOFF_PAUSE, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT } from '../src/sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, KICKOFF_PAUSE, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT } from '../src/sim/constants.ts';
 import { attackDir, inOffsidePosition, oppGoal, ownGoal } from '../src/sim/field.ts';
 import { createMatch, simulate, step } from '../src/sim/match.ts';
 import { awardRestart, issueCard, judgeFoul, matchMinute, matchSeconds } from '../src/sim/rules.ts';
@@ -168,13 +168,17 @@ describe('Law 8: the teams change ends at half-time', () => {
   test('a whole match plays the same either way round: CPU attacks the right goal in each half', () => {
     let shots1 = [0, 0];
     let shots2 = [0, 0];
-    for (const seed of [11, 12, 13]) {
+    // Enough halves that each one sees a few shots whatever the AI's version (the check is the direction).
+    for (const seed of [11, 12, 13, 14]) {
       const s = createMatch({ seed, ...teams(seed), halfSeconds: 90, humanTeam: -1 });
       while (s.phase !== 'fulltime') {
         const before = [s.stats[0].shots, s.stats[1].shots];
         step(s);
         for (const t of [0, 1] as const) {
-          if (s.stats[t].shots > before[t]) {
+          // A shot struck from right against a post can come straight back off it the same tick.
+          const b = s.ball.pos;
+          const atPost = [GOAL_TOP, GOAL_BOTTOM].some((y) => Math.hypot(Math.min(b.x, PITCH_W - b.x), b.y - y) < 0.5);
+          if (s.stats[t].shots > before[t] && !atPost) {
             // The ball is heading for the goal this side attacks this half.
             expect(Math.sign(s.ball.vel.x)).toBe(attackDir(s, t));
             if (s.half === 1) shots1[t]++;

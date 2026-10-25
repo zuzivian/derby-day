@@ -31,7 +31,8 @@ const fakeSim: QuickSim = (_s, a, b, seed) => {
   return a.elo >= b.elo ? { ga: 2, gb: 1 } : { ga: 1, gb: 2 };
 };
 
-const ladderSnapshot = (s: Save) => JSON.stringify(s.ladder.map((c) => [c.id, c.elo, c.played]));
+/** The ladder record (ranked matches only): competitions move Elo but never this. */
+const ladderSnapshot = (s: Save) => JSON.stringify(s.ladder.map((c) => [c.id, c.played, c.won, c.drawn, c.lost]));
 
 describe('entrants', () => {
   test('you plus seven ladder clubs, unique, best Elo first', () => {
@@ -57,7 +58,7 @@ describe('cup', () => {
     expect(cupOpponent(s, cup)).not.toBeNull();
   });
 
-  test('winning every round pays all the prizes, records the trophy and leaves Elo alone', () => {
+  test('winning every round pays all the prizes, records the trophy, moves Elo but not the ladder record', () => {
     const s = newGame(6);
     const elo = s.club.elo;
     const played = s.club.played;
@@ -70,8 +71,8 @@ describe('cup', () => {
     expect(s.cup!.winner).toBe(s.club.id);
     expect(s.trophies!.length).toBe(1);
     expect(s.trophies![0].kind).toBe('cup');
-    expect(s.budget - budget).toBe(CUP_PRIZES.reduce((a, b) => a + b, 0));
-    expect(s.club.elo).toBe(elo);
+    expect(s.budget - budget).toBe(CUP_PRIZES.reduce((a, b) => a + b, 0)); // bottom division: DIVISION_MONEY 1
+    expect(s.club.elo).toBeGreaterThan(elo); // three wins against rated clubs
     expect(s.club.played).toBe(played);
     expect(ladderSnapshot(s)).toBe(ladder);
     expect(s.history.at(-1)!.competition).toBe('Cup final');
@@ -159,7 +160,7 @@ describe('season', () => {
     for (const id of ids) expect(homes.get(id) ?? 0).toBeGreaterThanOrEqual(3);
   });
 
-  test('a full season fills the table, pays by position and leaves Elo alone', () => {
+  test('a full season fills the table, pays by position, moves Elo but not the ladder record', () => {
     const s = newGame(12);
     const elo = s.club.elo;
     const ladder = ladderSnapshot(s);
@@ -183,7 +184,7 @@ describe('season', () => {
     expect(season.finish).toBe(1);
     expect(budget).toBe(SEASON_PRIZES[0]);
     expect(s.trophies!.some((t) => t.kind === 'season')).toBe(true);
-    expect(s.club.elo).toBe(elo);
+    expect(s.club.elo).toBeGreaterThan(elo);
     expect(ladderSnapshot(s)).toBe(ladder);
   });
 
@@ -235,15 +236,16 @@ describe('saves', () => {
 describe('competition forfeits', () => {
   // Regression: forfeiting a cup quarter-final still paid its prize and two
   // sessions, so start → forfeit → restart could be farmed with no Elo cost.
-  test('forfeiting a cup tie knocks you out and pays nothing', () => {
+  test('forfeiting a cup tie knocks you out, pays no prize and costs a fine', () => {
     const s = newGame(8);
     const budget = s.budget;
     const sessions = s.trainingPoints;
     startCup(s);
     const out = recordCupMatch(s, 0, 3, [], fakeSim, true);
     expect(isOut(s, s.cup!)).toBe(true);
-    expect(out.summary.money).toBe(0);
-    expect(s.budget).toBe(budget);
+    expect(out.summary.money).toBe(0); // no prize money
+    expect(out.summary.fine).toBeGreaterThan(0);
+    expect(s.budget).toBe(budget - out.summary.fine!);
     expect(s.trainingPoints).toBe(sessions);
   });
 

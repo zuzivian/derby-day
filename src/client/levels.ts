@@ -82,7 +82,7 @@ export function levelPanel(s: Save): string {
     ${teaser
       ? `<p class="level-next" id="next-unlock"><span class="level-next-label">Next unlock</span> ${esc(teaser)}</p>`
       : `<p class="level-next" id="next-unlock"><span class="level-next-label">Everything unlocked</span> ${p.maxed ? 'Max level. Your XP keeps counting.' : 'Keep going: level 99 is the cap.'}</p>`}
-    <p class="muted small">XP: ranked, cup or league win ${XP.win}, draw ${XP.draw}, loss ${XP.loss}, +${XP.goal} a goal, +${XP.cleanSheet} for a clean sheet. Practice ${XP.practice.easy} to ${XP.practice.hard}. Each training session +${XP.trainingSession}. Cup and league finishes and first-time milestones pay extra. Forfeits earn nothing.</p>
+    <p class="muted small">XP: ranked, cup or league win ${XP.win}, draw ${XP.draw}, loss ${XP.loss}, +${XP.goal} a goal, +${XP.cleanSheet} for a clean sheet, more against stronger clubs and in higher divisions (up to about ×2.3), less against weak ones. Practice ${XP.practice.easy} to ${XP.practice.hard}. Each training session +${XP.trainingSession}. Cup and league finishes and first-time milestones pay extra. Forfeits earn nothing.</p>
     ${next.length ? `<ul class="unlock-list unlock-list-next" aria-label="Next unlock">${next.map((u) => unlockRow(s, u, nextLevel)).join('')}</ul>` : ''}
     <details class="unlock-all">
       <summary>All unlocks and perks · ${done} of ${UNLOCKS.length} unlocked</summary>
