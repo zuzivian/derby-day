@@ -588,7 +588,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       // Short of the final third the front striker stays on the last line, to stretch it and run in
       // behind, rather than coming short with the others (a lone 9 dropping in leaves nobody up).
       // A low block (k.pin off) keeps him close instead, so the block stays compact when the ball is lost.
-      if (k.pin && cx < 0.66) {
+      // With the human on the ball he comes short as before: a player steering the ball wants
+      // the short option more than a man on the shoulder he must find with a through ball.
+      if (k.pin && cx < 0.66 && center.i !== human) {
         let top = -Infinity;
         for (const m of mates) {
           if (m.sub !== 'ST' || m.i === center.i) continue;

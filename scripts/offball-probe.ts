@@ -21,7 +21,8 @@
 //   <.5s..2s+  open teammates by how long the carrier has had the ball
 //   m/s      the carrier's average speed
 // --human: home is a scripted human (runs at goal, passes to the most forward open man);
-// the table is then for his touches (he is switched to whoever has it), by formation and by mentality.
+// the table is then for his touches (he is switched to whoever has it), by formation and by mentality,
+// with his side's goals and shots for and against (GF GA sh shA, per match).
 
 import { autoLineup, generateSquad, toTeamSetup } from '../src/meta/club.ts';
 import { addOpt, addShape, measureOffball, optionSummary, shapeSummary, type OffballResult, type OptionStats, type ShapePhase } from '../src/meta/offballProbe.ts';
@@ -46,6 +47,7 @@ const id = (name: string, primary: string) => ({ id: name, name, short: name.sli
 /** n matches of A against a Balanced 4-4-2. A is home in even matches (always home with a human). */
 function series(f: FormationId, m: Mentality) {
   let acc: { shape: OffballResult['shape']; opt: OffballResult['options'][0]; hum: OffballResult['humanOptions'] } | null = null;
+  const res = { gf: 0, ga: 0, sh: 0, sha: 0 };
   for (let i = 0; i < n; i++) {
     const squad = generateSquad(makeRng(5000 + Math.floor(i / 2)), quality);
     const A = toTeamSetup(id('Side A', '#c00'), squad, autoLineup(squad, f), skill, f, m);
@@ -53,6 +55,10 @@ function series(f: FormationId, m: Mentality) {
     const aHome = human || i % 2 === 0;
     const r = measureOffball({ seed: 7100 + i, home: aHome ? A : B, away: aHome ? B : A, halfSeconds }, human);
     const t = aHome ? 0 : 1;
+    res.gf += r.state.score[t];
+    res.ga += r.state.score[1 - t];
+    res.sh += r.state.stats[t].shots;
+    res.sha += r.state.stats[1 - t].shots;
     if (!acc) acc = { shape: [r.shape[t], r.shape[t]], opt: r.options[t], hum: r.humanOptions };
     else {
       addShape(acc.shape[0][0], r.shape[t][0]);
@@ -62,7 +68,7 @@ function series(f: FormationId, m: Mentality) {
     }
   }
   const slots = formationOf(f);
-  return { inPoss: shapeSummary(acc!.shape[0][0], slots), outPoss: shapeSummary(acc!.shape[0][1], slots), options: optionSummary(acc!.opt), human: optionSummary(acc!.hum) };
+  return { inPoss: shapeSummary(acc!.shape[0][0], slots), outPoss: shapeSummary(acc!.shape[0][1], slots), options: optionSummary(acc!.opt), human: optionSummary(acc!.hum), res };
 }
 
 const f1 = (v: number) => v.toFixed(1).padStart(5);
@@ -90,15 +96,16 @@ if (!human) {
     }
   }
 } else {
-  console.log(`${'side A'.padEnd(18)} |${optHead}`);
-  for (const f of FORMATION_IDS) {
-    const r = series(f, 'balanced');
-    console.log(`${`${f} Balanced`.padEnd(18)} | ${optCols(r.human)}`);
-  }
-  for (const m of MENTALITY_IDS) {
-    if (m === 'balanced') continue;
-    const r = series('4-4-2', m);
-    console.log(`${`4-4-2 ${MENTALITY_LABEL[m]}`.padEnd(18)} | ${optCols(r.human)}`);
-  }
+  // GF GA sh shA: the human side's goals and shots for and against, per match.
+  console.log(`${'side A'.padEnd(18)} |${optHead} |   GF    GA    sh   shA`);
+  const tot = { gf: 0, ga: 0, sh: 0, sha: 0, n: 0 };
+  const line = (label: string, r: ReturnType<typeof series>) => {
+    for (const k of ['gf', 'ga', 'sh', 'sha'] as const) tot[k] += r.res[k];
+    tot.n += n;
+    console.log(`${label.padEnd(18)} | ${optCols(r.human)} | ${f2(r.res.gf / n)} ${f2(r.res.ga / n)} ${f1(r.res.sh / n)} ${f1(r.res.sha / n)}`);
+  };
+  for (const f of FORMATION_IDS) line(`${f} Balanced`, series(f, 'balanced'));
+  for (const m of MENTALITY_IDS) if (m !== 'balanced') line(`4-4-2 ${MENTALITY_LABEL[m]}`, series('4-4-2', m));
+  console.log(`${'all'.padEnd(18)} | ${' '.repeat(optHead.length - 1)} | ${f2(tot.gf / tot.n)} ${f2(tot.ga / tot.n)} ${f1(tot.sh / tot.n)} ${f1(tot.sha / tot.n)}   (${tot.n} matches)`);
 }
 console.log(`\n${((performance.now() - t0) / 1000).toFixed(1)} s`);

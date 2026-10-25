@@ -13,7 +13,7 @@
 //     is open when he is 5 to 35 m away, no opponent is within 1.5 m (plus
 //     3% of the distance) of the straight lane from 1.5 m out, and none is
 //     within 2.5 m of him. The human here is a scripted bot (humanBot below) that runs at
-//     goal and passes to the most forward open teammate.
+//     goal, plays in runners, and passes to the most forward open teammate.
 //
 // All in metres in each side's own frame (x from its own goal line; y is world y, as
 // slots are).
@@ -225,8 +225,9 @@ function sampleOptions(s: MatchState, c: MatchPlayer, onBall: number, a: OptAcc)
 }
 
 /**
- * The scripted human: with the ball he runs at goal, and after 1 to 2 s on it
- * passes to the open teammate furthest forward (or shoots inside 22 m); without
+ * The scripted human: with the ball he runs at goal, plays a teammate in who is
+ * running in behind from onside, and after 1 to 2 s on it passes to the open
+ * teammate furthest forward (or shoots inside 22 m); without
  * it he chases the ball and tackles when close. He takes his side's restarts short
  * at once. Deterministic (no RNG draws).
  */
@@ -249,6 +250,24 @@ export function humanBot(s: MatchState, team: 0 | 1, held: { since: number }): H
     if (held.since < 0) held.since = s.tick;
     const t = (s.tick - held.since) / TICK_HZ;
     if (Math.hypot(goal.x - me.pos.x, goal.y - me.pos.y) < 22) return { cursor: goal, aim: goal, shoot: 0.85, moved: true };
+    // A teammate running in behind from onside: play him in (the pass is led onto his run).
+    if (t > 0.3) {
+      const line = secondLastOpponentX(s, team);
+      const bx = tx(s, team, b.pos.x);
+      const fwd = goal.x > PITCH_W / 2 ? 1 : -1;
+      for (const m of s.players) {
+        if (m.team !== team || m.i === me.i || m.sentOff || m.role === 'GK') continue;
+        const x = tx(s, team, m.pos.x);
+        const d = Math.hypot(m.pos.x - me.pos.x, m.pos.y - me.pos.y);
+        if (x > line || x < line - 4 / PITCH_W || x < bx + 8 / PITCH_W || m.vel.x * fwd < 3 || d > 35) continue;
+        const lead = { x: m.pos.x + m.vel.x * 0.9, y: m.pos.y + m.vel.y * 0.9 };
+        let clear = true;
+        for (const o of s.players) if (o.team !== team && !o.sentOff && segDist(o.pos.x, o.pos.y, me.pos.x, me.pos.y, lead.x, lead.y) < 1.5) clear = false;
+        if (!clear) continue;
+        held.since = -1;
+        return { cursor: { ...m.pos }, aim: { ...m.pos }, pass: true, moved: true };
+      }
+    }
     if (t > 1 + ((s.tick * 7) % 60) / 60) {
       let best: MatchPlayer | null = null;
       let bestX = -Infinity;
