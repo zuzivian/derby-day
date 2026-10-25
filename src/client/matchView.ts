@@ -506,6 +506,20 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   canvas.focus({ preventScroll: true });
   announce(`${o.label} match. ${home.name} against ${away.name}. Esc pauses.`);
 
+  // The browser's Back (and Android's Back gesture) during a live match opens the pause menu instead of leaving the page
+  // and losing the match: the match owns one history entry, put back after each Back press, and removes it when it ends.
+  let guardingBack = false;
+  const onPop = () => {
+    if (done) return;
+    try { history.pushState({ derbyMatch: true }, ''); } catch { /* sandboxed viewer: no history to guard */ }
+    setPaused(true);
+  };
+  try {
+    history.pushState({ derbyMatch: true }, '');
+    guardingBack = true;
+    window.addEventListener('popstate', onPop);
+  } catch { /* sandboxed viewer */ }
+
   function dispose() {
     gfx.dispose();
     input.dispose();
@@ -519,6 +533,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    if (guardingBack) {
+      window.removeEventListener('popstate', onPop);
+      guardingBack = false;
+      // Take the match's own entry back off, so the player's Back button goes where it went before the match.
+      try { if ((history.state as { derbyMatch?: boolean } | null)?.derbyMatch) history.back(); } catch { /* no history */ }
+    }
     replay?.skip.remove();
     replay = null;
   }
