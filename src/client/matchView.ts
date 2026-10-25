@@ -16,7 +16,8 @@ import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type Ti
 import { InputController } from './input.ts';
 import { kickGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
-import { PitchRenderer, type RenderExtras } from './render.ts';
+import type { RenderExtras } from './render.ts';
+import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -85,8 +86,7 @@ const REPLAY_STALE = 6 * TICK_HZ;
 const REPLAY_GAP = 90 * TICK_HZ;
 /** Clicks and keys can't skip in the first moments, so a click already in progress doesn't. */
 const REPLAY_SKIP_AFTER_MS = 400;
-/** A lost WebGL context not restored within this long: the match carries on in 2D. */
-export const GFX_RESTORE_MS = 3000;
+export { GFX_RESTORE_MS } from './gfxloss.ts';
 
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
 export interface MatchInputSource {
@@ -265,70 +265,35 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
 
-  // WebGL context loss (a GPU or driver reset): hold the match with a calm note instead of playing on
-  // under a blank pitch. Resume when the context comes back; if it doesn't within GFX_RESTORE_MS,
-  // finish the match on the 2D renderer, on a fresh canvas, from the very same state.
-  let gfxLost = false;
-  let gfxTimer = 0;
-  const gfxNote = document.createElement('div');
-  gfxNote.className = 'gfx-note';
-  gfxNote.setAttribute('role', 'status');
-  gfxNote.hidden = true;
-  gfxNote.textContent = 'Restoring graphics…';
-  wrapEl.appendChild(gfxNote);
-  function watchContext(r: MatchRenderer) {
-    if (!(r instanceof Renderer3D)) return;
-    r.onContextLost = () => {
-      if (done || gfxLost) return;
-      gfxLost = true;
-      gfxNote.hidden = false;
-      announce('Restoring graphics.');
-      gfxTimer = window.setTimeout(fallBackTo2D, GFX_RESTORE_MS);
-    };
-    r.onContextRestored = () => {
-      clearTimeout(gfxTimer);
-      if (!gfxLost) return;
-      gfxLost = false;
-      gfxNote.hidden = true;
+  // WebGL context loss (a GPU or driver reset): hold the match under a calm note instead of playing on
+  // under a blank pitch (gfxloss.ts). Resume when the context comes back; if it doesn't, finish the
+  // match on the 2D renderer, on a fresh canvas, from the very same state.
+  const gfx = watchGfxLoss(renderer, wrapEl, {
+    onRestored: () => {
       last = performance.now();
       acc = 0;
-    };
-  }
-  function fallBackTo2D() {
-    if (done || !gfxLost) return;
-    endReplay();
-    input.dispose();
-    offCam();
-    ro.unobserve(canvas);
-    renderer.dispose();
-    const fresh = document.createElement('canvas');
-    for (const a of ['id', 'tabindex', 'role', 'aria-roledescription', 'aria-label']) {
-      const v = canvas.getAttribute(a);
-      if (v !== null) fresh.setAttribute(a, v);
-    }
-    const hadFocus = document.activeElement === canvas;
-    canvas.replaceWith(fresh);
-    canvas = fresh;
-    renderer = new PitchRenderer(fresh);
-    fresh.dataset.renderer = '2d';
-    fresh.dataset.fallback = 'context-lost';
-    input = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
-    offCam = () => {};
-    replaysOk = false;
-    replaysOn = false;
-    optReplays.closest('label')!.hidden = true;
-    root.querySelector('#zoom-hint')?.remove();
-    ro.observe(fresh);
-    renderer.resize();
-    renderer.prepare(s);
-    gfxLost = false;
-    gfxNote.hidden = true;
-    last = performance.now();
-    acc = 0;
-    if (hadFocus) fresh.focus({ preventScroll: true });
-    announce('The graphics could not be restored, so the match carries on in the 2D view.');
-  }
-  watchContext(renderer);
+    },
+    onGiveUp: () => {
+      if (done) return;
+      endReplay();
+      input.dispose();
+      offCam();
+      ro.unobserve(canvas);
+      ({ canvas, renderer } = fallback2D(canvas, renderer));
+      input = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
+      offCam = () => {};
+      replaysOk = false;
+      replaysOn = false;
+      optReplays.closest('label')!.hidden = true;
+      root.querySelector('#zoom-hint')?.remove();
+      ro.observe(canvas);
+      renderer.resize();
+      renderer.prepare(s);
+      last = performance.now();
+      acc = 0;
+      announce('The graphics could not be restored, so the match carries on in the 2D view.');
+    },
+  });
 
   function consider(h: Highlight) {
     if (!replaysOn) return;
@@ -444,14 +409,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
-    if (replay && !paused && !gfxLost) {
+    if (replay && !paused && !gfx.lost) {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
       renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
       hud.update(replay.state, 0, null);
     } else {
-      if (!paused && !gfxLost) {
+      if (!paused && !gfx.lost) {
         acc += elapsed;
         let steps = 0;
         while (acc >= DT && steps < 12) {
@@ -548,8 +513,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   } catch { /* sandboxed viewer */ }
 
   function dispose() {
-    clearTimeout(gfxTimer);
-    gfxNote.remove();
+    gfx.dispose();
     input.dispose();
     juice.dispose();
     hud.dispose();
