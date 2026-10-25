@@ -2,7 +2,7 @@
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
 import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
-import { attackDir } from '../../sim/field.ts';
+import { attackDir, oppGoal } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
@@ -92,7 +92,7 @@ export interface ReplayShot {
  */
 export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
-  const dir = attackDir(me);
+  const dir = attackDir(s, me);
   const r = s.restart;
   const b = s.ball;
   // Corners, either side's: the taker, the goal and the whole box (review of #15: the broadcast view
@@ -514,7 +514,7 @@ export class Renderer3D implements MatchRenderer {
   }
 
   screenDir(d: Vec): Vec {
-    return this.cam.screenDir(d, attackDir(this.me) as 1 | -1);
+    return this.cam.screenDir(d, (this.lastState ? attackDir(this.lastState, this.me) : this.me === 0 ? 1 : -1) as 1 | -1);
   }
 
   /** Frames per second over the last second, for tooling. */
@@ -777,7 +777,7 @@ export class Renderer3D implements MatchRenderer {
     const owner = holder ? holder.team : -1;
     const st = this.stadiumFrame;
     for (const team of [0, 1] as const) {
-      const nearGoal = owner === team && Math.abs(b.pos.x - (team === 0 ? HALF_W * 2 : 0)) < 18;
+      const nearGoal = owner === team && Math.abs(b.pos.x - oppGoal(s, team).x) < 18;
       st.excite[team] = celebrating === team ? 1 : nearGoal ? 0.45 : 0.08;
     }
     st.ball.x = this.ball.position.x;
@@ -797,7 +797,7 @@ export class Renderer3D implements MatchRenderer {
     // Set pieces: frame what matters. A corner or free kick shows the spot and the box it is aimed at,
     // a throw-in the thrower and the play in front of him.
     if (restart && restart.stage !== 'whistle') {
-      const gx = restart.team === 0 ? HALF_W * 2 : 0;
+      const gx = oppGoal(s, restart.team).x;
       const k = restart.kind === 'corner' ? 0.2 : restart.kind === 'freekick' || restart.kind === 'penalty' ? 0.3 : 0;
       focusX = restart.spot.x + (gx - restart.spot.x) * k;
       focusY = restart.spot.y + (HALF_H - restart.spot.y) * (restart.kind === 'throwin' ? 0.2 : k);
@@ -838,10 +838,10 @@ export class Renderer3D implements MatchRenderer {
     f.vx = b.vel.x;
     f.vz = b.vel.y;
     f.air = b.z;
-    f.attack = holder && s.phase === 'play' ? attackDir(holder.team) : 0;
+    f.attack = holder && s.phase === 'play' ? attackDir(s, holder.team) : 0;
     f.phase = s.phase;
     f.close = cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null;
-    f.humanDir = attackDir(this.me) as 1 | -1;
+    f.humanDir = attackDir(s, this.me) as 1 | -1;
     f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null;
     f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
     this.cam.update(

@@ -12,7 +12,12 @@ function played(seed = 3): { code: string; replay: Replay } {
   const s = createMatch(opts);
   const rec = new ReplayRecorder(opts, 'Ranked');
   for (let t = 0; s.phase !== 'fulltime'; t++) {
-    step(s, rec.push({ cursor: { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 45) }, moved: true, pass: t % 120 === 0, sprint: t % 300 < 80 }));
+    // Wander, and every two seconds pass: to the nearest teammate when he has the ball, so some passes are completed.
+    const me = s.players[s.controlled[0]];
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== me.i && !p.sentOff && p.role !== 'GK').sort((x, y) => Math.hypot(x.pos.x - me.pos.x, x.pos.y - me.pos.y) - Math.hypot(y.pos.x - me.pos.x, y.pos.y - me.pos.y))[0];
+    const pass = t % 120 === 0;
+    const cursor = pass && s.ball.owner === me.i && mate ? { ...mate.pos } : { x: 30 + 20 * Math.sin(t / 70), y: 20 + 12 * Math.cos(t / 45) };
+    step(s, rec.push({ cursor, moved: true, pass, sprint: t % 300 < 80 }));
   }
   const replay = rec.finish(s, 1_700_000_000);
   return { code: encodeReplay(replay), replay };

@@ -151,8 +151,9 @@ test('a match in progress is never taken away: the other tab waits, and the resu
   await b.waitForFunction(() => /in progress/i.test(document.getElementById('guard-note')?.textContent || ''), null, { timeout: 15_000 });
   expect(await a.locator(SEL.pitch).count(), 'owner keeps its match').toBe(1);
   expect(await a.locator('#guard').count(), 'owner not parked mid-match').toBe(0);
-  // The match runs to full time; the result is recorded, then the club moves.
-  await a.waitForSelector(SEL.modal, { timeout: 60_000 });
+  // The match runs to full time; the result is recorded, then the club moves. Nobody touches the
+  // mouse, so each kick-off waits five seconds for the CPU to take it for us (Law 8: it is a kick).
+  await a.waitForSelector(SEL.modal, { timeout: 120_000 });
   await b.waitForSelector(SEL.tab, { timeout: 30_000 });
   const played = (await readSave(b)).club.played;
   expect(played, 'the finished match is in the save the new tab loaded').toBe(before + 1);
