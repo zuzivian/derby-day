@@ -15,12 +15,14 @@ import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
 import { InputController } from './input.ts';
 import { kickGauge } from './power.ts';
-import type { RenderExtras } from './render.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
+import { PitchRenderer, type RenderExtras } from './render.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
+import { quickTacticsMarkup } from './tactics.ts';
+import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
@@ -83,6 +85,8 @@ const REPLAY_STALE = 6 * TICK_HZ;
 const REPLAY_GAP = 90 * TICK_HZ;
 /** Clicks and keys can't skip in the first moments, so a click already in progress doesn't. */
 const REPLAY_SKIP_AFTER_MS = 400;
+/** A lost WebGL context not restored within this long: the match carries on in 2D. */
+export const GFX_RESTORE_MS = 3000;
 
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
 export interface MatchInputSource {
@@ -128,6 +132,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   // Replays record one human's input; two-human matches (hot-seat) aren't recorded.
   const rec = o.humans?.[0] && o.humans?.[1] ? null : new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
+  // Quick tactics: only for a single human side (hot-seat has two, and no setup to change).
+  const me: 0 | 1 | null = s.humans[0] !== s.humans[1] ? (s.humans[0] ? 0 : 1) : null;
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
@@ -140,6 +146,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
             <button class="btn primary" id="resume">Resume</button>
             <button class="btn" id="forfeit">${esc(o.forfeitText ?? (o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'))}</button>
           </div>
+          ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
@@ -153,8 +160,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
-  const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
-  const renderer = createMatchRenderer(canvas);
+  // let: a lost WebGL context that never comes back swaps both for a fresh 2D canvas (fallBackTo2D).
+  let canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
+  let renderer = createMatchRenderer(canvas);
   // Only the 3D view zooms (the 2D one already shows the whole pitch).
   if (renderer.kind !== '3d') root.querySelector('#zoom-hint')?.remove();
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
@@ -170,6 +178,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     input.reset?.();
     $('pause').hidden = !v;
     coach?.setPaused(v);
+    juice.setPaused(v);
     if (v) {
       focusBeforePause = document.activeElement as HTMLElement | null;
       $('resume').focus();
@@ -178,7 +187,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       (focusBeforePause && root.contains(focusBeforePause) ? focusBeforePause : canvas).focus();
     }
   };
-  const input: MatchInputSource = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
+  let input: MatchInputSource = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
   function defaultInput(): MatchInputSource {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
@@ -218,10 +227,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
   const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, mode: () => input.mode?.() ?? o.controls ?? 'mouse' }) : null;
-  const offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
+  let offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
 
   // Instant replays: never with two tabs in lockstep (versus.ts runs its own loop), only in 3D.
-  const replaysOk = renderer instanceof Renderer3D;
+  let replaysOk = renderer instanceof Renderer3D;
   let replaysOn = replaysOk && (o.instantReplays ?? instantReplaysPref());
   const optReplays = root.querySelector<HTMLInputElement>('#opt-replays')!;
   optReplays.checked = replaysOn;
@@ -229,6 +238,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   optReplays.addEventListener('change', () => {
     replaysOn = optReplays.checked;
     setInstantReplaysPref(replaysOn);
+  });
+  // A mentality picked in the pause menu goes to the sim with the next tick's input.
+  let pendingTactic = 0;
+  root.querySelector('#quick-tactics')?.addEventListener('change', (e) => {
+    const v = (e.target as HTMLInputElement).value as Mentality;
+    pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
+    announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
   });
   const spotter = new HighlightSpotter(s);
   const buffer = new ReplayBuffer(s);
@@ -248,6 +264,71 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
+
+  // WebGL context loss (a GPU or driver reset): hold the match with a calm note instead of playing on
+  // under a blank pitch. Resume when the context comes back; if it doesn't within GFX_RESTORE_MS,
+  // finish the match on the 2D renderer, on a fresh canvas, from the very same state.
+  let gfxLost = false;
+  let gfxTimer = 0;
+  const gfxNote = document.createElement('div');
+  gfxNote.className = 'gfx-note';
+  gfxNote.setAttribute('role', 'status');
+  gfxNote.hidden = true;
+  gfxNote.textContent = 'Restoring graphics…';
+  wrapEl.appendChild(gfxNote);
+  function watchContext(r: MatchRenderer) {
+    if (!(r instanceof Renderer3D)) return;
+    r.onContextLost = () => {
+      if (done || gfxLost) return;
+      gfxLost = true;
+      gfxNote.hidden = false;
+      announce('Restoring graphics.');
+      gfxTimer = window.setTimeout(fallBackTo2D, GFX_RESTORE_MS);
+    };
+    r.onContextRestored = () => {
+      clearTimeout(gfxTimer);
+      if (!gfxLost) return;
+      gfxLost = false;
+      gfxNote.hidden = true;
+      last = performance.now();
+      acc = 0;
+    };
+  }
+  function fallBackTo2D() {
+    if (done || !gfxLost) return;
+    endReplay();
+    input.dispose();
+    offCam();
+    ro.unobserve(canvas);
+    renderer.dispose();
+    const fresh = document.createElement('canvas');
+    for (const a of ['id', 'tabindex', 'role', 'aria-roledescription', 'aria-label']) {
+      const v = canvas.getAttribute(a);
+      if (v !== null) fresh.setAttribute(a, v);
+    }
+    const hadFocus = document.activeElement === canvas;
+    canvas.replaceWith(fresh);
+    canvas = fresh;
+    renderer = new PitchRenderer(fresh);
+    fresh.dataset.renderer = '2d';
+    fresh.dataset.fallback = 'context-lost';
+    input = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
+    offCam = () => {};
+    replaysOk = false;
+    replaysOn = false;
+    optReplays.closest('label')!.hidden = true;
+    root.querySelector('#zoom-hint')?.remove();
+    ro.observe(fresh);
+    renderer.resize();
+    renderer.prepare(s);
+    gfxLost = false;
+    gfxNote.hidden = true;
+    last = performance.now();
+    acc = 0;
+    if (hadFocus) fresh.focus({ preventScroll: true });
+    announce('The graphics could not be restored, so the match carries on in the 2D view.');
+  }
+  watchContext(renderer);
 
   function consider(h: Highlight) {
     if (!replaysOn) return;
@@ -326,6 +407,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   };
   window.addEventListener('keydown', onReplayKey, true);
 
+  // The score bar is written only when it changes: a write every frame costs a style and layout pass.
+  const [sbH, sbA, sbMin, sbPhase] = ['sb-h', 'sb-a', 'sb-min', 'sb-phase'].map($);
+  const setText = (el: HTMLElement, v: string) => {
+    if (el.textContent !== v) el.textContent = v;
+  };
+
   let raf = 0;
   let last = performance.now();
   let acc = 0;
@@ -357,18 +444,22 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
-    if (replay && !paused) {
+    if (replay && !paused && !gfxLost) {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
       renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
       hud.update(replay.state, 0, null);
     } else {
-      if (!paused) {
+      if (!paused && !gfxLost) {
         acc += elapsed;
         let steps = 0;
         while (acc >= DT && steps < 12) {
-          const raw = input.take();
+          let raw = input.take();
+          if (pendingTactic && !Array.isArray(raw)) {
+            raw = { ...raw, tactic: pendingTactic };
+            pendingTactic = 0;
+          }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
           step(s, used);
           juice.tick(s);
@@ -402,10 +493,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     coach?.setPaused(paused || !!replay);
     if (!replay) coach?.update(s, paused ? 0 : elapsed * 1000);
 
-    $('sb-h').textContent = String(s.score[0]);
-    $('sb-a').textContent = String(s.score[1]);
-    $('sb-min').textContent = `${matchMinute(s)}'`;
-    $('sb-phase').textContent = s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`;
+    setText(sbH, String(s.score[0]));
+    setText(sbA, String(s.score[1]));
+    setText(sbMin, `${matchMinute(s)}'`);
+    setText(sbPhase, s.phase === 'halftime' ? 'Half-time' : s.phase === 'fulltime' ? 'Full-time' : s.half === 1 ? `${o.label} · 1st half` : `${o.label} · 2nd half`);
 
     // Referee's calls: offside, fouls, cards, penalties, set pieces, as big HUD words (goals have their own below).
     while (lastEvent < s.events.length) {
@@ -443,6 +534,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   announce(`${o.label} match. ${home.name} against ${away.name}. Esc pauses.`);
 
   function dispose() {
+    clearTimeout(gfxTimer);
+    gfxNote.remove();
     input.dispose();
     juice.dispose();
     hud.dispose();

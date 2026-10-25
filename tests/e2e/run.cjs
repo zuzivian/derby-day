@@ -226,12 +226,14 @@ async function main() {
     let error = null;
     let timer;
     let diag = [];
+    // A test can ask for more time (harness.cjs test opts); a CPU-throttled run scales it.
+    const limit = Math.max(TIMEOUT, (t.timeoutMs || 0) * Math.max(1, Number(process.env.E2E_CPU_THROTTLE || 1) / 2));
     try {
       await Promise.race([
         crashed,
         t.fn(harness),
         new Promise((_, rej) => {
-          timer = setTimeout(() => rej(new Error(`timed out after ${TIMEOUT} ms`)), TIMEOUT);
+          timer = setTimeout(() => rej(new Error(`timed out after ${limit} ms`)), limit);
         }),
       ]);
       // Every test implicitly asserts the page stayed error-free.

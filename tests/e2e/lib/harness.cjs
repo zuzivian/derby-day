@@ -3,8 +3,9 @@
 
 const registry = [];
 
-function test(name, fn) {
-  registry.push({ name, fn });
+/** opts.timeoutMs: this test's own time limit, for long ones (default E2E_TIMEOUT_MS). */
+function test(name, fn, opts = {}) {
+  registry.push({ name, fn, timeoutMs: opts.timeoutMs });
 }
 
 class AssertionError extends Error {}

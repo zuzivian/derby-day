@@ -1,4 +1,4 @@
-import type { FormationId, Role, SubRole } from './constants.ts';
+import type { FormationId, Mentality, Role, SubRole } from './constants.ts';
 import type { Rng } from './rng.ts';
 import type { Vec } from './vec.ts';
 
@@ -32,6 +32,8 @@ export interface TeamSetup {
   aiSkill: number;
   /** Default '4-4-2'. */
   formation?: FormationId;
+  /** How aggressively the CPU players of this side defend, press and attack (TACTICS in ai.ts). Absent means 'balanced'. */
+  mentality?: Mentality;
 }
 
 export interface MatchPlayer {
@@ -92,6 +94,8 @@ export interface AiMemory {
   retarget: number;
   /** Whether the team was attacking when the target was chosen. */
   attacking: boolean;
+  /** Whether the target is a support spot for the carrier (TeamPlan.support); optional for older memories. */
+  supporting?: boolean;
   /** Carrier behaviour that persists across ticks. */
   mode: 'none' | 'takeon' | 'shield' | 'dive';
   modeTicks: number;
@@ -381,6 +385,17 @@ export interface AiTeamPlan {
   oppLine: number;
   /** Tick this spell of possession began (attacking), for urgency: a side that has kept it a while takes more risks. */
   possSince: number;
+  // Tactics (mentality, see TACTICS in ai.ts). Optional so plans from before them still read.
+  /** Defending: does the chaser go in on the carrier (true) or hold off goal-side and wait (false, a low block)? */
+  engage?: boolean;
+  /** Defending: players who press with the chaser, and for each the opponent whose passing lane he cuts (-1: closes the carrier down). */
+  pressers?: number[];
+  pressLane?: number[];
+  /** Tick this team last lost the ball, for the counter-press. */
+  lostAt?: number;
+  /** Attacking: the teammates offering the carrier a short pass, and for each the angle he offers it at (radians from straight ahead). */
+  support?: number[];
+  supportAng?: number[];
 }
 
 
@@ -437,6 +452,12 @@ export interface HumanInput {
    * the pitch under it). Ends the hold after an automatic change of player (MatchState.ctlHold).
    */
   moved?: boolean;
+  /**
+   * Change this side's mentality from this tick on (the pause menu's quick tactics): its
+   * index in MENTALITY_IDS plus one, 1 (Park the bus) to 5 (High press). Sent for one tick;
+   * recorded in replays like any input, so they play back the same.
+   */
+  tactic?: number;
 }
 
 /** Input for both teams in one tick: index 0 is the home side, 1 the away side. */

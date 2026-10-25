@@ -36,8 +36,8 @@ export const levelUpOpen = (s: Save): boolean => pendingUnlocks(s).length > 0;
 /** Header: level badge (a button to the Club level panel) and the XP bar. */
 export function levelChip(s: Save): string {
   const p = levelForXp(s.xp ?? 0);
-  const pct = Math.min(100, Math.round((p.intoLevel / p.needed) * 100));
-  const now = Math.min(p.intoLevel, p.needed);
+  const pct = p.maxed ? 100 : Math.min(100, Math.round((p.intoLevel / p.needed) * 100));
+  const now = p.maxed ? p.needed : Math.min(p.intoLevel, p.needed);
   const valueText = p.maxed ? 'Max level' : `${fmt(p.intoLevel)} of ${fmt(p.needed)} XP`;
   return `<div class="level-chip">
     ${isUnlocked(s, 'club')
@@ -110,7 +110,7 @@ export function xpCardHtml(s: Save, gain: XpGain | undefined, forfeited: boolean
   }
   const before = levelForXp(Math.max(0, xpNow - gain.total));
   const up = after.level > before.level;
-  const pct = (p: ReturnType<typeof levelForXp>) => Math.max(0, Math.min(100, (p.intoLevel / p.needed) * 100));
+  const pct = (p: ReturnType<typeof levelForXp>) => (p.maxed ? 100 : Math.max(0, Math.min(100, (p.intoLevel / p.needed) * 100)));
   const from = up ? 0 : pct(before);
   const to = pct(after);
   const [head, ...rest] = xpSummary(gain).split(': ');

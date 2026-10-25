@@ -33,7 +33,7 @@ import {
   type Season,
   type Tie,
 } from '../meta/competitions.ts';
-import { formatMoney, type Save } from '../meta/game.ts';
+import { formatMoney, signed, type Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, unlockOf } from '../meta/levels.ts';
 import { maybeRollover } from '../meta/progression.ts';
 import { penaltySide } from '../meta/shootout.ts';
@@ -150,7 +150,7 @@ function cupPanel(s: Save): string {
   }
   return `
   <article class="panel comp-panel" aria-labelledby="cup-title">
-    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned ${formatMoney(cup.earned)}` : ''}</span></div>
+    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
     ${status}
     ${bracket(s, cup)}
   </article>`;
@@ -250,7 +250,7 @@ function leagueTable(s: Save, season: Season): string {
         <td class="num">${i + 1}</td>
         <th scope="row" class="name">${kit(r)}${esc(r.name)}${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
-        <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd > 0 ? '+' : ''}${r.gd}</td><td class="num ovr">${r.points}</td>
+        <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd ? signed(r.gd) : '0'}</td><td class="num ovr">${r.points}</td>
       </tr>`)
       .join('')}</tbody>
   </table></div>

@@ -140,3 +140,54 @@ test('shootout: leaving counts as a loss and knocks you out', async (t) => {
   expect(save.budget, 'a forfeit pays nothing').toBe(before.budget);
   expect(await page.locator(SEL.modal).innerText(), 'result says you are out').toMatch(/Out in the quarter-final/);
 });
+
+/** Before boot: window.__hide(ms) acts like a background tab for ms: no animation frames, document.hidden, visibilitychange. */
+function hideHook() {
+  const raf = window.requestAnimationFrame.bind(window);
+  const held = [];
+  let frozen = false;
+  window.requestAnimationFrame = (cb) => (frozen ? (held.push(cb), 0) : raf((ts) => (frozen ? held.push(cb) : cb(ts))));
+  window.__hide = (ms) =>
+    new Promise((res) => {
+      frozen = true;
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+      setTimeout(() => {
+        delete document.hidden;
+        frozen = false;
+        document.dispatchEvent(new Event('visibilitychange'));
+        for (const f of held.splice(0)) raf(f);
+        res();
+      }, ms);
+    });
+}
+
+test('shootout: a hidden tab stops the clock, so the keeper window and a charging kick wait for you', async (t) => {
+  const page = await reachShootout(t, { init: hideHook });
+  await page.locator(S.start).click();
+  const seen = new Set();
+  for (let k = 0; k < 12 && seen.size < 2; k++) {
+    await waitPhase(page, ['aim', 'telegraph', 'done']);
+    const ph = await phaseOf(page);
+    if (ph === 'done') break;
+    if (ph === 'telegraph' && !seen.has('keeper')) {
+      seen.add('keeper');
+      await page.evaluate(() => window.__hide(5000)); // longer than the 3.8 s window
+      await page.waitForTimeout(200);
+      expect(await phaseOf(page), 'back from a hidden tab: still your call as keeper').toBe('telegraph');
+      expect(await page.locator(S.live).textContent(), 'not decided while away').notToContain('Too slow');
+    } else if (ph === 'aim' && !seen.has('taker')) {
+      seen.add('taker');
+      await page.keyboard.down(' ');
+      await waitPhase(page, ['charge']);
+      await page.evaluate(() => window.__hide(2500)); // longer than a full charge
+      await page.waitForTimeout(100);
+      expect(await phaseOf(page), 'back from a hidden tab: the kick is not struck by itself').toBe('charge');
+      await page.keyboard.up(' ');
+    }
+    await playOneKick(page).catch(() => {});
+    await page.waitForTimeout(520);
+    await page.keyboard.press('Space').catch(() => {});
+  }
+  expect([...seen].sort().join(','), 'checked both roles').toBe('keeper,taker');
+}, { timeoutMs: 150_000 });

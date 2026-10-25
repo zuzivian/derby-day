@@ -391,6 +391,12 @@ export class Points extends Object3D {
   material: Material;
 }
 
+export class Sphere {
+  constructor(center?: Vector3, radius?: number);
+  center: Vector3;
+  radius: number;
+  [k: string]: any;
+}
 export class Plane {
   constructor(normal?: Vector3, constant?: number);
   [k: string]: any;

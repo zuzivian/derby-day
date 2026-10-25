@@ -2,7 +2,7 @@
 // Everything here is plain data in, plain data out, so it can move behind an
 // API unchanged when the economy goes server-side.
 
-import { DEFAULT_FORMATION, FORMATIONS, TEAM_SIZE, type FormationId, type Role } from '../sim/constants.ts';
+import { DEFAULT_FORMATION, DEFAULT_MENTALITY, isFormationId, isMentality, TEAM_SIZE, type FormationId, type Mentality, type Role } from '../sim/constants.ts';
 import { chance, makeRng, next, pick, type Rng } from '../sim/rng.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import {
@@ -96,6 +96,8 @@ export interface Save {
   legacyUnlocks?: boolean;
   /** The club's formation (FORMATIONS in sim/constants.ts). Default 4-4-2. The lineup is in its slot order. */
   formation?: FormationId;
+  /** How the CPU players of your side defend, press and attack (MENTALITY_IDS in sim/constants.ts). Default Balanced. */
+  mentality?: Mentality;
 }
 
 export function newGame(seed: number): Save {
@@ -110,6 +112,7 @@ export function newGame(seed: number): Save {
     squad,
     lineup: autoLineup(squad, DEFAULT_FORMATION),
     formation: DEFAULT_FORMATION,
+    mentality: DEFAULT_MENTALITY,
     budget: 1_200_000,
     trainingPoints: 6,
     eloHistory: [START_ELO],
@@ -136,6 +139,11 @@ export function rerollIdentity(save: Save): void {
   const identity = generateIdentity(save.rng);
   save.club = { ...save.club, ...identity };
   save.news[save.news.length - 1] = `${identity.name} founded. The board has given you ${formatMoney(save.budget)} to build a squad.`;
+}
+
+/** A signed change as players read it everywhere: "+3", "−17" (a true minus), "±0". */
+export function signed(n: number): string {
+  return n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0';
 }
 
 export function formatMoney(n: number): string {
@@ -222,14 +230,19 @@ export const lineupReady = (save: Save): boolean => save.lineup.filter(Boolean).
 
 /** The player's own club as the sim sees it. */
 export function clubTeam(save: Save, aiSkill: number): TeamSetup {
-  return toTeamSetup(save.club, save.squad, save.lineup, aiSkill, save.formation);
+  return toTeamSetup(save.club, save.squad, save.lineup, aiSkill, save.formation, save.mentality);
 }
 
 /** Change formation: the lineup is re-picked for the new slots. */
 export function setFormation(save: Save, formation: FormationId): void {
-  if (!FORMATIONS[formation]) return;
+  if (!isFormationId(formation)) return;
   save.formation = formation;
   save.lineup = autoLineup(save.squad, formation);
+}
+
+/** Change how the side plays, from Park the bus to High press. The lineup is untouched. */
+export function setMentality(save: Save, mentality: Mentality): void {
+  if (isMentality(mentality)) save.mentality = mentality;
 }
 
 /**
@@ -239,7 +252,13 @@ export function setFormation(save: Save, formation: FormationId): void {
  * every load.
  */
 export function ensureElevenASide(save: Save): void {
-  save.formation ??= DEFAULT_FORMATION;
+  // Tactics: older saves (or one from a build with a formation since removed) get 4-4-2 and Balanced.
+  let reshaped = false;
+  if (!isFormationId(save.formation)) {
+    reshaped = save.formation !== undefined;
+    save.formation = DEFAULT_FORMATION;
+  }
+  if (!isMentality(save.mentality)) save.mentality = DEFAULT_MENTALITY;
   if (save.squad.length < 18) {
     const r = makeRng((save.seed ^ 0x11a51de) | 0);
     const avg = save.squad.length ? Math.round(save.squad.reduce((t, p) => t + overall(p), 0) / save.squad.length) : 54;
@@ -253,7 +272,7 @@ export function ensureElevenASide(save: Save): void {
     assignNumbers(save.squad);
     save.news.push('The club moves up to eleven-a-side: the board has signed players to make up a squad of 18.');
   }
-  const ok = save.lineup.length === TEAM_SIZE && save.lineup.every((id) => save.squad.some((p) => p.id === id)) && new Set(save.lineup).size === TEAM_SIZE;
+  const ok = !reshaped && save.lineup.length === TEAM_SIZE && save.lineup.every((id) => save.squad.some((p) => p.id === id)) && new Set(save.lineup).size === TEAM_SIZE;
   if (!ok) save.lineup = autoLineup(save.squad, save.formation);
 }
 
@@ -344,7 +363,7 @@ export function applyResult(
 
   save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}) });
   const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
-  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${delta >= 0 ? '+' : ''}${delta})` : ''}.`);
+  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${signed(delta)})` : ''}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { eloDelta: delta, money, trainingPoints: tp, developments, xp };
 }
@@ -415,5 +434,6 @@ export function isSave(x: unknown): x is Save {
     numOrUndef(s.week) && numOrUndef(s.year) && objOrNull(s.review) && (s.offers === undefined || Array.isArray(s.offers)) &&
     // Club level fields (also optional).
     numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones))
+    // Tactics (formation, mentality) are never a reason to refuse a save: ensureElevenASide repairs them.
   );
 }
