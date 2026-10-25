@@ -10,10 +10,11 @@ const ROWS: { action: string; mouse: string; keys: string }[] = [
   { action: 'Switch player', mouse: 'Left click a teammate (or toward one) without the ball', keys: 'E' },
   { action: 'Tackle', mouse: 'Right click without the ball: a slide if the pointer is far', keys: 'Space without the ball' },
   { action: 'Keeper', mouse: 'Yours when he has the ball: left click rolls it out, hold left throws it, right click punts it. Six seconds, then he plays it himself.', keys: 'Space roll out, hold C throw, hold F punt' },
+  { action: 'Mentality', mouse: 'Keys 1-5 during a match (1 Park the bus, 3 Balanced, 5 High press), or the pause menu', keys: '1-5 during a match (1 Park the bus, 3 Balanced, 5 High press), or the pause menu' },
   { action: 'Pause', mouse: 'Esc or P', keys: 'Esc or P' },
 ];
 
-const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|F|C|E|P|Esc)\b/g, '<kbd>$1</kbd>');
+const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|F|C|E|P|Esc|1-5)\b/g, '<kbd>$1</kbd>');
 
 export function controlsCard(mode: ControlStyle, headingLevel: 2 | 3 = 3): string {
   const h = `h${headingLevel}`;

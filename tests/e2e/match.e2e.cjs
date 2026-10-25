@@ -151,6 +151,25 @@ test('quick tactics: a mentality picked in the pause menu changes the side in th
   expect((await readSave(page)).mentality ?? 'balanced', 'the saved default is untouched').toBe('balanced');
 });
 
+test('quick tactics from the keyboard: 1-5 pick a mentality mid-match, the HUD says which, the pause menu follows', async (t) => {
+  const page = await openApp(t, { e2eHook: true, prefs: { halfSeconds: 60, onboarded: true } });
+  await startRanked(page);
+  const mentality = () => page.evaluate(() => window.__derbyMatch.teams[0].mentality ?? 'balanced');
+  await page.locator('#pitch').focus();
+  await page.keyboard.press('1');
+  await page.waitForFunction(() => window.__derbyMatch.teams[0].mentality === 'park', null, { timeout: 10_000 });
+  expect((await page.locator('.hud-tag').innerText()).toLowerCase(), 'the HUD names the new mentality').toContain('park the bus');
+  await page.keyboard.press('5');
+  await page.waitForFunction(() => window.__derbyMatch.teams[0].mentality === 'press', null, { timeout: 10_000 });
+  await page.keyboard.press('3');
+  await page.waitForFunction(() => (window.__derbyMatch.teams[0].mentality ?? 'balanced') === 'balanced', null, { timeout: 10_000 });
+  expect(await mentality(), 'back to Balanced').toBe('balanced');
+  await page.keyboard.press('Escape');
+  await page.locator(SEL.pause).waitFor({ state: 'visible' });
+  expect(await page.locator('#quick-tactics input:checked').getAttribute('value'), 'the pause menu shows the key pick').toBe('balanced');
+  expect((await readSave(page)).mentality ?? 'balanced', 'the saved default is untouched').toBe('balanced');
+});
+
 for (const renderer of ['2d', '3d']) {
   test(`HUD (${renderer}): a card names the man you control, with his number and his legs`, async (t) => {
     const page = await openApp(t, { prefs: { halfSeconds: 20 }, e2eHook: true, renderer });

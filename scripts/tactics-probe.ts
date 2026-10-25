@@ -4,6 +4,7 @@
 // the same table.
 //   bun run scripts/tactics-probe.ts [matches] [--formation 4-4-2] [--skill 0.6] [--quality 60]
 //   bun run scripts/tactics-probe.ts [matches] --formations    each formation (Balanced) against a Balanced 4-4-2
+//   bun run scripts/tactics-probe.ts [seeds] --lag             how many seconds a mentality change takes to show
 //
 // Columns are for the side being tested (A), per match:
 //   GF GA      goals for and against            poss   share of the ball (%)
@@ -23,7 +24,7 @@
 // most players round the ball, wins it back highest up and fouls most.
 
 import { autoLineup, generateSquad, toTeamSetup } from '../src/meta/club.ts';
-import { averageMetrics, measureMatch, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
+import { averageMetrics, measureMatch, mentalityLag, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
 import { FORMATION_IDS, HALF_SECONDS, isFormationId, MENTALITY_IDS, MENTALITY_LABEL, type FormationId, type Mentality } from '../src/sim/constants.ts';
 import { makeRng } from '../src/sim/rng.ts';
 
@@ -65,7 +66,19 @@ const row = (label: string, m: TeamMetrics) =>
   `${label.padEnd(14)} ${f2(m.goalsFor)} ${f2(m.goalsAgainst)} ${f1(m.possession)} ${f1(m.shots)} ${f1(m.shotsAgainst)} ${f1(m.passes)} ${f1(m.fouls)} ${f2(m.yellows)} ${f1(m.line)} ${f1(m.depth)} ${f1(m.width)} ${f2(m.pressers)} ${f1(m.regainHeight).padStart(6)} ${f2(m.ahead)} ${f2(m.forward)} ${f2(m.openShort)} ${f1(m.passCompletion)}`;
 
 const t0 = performance.now();
-if (args.includes('--formations')) {
+if (args.includes('--lag')) {
+  // Side A switches from Balanced at 60 s; the shift is its average outfield height against the same match without the switch.
+  const squad = generateSquad(makeRng(5000), quality);
+  const A = toTeamSetup(id('Side A', '#c00'), squad, autoLineup(squad, baseFormation), skill, baseFormation, 'balanced');
+  const B = toTeamSetup(id('Side B', '#00c'), squad, autoLineup(squad, baseFormation), skill, baseFormation, 'balanced');
+  const seeds = Array.from({ length: n }, (_, i) => 7200 + i);
+  console.log(`Balanced to each mentality at 60 s, ${baseFormation}, ${n} seeds: shift in the side's average height (m) after 1-12 s\n`);
+  for (const m of MENTALITY_IDS) {
+    if (m === 'balanced') continue;
+    const r = mentalityLag({ home: A, away: B, halfSeconds }, seeds, m);
+    console.log(`${MENTALITY_LABEL[m].padEnd(14)} 3 m after ${String(r.secondsTo).padStart(2)} s   ${r.shift.map((v) => v.toFixed(1).padStart(6)).join('')}`);
+  }
+} else if (args.includes('--formations')) {
   console.log(`Each formation (Balanced) vs a Balanced 4-4-2: ${n} matches each, skill ${skill}, squad quality ${quality}\n`);
   console.log(header.replace('side A        ', 'formation     '));
   for (const f of FORMATION_IDS) console.log(row(f, series({ formation: f, mentality: 'balanced' }, { formation: '4-4-2', mentality: 'balanced' })));
