@@ -5,7 +5,7 @@
 // Everything is sampled during live play only (dead balls, kick-offs and
 // celebrations are skipped), in metres from the team's own goal line.
 
-import { PITCH_W } from '../sim/constants.ts';
+import { PITCH_W, TICK_HZ, type Mentality } from '../sim/constants.ts';
 import { teamX } from '../sim/field.ts';
 import { createMatch, possessionShare, step, type MatchOptions } from '../sim/match.ts';
 import type { MatchState } from '../sim/types.ts';
@@ -188,4 +188,53 @@ export function averageMetrics(list: TeamMetrics[]): TeamMetrics {
   const regains = list.reduce((t, m) => t + m.regains, 0);
   out.regainHeight = regains ? list.reduce((t, m) => t + m.regainHeight * m.regains, 0) / regains : 0;
   return out;
+}
+
+/**
+ * How quickly a mentality change shows on the pitch. Each seed is played twice from kick-off:
+ * once as it is, and once with side 0 switched to `to` at `atSecond` (as quick tactics does).
+ * Up to the switch the two are identical, so the difference just afterwards is the change
+ * itself (later on the two matches drift apart as different things happen in them).
+ * `shift[i]` is side 0's average outfield height (m from its own goal) in the changed match
+ * minus the unchanged one, `i + 1` seconds after the switch, averaged over seeds; `secondsTo`
+ * is the first second the shift reaches `metres` (in the direction of the change) and holds
+ * it for the next two seconds, or Infinity.
+ */
+export function mentalityLag(o: Omit<MatchOptions, 'humanTeam' | 'humans' | 'seed'>, seeds: number[], to: Mentality, metres = 3, atSecond = 60, window = 12): { shift: number[]; secondsTo: number } {
+  const height = (s: MatchState) => {
+    let sum = 0;
+    let n = 0;
+    for (const p of s.players) {
+      if (p.team !== 0 || p.role === 'GK' || p.sentOff) continue;
+      sum += teamX(s, 0, p.pos.x) * PITCH_W;
+      n++;
+    }
+    return n ? sum / n : 0;
+  };
+  const run = (seed: number, change: boolean): number[] => {
+    const s = createMatch({ ...o, seed, humans: [false, false] });
+    const out: number[] = [];
+    const from = atSecond * TICK_HZ;
+    while (s.phase !== 'fulltime' && out.length < window) {
+      if (change && s.tick === from) s.teams[0].mentality = to;
+      step(s);
+      if (s.tick > from && (s.tick - from) % TICK_HZ === 0) out.push(height(s));
+    }
+    return out;
+  };
+  const shift = Array<number>(window).fill(0);
+  for (const seed of seeds) {
+    const a = run(seed, false);
+    const b = run(seed, true);
+    for (let t = 0; t < window; t++) shift[t] += ((b[t] ?? 0) - (a[t] ?? 0)) / seeds.length;
+  }
+  const sign = Math.sign(shift[window - 1]) || 1;
+  let secondsTo = Infinity;
+  for (let t = 0; t + 2 < window; t++) {
+    if ([0, 1, 2].every((d) => shift[t + d] * sign >= metres)) {
+      secondsTo = t + 1;
+      break;
+    }
+  }
+  return { shift, secondsTo };
 }

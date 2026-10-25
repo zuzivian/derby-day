@@ -13,7 +13,7 @@
 //   restart   dead ball: rules.ts Restart (whistle -> setup -> ready -> taken)
 //   goal, halftime, fulltime
 
-import { aiIntent, passSpeed, penaltyDive, restartAction, restartIntent } from './ai.ts';
+import { aiIntent, humanAuto, passSpeed, penaltyDive, restartAction, restartIntent } from './ai.ts';
 import {
   AIR_DRAG,
   BALL_R,
@@ -1824,8 +1824,8 @@ export function teamInputs(s: MatchState, input: HumanInput | TeamInputs | undef
 const IDLE_INTENT: Intent = { move: { x: 0, y: 0 }, throttle: 0 };
 const isKick = (a: Action | undefined): a is Action => !!a && (a.kind === 'pass' || a.kind === 'chip' || a.kind === 'loft' || a.kind === 'shoot' || a.kind === 'punt');
 
-/** The human is holding a player still after an automatic switch (human.ts): the CPU positions him meanwhile. */
-const heldByCpu = (s: MatchState, p: MatchPlayer, input: HumanInput): boolean => !!s.ctlHold?.[p.team] && input.cursor !== undefined;
+/** The human is held after an automatic switch, or idle (ai.ts humanAuto): the CPU positions his player meanwhile. */
+const heldByCpu = (s: MatchState, p: MatchPlayer): boolean => humanAuto(s, p.team);
 
 /**
  * The intent of a player a human steers. A keeper who has held the ball for KEEPER_HOLD_TICKS
@@ -1992,7 +1992,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   if (r.stage === 'whistle') {
     for (const p of s.players) {
       if (p.sentOff) continue;
-      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p, inputs[p.team]);
+      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p);
       const it = humanCtl ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
       movePlayer(s, p, { move: it.move, throttle: Math.min(it.throttle, 0.7) });
     }
@@ -2051,7 +2051,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
       p.vel = { x: 0, y: 0 };
       continue;
     }
-    const it = humanCtl && !heldByCpu(s, p, inputs[p.team]) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
+    const it = humanCtl && !heldByCpu(s, p) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
     movePlayer(s, p, { move: it.move, throttle: it.throttle, sprint: it.sprint });
   }
   separate(s);

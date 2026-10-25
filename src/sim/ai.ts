@@ -24,7 +24,7 @@
 //   restartAction()  what a CPU taker does with a throw-in, goal kick, corner,
 //                    free kick or penalty.
 //
-// Difficulty (TeamSetup.aiSkill, 0..1) scales:
+// Difficulty (TeamSetup.aiSkill, 0..1, and down to AI_SKILL_MIN for a rookie side) scales:
 //   reaction  how stale the plan is (rebuilt every 1 tick at skill 1, every
 //             5 at skill 0) and how far behind the ball the team "sees" it;
 //   decisions how often players re-decide and how much noise is added to
@@ -274,7 +274,9 @@ function seek(p: MatchPlayer, target: Vec, arrive = 2.5, cap = 1): Intent {
   return { move: norm(d), throttle: Math.min(cap, l / arrive) };
 }
 
-const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, 0, 1);
+/** The lowest CPU skill: below 0 is a rookie side, for the players who need one (src/meta/skill.ts sets it). */
+export const AI_SKILL_MIN = -0.3;
+const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, AI_SKILL_MIN, 1);
 
 /** Seconds of staleness in where a team "sees" the ball: 0.15 s at skill 0, 0.03 s at skill 1. */
 const reactionLag = (skill: number): number => 0.03 + 0.12 * (1 - skill);
@@ -460,6 +462,37 @@ function supportSlots(s: MatchState, team: 0 | 1, c: Vec, n: number): number[] {
   return [[0.9 * inSign], [-a, a], [-a, a, (Math.PI - 0.75) * inSign]][Math.min(n, 3) - 1];
 }
 
+/**
+ * Is the human's man going for this point (the carrier, or where a loose ball can be met)? Close
+ * to it, or running at it. If not, a CPU teammate presses or chases for him: the side
+ * covers for a human who is somewhere else, instead of nobody going.
+ */
+export function humanEngaging(s: MatchState, h: MatchPlayer, at: Vec): boolean {
+  // A pass on its way to him: he goes to meet it whoever steers him (human.ts meetBall).
+  if (s.ball.owner < 0 && s.ball.receiver === h.i) return true;
+  if (humanAuto(s, h.team)) return false;
+  const to = sub(at, h.pos);
+  const d = len(to);
+  if (d < HUMAN_ENGAGE_R) return true;
+  return d < 14 && dot(h.vel, scale(to, 1 / d)) > 2.5;
+}
+/** Within this many metres the human's man counts as going in, whatever he is doing. */
+export const HUMAN_ENGAGE_R = 3;
+
+/** The human's man this far from his place in the shape has left a zone for the others to fill. */
+export const WANDER_R = 12;
+
+/** Ticks without any input after which a human's player is positioned by the CPU (0.75 s). */
+export const IDLE_TICKS = 45;
+
+/**
+ * Is the human's player on this side being positioned by the CPU just now: held after an
+ * automatic switch until the pointer moves (MatchState.ctlHold), or the human idle for
+ * IDLE_TICKS? He then holds his position and marks like a teammate, but never presses or
+ * chases (a CPU teammate does that for him) and takes no action of his own.
+ */
+export const humanAuto = (s: MatchState, team: 0 | 1): boolean => !!s.ctlHold?.[team] || (s.idleTicks?.[team] ?? 0) >= IDLE_TICKS;
+
 function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const skill = skillOf(s, team);
   const k = tacticOf(s, team);
@@ -467,6 +500,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
   const human = s.humans[team] ? s.controlled[team] : -1;
+  // The human's man has a place in the shape and a man to mark like anyone else while the CPU
+  // positions him (humanAuto); while the human steers him he is left out of every job.
+  const steered = human >= 0 && !humanAuto(s, team) ? human : -1;
   const icpt: (AiInterception | null)[] = s.players.map(() => null);
   const mark: number[] = s.players.map(() => -1);
   const mates = s.players.filter((m) => m.team === team && m.role !== 'GK' && m.stun === 0 && !m.sentOff);
@@ -486,6 +522,13 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       let best: MatchPlayer | null = null;
       for (const m of mates) if (!best || dist(m.pos, press) < dist(best.pos, press)) best = m;
       chaser = best && best.i !== human ? best.i : -1;
+      // The human's man is the natural presser but isn't going in: the next man presses for him.
+      if (best && best.i === human && !humanEngaging(s, best, owner.pos)) {
+        let cover: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && (!cover || dist(m.pos, press) < dist(cover.pos, press))) cover = m;
+        chaser = cover ? cover.i : -1;
+        best = cover;
+      }
       pressured = !!best && dist(best.pos, owner.pos) < 5;
     }
   } else {
@@ -514,7 +557,16 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       attacking = bestUs < bestThem - (lastOurs ? 0.1 : 0.45);
       chaser = quickest?.i ?? -1;
     }
-    if (chaser === human) chaser = -1;
+    if (human >= 0 && chaser === human) {
+      // Loose ball: the human's man is quickest to it. If he isn't heading for it, the next quickest goes.
+      const h = s.players[human];
+      if (humanEngaging(s, h, icpt[human]!.pt)) chaser = -1;
+      else {
+        let next: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && !keepsOut(s, m) && icpt[m.i] && (!next || icpt[m.i]!.t < icpt[next.i]!.t)) next = m;
+        chaser = next ? next.i : -1;
+      }
+    }
     const fi = chaser >= 0 ? icpt[chaser]! : quickest ? icpt[quickest.i]! : null;
     focus = fi ? fi.pt : seen;
   }
@@ -618,7 +670,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
       }
       for (const m of mates) {
-        if (m.i === center.i || m.i === human || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
+        if (m.i === center.i || m.i === steered || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
         const dx = m.pos.x - cpos.x;
         const dy = m.pos.y - cpos.y;
         const d2 = dx * dx + dy * dy;
@@ -660,7 +712,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     const attackers = s.players
       .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(s, team, o.pos.x) < 0.42 + 0.2 * skill)
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
-    const free = mates.filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i));
+    const free = mates.filter((m) => m.i !== chaser && m.i !== steered && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
     // A low block marks zonally (only who comes into its zone); a pressing side follows its man further.
     const radius = (13 + 7 * skill) * k.markR;
@@ -680,6 +732,31 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
       }
       if (best) mark[best.i] = a.i;
+    }
+    // The human has taken his man out of his zone: whoever is free picks up the attackers in it.
+    if (steered >= 0) {
+      const h = s.players[steered];
+      const home = shapeTarget(s, h, false, focus, line, oppLine);
+      if (dist(h.pos, home) > WANDER_R) {
+        const marked = new Set(mark.filter((x) => x >= 0));
+        for (const a of attackers) {
+          if (marked.has(a.i) || dist(a.pos, home) > WANDER_R) continue;
+          let best: MatchPlayer | null = null;
+          let bestD = radius * 1.6;
+          for (const d of free) {
+            if (mark[d.i] >= 0) continue;
+            const dd = dist(d.pos, a.pos);
+            if (dd < bestD) {
+              bestD = dd;
+              best = d;
+            }
+          }
+          if (best) {
+            mark[best.i] = a.i;
+            marked.add(a.i);
+          }
+        }
+      }
     }
     // An unassigned midfielder screens in front of the back line.
     let deepest = Infinity;
@@ -770,7 +847,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
       break;
     case 'WM':
       nx = L + (attacking ? 0.32 : 0.21) * depth + adj;
-      if (attacking) ny = side < 0 ? (ballSide ? 0.06 : 0.16) : ballSide ? 0.94 : 0.84;
+      if (attacking) ny = side < 0 ? (ballSide ? 0.06 : 0.1) : ballSide ? 0.94 : 0.9;
       break;
     case 'W':
       nx = L + (attacking ? 0.42 : 0.36) * depth + adj;
@@ -1554,6 +1631,10 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   // Who commits forward is the mentality's call: a low block keeps everyone but the strikers back.
   const runner = runsIntoBox(k, sub_);
 
+  // The far-side wide man holds the width for a switch of play until the ball reaches the final
+  // third (then he may come in for the far post). Metres he is in from his touchline past 10 m cost him.
+  const holdWidth = (sub_ === 'W' || sub_ === 'WM') && fx < 0.7 && Math.abs(focus.y - MID_Y) > 10 && (anchor.y - MID_Y) * (focus.y - MID_Y) < 0;
+
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
   if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(s, team, p.pos.x) > onsideX - 0.06) {
@@ -1561,7 +1642,8 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
     if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
       mem.retarget = Math.round(40 + 20 * next(s.rng));
-      const y = clamp(p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 6, PITCH_H - 6);
+      // In behind, angled in; down the line for a wide man holding the width.
+      const y = clamp(holdWidth ? p.pos.y + range(s.rng, -3, 3) : p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 4, PITCH_H - 4);
       mem.target = fromTeam(s, team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
       return mem.target;
     }
@@ -1614,6 +1696,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     let score = space * 0.3 + lane * 0.4 - (lane < 1.2 ? 2 : 0) + cx * PITCH_W * 0.05 * roleW;
     const dG = dist(c, oppG);
     if (forward && runner && dG < 20) score += (20 - dG) * 0.06;
+    if (holdWidth) score -= Math.max(0, Math.min(c.y, PITCH_H - c.y) - 10) * 0.3;
     for (const m of s.players) {
       if (m.team !== team || m.i === p.i || m.role === 'GK' || m.sentOff) continue;
       const spot = m.i === carrier?.i ? focus : m.ai?.target && m.ai.attacking ? m.ai.target : m.pos;
