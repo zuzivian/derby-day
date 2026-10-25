@@ -266,22 +266,26 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   el.addEventListener('click', onClick);
 
   let lastState: MatchState | null = null;
+  let frozen = false; // e2e only: frames do not move the tip clock, only hook.advance does
+  const step = (s: MatchState, dtMs: number, redraw = dtMs > 0) => {
+    lastState = s;
+    tracker.observe(s, human);
+    if (shown) {
+      age += dtMs;
+      if (!counted && age >= SEEN_AFTER_MS) countSeen();
+      if (redraw && text !== tipText(shown, o.mode(), touch(), introTip === shown)) draw(shown); // the player switched input: say it their way
+      if (age >= autoHideMs(text)) hide();
+      // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
+      else if (tracker.queue.length && age >= minTipMs(text)) hide();
+    }
+    if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
+      const id = tracker.take(s, human);
+      if (id) show(id);
+    }
+  };
   const handle: CoachHandle = {
     update(s, dtMs) {
-      lastState = s;
-      tracker.observe(s, human);
-      if (shown) {
-        age += dtMs;
-        if (!counted && age >= SEEN_AFTER_MS) countSeen();
-        if (dtMs > 0 && text !== tipText(shown, o.mode(), touch(), introTip === shown)) draw(shown); // the player switched input: say it their way
-        if (age >= autoHideMs(text)) hide();
-        // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
-        else if (tracker.queue.length && age >= minTipMs(text)) hide();
-      }
-      if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
-        const id = tracker.take(s, human);
-        if (id) show(id);
-      }
+      step(s, frozen ? 0 : dtMs, dtMs > 0);
     },
     setPaused(paused) {
       el.classList.toggle('paused', paused);
@@ -300,7 +304,11 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   const hook = {
     state: () => ({ shown, age, counted, minMs: shown ? minTipMs(text) : 0, seenAfterMs: SEEN_AFTER_MS, queue: [...tracker.queue] }),
     advance: (ms: number) => {
-      if (lastState) handle.update(lastState, ms);
+      if (lastState) step(lastState, ms);
+    },
+    // Hold the tip clock still, so a slow runner's wall time between test steps cannot age or replace a tip.
+    freeze: () => {
+      frozen = true;
     },
   };
   if (e2eHook) (globalThis as { __derbyCoach?: unknown }).__derbyCoach = hook;
