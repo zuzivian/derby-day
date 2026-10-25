@@ -136,11 +136,17 @@ function tackleAt(gap: number, seed: number, opts: { still?: boolean; pointer?: 
   const tk0 = s.stats[0].tackles;
   step(s, { cursor: aim, aim, tackle: true, moved: true });
   let closest = dist(me.pos, b.pos);
+  // A tackle that reaches the man and loses the ball leaves a long cooldown (90 ticks for a slide,
+  // 50 standing); one that never reaches him only the cooldown it started with (70 / 36).
+  let lost = me.tackleCd > 70 || me.tackleCd === 50;
   for (let t = 0; t < 30 && s.phase === 'play' && s.stats[0].tackles === tk0; t++) {
     step(s, { cursor: aim });
     closest = Math.min(closest, dist(me.pos, b.pos));
+    if (me.tackleCd > 70) lost = true;
   }
-  return { won: s.stats[0].tackles > tk0, foul: s.stats[0].fouls > fouls0 || s.phase === 'restart', closest };
+  const won = s.stats[0].tackles > tk0;
+  const foul = s.stats[0].fouls > fouls0 || s.phase === 'restart';
+  return { won, foul, judged: won || foul || lost, closest };
 }
 
 describe('right-click tackles (no dead band, slides that reach the ball can win it)', () => {
@@ -155,12 +161,12 @@ describe('right-click tackles (no dead band, slides that reach the ball can win 
     }
   });
 
-  test('a slide from 3.5-4.5 m at a carrier reaches him and wins or fouls; it never just slides into him and stops', () => {
+  test('a slide from 3.5-4.5 m at a carrier reaches him and is judged (won, lost or a foul); it never just slides into him and stops', () => {
     for (const gap of [3.5, 4, 4.5]) {
       for (const still of [false, true]) {
         const rs = seeds.map((sd) => tackleAt(gap, sd, { still }));
-        const reached = rs.filter((r) => r.won || r.foul).length;
-        // Main: 0 of 30 (the slide was judged once, at the click, against 3 m).
+        const reached = rs.filter((r) => r.judged).length;
+        // Main: 0 of 30 (the slide was judged once, at the click, against 3 m, and then slid on uselessly).
         expect(reached).toBeGreaterThanOrEqual(20);
         expect(rs.filter((r) => r.won).length).toBeGreaterThanOrEqual(6);
       }

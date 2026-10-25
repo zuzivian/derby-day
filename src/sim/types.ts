@@ -79,8 +79,9 @@ export interface MatchPlayer {
 export interface SlideTackle {
   /** Unit vector, the way he is sliding. */
   dir: Vec;
-  /** Metres still to slide. */
+  /** Metres still to slide, and how far it set out to go. */
   left: number;
+  len: number;
   /** Ticks the slide has run. */
   ticks: number;
   /** A late challenge on a man who has just released the ball has been judged (once per slide). */

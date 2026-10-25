@@ -378,7 +378,8 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
       // A slide is a committed lunge along the ground toward the target. It is judged each tick
       // of the slide (slideTackles), when his feet reach the ball or he meets the man.
       p.tackleCd = 70;
-      p.slide = { dir: lunge, left: clamp(dist(a.target, p.pos), 1, SLIDE_TRAVEL), ticks: 0 };
+      const len0 = clamp(dist(a.target, p.pos), 1, SLIDE_TRAVEL);
+      p.slide = { dir: lunge, left: len0, len: len0, ticks: 0 };
       p.stun = SLIDE_TICKS + SLIDE_DOWN;
       p.vel = scale(lunge, Math.max(SLIDE_SPEED, before));
       slideContact(s, p, before);
@@ -396,10 +397,14 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
   }
 }
 
+/** Beyond this a standing tackle is at full stretch (out to STAND_REACH): less sure, and half as likely to foul. */
+const STAND_EDGE = 1.7;
 /** A slide (SLIDE_TRAVEL at most): how fast it starts, how long it lasts, how long he is down after. */
 const SLIDE_SPEED = 11;
 const SLIDE_TICKS = 30;
 const SLIDE_DOWN = 16;
+/** A slide that has gone this far (m) when it meets the man is fully committed (resolveTackle's `commit`). */
+const SLIDE_COMMITTED = 2.5;
 /** Where his feet are ahead of him while sliding, and how close to the ball they must come. */
 const SLIDE_FEET = 0.6;
 const SLIDE_TOUCH = 0.6;
@@ -415,7 +420,11 @@ function lateChallenge(s: MatchState, p: MatchPlayer, before: number): boolean {
 }
 
 /** A challenge on the man with the ball that has reached him: won, missed, or a foul. */
-function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide: boolean, before: number): void {
+/**
+ * `commit` (slides): how committed the lunge was when it met the man, 0..1. A short slide is
+ * judged more like a standing tackle; a full-length one like a challenge at full speed.
+ */
+function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide: boolean, before: number, commit = 1): void {
   const b = s.ball;
   const team = p.team;
   // Coming through the back of the man: rarely gets the ball, often fouls. A slide is riskier still.
@@ -424,13 +433,17 @@ function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide:
   if (fromBehind) pWin *= 0.8;
   if (owner.role === 'GK' && inOwnBox(owner.team, owner.pos)) pWin *= 0.25;
   // A standing tackle at full stretch is a little less sure.
-  if (!slide) pWin *= 1 - 0.25 * clamp((dist(owner.pos, p.pos) - 1.7) / (STAND_REACH - 1.7), 0, 1);
+  if (!slide) pWin *= 1 - 0.25 * clamp((dist(owner.pos, p.pos) - STAND_EDGE) / (STAND_REACH - STAND_EDGE), 0, 1);
   const won = next(s.rng) < pWin;
-  const fast = slide ? 1 : clamp((before - 6.5) / 2.5, 0, 1);
+  const fast = slide ? commit : clamp((before - 6.5) / 2.5, 0, 1);
   let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
   pFoul *= 2.05 - 0.9 * care(s, p);
   // A booked CPU player goes in more carefully.
   if (p.yellow > 0 && !isHumanControlled(s, p)) pFoul *= 0.45;
+  // At full stretch a standing tackle is more a poke than a challenge through the man, and so
+  // is a slide that meets him before it is fully committed.
+  if (!slide && dist(owner.pos, p.pos) > STAND_EDGE) pFoul *= 0.5;
+  if (slide) pFoul *= 0.5 + 0.5 * commit;
   if (next(s.rng) < pFoul) {
     const sev = severityOf((fromBehind ? 0.3 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
     if (judgeFoul(s, { offender: p, victim: owner, severity: sev, attempt: true, keptBall: !won })) return;
@@ -470,7 +483,7 @@ function slideContact(s: MatchState, p: MatchPlayer, before: number): boolean {
     // His feet reach the ball, or he slides into the man from in front of him or the side.
     const toMan = sub(owner.pos, p.pos);
     if (dist(feet, b.pos) < SLIDE_TOUCH + BALL_R || (len(toMan) < PLAYER_R * 2 + 0.1 && dot(sl.dir, norm(toMan)) > 0.4)) {
-      resolveTackle(s, p, owner, true, before);
+      resolveTackle(s, p, owner, true, before, clamp((sl.len - sl.left) / SLIDE_COMMITTED, 0.2, 1));
       return done();
     }
     return false;
@@ -488,7 +501,8 @@ function slideContact(s: MatchState, p: MatchPlayer, before: number): boolean {
   // Sliding into a man who has just released the ball: judged once, when the slide reaches him.
   if (!owner && !sl.lateJudged && s.players.some((q) => q.team !== p.team && !q.sentOff && q.kickCd > 9 && b.lastTouch === q.i && dist(q.pos, p.pos) < 1.4)) {
     sl.lateJudged = true;
-    if (lateChallenge(s, p, before)) return done();
+    // Rated by how committed the slide was, not its speed (a short slide is not a full-speed lunge).
+    if (lateChallenge(s, p, 4 + 4 * clamp((sl.len - sl.left) / SLIDE_COMMITTED, 0.2, 1))) return done();
   }
   return false;
 }
