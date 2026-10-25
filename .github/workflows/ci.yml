@@ -64,7 +64,8 @@ jobs:
   e2e:
     name: Browser end-to-end tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The suite takes about 20 minutes (3D under SwiftShader, and the perf tests play several matches back to back).
+    timeout-minutes: 30
     steps:
       # Get the code.
       - uses: actions/checkout@v4
