@@ -164,3 +164,91 @@ describe('right-click tackles (no dead band, slides that reach the ball can win 
     expect(a.filter((r) => r.won).length).toBeGreaterThanOrEqual(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Major 3: a lofted pass to a team-mate is controlled where it lands
+
+/** The human (a MID at (10,34), in our own half so nobody is offside) lofts to a team-mate `d` m away along +x; nobody else on the pitch. */
+function loftScene(d: number, seed = 5) {
+  const s = livePlay(seed);
+  const me = role(s, 0, 'MID');
+  const mate = role(s, 0, 'MID', 1);
+  isolate(s, me, mate);
+  s.switchTimer[0] = 1e9;
+  s.controlled[0] = me.i;
+  me.pos = { x: 10, y: 34 };
+  me.vel = { x: 0, y: 0 };
+  me.facing = { x: 1, y: 0 };
+  me.stun = 0;
+  mate.pos = { x: 10 + 0.99 + d, y: 34 };
+  mate.vel = { x: 0, y: 0 };
+  mate.stun = 0;
+  Object.assign(s.ball, { owner: me.i, pos: { x: 10.99, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
+  return { s, me, mate };
+}
+
+/** Play the loft with the pointer on the team-mate, then `mode` with the pointer. When and where does our side control it? */
+function loftTo(d: number, mode: 'still' | 'jiggle', seed = 5) {
+  const { s, mate } = loftScene(d, seed);
+  const aim = { ...mate.pos };
+  const hold = Math.min(1, (d - 12) / 28 + 0.05);
+  step(s, { cursor: aim, aim, loft: hold });
+  let landed = -1;
+  for (let t = 1; t < 600; t++) {
+    const jig = mode === 'jiggle' ? { x: aim.x + (t % 2 ? 0.3 : -0.3), y: aim.y } : aim;
+    step(s, { cursor: jig, moved: mode === 'jiggle' });
+    if (landed < 0 && s.ball.z === 0 && s.ball.owner < 0) landed = t;
+    const o = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    // Taken before it ever lands (on the chest or thigh) counts as no time after landing.
+    if (o) return { ours: o.team === 0, landed, at: t, late: landed < 0 ? 0 : t - landed, off: dist(s.ball.pos, aim) };
+  }
+  return { ours: false, landed, at: 600, late: Infinity, off: Infinity };
+}
+
+describe('lofted passes to a team-mate (hold left)', () => {
+  test('to a team-mate standing on the spot, 15-30 m: he controls it within half a second of it landing, near the aim', () => {
+    for (const d of [15, 20, 25, 30]) {
+      for (const mode of ['still', 'jiggle'] as const) {
+        const r = loftTo(d, mode);
+        // Main: it came off him and skipped on 13-23 m; nobody had it for seconds.
+        expect(r.ours).toBe(true);
+        expect(r.late).toBeLessThanOrEqual(30);
+        expect(r.off).toBeLessThan(4);
+      }
+    }
+  });
+
+  test('over a range of seeds and 15-35 m, nearly every loft to a free team-mate is kept, and quickly', () => {
+    let kept = 0;
+    let quick = 0;
+    let n = 0;
+    for (const d of [15, 20, 25, 30, 35]) {
+      for (let seed = 1; seed <= 6; seed++) {
+        const r = loftTo(d, 'still', seed);
+        n++;
+        if (r.ours) kept++;
+        if (r.ours && r.at < 2.6 * 60 + 30) quick++;
+      }
+    }
+    expect(kept / n).toBeGreaterThan(0.9);
+    expect(quick / n).toBeGreaterThan(0.8);
+  });
+
+  test('a loft into space with nobody else near: the man the human is given goes to it even with a resting pointer', () => {
+    const { s, me, mate } = loftScene(10);
+    s.switchTimer[0] = 0; // the human is handed whoever is nearest the ball, as in a match
+    // Aim at empty grass 25 m away, well wide of the team-mate.
+    const aim = { x: 35, y: 50 };
+    step(s, { cursor: aim, aim, loft: 0.5 });
+    const rest = { x: 25, y: 20 };
+    let ours = -1;
+    for (let t = 1; t < 600 && ours < 0; t++) {
+      step(s, { cursor: rest });
+      if (s.ball.owner >= 0 && s.players[s.ball.owner].team === 0) ours = t;
+    }
+    // Main: the held man is positioned by the CPU and nobody chases; it rolls on untouched.
+    expect(ours).toBeGreaterThan(0);
+    expect(ours).toBeLessThan(4 * 60);
+    expect([me.i, mate.i]).toContain(s.ball.owner);
+  });
+});

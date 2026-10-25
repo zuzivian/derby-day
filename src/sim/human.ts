@@ -22,7 +22,7 @@
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
 import { aiIntent } from './ai.ts';
-import { BOX_DEPTH, BOX_W, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
+import { BOX_DEPTH, BOX_W, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
@@ -152,8 +152,26 @@ function keepInBox(p: MatchPlayer, move: Vec, throttle: number): { move: Vec; th
  * fast as he needs to be there before it is. Taking it earlier is what beats the defender
  * coming round the back.
  */
+/** A ball in the air drops to chest height here (no drag): where to meet it, not under its flight. */
+function dropPoint(s: MatchState): Vec {
+  const b = s.ball;
+  const z = 1.2;
+  const disc = b.vz * b.vz + 2 * GRAVITY * Math.max(0, b.z - z);
+  const t = b.z > z || b.vz > 0 ? (b.vz + Math.sqrt(Math.max(0, disc))) / GRAVITY : 0;
+  return add(b.pos, scale(b.vel, t));
+}
+
 export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const b = s.ball;
+  if (b.z > 1.5 || b.vz > 0) {
+    // Lofted: get to where it comes down and wait for it there.
+    const to = sub(dropPoint(s), p.pos);
+    const d = len(to);
+    if (d < 0.3) return { move: { x: 0, y: 0 }, throttle: 0 };
+    const t = Math.max(0.2, (b.vz + Math.sqrt(b.vz * b.vz + 2 * GRAVITY * b.z)) / GRAVITY - 0.2);
+    const effort = clamp(d / t / 6.5, 0.3, SPRINT_MULT);
+    return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
+  }
   const v = len(b.vel);
   if (v < 0.5) {
     const to = sub(b.pos, p.pos);
@@ -162,8 +180,9 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const dir = scale(b.vel, 1 / v);
   const along = dot(sub(p.pos, b.pos), dir);
   if (along < 0.5) {
+    // It is past him (or he is chasing it down): run after it, flat out if it is getting away.
     const to = sub(b.pos, p.pos);
-    return { move: norm(to), throttle: 1 };
+    return { move: norm(to), throttle: 1, sprint: v > 4 };
   }
   const onLine = add(b.pos, scale(dir, along));
   const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
@@ -174,6 +193,15 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const need = d / Math.max(0.15, along / v - 0.1);
   const effort = clamp(need / 6.5, 0.3, SPRINT_MULT);
   return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
+}
+
+/** The ball is loose with no receiver, and he is the nearest outfielder on his side to where it is going. */
+function looseForHim(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  if (b.owner >= 0 || b.receiver >= 0 || s.phase !== 'play') return false;
+  const at = b.z > 0 || b.vz > 0 ? dropPoint(s) : b.pos;
+  const mine = dist(p.pos, at);
+  return !s.players.some((m) => m.team === p.team && m.i !== p.i && m.role !== 'GK' && !m.sentOff && m.stun === 0 && dist(m.pos, at) < mine);
 }
 
 export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
@@ -249,7 +277,14 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     }
     return { move, throttle, sprint };
   }
-  if (held) {
+  if (held && looseForHim(s, p)) {
+    // A loose ball nobody is meant for, and he is our nearest: he goes for it (the CPU would
+    // leave it to the man the human steers).
+    const it = meetBall(s, p);
+    move = it.move;
+    throttle = it.throttle;
+    sprint = !!it.sprint;
+  } else if (held) {
     // Until the pointer moves, he plays like the CPU would (but takes no action of his own).
     const it = aiIntent(s, p);
     move = it.move;

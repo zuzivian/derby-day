@@ -54,6 +54,8 @@ export const MATCH_SECONDS = 90 * 60;
 /** Ball flight. Metres and seconds, so gravity is the real thing. */
 export const GRAVITY = 9.8;
 export const BOUNCE_DAMP = 0.55;
+/** Share of its pace across the ground a ball keeps when it bounces on grass (a lofted pass sits up, not skids on). */
+export const BOUNCE_KEEP = 0.65;
 /** Above this height a ball cannot be controlled by an outfield player (headers go up to HEAD_Z). */
 export const REACH_Z = 1.2;
 /** A descending ball below this can be headed. */

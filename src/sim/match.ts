@@ -17,6 +17,7 @@ import {
   AIR_DRAG,
   BALL_R,
   BOUNCE_DAMP,
+  BOUNCE_KEEP,
   CHIP_Z0,
   CENTRE_R,
   DT,
@@ -55,7 +56,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
+import { assistReceiver, chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
 import {
   awardRestart,
   ballOut,
@@ -334,7 +335,10 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
       a.kind === 'chip'
         ? 0.03 + 0.09 * a.power * a.power * (1.3 - p.attrs.shooting)
         : (0.015 + 0.04 * a.power * (1.3 - p.attrs.passing)) * (human ? HUMAN_AIM : 1);
-    kick(s, p, plan.landing, plan.speed, err, -1);
+    // A lofted pass is meant for the team-mate nearest where it comes down (the same assist as
+    // a click), so he goes to meet it and takes it cleanly. A punt is for whoever wins it.
+    const receiver = a.kind === 'punt' ? -1 : assistReceiver(s, p, b.pos, plan.landing);
+    kick(s, p, plan.landing, plan.speed, err, receiver);
     b.z = CHIP_Z0;
     b.vz = plan.vz;
     if (a.kind !== 'punt' && blockCross(s, p)) return;
@@ -343,7 +347,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     if (a.kind === 'punt' || !countShot(s, team)) {
       b.passFrom = p.i;
       s.stats[team].passAttempts++;
-    }
+    } else b.receiver = -1;
     return;
   }
   if (a.kind === 'shoot' && b.owner === p.i) {
@@ -851,7 +855,7 @@ function updateBall(s: MatchState, live: boolean): void {
       b.z = 0;
       if (b.vz < -1.5) {
         b.vz = -b.vz * BOUNCE_DAMP;
-        b.vel = scale(b.vel, 0.82);
+        b.vel = scale(b.vel, BOUNCE_KEEP);
       } else b.vz = 0;
     }
   } else if (speed > 0) {
@@ -1114,11 +1118,13 @@ function contacts(s: MatchState, from: Vec): void {
  */
 function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void {
   const b = s.ball;
-  const speed = len(b.vel) + Math.abs(b.vz) * 0.5;
   const receiver = b.receiver === p.i;
+  // A dropping ball is harder to kill than its pace across the ground; the man it was meant for
+  // is set for it, so its fall counts for less (chest and thigh control of a lofted pass).
+  const speed = len(b.vel) + Math.abs(b.vz) * (receiver ? 0.15 : 0.5);
   const chest = b.z > FOOT_Z;
   let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : 0);
-  if (chest) limit *= 0.75;
+  if (chest && !receiver) limit *= 0.75;
   const takes = speed <= limit;
   if (offsideOnTouch(s, p, takes)) return;
 
@@ -1261,7 +1267,7 @@ function timeToTravel(b: MatchState['ball'], d: number): number {
     const dAir = (v * (1 - Math.exp(-AIR_DRAG * tLand))) / AIR_DRAG;
     if (d <= dAir) return -Math.log(1 - (AIR_DRAG * d) / v) / AIR_DRAG;
     t0 = tLand;
-    v0 = v * Math.exp(-AIR_DRAG * tLand) * 0.82;
+    v0 = v * Math.exp(-AIR_DRAG * tLand) * BOUNCE_KEEP;
     left = d - dAir;
   }
   if (rollTravel(v0, 10) < left) return Infinity;
