@@ -16,8 +16,30 @@
   padding: 3px 8px; font: 700 12px/1.2 'Barlow', system-ui, sans-serif; cursor: pointer; pointer-events: auto;
 }
 .coach-x:hover { background: rgba(255, 255, 255, .16); }
+/* On phones the card keeps clear of the HUD's right-hand column (Menu, the camera chip and the zoom buttons, about 96 px wide plus
+   its 6 px margin): a tap that misses the card must never land on one of them. "Got it" is a proper 44 px touch target. */
 @media (max-width: 640px) {
-  .coach-tip { left: 6px; right: 6px; top: 64px; width: auto; max-width: none; font-size: 12px; padding: 7px 8px; }
+  .coach-tip { left: 6px; right: 108px; top: 64px; width: auto; max-width: none; font-size: 12px; padding: 7px 8px; }
+}
+/* The first tip also says which player is you. A card that long would cover the kick-off on a narrow phone, so there the sentence
+   becomes a one-line banner in the free strip above the radar and the Pass and Shoot pad, and the card keeps only its own tip. */
+.coach-intro { display: none; }
+@media (max-width: 640px) and (orientation: portrait) {
+  .coach-lead { display: none; }
+  /* The card is only ~170 px wide beside the HUD column, so "Got it" (a real 44 px target) goes on its own line, not beside the words. */
+  .coach-tip { flex-wrap: wrap; }
+  .coach-text { flex: 1 1 calc(100% - 28px); }
+  .coach-x { margin-left: auto; }
+  .coach-intro {
+    display: block; position: absolute; left: 6px; right: 6px; bottom: 80px; z-index: 5; padding: 5px 8px; border-radius: 8px; pointer-events: none;
+    background: rgba(8, 12, 11, .82); border: 1px solid rgba(255, 255, 255, .22); color: #fff; text-align: center;
+    font: 700 12px/1.3 'Barlow', system-ui, sans-serif;
+  }
+  .coach-intro[hidden] { display: none; }
+  .coach-intro.paused { visibility: hidden; }
+}
+@media (pointer: coarse), (max-width: 640px) {
+  .coach-x { min-width: 44px; min-height: 44px; padding: 0 10px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .coach-tip { transition: none; transform: none; }
@@ -51,3 +73,7 @@
 
 /* The hero's middle while there is no win-chance gauge (warm-up friendlies, the first ranked matches). */
 .hero-vs { font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: 44px; line-height: 1; color: rgba(255, 255, 255, .85); text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+
+/* The welcome card is a dark felt card, but its club panel is the theme's light surface: the club names inherited the card's
+   near-white text and vanished in the light theme (1.01:1). Ink on the panel is right in both themes. (Kept here, not in styles.css.) */
+.ob-welcome .ob-versus { color: var(--ink); }
