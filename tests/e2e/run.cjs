@@ -75,6 +75,8 @@ const LIST_ONLY = process.argv[2] === '--list';
 const TIMEOUT = Number(process.env.E2E_TIMEOUT_MS || 90_000);
 /** How long closing a test's contexts (and the browser) may take before the runner gives up on it. */
 const CLOSE_TIMEOUT = Number(process.env.E2E_CLOSE_TIMEOUT_MS || 20_000);
+/** A context that took longer than this to close leaves the browser suspect: the next test gets a fresh one. */
+const RELAUNCH_AFTER_MS = 8000;
 
 /** The close stalled: which page will not close, can the browser still make a context, and what are the Chrome processes doing? */
 async function probeStall(browser, contexts) {
@@ -163,11 +165,8 @@ async function main() {
 
   // WebGL for the 3D match view: headless Chromium falls back to SwiftShader (software), which the
   // game detects and renders at low quality. E2E_RENDERER=2d forces the 2D canvas fallback instead.
-  const browser = await chromium.launch({
-    executablePath: executablePath(),
-    headless: !process.env.E2E_HEADED,
-    args: BROWSER_ARGS,
-  });
+  const launch = () => chromium.launch({ executablePath: executablePath(), headless: !process.env.E2E_HEADED, args: BROWSER_ARGS });
+  let browser = await launch();
   console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}${SHARD ? ` (shard ${SHARD}: ${FILES.join(', ')})` : ''}\n`);
 
   const results = [];
@@ -191,6 +190,13 @@ async function main() {
       async newPage(contextOptions = {}) {
         const ctx = await browser.newContext(contextOptions);
         contexts.push(ctx);
+        // A test's own CDP sessions (metrics, DPR, GC) are released before the close too, like the runner's.
+        const newCDPSession = ctx.newCDPSession.bind(ctx);
+        ctx.newCDPSession = async (p) => {
+          const cdp = await newCDPSession(p);
+          sessions.push(cdp);
+          return cdp;
+        };
         // Fonts are blocked for every page of the context, including pages opened later in it (nextVisit, openApp's second page).
         await ctx.route(FONT_HOST, (route) => route.abort());
         const attach = async (p) => {
@@ -199,7 +205,6 @@ async function main() {
           const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
           if (throttle > 1) {
             const cdp = await ctx.newCDPSession(p);
-            sessions.push(cdp);
             await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
           }
           // A tab whose renderer dies would leave the test waiting for it for ever: fail the test now, saying which page.
@@ -246,8 +251,13 @@ async function main() {
       // page.close() on the same pages worked at once, with the browser otherwise healthy.)
       const bounded = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
       await Promise.all(sessions.map((c) => bounded(c.send('Emulation.setCPUThrottlingRate', { rate: 1 }).then(() => c.detach()), 3000)));
+      // Not goto('about:blank') first: on a busy 3D page (SwiftShader at DPR 2) the navigation did not even commit within
+      // 3 s, and blank-then-close took 3.5-5 s where a plain close took 1.4 s.
+      const p0 = Date.now();
       await Promise.all(contexts.flatMap((c) => c.pages().map((pg) => bounded(pg.close(), 5000))));
       const stalledAt = [];
+      if (Date.now() - p0 > 2000) stalledAt.push(`pages took ${Date.now() - p0} ms to close`);
+      let slowest = 0;
       const closed = await Promise.race([
         Promise.all(
           contexts.map(async (c, ci) => {
@@ -255,6 +265,7 @@ async function main() {
             const tick = setTimeout(() => stalledAt.push(`context ${ci} still closing after ${(CLOSE_TIMEOUT / 2000).toFixed(0)} s; pages: ${c.pages().map((pg) => (pg.isClosed() ? 'closed' : 'open')).join(',')}`), CLOSE_TIMEOUT / 2);
             await c.close().catch(() => {});
             clearTimeout(tick);
+            slowest = Math.max(slowest, Date.now() - t0);
             if (Date.now() - t0 > 2000) stalledAt.push(`context ${ci} took ${Date.now() - t0} ms to close`);
           }),
         ).then(() => true),
@@ -266,6 +277,11 @@ async function main() {
         diag = diag.concat(await diagnose(contexts));
         error = new Error(`${error ? error.message + '\n      ' : ''}closing the test's browser contexts did not finish within ${CLOSE_TIMEOUT / 1000} s`);
         wedged = true;
+      } else if (slowest > RELAUNCH_AFTER_MS) {
+        // It closed, but slowly enough that the browser (its GPU process above all) is not to be trusted with the next test.
+        await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_TIMEOUT))]);
+        browser = await launch();
+        diag.push(`relaunched the browser after a ${slowest} ms close`);
       }
     }
     const ms = Date.now() - started;
