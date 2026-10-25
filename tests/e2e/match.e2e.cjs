@@ -104,7 +104,7 @@ test('leaving a ranked match mid-way (reload or closed tab) counts as a 0–3 fo
   const rec = after.history.at(-1);
   expect([rec.ranked, rec.goalsFor, rec.goalsAgainst, rec.forfeited], 'a ranked 0–3 forfeit').toEqual([true, 0, 3, true]);
   expect(after.club.elo, 'Elo dropped').toBeLessThan(before.club.elo);
-  expect(after.budget, 'no money').toBe(before.budget);
+  expect(after.budget, 'a fine, like a pause-menu forfeit').toBeLessThan(before.budget);
   expect(await next.locator(SEL.toast).innerText(), 'the player is told why').toMatch(/didn't finish.*0–3 forfeit/);
 });
 

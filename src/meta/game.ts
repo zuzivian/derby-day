@@ -12,6 +12,7 @@ import {
   emptyRecord,
   generateIdentity,
   generateSquad,
+  teamStrength,
   toTeamSetup,
   type ClubIdentity,
   type ClubRecord,
@@ -23,7 +24,7 @@ import type { SeasonReview } from './progression.ts';
 import { pushHistory, type ClubRecords, type SeasonSummary } from './history.ts';
 import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, UNLOCKS_VERSION, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
 import type { PendingMatch } from './pending.ts';
-import { divisionMoney, divisionXp, generateWorld, playerDivision, START_DIVISION, WORLD_CPU_CLUBS } from './world.ts';
+import { cpuStrength, divisionMoney, divisionXp, generateWorld, playerDivision, START_DIVISION, WORLD_CPU_CLUBS, xiExpected } from './world.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
 export const SAVE_VERSION = 1;
@@ -127,6 +128,10 @@ export interface Save {
   cupWait?: number;
   /** When the transfer market was last refreshed (client clock, ms). Only the timed refresh reads it. */
   marketAt?: number;
+  /** XP owed for forfeits, taken from the next rated matches (forfeitCost). */
+  xpOwed?: number;
+  /** Lifetime match count at the last match voided by a crash (pending.ts): at most one in VOID_EVERY. */
+  voidAt?: number;
 }
 
 export function newGame(seed: number): Save {
@@ -342,11 +347,14 @@ export function offeredOpponent(save: Save): LadderClub {
  * Your chance of beating `opp` (an expected score, 0 to 1): the one number the
  * win-chance gauge, the reward scale and (with the fairness stream) the
  * opponent's difficulty all read, so the chance shown, the stake and the CPU
- * you meet agree. For now it is the public Elo expectation; the fairness
- * stream owns its body.
+ * you meet agree. The fairness stream owns its body. Until then it is mostly
+ * the two XIs (xiExpected, the CPU-fixture model) with a fifth of public Elo,
+ * so losing Elo on purpose doesn't make an easy opponent look hard: the squads
+ * still say you should win.
  */
 export function winChance(save: Save, opp: LadderClub): number {
-  return expectedScore(save.club.elo, opp.elo);
+  const xi = teamStrength(save.squad, save.lineup, save.formation);
+  return 0.8 * xiExpected(xi, cpuStrength(opp)) + 0.2 * expectedScore(save.club.elo, opp.elo);
 }
 
 /**
@@ -378,6 +386,19 @@ export interface ResultSummary {
   developments: string[];
   /** Experience from this match (competitions add their finishing bonuses to it). */
   xp: XpGain;
+  /** A forfeit's cost (forfeitCost): the fine paid and the XP now owed. */
+  fine?: number;
+  owed?: number;
+}
+
+/**
+ * What forfeiting a rated match against an opponent paying `scale` costs: a
+ * fine of what a win would have paid (at most what is in the bank) and a win's
+ * XP, owed from the next rated matches.
+ */
+export function forfeitCost(save: Save, scale: { xp: number; money: number }): { fine: number; owed: number } {
+  const fine = Math.min(Math.max(0, save.budget), Math.round((RANKED_MONEY.win * scale.money) / 5_000) * 5_000);
+  return { fine, owed: Math.round(XP.win * scale.xp) };
 }
 
 /** Ranked money by result, before rankedScale: a win, a draw, a defeat, and each goal scored. */
@@ -433,6 +454,16 @@ export function applyResult(
     simulateLadderRound(save, opponent.id);
     save.nextOpp = null; // the next offer is picked fresh
   }
+  // A rated forfeit costs what a win would have paid, as a fine (never below ƒ0), and a win's XP owed
+  // from the matches after it (forfeitCost), so losing Elo on purpose to meet weaker clubs never pays.
+  let fine = 0;
+  let owed = 0;
+  if (forfeited && rated && scale) {
+    ({ fine, owed } = forfeitCost(save, scale));
+    save.budget -= fine;
+    money = -fine;
+    save.xpOwed = (save.xpOwed ?? 0) + owed;
+  }
   if ((ranked || competition) && win) tp += winTrainingBonus(save);
   if (forfeited) tp = 0;
   save.trainingPoints += tp;
@@ -442,7 +473,16 @@ export function applyResult(
   if (!forfeited && (ranked || comp === 'league') && (save.cupWait ?? 0) > 0) save.cupWait = save.cupWait! - 1;
 
   // Experience: the match itself, then a first ranked win. Forfeits earn nothing.
-  award(save, matchXp(ranked ? 'ranked' : competition ? 'competition' : 'practice', goalsFor, goalsAgainst, forfeited, practice, xpScale), xp);
+  const parts = matchXp(ranked ? 'ranked' : competition ? 'competition' : 'practice', goalsFor, goalsAgainst, forfeited, practice, xpScale);
+  // XP owed for earlier forfeits comes out of the next rated matches, half of each at most.
+  if (rated && !forfeited && (save.xpOwed ?? 0) > 0) {
+    const pay = Math.min(save.xpOwed!, Math.floor(parts.reduce((t, p) => t + p.xp, 0) / 2));
+    if (pay > 0) {
+      parts.push({ label: 'owed for forfeits', xp: -pay });
+      save.xpOwed = save.xpOwed! - pay;
+    }
+  }
+  award(save, parts, xp);
   if (ranked && win && !forfeited) award(save, [claimMilestone(save, 'first-win')], xp);
 
   // One week passes per ranked or competition match played once the season
@@ -470,7 +510,7 @@ export function applyResult(
   const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
   save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${rated ? ` (Elo ${signed(delta)})` : ''}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
-  return { eloDelta: delta, money, trainingPoints: tp, developments, xp };
+  return { eloDelta: delta, money, trainingPoints: tp, developments, xp, ...(fine || owed ? { fine, owed } : {}) };
 }
 
 function tallyRecord(r: ClubRecord, gf: number, ga: number): void {
@@ -545,7 +585,7 @@ export function isSave(x: unknown): x is Save {
     // Club level fields (also optional).
     numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones)) &&
     // World and history fields (also optional).
-    numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) &&
+    numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) && numOrUndef(s.xpOwed) && numOrUndef(s.voidAt) &&
     (s.nextOpp === undefined || s.nextOpp === null || typeof s.nextOpp === 'string') && objOrNull(s.pending) && objOrNull(s.records) &&
     (s.seasons === undefined || Array.isArray(s.seasons)) && (s.yearNotes === undefined || Array.isArray(s.yearNotes))
     // Tactics (formation, mentality) are never a reason to refuse a save: ensureElevenASide repairs them.

@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { canStart, closeCup, cupOpponent, cupWaitLeft, pickEntrants, recordCupMatch, recordSeasonMatch, seasonOpponent, simulateRestOfCup, startCup, startSeason, type QuickSim } from '../src/meta/competitions.ts';
-import { applyResult, CUP_WAIT, MARKET_REFRESH_MS, newGame as freshGame, offeredOpponent, rankedScale, refreshMarketIfStale, type Save } from '../src/meta/game.ts';
+import { canStart, closeCup, seasonVerdict, cupOpponent, cupWaitLeft, pickEntrants, recordCupMatch, recordSeasonMatch, seasonOpponent, simulateRestOfCup, startCup, startSeason, type QuickSim } from '../src/meta/competitions.ts';
+import { applyResult, averageOverall, CUP_WAIT, MARKET_REFRESH_MS, newGame as freshGame, offeredOpponent, rankedScale, refreshMarketIfStale, winChance, type Save } from '../src/meta/game.ts';
 import { HISTORY_CAP, lifetimeMatches } from '../src/meta/history.ts';
 import { academyIntake, academyPotentialBonus, marketSize, prizeBonus, scoutMatchesFor, squadCap, totalXpForLevel, UNLOCKS, winTrainingBonus } from '../src/meta/levels.ts';
-import { beginMatch, settleAbandoned } from '../src/meta/pending.ts';
+import { beginMatch, markCrashed, settleAbandoned, VOID_EVERY } from '../src/meta/pending.ts';
 import { maybeRollover, runRollover } from '../src/meta/progression.ts';
 import { playerDivision } from '../src/meta/world.ts';
 
@@ -73,15 +73,19 @@ describe('cups wait between editions', () => {
 });
 
 describe('league forfeits', () => {
-  test('a fully forfeited season pays nothing, wins nothing and still relegates', () => {
+  test('a fully forfeited season pays no prize, wins nothing, costs its fines and still relegates', () => {
     const s = newGame(5);
     s.division = 3;
     startSeason(s);
     const budget = s.budget;
     const xp = s.xp;
     let out;
-    for (let d = 0; d < 7; d++) out = recordSeasonMatch(s, 0, 3, [], homeWins, true);
-    expect(s.budget).toBe(budget);
+    let fines = 0;
+    for (let d = 0; d < 7; d++) {
+      out = recordSeasonMatch(s, 0, 3, [], homeWins, true);
+      fines += out.summary.fine ?? 0;
+    }
+    expect(s.budget).toBe(budget - fines);
     expect(s.xp).toBe(xp);
     expect(out!.money).toBe(0);
     expect(s.trophies!.length).toBe(0);
@@ -101,15 +105,16 @@ describe('league forfeits', () => {
 });
 
 describe('ranked rewards follow the opponent', () => {
-  test('beating a stronger club pays more than beating a weaker one; equal pays the table', () => {
+  test('beating a stronger club pays more than beating a weaker one; the squads count more than Elo', () => {
     const s = newGame(7);
-    const same = s.ladder.filter((c) => c.division === 4);
-    const strong = { ...same[0], elo: s.club.elo + 200 };
-    const weak = { ...same[1], elo: s.club.elo - 200 };
-    const even = { ...same[2], elo: s.club.elo };
-    expect(rankedScale(s, strong).xp).toBeGreaterThan(rankedScale(s, even).xp);
-    expect(rankedScale(s, even).xp).toBe(1);
-    expect(rankedScale(s, weak).xp).toBeLessThan(1);
+    const base = s.ladder.find((c) => c.division === 4)!;
+    const club = (quality: number, elo: number) => ({ ...base, quality, elo });
+    const xi = averageOverall(s);
+    expect(rankedScale(s, club(xi + 10, s.club.elo)).xp).toBeGreaterThan(rankedScale(s, club(xi, s.club.elo)).xp);
+    expect(rankedScale(s, club(xi - 10, s.club.elo)).xp).toBeLessThan(rankedScale(s, club(xi, s.club.elo)).xp);
+    // A weak squad doesn't pay like a strong one just because your Elo has dropped below it (sandbagging).
+    expect(rankedScale(s, club(xi - 10, s.club.elo + 400)).xp).toBeLessThan(rankedScale(s, club(xi + 10, s.club.elo)).xp);
+    expect(winChance(s, club(xi - 10, s.club.elo + 400))).toBeGreaterThan(0.6);
     expect(rankedScale(s, s.ladder.find((c) => c.division === 1)!).money).toBeGreaterThan(2);
   });
   test('sandbagging: dropping Elo by forfeits buys weaker ranked opponents that pay less, and no easier league', () => {
@@ -165,7 +170,9 @@ describe('abandoned matches', () => {
     expect(loaded.history.length).toBe(1);
     expect(loaded.history[0]).toMatchObject({ goalsFor: 0, goalsAgainst: 3, forfeited: true });
     expect(out.eloDelta).toBeLessThan(0);
-    expect(loaded.budget).toBe(budget);
+    expect(loaded.budget).toBeLessThan(budget); // a fine
+    expect(loaded.xpOwed).toBeGreaterThan(0);
+    expect(out.message).toContain('fine');
     expect(loaded.pending).toBeNull();
     expect(out.message).toContain(opp.name);
     expect(out.message).toContain('0–3 forfeit');
@@ -284,5 +291,65 @@ describe('late perks', () => {
     s.squad = s.squad.slice(0, 18);
     const review = runRollover(s);
     expect(review.intake.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('what a forfeit costs', () => {
+  test('owed XP comes out of the next rated matches, at most half of each', () => {
+    const s = newGame(40);
+    const o = offeredOpponent(s);
+    applyResult(s, o, o, 0, 3, true, [], undefined, true);
+    const owed = s.xpOwed!;
+    expect(owed).toBeGreaterThan(0);
+    const next = offeredOpponent(s);
+    const r = applyResult(s, next, next, 2, 0, true, []);
+    const paid = -r.xp.parts.find((p) => p.label === 'owed for forfeits')!.xp;
+    const earned = r.xp.parts.filter((p) => p.xp > 0 && p.label !== 'first ranked win').reduce((t, p) => t + p.xp, 0);
+    expect(paid).toBeLessThanOrEqual(Math.floor(earned / 2));
+    expect(s.xpOwed).toBe(owed - paid);
+    expect(r.xp.total).toBeGreaterThan(0);
+    // Practice never pays it off.
+    const before = s.xpOwed;
+    applyResult(s, null, { name: 'Reserve XI', short: 'RES' }, 3, 0, false, [], undefined, false, 'easy');
+    expect(s.xpOwed).toBe(before);
+  });
+  test('the fine never takes the budget below zero', () => {
+    const s = newGame(41);
+    s.budget = 10_000;
+    const o = offeredOpponent(s);
+    applyResult(s, o, o, 0, 3, true, [], undefined, true);
+    expect(s.budget).toBe(0);
+  });
+});
+
+describe('a crash mid-match', () => {
+  test('is voided, at most once in VOID_EVERY matches; a second crash soon after counts as a forfeit', () => {
+    const s = newGame(42);
+    const o = offeredOpponent(s);
+    beginMatch(s, { kind: 'ranked', opponentId: o.id, opponent: o.name, label: 'Ranked' });
+    markCrashed(s);
+    const elo = s.club.elo;
+    const first = settleAbandoned(s)!;
+    expect(first.voided).toBe(true);
+    expect(first.message).toContain("doesn't count");
+    expect(s.history.length).toBe(0);
+    expect(s.club.elo).toBe(elo);
+    beginMatch(s, { kind: 'ranked', opponentId: o.id, opponent: o.name, label: 'Ranked' });
+    markCrashed(s);
+    const second = settleAbandoned(s)!;
+    expect(second.voided).toBeUndefined();
+    expect(s.history.length).toBe(1);
+    for (let k = 0; k < VOID_EVERY; k++) applyResult(s, o, o, 1, 1, true, []);
+    beginMatch(s, { kind: 'ranked', opponentId: o.id, opponent: o.name, label: 'Ranked' });
+    markCrashed(s);
+    expect(settleAbandoned(s)!.voided).toBe(true);
+  });
+});
+
+describe('promotion needs an honest season', () => {
+  test('a top-two finish with three forfeits says why it stays put', () => {
+    expect(seasonVerdict(2, 3, null, 3)).toBe('Runners-up, but promotion needs a season with at most 2 forfeits.');
+    expect(seasonVerdict(1, 3, null, 3)).toContain('the title and promotion need a season with at most 2 forfeits');
+    expect(seasonVerdict(2, 3, 'up', 0)).toBe('Runners-up. Promoted to Division 2.');
   });
 });

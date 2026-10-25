@@ -215,9 +215,10 @@ describe('XP awards', () => {
   });
   test('applyResult adds match XP and the first ranked win once', () => {
     const s = newGame(11);
-    // An opponent from your own division at your Elo pays the table as it stands (rankedScale 1).
+    // An opponent from your own division at your Elo with an XI like yours pays the table as it stands (rankedScale 1).
     const even = s.ladder.find((c) => c.division === 4)!;
     even.elo = s.club.elo;
+    for (let q = 40; q < 90 && rankedScale(s, even).xp !== 1; q++) even.quality = q;
     expect(rankedScale(s, even).xp).toBe(1);
     const a = applyResult(s, even, { name: 'A', short: 'A' }, 3, 1, true, []);
     expect(a.xp.total).toBe(120 + 30 + 100);

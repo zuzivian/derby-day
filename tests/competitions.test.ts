@@ -236,15 +236,16 @@ describe('saves', () => {
 describe('competition forfeits', () => {
   // Regression: forfeiting a cup quarter-final still paid its prize and two
   // sessions, so start → forfeit → restart could be farmed with no Elo cost.
-  test('forfeiting a cup tie knocks you out and pays nothing', () => {
+  test('forfeiting a cup tie knocks you out, pays no prize and costs a fine', () => {
     const s = newGame(8);
     const budget = s.budget;
     const sessions = s.trainingPoints;
     startCup(s);
     const out = recordCupMatch(s, 0, 3, [], fakeSim, true);
     expect(isOut(s, s.cup!)).toBe(true);
-    expect(out.summary.money).toBe(0);
-    expect(s.budget).toBe(budget);
+    expect(out.summary.money).toBe(0); // no prize money
+    expect(out.summary.fine).toBeGreaterThan(0);
+    expect(s.budget).toBe(budget - out.summary.fine!);
     expect(s.trainingPoints).toBe(sessions);
   });
 

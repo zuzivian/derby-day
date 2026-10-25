@@ -140,15 +140,28 @@ export function ensureWorldFields(save: Save): void {
   const nearest = (q: number) => [...Array(DIVISIONS).keys()].map((k) => k + 1).sort((a, b) => Math.abs(DIVISION_QUALITY[a - 1] - q) - Math.abs(DIVISION_QUALITY[b - 1] - q) || b - a);
   const you = save.division !== undefined ? clampDiv(save.division) : nearest(xi)[0];
   save.division = you;
-  const room = Array.from({ length: DIVISIONS }, (_, k) => DIVISION_SIZE - (k + 1 === you ? 1 : 0));
-  const placed = save.ladder.filter((c) => c.division !== undefined);
-  for (const c of placed) room[clampDiv(c.division) - 1]--;
-  // Strongest first, each to the free division nearest its quality.
-  const toPlace = save.ladder.filter((c) => c.division === undefined).sort((a, b) => b.quality - a.quality || a.id.localeCompare(b.id));
-  for (const c of toPlace) {
-    const d = nearest(c.quality).find((x) => room[x - 1] > 0) ?? clampDiv(nearest(c.quality)[0]);
-    c.division = d;
-    room[d - 1]--;
+  // Every CPU place in the pyramid, strongest first: each division's centre, spread ±4.
+  const places: { division: number; quality: number }[] = [];
+  for (let d = 1; d <= DIVISIONS; d++) {
+    const n = DIVISION_SIZE - (d === you ? 1 : 0);
+    for (let k = 0; k < n; k++) places.push({ division: d, quality: divisionCentre(d) + 4 - (8 * k) / Math.max(1, n - 1) });
+  }
+  // The old clubs (strongest first) take the places nearest their quality without changing order (a small DP),
+  // so the divisions stay in quality order; new clubs fill the places left.
+  const old = save.ladder.filter((c) => c.division === undefined).sort((a, b) => b.quality - a.quality || a.id.localeCompare(b.id));
+  const m = old.length;
+  const n = places.length;
+  const cost = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(Infinity));
+  for (let j = 0; j <= n; j++) cost[0][j] = 0;
+  for (let i = 1; i <= m; i++) {
+    for (let j = i; j <= n; j++) cost[i][j] = Math.min(cost[i][j - 1], cost[i - 1][j - 1] + Math.abs(old[i - 1].quality - places[j - 1].quality));
+  }
+  const free = new Set(places.map((_, j) => j));
+  for (let i = m, j = n; i > 0; j--) {
+    if (cost[i][j] === cost[i][j - 1] && j > i) continue;
+    old[i - 1].division = places[j - 1].division;
+    free.delete(j - 1);
+    i--;
   }
   for (const c of save.ladder) {
     c.ambition ??= Math.max(-4, Math.min(4, Math.round(c.quality - divisionCentre(clubDivision(c)))));
@@ -157,11 +170,14 @@ export function ensureWorldFields(save: Save): void {
   const names = new Set(save.ladder.map((c) => c.name));
   names.add(save.club.name);
   let added = 0;
-  for (let d = 1; d <= DIVISIONS; d++) {
-    for (; room[d - 1] > 0; room[d - 1]--) {
-      save.ladder.push(makeClub(r, d, names));
-      added++;
-    }
+  for (const j of [...free].sort((a, b) => a - b)) {
+    if (save.ladder.length >= WORLD_CPU_CLUBS) break;
+    const c = makeClub(r, places[j].division, names);
+    c.quality = Math.round(places[j].quality);
+    c.ambition = Math.max(-4, Math.min(4, Math.round(c.quality - divisionCentre(places[j].division))));
+    c.elo = eloForQuality(c.quality);
+    save.ladder.push(c);
+    added++;
   }
   if (added) save.news.push(`The league pyramid opens: ${DIVISIONS} divisions of ${DIVISION_SIZE}, ${added} new clubs. ${save.club.name} start in ${divisionName(you)}.`);
 }
@@ -185,6 +201,27 @@ export function quickScore(r: Rng, xa: number, xb: number): [number, number] {
 export const QUICK_BASE = 1.3;
 /** Per point of XI difference, on the log scale (the full-length sim fits 0.09; a little gentler keeps upsets alive). */
 export const QUICK_SLOPE = 0.07;
+
+/** Expected score (a win, plus half a draw) for XI `xa` against XI `xb` under quickScore's model. */
+export function xiExpected(xa: number, xb: number): number {
+  const d = Math.max(-30, Math.min(30, xa - xb));
+  const pmf = (l: number) => {
+    const out: number[] = [];
+    let p = Math.exp(-l);
+    for (let k = 0; k <= 12; k++) {
+      out.push(p);
+      p *= l / (k + 1);
+    }
+    return out;
+  };
+  const a = pmf(QUICK_BASE * Math.exp(QUICK_SLOPE * d));
+  const b = pmf(QUICK_BASE * Math.exp(-QUICK_SLOPE * d));
+  let win = 0;
+  let draw = 0;
+  for (let i = 0; i <= 12; i++) for (let j = 0; j <= 12; j++) if (i > j) win += a[i] * b[j];
+  else if (i === j) draw += a[i] * b[j];
+  return win + draw / 2;
+}
 
 function poisson(r: Rng, lambda: number): number {
   const limit = Math.exp(-lambda);

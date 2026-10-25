@@ -46,7 +46,7 @@ export const CUP_GUESTS = 3;
 export const MAX_SEASON_FORFEITS = 2;
 
 /** Money for reaching each stage of the cup in the bottom division: played a QF, reached the SF, reached the final, won it. Times DIVISION_MONEY. */
-export const CUP_PRIZES = [40_000, 90_000, 160_000, 320_000] as const;
+export const CUP_PRIZES = [30_000, 65_000, 120_000, 240_000] as const;
 /** Season prize money by finishing position, 1st to 8th, in the bottom division. Times DIVISION_MONEY. */
 export const SEASON_PRIZES = [450_000, 300_000, 200_000, 140_000, 100_000, 70_000, 50_000, 30_000] as const;
 
@@ -540,7 +540,11 @@ function tally(r: TableRow, gf: number, ga: number): void {
  * One line on a finish in `division`. `moved` is where it took you
  * (applyLeagueFinish); without it, the line says what the place normally means.
  */
-export function seasonVerdict(position: number, division: number = DIVISIONS, moved?: 'up' | 'down' | null): string {
+export function seasonVerdict(position: number, division: number = DIVISIONS, moved?: 'up' | 'down' | null, forfeits = 0): string {
+  if (forfeits > MAX_SEASON_FORFEITS && position <= 2) {
+    const rule = `a season with at most ${MAX_SEASON_FORFEITS} forfeits`;
+    return position === 1 ? `Top of the table, but the title${division > 1 ? ' and promotion need' : ' needs'} ${rule}.` : division > 1 ? `Runners-up, but promotion needs ${rule}.` : 'Runners-up.';
+  }
   const up = moved === undefined ? position <= 2 && division > 1 : moved === 'up';
   const down = moved === undefined ? position >= COMP_SIZE - 1 && division < DIVISIONS : moved === 'down';
   if (position === 1) return division === 1 ? 'Champions of the top division.' : up ? `Champions. Promoted to ${divisionName(division - 1)}.` : 'Champions.';
@@ -608,7 +612,7 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   const move = honest || pos > 2 ? applyLeagueFinish(save, pos) : { moved: null, division: playerDivision(save) };
   season.moved = move.moved;
   if (move.moved) noteDivision(save, move.division);
-  const verdict = seasonVerdict(pos, division, move.moved);
+  const verdict = seasonVerdict(pos, division, move.moved, season.forfeits ?? 0);
   noteYear(save, `League ${season.edition}: ${ordinal(pos)} in ${divisionName(division)}${move.moved === 'up' ? ', promoted' : move.moved === 'down' ? ', relegated' : ''}`);
   const swap = move.moved && 'swapped' in move && move.swapped ? ` ${move.swapped} go${move.moved === 'up' ? ' down' : ' up'} in your place.` : '';
   save.news.push(`League ${season.edition} over: finished ${ordinal(pos)} in ${divisionName(division)}. ${verdict}${swap} +${formatMoney(money)}.`);

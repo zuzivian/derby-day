@@ -22,7 +22,8 @@ import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
 import { ensureWorldFields } from '../meta/world.ts';
 import { ensureHistoryFields } from '../meta/history.ts';
-import { beginMatch, settleAbandoned, type PendingMatch } from '../meta/pending.ts';
+import { beginMatch, markCrashed, settleAbandoned, type PendingMatch } from '../meta/pending.ts';
+import { isBenign } from './errors.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
@@ -97,6 +98,20 @@ const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0
 function toast(text: string, ok = true) {
   showToast(text, ok);
 }
+
+// A crash mid-match (errors.ts draws its panel) marks the match, so the reload that follows voids it instead of
+// counting it as a forfeit (pending.ts, at most once in VOID_EVERY matches).
+const crashedMidMatch = (reason: unknown) => {
+  try {
+    if (!app?.save.pending || isBenign({ message: String((reason as Error)?.message ?? reason) })) return;
+    markCrashed(app.save);
+    writeSaveResult(app.save);
+  } catch {
+    /* never let this throw */
+  }
+};
+window.addEventListener('error', (e) => crashedMidMatch(e.error ?? e.message));
+window.addEventListener('unhandledrejection', (e) => crashedMidMatch(e.reason));
 
 function persist() {
   // A rollover or a promotion clears the ranked offer; the next one is picked here so it is saved with the change.

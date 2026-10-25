@@ -124,6 +124,11 @@ function strengthOf(id: string): number {
 levelAt[clubLevel(s)] = 0;
 
 const t0 = performance.now();
+/** The sandbagging probe starts from the save at this match, and plays this many honest matches after its forfeits. */
+const SANDBAG_AT = 150;
+const SANDBAG_MATCHES = 60;
+const SANDBAG_SEEDS = 4;
+let sandbagFrom: string | null = null;
 let lastPrint = 0;
 for (let i = 1; i <= N; i++) {
   const before = clubLevel(s);
@@ -248,6 +253,7 @@ for (let i = 1; i <= N; i++) {
     );
     blk = { n: 0, w: 0, d: 0, l: 0, opp: 0 };
   }
+  if (i === SANDBAG_AT) sandbagFrom = JSON.stringify(s);
   if (clubLevel(s) >= MAX_LEVEL && ASSERT) {
     lastPrint = i;
     break;
@@ -255,6 +261,44 @@ for (let i = 1; i <= N; i++) {
   lastPrint = i;
 }
 const ms = performance.now() - t0;
+
+/**
+ * Sandbagging probe: from the save at match SANDBAG_AT, forfeit `forfeits`
+ * ranked matches to drop Elo, then play SANDBAG_MATCHES ranked matches honestly
+ * (results from the XIs, as above, no training or transfers). Returns XP and
+ * money per real match, forfeit costs included, averaged over a few seeds.
+ */
+function sandbag(json: string, forfeits: number): { xp: number; money: number; eloDrop: number } {
+  let xp = 0;
+  let money = 0;
+  let drop = 0;
+  for (let k = 0; k < SANDBAG_SEEDS; k++) {
+    const t: Save = JSON.parse(json);
+    const pr = makeRng((SEED ^ 0x5a5a) + k);
+    const xp0 = t.xp ?? 0;
+    const money0 = t.budget;
+    const elo0 = t.club.elo;
+    for (let f = 0; f < forfeits; f++) {
+      const o = offeredOpponent(t);
+      applyResult(t, o, o, 0, 3, true, [], undefined, true);
+    }
+    drop += elo0 - t.club.elo;
+    for (let m = 0; m < SANDBAG_MATCHES; m++) {
+      const o = offeredOpponent(t);
+      const [gf, ga] = quickScore(pr, averageOverall(t) + EDGE, cpuStrength(o));
+      applyResult(t, o, o, gf, ga, true, []);
+    }
+    xp += (t.xp ?? 0) - xp0;
+    money += t.budget - money0;
+  }
+  const n = SANDBAG_SEEDS * SANDBAG_MATCHES;
+  return { xp: xp / n, money: money / n, eloDrop: drop / SANDBAG_SEEDS };
+}
+const honest = sandbagFrom ? sandbag(sandbagFrom, 0) : null;
+const tanked = sandbagFrom ? sandbag(sandbagFrom, 20) : null;
+if (honest && tanked) {
+  console.log(`sandbag probe from match ${SANDBAG_AT}: honest ${honest.xp.toFixed(0)} XP and ${(honest.money / 1000).toFixed(0)}k a match; after 20 forfeits (Elo −${tanked.eloDrop.toFixed(0)}) ${tanked.xp.toFixed(0)} XP and ${(tanked.money / 1000).toFixed(0)}k a match, over ${SANDBAG_MATCHES} matches x ${SANDBAG_SEEDS} seeds`);
+}
 
 function hours(matches: number): string {
   return ((matches * MATCH_MINUTES) / 60).toFixed(1);
@@ -293,6 +337,10 @@ if (ASSERT) {
   band('hours to level 99', h(99), 150, 320);
   band('cup XP a match / ranked XP a match', per('cup').xp / Math.max(1, per('ranked').xp), 0.8, 1.35);
   band('league XP a match / ranked XP a match', per('league').xp / Math.max(1, per('ranked').xp), 0.8, 1.35);
+  band('cup money a match / ranked money a match', per('cup').money / Math.max(1, per('ranked').money), 0.5, 1.35);
+  // Losing Elo on purpose never pays: 20 forfeits, then honest play, earns at most 5% more a real match than honest play.
+  band('sandbag XP a real match / honest', tanked!.xp / Math.max(1, honest!.xp), 0, 1.05);
+  band('sandbag money a real match / honest', tanked!.money / Math.max(1, honest!.money), 0, 1.05);
   // From match 200 on, the world keeps up: the strongest CPU XI is never more than 3 below yours, and ranked is never a walkover.
   const later = late.slice(1);
   band('worst gap, strongest CPU XI minus yours (from match 200)', Math.min(...later.map((x) => x.gap)), -3, 40);

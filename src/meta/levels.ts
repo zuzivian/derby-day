@@ -357,7 +357,8 @@ export function startGain(save: Save): XpGain {
 /** Add XP parts to the save (zero parts are dropped) and to `gain`. */
 export function award(save: Save, parts: (XpPart | null)[], gain: XpGain = startGain(save)): XpGain {
   for (const p of parts) {
-    if (!p || p.xp <= 0) continue;
+    // Zero parts are dropped. A negative part (XP owed for forfeits, game.ts) is only ever paid out of the same award's gains.
+    if (!p || p.xp === 0) continue;
     save.xp = (save.xp ?? 0) + p.xp;
     gain.parts.push(p);
     gain.total += p.xp;

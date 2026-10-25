@@ -465,6 +465,8 @@ function resultModal(app: App): string {
     ? [
         r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
         sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : 'banked for Transfers') : '',
+        // A forfeit's cost (forfeitCost in game.ts), so walking off is never free.
+        sum.fine || sum.owed ? rewardChip('rs-money', COIN, 'Forfeit fine', sum.fine ? `−${formatMoney(sum.fine)}` : '±0', sum.owed ? `and ${sum.owed} XP owed from your next matches` : '') : '',
         sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : 'banked for Training') : '',
       ].filter(Boolean)
     : [];

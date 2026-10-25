@@ -248,6 +248,20 @@ describe('saves from before the world', () => {
     expect(s.news.at(-1)).toContain('pyramid');
   });
 
+  test('old clubs are placed in quality order: nobody sits below a weaker club of the division under it', () => {
+    const s = oldSave(24);
+    const old = new Set(s.ladder.map((c) => c.id));
+    ensureWorldFields(s);
+    for (let d = 1; d < DIVISIONS; d++) {
+      const here = divisionClubs(s, d).filter((c) => old.has(c.id)).map((c) => c.quality);
+      const below = divisionClubs(s, d + 1).filter((c) => old.has(c.id)).map((c) => c.quality);
+      if (here.length && below.length) expect(Math.min(...here)).toBeGreaterThanOrEqual(Math.max(...below));
+    }
+    // And the whole division, new clubs included, is ordered on average.
+    expect(meanQuality(s, 1)).toBeGreaterThan(meanQuality(s, 2));
+    expect(meanQuality(s, 3)).toBeGreaterThan(meanQuality(s, 4));
+  });
+
   test('a strong old club starts higher up', () => {
     const s = oldSave(21);
     setXi(s, 85);

@@ -232,7 +232,7 @@ function seasonPanel(s: Save): string {
   if (f && opp) status = nextMatch(s, opp, `Matchday ${season.matchday + 1}`, 'season', f.home === s.club.id);
   else {
     const pos = season.finish ?? 0;
-    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null))} You earned ${formatMoney(season.earned)}.</div>
+    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))} You earned ${formatMoney(season.earned)}.</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Done: clear the table</button></div>`;
   }
   return `
