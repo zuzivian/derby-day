@@ -220,3 +220,17 @@ test('phone (390x844): Menu, then [−] camera [+] in one row: the corner takes 
   expect(r.tr.height <= 44 * 2 + 8 + 1, `corner is ${r.tr.height}px tall`).toBe(true);
   for (const b of [r.menu, r.cam, r.out, r.inn]) expect(b.height >= 44 && b.width >= 44, 'touch target ≥ 44px').toBe(true);
 });
+
+test('desktop (1280x800, 3D): the radar sits top left under the score, off the near touchline', async (t) => {
+  const page = await openApp(t, { width: 1280, height: 800, prefs: { halfSeconds: 20 }, renderer: '3d' });
+  await startRanked(page);
+  await page.waitForSelector('.hud-radar');
+  const r = await page.evaluate(() => {
+    const b = (s) => document.querySelector(s).getBoundingClientRect();
+    return { radar: b('.hud-radar'), tl: b('.hud-tl'), tr: b('.hud-tr'), pitch: b('#pitch') };
+  });
+  expect(r.radar.width > 0, 'shown').toBe(true);
+  expect(r.radar.top >= r.tl.bottom, 'under the score bar').toBe(true);
+  expect(r.radar.bottom < r.pitch.top + r.pitch.height / 3, 'in the top third, clear of the near touchline').toBe(true);
+  expect(r.radar.right < r.tr.left, 'clear of the Menu column').toBe(true);
+});
