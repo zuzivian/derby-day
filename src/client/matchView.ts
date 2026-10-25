@@ -22,6 +22,7 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
+import { onPageGone } from './pagegone.ts';
 import { quickTacticsMarkup } from './tactics.ts';
 import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
 
@@ -521,7 +522,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.addEventListener('popstate', onPop);
   } catch { /* sandboxed viewer */ }
 
+  // The tab is closing mid-match: stop drawing and give the GPU back now (dispose loses the context).
+  const offGone = onPageGone(() => {
+    if (done) return;
+    done = true;
+    cancelAnimationFrame(raf);
+    guardingBack = false; // no history.back() while the page unloads
+    dispose();
+  });
+
   function dispose() {
+    offGone();
     gfx.dispose();
     input.dispose();
     juice.dispose();

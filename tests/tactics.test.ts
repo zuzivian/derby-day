@@ -12,6 +12,7 @@ import { averageMetrics, measureMatch, type TeamMetrics } from '../src/meta/tact
 import { FORMATION_IDS, FORMATIONS, MENTALITY_IDS, SIM_VERSION, TEAM_SIZE, type FormationId, type Mentality } from '../src/sim/constants.ts';
 import { TACTICS } from '../src/sim/ai.ts';
 import { makeRng } from '../src/sim/rng.ts';
+import { secondLastOpponentX, teamX } from '../src/sim/field.ts';
 
 describe('formations', () => {
   test('nine shapes, each a keeper and ten outfielders in slot order, on the pitch', () => {
@@ -287,3 +288,43 @@ describe('replay format 6', () => {
   });
 });
 
+
+describe('off the ball: the front striker stays on the last line', () => {
+  /** One CPU match, a 4-3-3 at `m` against a Balanced 4-4-2: how far its striker stands from the last defender with the ball in midfield, and how often he is a short supporter. */
+  function striker(m: Mentality) {
+    const squad = generateSquad(makeRng(5100), 60);
+    const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
+    const home = toTeamSetup(id('Home'), squad, autoLineup(squad, '4-3-3'), 0.6, '4-3-3', m);
+    const away = toTeamSetup(id('Away'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced');
+    const s = createMatch({ seed: 7300, home, away, halfSeconds: 120, humans: [false, false] });
+    const st = s.players.find((p) => p.team === 0 && p.sub === 'ST')!;
+    let n = 0;
+    let gap = 0;
+    let supporting = 0;
+    while (s.phase !== 'fulltime') {
+      step(s);
+      const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+      if (s.phase !== 'play' || s.tick % 6 || !owner || owner.team !== 0 || owner === st || st.sentOff) continue;
+      const bx = teamX(s, 0, s.ball.pos.x);
+      if (bx < 1 / 3 || bx > 0.6) continue;
+      n++;
+      gap += (secondLastOpponentX(s, 0) - teamX(s, 0, st.pos.x)) * 105;
+      if (s.aiPlans?.[0]?.support?.includes(st.i)) supporting++;
+    }
+    return { n, gap: gap / n, supporting: supporting / n };
+  }
+
+  test('Balanced: never a short supporter in midfield, and nearer the line than when he was', () => {
+    const r = striker('balanced');
+    expect(r.n).toBeGreaterThan(100);
+    expect(r.supporting).toBe(0);
+    // Main before the change: 13.5 m behind the line on average (scripts/offball-probe.ts era).
+    expect(r.gap).toBeLessThan(10);
+  });
+
+  test('Park the bus keeps him close instead: he still comes short', () => {
+    expect(TACTICS.park.pin).toBe(false);
+    expect(TACTICS.defensive.pin).toBe(false);
+    expect(striker('park').supporting).toBeGreaterThan(0);
+  });
+});
