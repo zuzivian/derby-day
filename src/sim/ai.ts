@@ -207,6 +207,8 @@ export interface Tactic {
   /** Teammates who come to offer the carrier a short pass, and how far from him (m). */
   supporters: number;
   supportR: number;
+  /** Short of the final third, keep the front striker on the last line instead of coming short (TeamPlan.pin). */
+  pin: boolean;
   /** Throttle when jogging back into shape from far away. */
   recover: number;
 }
@@ -218,7 +220,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, markR: 0.75, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
     risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, shootLong: 0.7, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
-    supporters: 2, supportR: 11, recover: 0.95,
+    supporters: 2, supportR: 11, pin: false, recover: 0.95,
   },
   defensive: {
     lineGap: 0.23, lineMin: 0.06, lineMax: 0.34, boxHold: 0.16, attGap: 0.34, attMin: 0.12, attMax: 0.42,
@@ -226,7 +228,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 0.4, pressNear: 4, extra: 0, extraFrom: 2, markR: 0.8, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 2,
     risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, shootLong: 0.85, clear: 0.4, direct: 0.15, tackle: 0.95, reach: 0,
-    supporters: 2, supportR: 10, recover: 0.85,
+    supporters: 2, supportR: 10, pin: false, recover: 0.85,
   },
   balanced: {
     lineGap: 0.24, lineMin: 0.05, lineMax: 0.42, boxHold: 0.15, attGap: 0.3, attMin: 0.14, attMax: 0.52,
@@ -234,7 +236,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, markR: 1, screen: 0, screenR: 0, counter: 0, counterN: 0,
     fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
     risk: 1, tempo: 1, urgency: 1, carry: 1, shootLong: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
-    supporters: 3, supportR: 10, recover: 0.7,
+    supporters: 3, supportR: 10, pin: true, recover: 0.7,
   },
   attacking: {
     lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
@@ -242,7 +244,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, markR: 1, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
-    supporters: 3, supportR: 10, recover: 0.75,
+    supporters: 3, supportR: 10, pin: true, recover: 0.75,
   },
   press: {
     lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
@@ -250,7 +252,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, markR: 1.15, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.2, reach: 0.2,
-    supporters: 3, supportR: 9, recover: 0.9,
+    supporters: 3, supportR: 9, pin: true, recover: 0.9,
   },
 };
 
@@ -588,6 +590,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   // going to) short passes at different angles, so there is always a triangle.
   const support: number[] = [];
   const supportAng: number[] = [];
+  let pin = -1;
   if (attacking) {
     const center = owner && owner.team === team ? owner : b.receiver >= 0 && s.players[b.receiver].team === team ? s.players[b.receiver] : null;
     if (center) {
@@ -596,8 +599,24 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       // The k.supporters nearest within 30 m, kept in order as they are found (this runs on every plan).
       const near: MatchPlayer[] = [];
       const nearD: number[] = [];
+      // Short of the final third the front striker stays on the last line, to stretch it and run in
+      // behind, rather than coming short with the others (a lone 9 dropping in leaves nobody up).
+      // A low block (k.pin off) keeps him close instead, so the block stays compact when the ball is lost.
+      // With the human on the ball he comes short as before: a player steering the ball wants
+      // the short option more than a man on the shoulder he must find with a through ball.
+      if (k.pin && cx < 0.66 && center.i !== human) {
+        let top = -Infinity;
+        for (const m of mates) {
+          if (m.sub !== 'ST' || m.i === center.i) continue;
+          const x = teamX(s, team, m.pos.x);
+          if (x > top) {
+            top = x;
+            pin = m.i;
+          }
+        }
+      }
       for (const m of mates) {
-        if (m.i === center.i || m.i === human || (m.sub === 'CB' && cx > line + 0.3)) continue;
+        if (m.i === center.i || m.i === human || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
         const dx = m.pos.x - cpos.x;
         const dy = m.pos.y - cpos.y;
         const d2 = dx * dx + dy * dy;
@@ -669,7 +688,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     }
   }
   const possSince = attacking && prev && prev.attacking ? prev.possSince : s.tick;
-  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince, engage, pressers, pressLane, lostAt, support, supportAng };
+  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince, engage, pressers, pressLane, lostAt, support, supportAng, pin };
 }
 
 /**
@@ -1483,10 +1502,18 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   const newSupporter = sj >= 0 && !mem.supporting;
   mem.supporting = sj >= 0;
   if (sj >= 0 && carrier && mem.retarget > 2 && (s.tick + p.i) % 3 === 0 && laneShut(s, p.team, carrier.pos, p.pos)) mem.retarget = 0;
-  if (mem.target && mem.attacking && !newSupporter && mem.retarget-- > 0) return mem.target;
   const skill = skillOf(s, p.team);
+  // How far forward a runner may stand and still be onside.
+  const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
+  if (mem.target && mem.attacking && !newSupporter && mem.retarget-- > 0) {
+    // On the shoulder of the last defender he moves with the line as it steps up or drops,
+    // not to where it was when he chose the spot.
+    if (mem.shoulder && sj < 0) mem.target = fromTeam(s, p.team, onsideX, mem.target.y / PITCH_H);
+    return mem.target;
+  }
   const k = tacticOf(s, p.team);
   mem.attacking = true;
+  mem.shoulder = false;
   if (sj >= 0) {
     mem.retarget = Math.round(10 + 8 * (1 - skill) + next(s.rng) * 4);
     mem.target = supportSpot(s, p, plan, carrier, sj);
@@ -1505,8 +1532,6 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   const forward = sub_ === 'ST' || sub_ === 'W' || sub_ === 'WM' || sub_ === 'CM' || sub_ === 'AM';
   // Who commits forward is the mentality's call: a low block keeps everyone but the strikers back.
   const runner = runsIntoBox(k, sub_);
-  // How far forward a runner may stand and still be onside.
-  const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
 
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
@@ -1521,6 +1546,12 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     }
   }
 
+  if (p.i === plan.pin && runner) {
+    // The pinned striker's one job: the shoulder of the last defender, in his own channel.
+    mem.target = fromTeam(s, team, onsideX, clamp(anchor.y / PITCH_H, 0.2, 0.8));
+    mem.shoulder = true;
+    return mem.target;
+  }
   if (sub_ === 'ST' || sub_ === 'W') {
     // On the shoulder of the last defender, ready to spin in behind.
     cands.push(fromTeam(s, team, onsideX, anchor.y / PITCH_H));
@@ -1578,6 +1609,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     }
   }
   mem.target = best;
+  mem.shoulder = Math.abs(teamX(s, team, best.x) - onsideX) < 0.005;
   return best;
 }
 
@@ -1986,7 +2018,9 @@ export function aiIntent(s: MatchState, p: MatchPlayer): Intent {
     const skill = skillOf(s, p.team);
     const target = supportTarget(s, p, plan, carrier);
     const runCap = dist(target, p.pos) > 8 ? 1 : 0.9 + 0.1 * skill;
-    const run = dist(target, p.pos) > 8 && teamX(s, p.team, target.x) > teamX(s, p.team, p.pos.x) + 0.08;
+    const ahead = teamX(s, p.team, target.x) - teamX(s, p.team, p.pos.x);
+    // Getting back onto the shoulder of a retreating line is worth a sprint too.
+    const run = (dist(target, p.pos) > 8 && ahead > 0.08) || (!!p.ai?.shoulder && ahead > 4 * M);
     return { ...seek(p, target, 2.5, runCap), sprint: sprintOk(s, p, run) };
   }
   return defendIntent(s, p, plan, owner && owner.team !== p.team ? owner : null);

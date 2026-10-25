@@ -5,6 +5,7 @@
 //   bun run build && NODE_PATH="$(npm root -g)" node scripts/view-probe.cjs [outDir=probe] [width=390] [height=844]
 //
 // CLUB_KIT=#rrggbb,#rrggbb sets your club's colours (shirt, then the second colour) first.
+// SEED=n makes Math.random seeded (and Date.now fixed) in the page: the same fixture on every build.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -41,10 +42,28 @@ async function waitFor(page, fn, arg, ms = 30_000) {
   const { chromium } = loadPlaywright();
   fs.mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch({ executablePath: fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  const seed = Number(process.env.SEED || 0);
   const t = {
     async newPage(opts) {
       const ctx = await browser.newContext(opts);
       await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+      // SEED=n: Math.random is a seeded generator in the page and Date.now is held, so the club, the
+      // opponent, the crowd and the players are the same from one build to the next (before and after).
+      if (seed) {
+        await ctx.addInitScript((n) => {
+          let a = n >>> 0;
+          Math.random = () => {
+            a = (a + 0x6d2b79f5) >>> 0;
+            let x = Math.imul(a ^ (a >>> 15), 1 | a);
+            x = (x + Math.imul(x ^ (x >>> 7), 61 | x)) ^ x;
+            return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+          };
+          // A new club's seed mixes in Date.now() (main.ts): hold it at a fixed base, moving only
+          // every couple of minutes, so it doesn't vary between runs.
+          const base = 1_700_000_000_000;
+          Date.now = () => base + (Math.floor(performance.now()) & ~0x1ffff);
+        }, seed);
+      }
       return ctx.newPage();
     },
   };
