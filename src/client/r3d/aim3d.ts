@@ -150,26 +150,50 @@ function whiteTexture(): CanvasTexture {
   return t;
 }
 
+/** Name tag: orange on a dark pill, so it reads over grass, kits and the stands. The text is
+ *  NAME_FONT / 64 of the sprite's height (see NAME_MIN_PX). */
+const NAME_FONT = 40;
 function nameTexture(text: string): { tex: CanvasTexture; aspect: number } {
   const c = document.createElement('canvas');
   const g = c.getContext('2d')!;
-  const font = `italic 800 44px 'Barlow', 'Arial Narrow', Arial, sans-serif`;
+  const font = `italic 800 ${NAME_FONT}px 'Barlow', 'Arial Narrow', Arial, sans-serif`;
   g.font = font;
-  const w = Math.ceil(g.measureText(text).width) + 24;
+  const w = Math.ceil(g.measureText(text).width) + 36;
   c.width = w;
   c.height = 64;
+  g.fillStyle = 'rgba(8,12,11,.72)';
+  g.beginPath();
+  g.roundRect(3, 6, w - 6, 52, 12);
+  g.fill();
   g.font = font;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
-  g.lineWidth = 8;
-  g.strokeStyle = 'rgba(0,0,0,.85)';
-  g.strokeText(text, w / 2, 34);
+  g.lineWidth = 4;
+  g.strokeStyle = 'rgba(0,0,0,.9)';
+  g.strokeText(text, w / 2, 33);
   g.fillStyle = ORANGE;
-  g.fillText(text, w / 2, 34);
+  g.fillText(text, w / 2, 33);
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
   return { tex, aspect: w / 64 };
+}
+
+/** The tag never draws smaller than this on screen (CSS px of sprite height: 13 px text). */
+const NAME_MIN_PX = Math.round((13 * 64) / NAME_FONT);
+const tagPos = new Vector3();
+/** Grow a name tag that the camera would draw too small to read (far zoom, a short canvas). */
+export function keepTagLegible(this: Sprite, r: { domElement: HTMLCanvasElement }, _s: unknown, cam: { fov?: number; matrixWorldInverse: Matrix4 }): void {
+  if (!cam.fov) return;
+  const depth = -this.getWorldPosition(tagPos).applyMatrix4(cam.matrixWorldInverse).z;
+  const h = r.domElement.clientHeight;
+  if (depth <= 0 || !h) return;
+  const px = (this.scale.y * h) / (2 * depth * Math.tan((cam.fov * Math.PI) / 360));
+  if (px >= NAME_MIN_PX) return;
+  const grow = NAME_MIN_PX / px;
+  this.scale.x *= grow;
+  this.scale.y *= grow;
+  this.updateMatrixWorld();
 }
 
 export interface AimFrame {
@@ -310,6 +334,7 @@ export class AimLayer {
       sp.scale.set(0.5 * aspect, 0.5, 1);
       sp.renderOrder = 21;
       sp.center.set(0.5, 0);
+      sp.onBeforeRender = keepTagLegible as Sprite['onBeforeRender'];
       this.names.set(p.i, sp);
       this.group.add(sp);
     }
