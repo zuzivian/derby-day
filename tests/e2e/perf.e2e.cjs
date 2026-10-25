@@ -184,12 +184,22 @@ for (const renderer of ['3d', '2d']) test(
             }
           });
           ob.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+          // The camera attribute written without the camera changing, and what the match did meanwhile
+          // (a goal, a half ending), so a real change at a stoppage is told from a needless write.
+          let sameCam = 0;
+          const cam = new MutationObserver((list) => {
+            for (const m of list) if (m.oldValue === document.querySelector('#pitch').getAttribute('data-camera')) sameCam++;
+          });
+          cam.observe(document.querySelector('#pitch'), { attributes: true, attributeFilter: ['data-camera'], attributeOldValue: true });
+          const s0 = { score: [...window.__derbyMatch.score], half: window.__derbyMatch.half };
           let frames = 0;
           const t0 = window.__derbyMatch.tick;
           const f = () => {
             if (++frames < 120) return requestAnimationFrame(f);
             ob.disconnect();
-            res({ by, ticks: window.__derbyMatch.tick - t0 });
+            cam.disconnect();
+            const m = window.__derbyMatch;
+            res({ by, ticks: m.tick - t0, sameCam, goals: [m.score[0] - s0.score[0], m.score[1] - s0.score[1]], halves: m.half - s0.half });
           };
           requestAnimationFrame(f);
         }),
@@ -197,10 +207,13 @@ for (const renderer of ['3d', '2d']) test(
     const total = Object.values(r.by).reduce((a, b) => a + b, 0);
     console.log(`      120 frames (${r.ticks} ticks): ${total} mutations ${JSON.stringify(r.by)}`);
     const n = (k) => Object.entries(r.by).filter(([key]) => key.includes(k)).reduce((a, [, v]) => a + v, 0);
-    // The score and the phase did not change; the minute changes once a match-minute (every 2 s of a 3-minute half).
-    for (const id of ['#sb-h', '#sb-a', '#sb-phase']) expect(n(id), `${id} is not rewritten`).toBe(0);
+    // The score and the phase are rewritten only when they change (a goal, a half ending: a live match
+    // may have one in the window); the minute changes once a match-minute (every 2 s of a 3-minute half).
+    expect(n('#sb-h'), '#sb-h only when the home score changes').toBeLessThanOrEqual(2 * r.goals[0]);
+    expect(n('#sb-a'), '#sb-a only when the away score changes').toBeLessThanOrEqual(2 * r.goals[1]);
+    expect(n('#sb-phase'), '#sb-phase only when the half changes').toBeLessThanOrEqual(2 * r.halves);
     expect(n('#sb-min'), '#sb-min only when the minute changes').toBeLessThanOrEqual(4);
-    expect(n('#pitch[data-camera]'), '#pitch[data-camera] only when the camera changes').toBeLessThanOrEqual(4);
+    expect(r.sameCam, '#pitch[data-camera] only when the camera changes').toBe(0);
   },
   { timeoutMs: 120_000 },
 );
