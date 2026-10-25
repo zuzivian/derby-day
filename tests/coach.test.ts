@@ -9,6 +9,7 @@ import { pendingUnlocks, totalXpForLevel } from '../src/meta/levels.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { MatchState, Restart } from '../src/sim/types.ts';
+import { kickOff } from './helpers.ts';
 
 function match(): MatchState {
   const team = (seed: number) => {
@@ -21,7 +22,7 @@ function match(): MatchState {
 
 /** Run until the match is in open play. */
 function toPlay(s: MatchState) {
-  for (let i = 0; i < 60 * 40 && s.phase !== 'play'; i++) step(s, {});
+  kickOff(s);
   expect(s.phase).toBe('play');
 }
 
@@ -29,14 +30,39 @@ describe('coach tracker', () => {
   test('offers the run tip a moment after the whistle, once', () => {
     const s = match();
     const c = new CoachTracker();
-    expect(c.observe(s)).toEqual([]);
+    expect(c.observe(s)).toEqual(['pass']); // he stands over the kick-off and the click is waiting: how to pass is due at once
     for (let i = 0; i < 60; i++) step(s, {});
-    expect(c.observe(s)).toContain('run');
+    expect(c.observe(s)).toEqual(['run']);
     expect(c.observe(s)).toEqual([]);
     expect(c.take()).toBe('pass'); // the human holds the ball at kick-off, so what to do with it comes before how to run
     expect(c.take()).toBe('run');
     while (c.take()) c.observe(s);
     for (let i = 0; i < 120; i++) { step(s, {}); expect(c.observe(s)).not.toContain('run'); }
+  });
+
+  test('the kick-off he takes is a pass (Law 8): the pass tip comes first, as soon as the click is waiting', () => {
+    const s = match();
+    const c = new CoachTracker();
+    for (let i = 0; i < 60; i++) {
+      step(s, {});
+      c.observe(s);
+    }
+    expect(s.phase).toBe('restart');
+    expect(s.restart!.kind).toBe('kickoff');
+    expect(s.restart!.taker).toBe(s.controlled[0]);
+    expect(c.queue).toEqual(['pass', 'run']);
+    expect(c.take()).toBe('pass');
+    expect(c.relevant('pass', s)).toBe(true);
+  });
+
+  test('the pass tip does not wait for the run tip when the kick-off is ready early', () => {
+    const s = match();
+    const c = new CoachTracker();
+    let n = 0;
+    while (!(s.phase === 'restart' && s.restart!.kind === 'kickoff' && s.restart!.stage === 'ready') && n++ < 600) step(s, {});
+    expect(s.restart!.stage).toBe('ready');
+    s.tick = 5; // before the run tip's moment
+    expect(c.observe(s)).toEqual(['pass']);
   });
 
   test('nothing is offered before the whistle has settled', () => {

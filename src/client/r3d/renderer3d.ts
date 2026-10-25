@@ -2,7 +2,7 @@
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
 import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
-import { attackDir } from '../../sim/field.ts';
+import { attackDir, oppGoal } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
@@ -92,7 +92,7 @@ export interface ReplayShot {
  */
 export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
-  const dir = attackDir(me);
+  const dir = attackDir(s, me);
   const r = s.restart;
   const b = s.ball;
   // Corners, either side's: the taker, the goal and the whole box (review of #15: the broadcast view
@@ -176,6 +176,57 @@ function blobTexture(): CanvasTexture {
 
 function teamKey(t: TeamSetup): string {
   return `${t.name}|${t.primary}|${t.secondary}|${t.players.map((p) => p.id).join(',')}`;
+}
+
+/** A player's body for picking a click: a vertical cylinder this wide (m) from the grass to this height. */
+export const PICK_BODY_R = 0.38;
+export const PICK_BODY_TOP = 1.9;
+
+/** Which players a press may pick: `me`'s team-mates but never the man he steers, or the opponents; nobody sent off. */
+export function pickable(s: MatchState, me: 0 | 1, who: 'mates' | 'opponents'): boolean[] {
+  const mine = s.controlled[me];
+  return s.players.map((p) => !p.sentOff && p.i !== mine && (who === 'mates' ? p.team === me : p.team !== me));
+}
+
+/**
+ * The first body a ray meets, as an index into `bodies` (scene x, z of each player's feet), or -1.
+ * Bodies are vertical cylinders PICK_BODY_R wide from the grass to PICK_BODY_TOP, entered through
+ * the side or the top.
+ */
+export function pickBody(o: { x: number; y: number; z: number }, d: { x: number; y: number; z: number }, bodies: readonly ({ x: number; z: number } | null)[]): number {
+  let best = -1;
+  let bestT = Infinity;
+  const r2 = PICK_BODY_R * PICK_BODY_R;
+  for (let i = 0; i < bodies.length; i++) {
+    const c = bodies[i];
+    if (!c) continue;
+    let t = Infinity;
+    // Through the top: where the ray crosses the head's height.
+    if (Math.abs(d.y) > 1e-9) {
+      const tt = (PICK_BODY_TOP - o.y) / d.y;
+      const px = o.x + d.x * tt - c.x;
+      const pz = o.z + d.z * tt - c.z;
+      if (tt > 0 && px * px + pz * pz <= r2) t = tt;
+    }
+    // Through the side.
+    const ox = o.x - c.x;
+    const oz = o.z - c.z;
+    const a = d.x * d.x + d.z * d.z;
+    if (a > 1e-12) {
+      const b = ox * d.x + oz * d.z;
+      const disc = b * b - a * (ox * ox + oz * oz - r2);
+      if (disc >= 0) {
+        const ts = (-b - Math.sqrt(disc)) / a;
+        const y = o.y + d.y * ts;
+        if (ts > 0 && y >= 0 && y <= PICK_BODY_TOP && ts < t) t = ts;
+      }
+    }
+    if (t < bestT) {
+      bestT = t;
+      best = i;
+    }
+  }
+  return best;
 }
 
 export class Renderer3D implements MatchRenderer {
@@ -445,8 +496,25 @@ export class Renderer3D implements MatchRenderer {
     return { x: Math.max(-m, Math.min(HALF_W * 2 + m, wx(x))), y: Math.max(-m, Math.min(HALF_H * 2 + m, wy(z))) };
   }
 
+  /**
+   * A press on a player's body (not just his feet) picks him: his feet in world metres, or null if the
+   * ray meets no one. `who`: our team-mates (never the man we steer) or the opponents.
+   */
+  pickPlayer(cssX: number, cssY: number, who: 'mates' | 'opponents'): Vec | null {
+    const s = this.lastState;
+    if (!s) return null;
+    this.ndc.set((cssX / this.cssW) * 2 - 1, -(cssY / this.cssH) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.cam.camera);
+    const can = pickable(s, this.me, who);
+    const bodies = this.players.map((m, i) => (can[i] && m.object.visible ? m.object.position : null));
+    const i = pickBody(this.raycaster.ray.origin, this.raycaster.ray.direction, bodies);
+    if (i < 0) return null;
+    const at = this.players[i].object.position;
+    return { x: wx(at.x), y: wy(at.z) };
+  }
+
   screenDir(d: Vec): Vec {
-    return this.cam.screenDir(d, attackDir(this.me) as 1 | -1);
+    return this.cam.screenDir(d, (this.lastState ? attackDir(this.lastState, this.me) : this.me === 0 ? 1 : -1) as 1 | -1);
   }
 
   /** Frames per second over the last second, for tooling. */
@@ -710,7 +778,7 @@ export class Renderer3D implements MatchRenderer {
     const owner = holder ? holder.team : -1;
     const st = this.stadiumFrame;
     for (const team of [0, 1] as const) {
-      const nearGoal = owner === team && Math.abs(b.pos.x - (team === 0 ? HALF_W * 2 : 0)) < 18;
+      const nearGoal = owner === team && Math.abs(b.pos.x - oppGoal(s, team).x) < 18;
       st.excite[team] = celebrating === team ? 1 : nearGoal ? 0.45 : 0.08;
     }
     st.ball.x = this.ball.position.x;
@@ -730,7 +798,7 @@ export class Renderer3D implements MatchRenderer {
     // Set pieces: frame what matters. A corner or free kick shows the spot and the box it is aimed at,
     // a throw-in the thrower and the play in front of him.
     if (restart && restart.stage !== 'whistle') {
-      const gx = restart.team === 0 ? HALF_W * 2 : 0;
+      const gx = oppGoal(s, restart.team).x;
       const k = restart.kind === 'corner' ? 0.2 : restart.kind === 'freekick' || restart.kind === 'penalty' ? 0.3 : 0;
       focusX = restart.spot.x + (gx - restart.spot.x) * k;
       focusY = restart.spot.y + (HALF_H - restart.spot.y) * (restart.kind === 'throwin' ? 0.2 : k);
@@ -771,10 +839,10 @@ export class Renderer3D implements MatchRenderer {
     f.vx = b.vel.x;
     f.vz = b.vel.y;
     f.air = b.z;
-    f.attack = holder && s.phase === 'play' ? attackDir(holder.team) : 0;
+    f.attack = holder && s.phase === 'play' ? attackDir(s, holder.team) : 0;
     f.phase = s.phase;
     f.close = cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null;
-    f.humanDir = attackDir(this.me) as 1 | -1;
+    f.humanDir = attackDir(s, this.me) as 1 | -1;
     f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null;
     f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
     this.cam.update(

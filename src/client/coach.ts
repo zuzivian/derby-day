@@ -40,9 +40,9 @@ export const TIPS: Record<TipId, Tip> = {
   pass: {
     id: 'pass',
     title: 'You have the ball',
-    mouse: 'Left click to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running.',
-    keys: 'Press Space to pass to the teammate you are facing.',
-    touch: 'Tap Pass to pass where you are aiming. Hold it to loft the ball.',
+    mouse: 'Left click to kick off and to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running. Hold the button for a lofted ball: the dots show where it lands.',
+    keys: 'Press Space to kick off and to pass to the teammate you are facing.',
+    touch: 'Tap Pass to kick off or pass where you aim. Hold it to loft.',
   },
   shoot: {
     id: 'shoot',
@@ -108,13 +108,18 @@ export class CoachTracker {
     const ownerTeam = owner >= 0 ? s.players[owner].team : null;
     const live = s.phase === 'play';
 
-    // Tips start a moment after the whistle. Which comes first depends on the situation: a player on the ball at the
-    // kick-off is told about the ball (pass) before how to run, because that is what is on his mind; a player without
-    // it is told how to run. Nothing else is offered before then.
+    // Which tip comes first depends on the situation: a player on the ball is told about the ball (pass) before how to run,
+    // because that is what is on his mind; a player without it is told how to run. The kick-off is a kick (Law 8): taking it is
+    // the first pass, so the pass tip is due as soon as he stands over the ball and the click is waiting. Everything else
+    // starts a moment after the whistle.
     const started = s.tick >= RUN_AT_TICK && s.phase !== 'fulltime';
     const withBall = me >= 0 && owner === me;
-    if (started && withBall && (live || s.phase === 'kickoff')) this.offer('pass');
-    if (started) this.offer('run');
+    const kickoffRestart = s.restart?.kind === 'kickoff' && s.phase !== 'fulltime'; // the match opens in phase 'kickoff', then 'restart'
+    const kickoff = kickoffRestart && s.restart!.stage === 'ready';
+    if (withBall && (kickoff || (started && live))) this.offer('pass');
+    // At his own kick-off the run tip waits for the pass tip: the click is what is wanted of him first.
+    const toTake = kickoffRestart && s.restart!.taker === me && !kickoff;
+    if (started && !toTake) this.offer('run');
 
     // Shooting is only worth saying when a shot is on: the ball at his feet in open play and the goal within range.
     if (started && live && withBall && this.inShootingRange(s, human, me)) this.offer('shoot');
@@ -127,7 +132,7 @@ export class CoachTracker {
 
   /** Within SHOOT_RANGE metres of the centre of the goal the human's team attacks. */
   private inShootingRange(s: MatchState, human: 0 | 1, me: number): boolean {
-    const goalX = attackDir(human) > 0 ? PITCH_W : 0;
+    const goalX = attackDir(s, human) > 0 ? PITCH_W : 0;
     const p = s.players[me].pos;
     return Math.hypot(p.x - goalX, p.y - PITCH_H / 2) < SHOOT_RANGE;
   }
@@ -146,7 +151,7 @@ export class CoachTracker {
       case 'run':
         return s.phase !== 'fulltime';
       case 'pass':
-        return withBall && (s.phase === 'play' || s.phase === 'kickoff');
+        return withBall && (s.phase === 'play' || s.restart?.kind === 'kickoff');
       case 'shoot':
         return withBall && s.phase === 'play' && this.inShootingRange(s, human, me);
       case 'tackle':

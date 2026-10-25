@@ -308,13 +308,18 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       const me = s.players[s.controlled[0]];
       const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
       for (const p of s.players) p.stun = 1e7;
-      Object.assign(me, { stun: 0, tackleCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
+      // kickCd too: when nobody clicks at the kick-off the CPU takes it for our man after five seconds
+      // (Law 8: it is a kick), and a right click straight after his own kick is never a tackle.
+      Object.assign(me, { stun: 0, tackleCd: 0, kickCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
       // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
       Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
       opp.attrs.dribbling = 0;
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
       s.switchTimer[0] = 1e9;
+      // He is the human's man now, not one handed over by the kick-off pass: no hold waiting for the
+      // pointer to move (MatchState.ctlHold), which under load can outlast the click.
+      s.ctlHold = [false, false];
       // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
       // 1000 headless), and a right click during the restart that follows is not a tackle.
       Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });
@@ -423,4 +428,37 @@ test('training ground: the move and pass drills are done with the pointer', asyn
   });
   await click(page, mate);
   await page.waitForSelector('.coach-dots li[data-drill="pass"].done', { timeout: 15_000 });
+});
+
+test('trackpad: a pinch (ctrl+wheel) over the pitch zooms the 3D camera, not the page', async (t) => {
+  const page = await openApp(t, { prefs: { halfSeconds: 600, controls: 'mouse', onboarded: true }, renderer: '3d' });
+  await startRanked(page);
+  if ((await page.evaluate(() => document.querySelector('#pitch').dataset.renderer)) !== '3d') return; // no WebGL2 here
+  const zoom = () => page.evaluate(() => Number(localStorage.getItem('derby-zoom') || '1'));
+  // A Mac trackpad pinch out arrives as wheel events with ctrlKey and small negative deltas.
+  const prevented = await page.evaluate(() => {
+    const el = document.querySelector('#pitch');
+    let n = 0;
+    for (let i = 0; i < 15; i++) if (!el.dispatchEvent(new WheelEvent('wheel', { deltaY: -4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true }))) n++;
+    return n;
+  });
+  expect(prevented, 'every pinch event is kept from zooming the page').toBe(15);
+  const zin = await zoom();
+  expect(zin, 'a pinch out zooms the camera in').toBeLessThan(0.8);
+  await page.evaluate(() => {
+    const el = document.querySelector('#pitch');
+    for (let i = 0; i < 15; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true }));
+  });
+  expect(await zoom(), 'a pinch in zooms back out').toBeGreaterThan(zin);
+  // A mouse wheel notch with Ctrl held is left to the browser's page zoom.
+  const before = await zoom();
+  const mousePrevented = await page.evaluate(() => !document.querySelector('#pitch').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true })));
+  expect(mousePrevented, 'a mouse ctrl+wheel still zooms the page').toBe(false);
+  expect(await zoom(), 'and leaves the camera alone').toBe(before);
+  // A smooth-scrolling mouse with Ctrl held sends small deltas too, but after a real Control keydown.
+  await page.keyboard.down('Control');
+  const smoothPrevented = await page.evaluate(() => !document.querySelector('#pitch').dispatchEvent(new WheelEvent('wheel', { deltaY: 4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true })));
+  await page.keyboard.up('Control');
+  expect(smoothPrevented, 'a smooth-scrolling mouse ctrl+wheel still zooms the page').toBe(false);
+  expect(await zoom(), 'and leaves the camera alone too').toBe(before);
 });

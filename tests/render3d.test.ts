@@ -93,7 +93,7 @@ describe('HUD', () => {
   test('referee words for the sim events', () => {
     // Find a match with fouls, cards and offsides in it.
     let s: MatchState | null = null;
-    for (let seed = 20; seed < 40 && !s; seed++) {
+    for (let seed = 20; seed < 80 && !s; seed++) {
       const m = watch(seed).s;
       if (m.cards.length && m.events.some((e) => e.kind === 'offside') && m.events.some((e) => e.kind === 'foul' && !e.advantage)) s = m;
     }

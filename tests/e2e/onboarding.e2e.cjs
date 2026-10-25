@@ -105,7 +105,7 @@ test('onboarding: the first tip is readable: it holds for seconds and is not cut
   await page.evaluate(() => window.__derbyCoach.freeze());
   expect(await page.locator(TIP).innerText(), 'text').toMatch(/pass/i);
   expect(await page.locator(TIP).innerText(), 'says which player is you and which way you attack').toMatch(/yellow ring.*goal on the right/i);
-  await page.waitForFunction(() => /^Tip\./.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 5000 });
+  await page.waitForFunction(() => /(^|\. )Tip\. /.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 5000 });
   // The human has the ball (as at a real kick-off): 'run' is queued behind 'pass' and must wait its turn. The ball is
   // held there on every step. Time is the coach's own tip clock (window.__derbyCoach), not wall time, which a slow
   // software renderer stretches: advance it in steps and look at the card after each.

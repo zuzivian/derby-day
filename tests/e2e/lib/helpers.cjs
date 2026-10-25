@@ -211,8 +211,26 @@ async function openApp(t, opts = {}) {
  * unload handlers exist only in a match, the tutorial and the two-player lobbies), so it cannot overwrite the second page's saves.
  */
 async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
+  // What the first page holds, to put in front of the new page's own boot. A page opened in the same context is meant to
+  // see it already, but under CPU contention one in ten or so starts with *empty* storage (a browser-side gap, seen with an
+  // on-disk profile too), boots a brand-new club and writes it. Restoring first makes this what the player's browser would
+  // hold: a no-op when the browser delivered it, and only once per page so later changes are never undone.
+  const held = await page.evaluate(() => Object.entries(localStorage)).catch(() => []);
   const next = await page.context().newPage(); // fonts are blocked and errors watched for the whole context (run.cjs)
-  await next.addInitScript((withHook) => { if (withHook) window.__e2e = true; window.__e2eSkipTabGuard = true; }, e2e);
+  await next.addInitScript(
+    ([withHook, entries]) => {
+      if (withHook) window.__e2e = true;
+      window.__e2eSkipTabGuard = true;
+      try {
+        if (sessionStorage.getItem('__restored')) return;
+        sessionStorage.setItem('__restored', '1');
+        for (const [k, v] of entries) if (localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+      } catch {
+        /* storage unavailable: nothing to restore */
+      }
+    },
+    [e2e, held],
+  );
   await next.goto(url);
   await next.waitForSelector(SEL.app + ' *');
   return next;
