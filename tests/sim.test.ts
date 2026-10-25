@@ -73,6 +73,8 @@ describe('sprint (key scheme; the pointer sprints by distance, see controls.test
       const me = s.players[s.controlled[0]];
       let top = 0;
       for (let t = 0; t < 100; t++) {
+        // Nobody else moves, so a challenge can't cut the run short (the CPU presses harder than it used to).
+        for (const p of s.players) if (p.i !== me.i) p.stun = 1000;
         step(s, { dir: { x: me.team === 0 ? 1 : -1, y: 0 }, sprint });
         top = Math.max(top, len(s.players[s.controlled[0]].vel));
       }
@@ -281,20 +283,21 @@ describe('CPU', () => {
   test('skill matters on its own: identical squads, sharp CPU beats sloppy CPU', () => {
     let sharp = 0;
     let sloppy = 0;
-    for (let i = 0; i < 10; i++) {
+    // Twelve two-minute-a-half matches: with one-minute halves half of them are drawn, too few to judge.
+    for (let i = 0; i < 12; i++) {
       const squad = generateSquad(makeRng(700 + i), 62);
       const lineup = autoLineup(squad);
       const a = toTeamSetup(id('A'), squad, lineup, 0.9);
       const b = toTeamSetup(id('B'), squad, lineup, 0.15);
       const home = i % 2 === 0;
-      const s = simulate({ seed: 40 + i, home: home ? a : b, away: home ? b : a, halfSeconds: 60 });
+      const s = simulate({ seed: 40 + i, home: home ? a : b, away: home ? b : a, halfSeconds: 120 });
       const [ga, gb] = home ? s.score : [s.score[1], s.score[0]];
       if (ga > gb) sharp++;
       if (gb > ga) sloppy++;
     }
     expect(sharp).toBeGreaterThan(sloppy * 2);
-    expect(sharp).toBeGreaterThanOrEqual(5);
-  });
+    expect(sharp).toBeGreaterThanOrEqual(6);
+  }, 20_000);
 
   test('a cloned mid-match state replays identically (the AI keeps no hidden state)', () => {
     const s = createMatch({ seed: 5, ...teams(9), halfSeconds: 30, humanTeam: -1 });

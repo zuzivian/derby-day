@@ -62,12 +62,31 @@ export function showToast(text: string, ok = true, ms = 3600): void {
   const t = document.createElement('div');
   t.className = `toast ${ok ? 'ok' : 'bad'}`;
   t.textContent = text;
+  placeToast(t);
   // Empty first, then fill, so an identical message is announced again.
   toastShowTimer = window.setTimeout(() => el.appendChild(t), 30);
   toastTimer = window.setTimeout(hideToast, ms);
+  window.addEventListener('scroll', onToastScroll, { passive: true });
+}
+
+/**
+ * Just below the club header (status strip included) while it is on screen and no dialog is open, so the
+ * toast never covers the wordmark or the club name; at the top (styles.css) once the header scrolls away.
+ * Re-placed on scroll while it shows, because an action can move the page (focus lands lower down).
+ */
+function placeToast(t: HTMLElement): void {
+  const bar = document.querySelector('.topbar');
+  const below = bar && !document.querySelector('.modal') ? bar.getBoundingClientRect().bottom : 0;
+  t.style.top = below > 0 ? `${Math.round(below + 8)}px` : '';
+}
+
+function onToastScroll(): void {
+  const t = document.querySelector<HTMLElement>('#toast-region .toast');
+  if (t) placeToast(t);
 }
 
 export function hideToast(): void {
+  window.removeEventListener('scroll', onToastScroll);
   clearTimeout(toastTimer);
   clearTimeout(toastShowTimer);
   document.getElementById('toast-region')?.replaceChildren();

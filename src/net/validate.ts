@@ -12,7 +12,7 @@
 
 import type { CrestPattern } from '../meta/names.ts';
 import { CREST_PATTERNS } from '../meta/names.ts';
-import { FORMATION_IDS, TEAM_SIZE, type FormationId, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, isMentality, MENTALITY_IDS, mentalityOf, TEAM_SIZE, type FormationId, type Role } from '../sim/constants.ts';
 import type { HumanInput, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 import type { LockstepMsg } from './lockstep.ts';
@@ -65,7 +65,7 @@ function cleanPlayer(v: unknown): PlayerSetup | null {
  * The TeamSetup and PlayerSetup fields cleanTeam knows. Typed as full records: a new field (a tactics
  * setting, say) is a type error here until cleanTeam handles it, instead of being dropped online.
  */
-export const TEAM_FIELDS: Record<keyof TeamSetup, true> = { name: true, short: true, primary: true, secondary: true, players: true, aiSkill: true, formation: true };
+export const TEAM_FIELDS: Record<keyof TeamSetup, true> = { name: true, short: true, primary: true, secondary: true, players: true, aiSkill: true, formation: true, mentality: true };
 export const PLAYER_FIELDS: Record<keyof PlayerSetup, true> = { id: true, name: true, number: true, role: true, attrs: true };
 
 /** A team setup from the other side, or null. Exactly TEAM_SIZE well-formed players with unique ids. */
@@ -80,7 +80,10 @@ export function cleanTeam(v: unknown): TeamSetup | null {
   if (name === null || short === null || primary === null || secondary === null || aiSkill === null || players.some((p) => !p)) return null;
   if (new Set(players.map((p) => p!.id)).size !== TEAM_SIZE) return null;
   const formation: FormationId = FORMATION_IDS.includes(v.formation as FormationId) ? (v.formation as FormationId) : '4-4-2';
-  return { name, short, primary, secondary, players: players as PlayerSetup[], aiSkill, formation };
+  const team: TeamSetup = { name, short, primary, secondary, players: players as PlayerSetup[], aiSkill, formation };
+  // Balanced is left off, as toTeamSetup does.
+  if (isMentality(v.mentality) && v.mentality !== 'balanced') team.mentality = v.mentality;
+  return team;
 }
 
 /** The colour pairs avoidClash() can give the away side: its own, swapped, or the neutral fallback. */
@@ -103,7 +106,7 @@ function kitOk(t: TeamSetup, mine: TeamSetup): boolean {
 export function isOwnTeam(theirs: TeamSetup, mine: TeamSetup): boolean {
   const names = [mine.name, cleanText(`${mine.name} II`, 40)];
   if (!names.includes(theirs.name) || theirs.short !== mine.short || !kitOk(theirs, mine)) return false;
-  if (theirs.aiSkill !== mine.aiSkill || (theirs.formation ?? '4-4-2') !== (mine.formation ?? '4-4-2')) return false;
+  if (theirs.aiSkill !== mine.aiSkill || (theirs.formation ?? '4-4-2') !== (mine.formation ?? '4-4-2') || mentalityOf(theirs.mentality) !== mentalityOf(mine.mentality)) return false;
   return theirs.players.length === mine.players.length && theirs.players.every((p, i) => {
     const q = mine.players[i];
     return p.id === q.id && p.name === q.name && p.number === q.number && p.role === q.role && ATTRS.every((k) => p.attrs[k] === q.attrs[k]);
@@ -156,6 +159,7 @@ export const INPUT_FIELDS: Record<keyof HumanInput, true> = {
   switchPlayer: true,
   aim: true,
   moved: true,
+  tactic: true,
 };
 
 /** One tick of input with every field finite and in range; anything else is dropped. Never null: junk becomes {}. */
@@ -178,6 +182,8 @@ export function cleanInput(v: unknown): HumanInput {
   const aim = cleanVec(v.aim, COORD);
   if (aim) o.aim = aim;
   if (v.moved === true) o.moved = true;
+  // Quick tactics: a mentality step, 1 (Park the bus) to 5 (High press).
+  if (typeof v.tactic === 'number' && Number.isInteger(v.tactic) && v.tactic >= 1 && v.tactic <= MENTALITY_IDS.length) o.tactic = v.tactic;
   return o;
 }
 

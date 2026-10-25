@@ -4,7 +4,7 @@
 // rewards before the stats, and management controls are at least 44 px tall on touch.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, startRanked } = require('./lib/helpers.cjs');
+const { SEL, openApp, goTab, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const PHONE = { width: 390, height: 844 };
 
@@ -137,4 +137,55 @@ test('phone: management controls are at least 44 px tall on touch', async (t) =>
     );
     expect(small.length, `${screen}: small targets ${JSON.stringify(small)}`).toBe(0);
   }
+});
+
+test('phone: at 320px a long surname ends in an ellipsis, never breaks mid-word', async (t) => {
+  const page = await openApp(t, { width: 320, height: 640, mutateSave: (s) => { s.squad.forEach((p, i) => { if (i % 3 === 0) p.last = 'Falkelbrandsteiner'; }); } });
+  await goTab(page, 'transfers');
+  const cells = await page.evaluate(() =>
+    [...document.querySelectorAll('.table-scroll')[1].querySelectorAll('.name-text')]
+      .filter((el) => el.textContent.includes('Falkelbrandsteiner'))
+      .map((el) => {
+        const node = el.firstChild;
+        const at = node.textContent.indexOf('Falkelbrandsteiner');
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + 'Falkelbrandsteiner'.length);
+        const cs = getComputedStyle(el);
+        return { lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size, ellipsis: cs.textOverflow, wrap: cs.overflowWrap };
+      }),
+  );
+  expect(cells.length > 0, 'long surnames in the Sell table').toBe(true);
+  for (const c of cells) {
+    expect(c.lines, `the surname stays on one line (${JSON.stringify(c)})`).toBe(1);
+    expect(c.ellipsis, 'ellipsis when it does not fit').toBe('ellipsis');
+    expect(c.wrap, 'no mid-word breaking').toBe('normal');
+  }
+  const fit = await tableFit(page);
+  for (const f of fit) expect(f.scroll, `table still fits ${JSON.stringify(f)}`).toBe(f.client);
+});
+
+test('phone: a toast sits below the club header, not over the wordmark and club name', async (t) => {
+  // Signing moves focus to the new player's Sell button, so the page scrolls; scroll back up while the toast shows.
+  const page = await openApp(t, PHONE);
+  await goTab(page, 'transfers');
+  await page.locator(`${SEL.buy}:not([aria-disabled])`).first().click();
+  await page.locator(SEL.toast).waitFor();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(400); // the slide-in
+  const pos = await page.evaluate(() => ({ toast: document.querySelector('.toast').getBoundingClientRect().top, header: document.querySelector('.topbar').getBoundingClientRect().bottom }));
+  expect(pos.toast >= pos.header, `toast below the header (${JSON.stringify(pos)})`).toBe(true);
+});
+
+test('phone: at 320x568 the XP card and its Level up are on screen when the result opens', async (t) => {
+  const page = await openApp(t, { width: 320, height: 568, prefs: { halfSeconds: 3 }, xp: totalXpForLevel(31) - 40 });
+  await startRanked(page);
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
+  const box = await page.evaluate(() => {
+    const view = document.querySelector('.modal .rs-scroll').getBoundingClientRect();
+    const card = document.querySelector('.modal .xp-card').getBoundingClientRect();
+    return { cardTop: card.top, cardBottom: card.bottom, viewTop: view.top, viewBottom: view.bottom, levelUp: !!document.querySelector('.modal .xp-level') };
+  });
+  expect(box.levelUp, 'this result levels up').toBe(true);
+  expect(box.cardTop >= box.viewTop && box.cardBottom <= box.viewBottom, `XP card fully visible (${JSON.stringify(box)})`).toBe(true);
 });

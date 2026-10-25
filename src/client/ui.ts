@@ -1,6 +1,7 @@
 // HTML templates for the management screens. Pure functions of app state.
 
-import { FORMATION_IDS, formationOf, type Role } from '../sim/constants.ts';
+import { formationOf, type Role } from '../sim/constants.ts';
+import { tacticsPanel } from './tactics.ts';
 import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
@@ -262,8 +263,9 @@ export function squadScreen(app: App): string {
       .sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))
       .map((p) => `<option value="${p.id}"${p.id === cur?.id ? ' selected' : ''}>${esc(`${ratingAs(p, f.role)} · ${p.last}${p.role !== f.role ? ` (${p.role})` : ''}`)}</option>`)
       .join('');
-    // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board.
-    return `<div class="slot" style="--x:${(2 + (f.x / 0.62) * 88).toFixed(1)}%;--y:${f.y * 100}%">
+    // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board, with
+    // room between keeper and centre-backs; y keeps wing-backs' badges and pickers on the pitch.
+    return `<div class="slot" style="--x:${(5 + ((f.x - 0.02) / 0.58) * 87).toFixed(1)}%;--y:${(5 + f.y * 90).toFixed(1)}%">
       <span class="magnet">${cur?.number ?? '?'}</span>
       <label class="slot-label"><span class="slot-role">${f.label}</span>
         <select id="slot-${slot}" data-change="slot" data-slot="${slot}">${options}</select>
@@ -273,8 +275,9 @@ export function squadScreen(app: App): string {
   return `
   <div class="squad-grid">
     ${academyPanel(app)}
+    ${tacticsPanel(s.formation, s.mentality)}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Lineup · <label class="formation-pick"><span class="sr-only">Formation</span><select id="formation" data-change="formation">${FORMATION_IDS.map((id) => `<option value="${id}"${id === (s.formation ?? '4-4-2') ? ' selected' : ''}>${id}</option>`).join('')}</select></label> · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
@@ -319,7 +322,7 @@ export function transfersScreen(app: App): string {
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone"> sale</span></button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
         }</td></tr>`).join('')}</tbody>
       </table></div>

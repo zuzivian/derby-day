@@ -1,7 +1,7 @@
 // Club management: training, transfers, lineup persistence.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, readSave } = require('./lib/helpers.cjs');
+const { SEL, openApp, goTab, readSave, pageWidths } = require('./lib/helpers.cjs');
 
 test('training spends a session and shows a toast', async (t) => {
   const page = await openApp(t);
@@ -78,4 +78,36 @@ test('lineup changes persist after reload', async (t) => {
   await goTab(page, 'squad');
   expect(await page.locator(SEL.slot(slot)).inputValue(), 'select shows the choice after reload').toBe(benchId);
   expect((await readSave(page)).lineup[slot], 'save after reload').toBe(benchId);
+});
+
+test('tactics board: formation and mentality are radio groups that save, survive a reload and fit a phone', async (t) => {
+  for (const width of [1280, 390]) {
+    const page = await openApp(t, { width, height: width > 600 ? 800 : 844 });
+    await goTab(page, 'squad');
+    expect(await page.locator('input[name="formation"]').count(), 'nine formations').toBe(9);
+    expect(await page.locator('input[name="mentality"]').count(), 'five mentality steps').toBe(5);
+    expect(await page.locator(SEL.formationChecked).getAttribute('value'), 'default formation').toBe('4-4-2');
+    expect(await page.locator(SEL.mentalityChecked).getAttribute('value'), 'default mentality').toBe('balanced');
+
+    // Pick by clicking the card (the label), the way a mouse user does.
+    await page.locator(`label:has(${SEL.formationRadio('3-5-2')})`).click();
+    let save = await readSave(page);
+    expect(save.formation, 'formation saved').toBe('3-5-2');
+    expect(save.lineup.length, 'XI re-picked').toBe(11);
+    // Keyboard: arrow keys move within the mentality group.
+    await page.locator(`label:has(${SEL.mentalityRadio('balanced')})`).click();
+    await page.keyboard.press('ArrowRight');
+    expect((await readSave(page)).mentality, 'arrow right steps up one').toBe('attacking');
+    expect(await page.evaluate(() => document.activeElement && document.activeElement.getAttribute('value')), 'focus stays on the group after re-render').toBe('attacking');
+    await page.locator(`label:has(${SEL.mentalityRadio('park')})`).click();
+    expect((await readSave(page)).mentality, 'mentality saved').toBe('park');
+
+    await page.reload();
+    await page.waitForSelector(SEL.app + ' *');
+    await goTab(page, 'squad');
+    expect(await page.locator(SEL.formationChecked).getAttribute('value'), 'formation after reload').toBe('3-5-2');
+    expect(await page.locator(SEL.mentalityChecked).getAttribute('value'), 'mentality after reload').toBe('park');
+    const { scrollWidth, innerWidth } = await pageWidths(page);
+    expect(scrollWidth, `no horizontal scroll at ${width}px`).toBeLessThan(innerWidth + 1);
+  }
 });
