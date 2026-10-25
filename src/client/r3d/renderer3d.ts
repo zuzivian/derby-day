@@ -4,7 +4,7 @@
 import { BOX_DEPTH, BOX_W, GOAL_BOTTOM, GOAL_TOP, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir, oppGoal } from '../../sim/field.ts';
 import { indirectPending } from '../../sim/rules.ts';
-import type { MatchState, TeamSetup } from '../../sim/types.ts';
+import type { GoalEvent, MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
 import type { MatchRenderer } from '../renderer.ts';
@@ -12,6 +12,7 @@ import type { RenderExtras } from '../render.ts';
 import { AimLayer, type AimFrame } from './aim3d.ts';
 import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
+import { mobBody, planMob, scorerAt, scorerBody, type MobPlan } from './celebration3d.ts';
 import { PlayerDots, playerPx } from './dots3d.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
@@ -157,6 +158,15 @@ export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; 
 
 /** The long view shows this far past halfway, metres. */
 export const LONG_PAST = 20;
+
+/** The goal just scored, while the sim holds play for it: the last goal among the last few events. */
+function goalHeld(s: MatchState): GoalEvent | null {
+  for (let i = s.events.length - 1; i >= Math.max(0, s.events.length - 4); i--) {
+    const e = s.events[i];
+    if (e.kind === 'goal') return e;
+  }
+  return null;
+}
 /** And touchline to touchline, but for this strip along each (where nobody stands at a set piece). */
 export const LONG_TOUCH = 3;
 /** A free kick's set-piece view: the wall stands this far from the ball (Law 13), this far either side of the line to goal. */
@@ -312,6 +322,9 @@ export class Renderer3D implements MatchRenderer {
   private dotsOn: boolean | null = null;
   private reduced = prefersReducedMotion();
   private celebrate: { i: number; until: number } | null = null;
+  /** The goal celebration (celebration3d.ts): the scorer's run-off and his team-mates', and the body handed to their models. */
+  private mob: MobPlan | null = null;
+  private mobBody: SimBody = { pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } };
   /** The referee turns to the player he is booking until this clock time. */
   private cardFace: { player: number; until: number } | null = null;
   private lost = false;
@@ -696,6 +709,13 @@ export class Renderer3D implements MatchRenderer {
     }
 
     const tPlayers = performance.now();
+    // A goal: the scorer is drawn running off and his nearest team-mates running to him (celebration3d.ts).
+    const goalEv = s.phase === 'goal' ? goalHeld(s) : null;
+    if (!goalEv) this.mob = null;
+    else if (!this.mob || this.mob.tick !== goalEv.tick) this.mob = planMob(s, goalEv, this.reduced);
+    const mob = this.mob;
+    const mobT = mob ? (s.tick - mob.tick) / 60 + lead : 0;
+
     // Players. A player sent off is parked far off the pitch by the sim: not drawn.
     for (const p of s.players) {
       const model = this.players[p.i];
@@ -713,7 +733,9 @@ export class Renderer3D implements MatchRenderer {
       c.wall = inWall(s, p);
       c.armUp = false;
       c.reducedMotion = this.reduced;
-      model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, c);
+      const runner = mob ? mob.runners.find((r) => r.i === p.i) : undefined;
+      const body = !mob ? p : p.i === mob.scorer ? scorerBody(mob, mobT, this.mobBody) : runner ? mobBody(mob, runner, mobT, this.mobBody) : p;
+      model.update(dt, body, dir.events[p.i] ?? NO_EVENTS, c);
       const ev = dir.events[p.i];
       if (ev) for (const e of ev) if (e.kind === 'celebrate') this.celebrate = { i: p.i, until: clock + 2.4 };
     }
@@ -891,7 +913,9 @@ export class Renderer3D implements MatchRenderer {
     f.air = b.z;
     f.attack = holder && s.phase === 'play' ? attackDir(s, holder.team) : 0;
     f.phase = s.phase;
-    f.close = cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null;
+    // The close shot follows the scorer as he is drawn: on his run-off, while there is one.
+    const celAt = cel && this.mob && this.mob.scorer === cel.i ? scorerAt(this.mob, (s.tick - this.mob.tick) / 60 + lead) : cel?.pos;
+    f.close = cel && celAt && !this.replayShot ? { x: sx(celAt.x), z: sz(celAt.y) } : null;
     f.humanDir = attackDir(s, this.me) as 1 | -1;
     f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind !== 'long' } : null;
     f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
