@@ -34,8 +34,10 @@
  *  13  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
  *  14  a back five forms: defenders leave a man 10 m upfield of their place to the midfield,
  *      and one 8 m or more upfield of his place runs back instead of jogging
+ *  15  far-side width: the wide man on the far side holds the touchline for a switch until the
+ *      final third, and makes his run in behind down the line
  */
-export const SIM_VERSION = 14;
+export const SIM_VERSION = 15;
 
 export const TICK_HZ = 60;
 
