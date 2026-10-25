@@ -26,8 +26,9 @@
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
+ *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
  */
-export const SIM_VERSION = 8;
+export const SIM_VERSION = 9;
 
 export const TICK_HZ = 60;
 
