@@ -105,7 +105,8 @@ describe('HUD', () => {
     expect(words.has('Yellow card') || words.has('Red card')).toBe(true);
     const card = m.events.find((e) => e.kind === 'card')!;
     expect(refereeWord(m, card)?.sub).toContain(card.kind === 'card' ? card.name : '');
-  });
+    // The search plays as many short matches as it takes, which moves with any change to the sim.
+  }, 30_000);
 
   test('the clock is matchSeconds as MM:SS and holds through a stoppage', () => {
     const s = cpuMatch(17);

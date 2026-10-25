@@ -28,8 +28,9 @@
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
  *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
  *  10  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
+ *  11  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
  */
-export const SIM_VERSION = 10;
+export const SIM_VERSION = 11;
 
 export const TICK_HZ = 60;
 

@@ -1025,3 +1025,50 @@ describe('a keeper and a cross', () => {
     expect(strong).toBeGreaterThan(weak + 0.1);
   }, 30_000);
 });
+
+describe('a keeper one-on-one', () => {
+  /**
+   * Our striker runs at their keeper (goalkeeping `skill`) from 20 m out, straight down the middle,
+   * and at 11 m shoots hard 0.7 m inside a post. How far out is the keeper then, and does it go in?
+   */
+  function oneOnOne(seed: number, skill: number, side: 1 | -1) {
+    const s = livePlay(seed);
+    const gk = goalkeeper(s, 1);
+    const me = s.players.find((p) => p.team === 0 && p.role === 'FWD')!;
+    isolate(s, gk, me);
+    gk.stun = 0;
+    gk.attrs.goalkeeping = skill;
+    s.switchTimer[0] = 1e9;
+    s.controlled[0] = me.i;
+    me.pos = { x: PITCH_W - 20, y: PITCH_H / 2 };
+    me.vel = { x: 0, y: 0 };
+    me.stun = 0;
+    me.facing = { x: 1, y: 0 };
+    me.energy = 1;
+    fire(s, { x: me.pos.x + 0.99, y: PITCH_H / 2 }, { x: 0, y: 0 });
+    s.ball.owner = me.i;
+    s.ball.lastTouch = me.i;
+    for (let t = 0; t < 400 && PITCH_W - me.pos.x > 11; t++) step(s, { cursor: { x: PITCH_W, y: PITCH_H / 2 }, moved: true });
+    const out = PITCH_W - gk.pos.x;
+    const aim = { x: PITCH_W, y: PITCH_H / 2 + side * (GOAL_BOTTOM - PITCH_H / 2 - 0.7) };
+    const goals = s.score[0];
+    step(s, { cursor: aim, aim, shoot: 0.8, moved: true });
+    for (let t = 0; t < 200 && s.phase === 'play' && s.ball.owner !== gk.i; t++) step(s, { cursor: aim });
+    return { out, goal: s.score[0] > goals };
+  }
+  const run = (skill: number) => {
+    const rs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].flatMap((seed) => [oneOnOne(seed, skill, 1), oneOnOne(seed, skill, -1)]);
+    return { out: Math.min(...rs.map((r) => r.out)), goals: rs.filter((r) => r.goal).length / rs.length };
+  };
+
+  test('he comes out to meet the striker, and a better keeper gives him less to shoot at', () => {
+    // Before: about 3.3 m off his line with the striker at 11 m, then backing off as he closed,
+    // and 70-80% of these went in whatever his goalkeeping (0.8 conceded the most).
+    const weak = run(0.4);
+    const strong = run(0.8);
+    console.log(`one-on-one from 11 m: keeper 0.4 out ${weak.out.toFixed(1)} m, ${(weak.goals * 100).toFixed(0)}% goals; keeper 0.8 out ${strong.out.toFixed(1)} m, ${(strong.goals * 100).toFixed(0)}% goals`);
+    expect(weak.out).toBeGreaterThan(4.5);
+    expect(strong.out).toBeGreaterThan(weak.out);
+    expect(strong.goals).toBeLessThan(weak.goals - 0.2);
+  }, 30_000);
+});
