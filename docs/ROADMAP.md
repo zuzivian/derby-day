@@ -37,9 +37,11 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - **Sound and feel.** Synthesised kicks, whistles, net and crowd (no audio files), goal shake and confetti, all reduced-motion aware.
 
 **The club**
-- **Loop.** Generated squad with attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach; transfers, training sessions, a 16-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
-- **Competitions.** An 8-club cup (seeded bracket, live penalty shootout when your tie is drawn) and an 8-club league season, neither touching ladder Elo. Forfeits pay nothing, so they can't be farmed.
-- **Time passes.** A 10-match season calendar: ageing curves, retirements from 34, an academy intake with scouting fog on potential, CPU clubs that rise and fall, and a season review.
+- **Loop.** Generated squad with attributes (1–99) that change speed, passing error, shot error, tackle odds and keeper reach; transfers, training sessions, a 32-club Elo ladder with the World Football Elo goal-difference multiplier, prize money.
+- **A living world.** Four divisions of eight (`src/meta/world.ts`). The 31 CPU clubs keep their players season after season: they age, retire, bring through academy youngsters and move up a division in a transfer window; clubs develop toward their division's level, and the top division rises with your XI, so there is always strong opposition at the top. CPU divisions play a modelled season at each rollover, with two up and two down. Your league finish moves you: top two up, bottom two down. Division sets the league's and cup's clubs, their prize money (×1 to ×3) and their XP (×1 to ×1.75).
+- **Competitions.** An 8-club cup (your division plus three clubs from the one above; seeded bracket, live penalty shootout when your tie is drawn) and an 8-club league season (your division). Both move Elo like ranked matches. A new cup waits for 4 ranked or league matches after the last one started. Forfeits can't be farmed: no week passes, a rated forfeit costs a fine of what a win would have paid (owed from half of later income when the bank can't cover it) and a win's XP owed from the next rated matches, and a league season pays only for the matchdays played.
+- **Time passes.** A 10-match season calendar: ageing curves, retirements from 34, an academy intake with scouting fog on potential, the CPU world's season, a season review and a club history.
+- **Results stand.** A ranked, cup or league match is marked on the save at kick-off; a reload or a closed tab mid-match is settled as a 0–3 forfeit on the next visit, with a message saying so (`src/meta/pending.ts`); a match the game itself crashed in is voided instead, at most once in 10 matches. The ranked opponent is fixed once offered, so reloading can't re-roll it.
 - **Club levels.** XP from matches, training and milestones; features unlock from level 1 to 12 and small perks run to 99 (see "Club levels" below).
 - **Original world.** Ten fictional name styles and nations, blocklists against famous real players and clubs.
 
@@ -47,7 +49,7 @@ As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependen
 - Gradual onboarding: a single welcome with one Kick off into a real first match (coach tips taught in play: running, passing, shooting, tackling, restarts), a celebration with the first XP, an optional club naming step, then menus revealed level by level. The training-ground drills are an optional Practice skills entry from level 3.
 - WCAG 2.1 AA pass: skip link, ARIA tabs, focus restored after every render, live announcements for goals and results, dialogs with focus traps, contrast fixed in both themes, team markers that don't rely on colour alone.
 
-Known gaps: saves live in one browser only (closing a tab mid-match is a free abort; one tab owns the club at a time, and Club > Back up or restore moves it between browsers: see OPS.md); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
+Known gaps: saves live in one browser only (one tab owns the club at a time, and Club > Back up or restore moves it between browsers: see OPS.md); no substitutions, no handball, holding or pushing offences, no VAR; corners come up less often than in a real 90 minutes (about 2 a match); the CPU's middle difficulty steps are uneven; sounds are untested by ear; no real screen-reader pass yet.
 
 ## Phase 1: Feel lab (2–4 weeks part-time)
 
@@ -151,26 +153,34 @@ The club opens up as it gains experience. A new player starts with Home and one 
 | 5 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
 | 5 | Feature | Practice: Hard | A tougher CPU friendly: the Veterans Select. |
 | 6 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
-| 7 | Feature | Ladder | The full Elo table of all 16 clubs. |
+| 7 | Feature | Ladder | The full Elo table of all 32 clubs, in four divisions. |
 | 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
 | 10 | Feature | Season calendar and academy | Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive. |
 | 15 | Perk | Squad of 25 | Room for one more player (24 to 25). |
 | 18 | Perk | Crest pattern | Change your crest pattern any time from Club news. |
 | 20 | Perk | Deeper market | Two extra players on the transfer market (10 to 12). |
 | 22 | Perk | Custom kit colours | Pick your own kit colours from Club news. |
+| 24 | Perk | Club history | Every season in one table, and the club records: biggest win, longest unbeaten run, highest Elo, best division. |
 | 25 | Perk | Sharper scouts | An academy prospect's potential is known one match sooner (5 instead of 6). |
 | 25 | Perk | Silver badge | Your level badge turns silver. |
 | 30 | Perk | Squad of 26 | Room for another player (25 to 26). |
 | 35 | Perk | Win bonus | One extra training session for every ranked or competition win. |
 | 40 | Perk | Replay shelf of 8 | Keep your last 8 replays instead of 5. |
+| 45 | Perk | Bigger academy | One more academy prospect every season (3 to 4 instead of 2 to 3). |
 | 50 | Perk | Squad of 27 | Room for another player (26 to 27). |
 | 50 | Perk | Gold badge | Your level badge turns gold. |
+| 55 | Perk | Data analysts | An academy prospect's potential is known after 3 matches. |
+| 60 | Perk | Shirt sponsor | Cup and league prize money +10%. |
 | 65 | Perk | Replay shelf of 10 | Keep your last 10 replays. |
+| 70 | Perk | Youth coach | Academy prospects arrive with 3 more potential. |
 | 75 | Perk | Platinum badge | Your level badge turns platinum. |
 | 80 | Perk | Scouting network | Two more players on the transfer market (12 to 14). |
+| 85 | Perk | Bigger win bonus | Two extra training sessions for every ranked or competition win. |
+| 90 | Perk | Global scouting | Two more players on the transfer market (14 to 16). |
+| 95 | Perk | Squad of 28 | Room for another player (27 to 28). |
 | 99 | Perk | Legend badge | Level 99. The bar keeps counting toward a future prestige. |
 
-The schedule is the owner's. History: Local 2P and Link two tabs were first at levels 7 and 12, moved to level 1 with the October 2026 home redesign, and now open at level 2 with the Squad and Easy practice, because level 1 is Home and one Kick off and "vs Player" is the first play mode after it. Level-1 features never open a level-up dialog. Two notes: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
+The schedule is the owner's. History: Local 2P and Link two tabs were first at levels 7 and 12, moved to level 1 with the October 2026 home redesign, and now open at level 2 with the Squad and Easy practice, because level 1 is Home and one Kick off and "vs Player" is the first play mode after it. Level-1 features never open a level-up dialog. Two notes: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win. Since the living world (October 2026) no gap past level 22 is longer than five levels; the long-term goals beyond them are the divisions (promotion, the top-division title), cups, the trophy cabinet and the club history's records.
 
 A feature is available when the club's level reaches it, when the save is already using it (a cup or league in progress, a trophy of that kind, a running calendar or academy offers), or when it was unlocked once before (`unlocksSeen`). So nothing is ever taken away, even if the XP table is rebalanced. Locked tabs and buttons are hidden, not disabled.
 
@@ -178,31 +188,32 @@ A feature is available when the club's level reaches it, when the save is alread
 
 | Source | XP |
 |---|---|
-| Ranked, cup or league match | win 120, draw 80, loss 50; +10 per goal scored; +20 for a clean sheet |
+| Ranked, cup or league match | win 120, draw 80, loss 50; +10 per goal scored; +20 for a clean sheet; all times the opponent's division (×1, ×1.2, ×1.45, ×1.75 from the bottom up) and 0.7 to 1.3 by how unlikely the win was (`rankedScale` in game.ts, reading `winChance`: mostly the two XIs, a fifth Elo): an equal club in the bottom division pays the table, a weak one less |
 | Practice | Easy 30, Normal 40, Hard 60 (flat) |
 | Training session | 5 each |
-| Cup finish | winners +500, runners-up +200, out in the semi-final +100 |
-| League finish | 1st +800, 2nd +400, 3rd–4th +200, 5th–6th +100, 7th–8th +50 |
+| Cup finish | winners +140, runners-up +60, out in the semi-final +30; times your division's XP scale |
+| League finish | 1st +400, 2nd +240, 3rd +120, 4th +100, 5th +70, 6th +50, 7th +35, 8th +25; times your division's XP scale and the share of matchdays played |
 | First-time milestones | finish the training ground +100, first ranked win +100, first signing +50, first trophy +200 |
-| Forfeits, abandoned matches | 0 (a forfeited cup final or last matchday also loses its finish bonus) |
+| Forfeits, abandoned matches | 0, and a rated forfeit owes a win's XP (times the opponent's scale) from the next rated matches, half of each at most (a forfeited cup final loses its finish bonus; a league finish is paid for the matchdays played) |
 | Local 2P, Link two tabs | 0 (they record nothing) |
 
 XP is per match whatever the match length, like money and Elo. A cup tie settled on penalties counts as the draw it was.
 
-**Pacing.** Expected values (`levelForXp` over a modelled run): a typical ranked match against clubs near your Elo, at 45% wins, 25% draws, 30% losses, 1.6 goals scored and a clean sheet a quarter of the time, is worth 110 XP, plus about 12 more once its ~2.5 training sessions are spent. The tutorial's 100 comes first and the first win and first signing add 150 early. "Mixed" plays one cup tie in four matches from level 5 and adds league matchdays from level 8. Real time assumes the standard 2 × 3-minute match (the old length selector is gone), about 5 minutes each with kick-off, half-time, the result and a minute in the menus.
+**Pacing.** Measured by `bun run career` (`scripts/career.ts`): a deterministic headless career through the same meta functions the UI calls. It plays a mixed week (5% practice, 25% cup when one can run, 30% league, the rest ranked; 3% forfeits and 1% abandoned matches), spends every training session, buys upgrades it can afford and signs four-star prospects. Results come from the CPU-fixture score model with your XI plus 3 (you play a little better than your squad's rating). Real time is 7 minutes a match: 2 × 3 minutes of play, a minute of kick-off, result and menus. Seed 2026 (seeds 1, 7 and 42 land within 6%):
 
-| Level | Total XP | Matches, ranked only | Matches, mixed | Time (mixed) |
+| Level | Total XP | Match | Hours | Before the world (main, Oct 2026) |
 |---|---|---|---|---|
-| 2 | 100 | 0 (the tutorial) or 1 | 0 or 1 | setup |
-| 5 | 1,000 | 7 | 7 | ~35 min |
-| 8 | 2,800 | 22 | 20 | ~1.7 h |
-| 10 | 4,500 | 36 | 32 | ~2.7 h |
-| 12 | 6,600 | 53 | 46 | ~3.8 h |
-| 20 | 19,000 | 154 | 131 | ~11 h |
-| 50 | 122,500 | 1,001 | 842 | ~70 h |
-| 99 | 485,100 | 3,967 | 3,331 | ~280 h |
+| 5 | 1,000 | 7 | 0.8 | 0.9 h |
+| 10 | 4,500 | 34 | 4.0 | 4.2 h |
+| 20 | 19,000 | 109 | 12.7 | 16.6 h |
+| 30 | 43,500 | 223 | 26.0 | |
+| 50 | 122,500 | 637 | 74 | 99 h |
+| 75 | 277,500 | 1,376 | 161 | |
+| 99 | 485,100 | 2,302 | 269 | 379 h |
 
-So the first session reaches level 2 (finishing the training ground alone does it; a skipped tutorial needs one match that isn't a goalless defeat) and level 5, the Cup, comes in about 35 minutes. Everything that is a feature is open in about four hours. The tail to 99 is long by design; if testers stall in the 20s, the lever is the per-match numbers, not the curve.
+XP a match rises from about 120 in the bottom division to about 240 in the top one, so level 98 to 99 takes about 40 matches (4.6 h) instead of 64 (7.5 h). Per match after the first 30: ranked 178 XP and ƒ218k, cup 224 XP and ƒ243k, league 231 XP and ƒ99k (the cup and league include their finish bonuses and prizes), practice 57 XP. `bun run career --assert` (in CI) fails if level 5 takes over 1.5 h, level 10 leaves 2–7 h, level 20 8–25 h, level 50 40–110 h or level 99 150–320 h; if a cup or league match pays over 1.35× a ranked one in XP, or a cup match in money; if forfeiting 20 ranked matches and then playing 60 honestly earns over 1.05× the XP or money a real match of honest play does (the sandbag probe, from a normal budget and from ƒ0: it measures about 0.75× XP and 0.7× money, and stays under 1.05 with winChance on Elo alone); if from match 200 the strongest CPU XI is ever more than 3 below yours or you win over 70% of a block of ranked matches; if fewer than 3 promotions happen; or if the save passes 160 KB.
+
+**CPU fixtures.** Matches between CPU clubs (the rest of a cup round or league matchday, and the modelled CPU seasons) get a full-length scoreline from a Poisson model on the two XIs (`quickScore` in world.ts): 1.3 goals a side between equal XIs (about 2.6 a match, a quarter drawn, like your own matches), and a stronger XI scoring e^(0.07 × gap) times as often. The strength effect comes from 600 full-length CPU v CPU sims (fit 0.09 a point; 0.07 keeps upsets alive). Between evenly matched CPU XIs the full sim scores only about 1.1 a match with half drawn, so a straight full-length sim would have made the CPU table look stranger, not more real.
 
 **Saves from before levels.** `ensureLevelFields` runs at boot. A save with no `xp` gets retro XP from what it records, using the same table: every match in its history (forfeits look like 0–3 defeats there, so they count as defeats), training sessions spent (sessions earned minus sessions left), cup runs and league seasons its history and trophies prove (a finished season without a title gets the bottom-place bonus), and the milestones it shows (first ranked win, a signing in the news, a trophy). The training-ground milestone can't be known, so it stays claimable from Replay tutorial. Everything its level reaches, plus anything it is using, is marked as seen, so an old save neither loses a feature in use nor gets a flood of level-up dialogs. New fields (`xp`, `unlocksSeen`, `milestones`) are optional and `isSave` accepts saves without them.
 
@@ -214,8 +225,7 @@ Goal: a market that people trade on, not just a CPU shop.
 
 - Player-to-player transfers: listings, offers, a short auction window, a transfer fee tax that removes money from the economy.
 - **Anti-abuse is the main design work.** Manager games historically suffer from multi-accounting: alts feed players and money to a main club. Mitigations: account age and play requirements before trading, a price band around the model's valuation, rate limits, flagging circular trades.
-- Seasons: aging, retirements, generated youth intake, divisions with promotion and relegation.
-- Wages and a stadium upgrade as money sinks.
+- Wages and a stadium upgrade as money sinks. (Seasons with ageing, retirements, youth and divisions with promotion and relegation are in.) With transfers as the only sink, the career simulator's buying club keeps ƒ0.1–1.5m; a club that never buys piles money up.
 
 ## Phase 5: Live service (ongoing)
 

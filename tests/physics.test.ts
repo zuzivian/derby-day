@@ -975,3 +975,53 @@ describe('a corner played to a team-mate', () => {
     expect(him / n).toBeGreaterThan(0.3);
   }, 60_000);
 });
+
+describe('a keeper and a cross', () => {
+  /** Our man lofts it from the wing (the human's loft) to `land`; their keeper (goalkeeping `skill`) is alone. Does he hold it? */
+  function cross(seed: number, skill: number, from: Vec, land: Vec): boolean {
+    const s = livePlay(seed);
+    const gk = goalkeeper(s, 1);
+    const me = mid(s, 0);
+    isolate(s, gk, me);
+    gk.stun = 0;
+    gk.attrs.goalkeeping = skill;
+    s.switchTimer[0] = 1e9;
+    s.controlled[0] = me.i;
+    me.pos = { ...from };
+    me.vel = { x: 0, y: 0 };
+    me.stun = 0;
+    me.facing = { x: 1, y: 0 };
+    fire(s, { x: from.x + 0.99, y: from.y }, { x: 0, y: 0 });
+    s.ball.owner = me.i;
+    s.ball.lastTouch = me.i;
+    const loft = Math.max(0, Math.min(1, (dist(from, land) - 12) / 28 + 0.05));
+    step(s, { cursor: land, aim: land, loft, moved: true });
+    for (let t = 0; t < 300 && s.phase === 'play' && s.ball.owner !== gk.i; t++) step(s, { cursor: { ...me.pos } });
+    return s.ball.owner === gk.i;
+  }
+  const claims = (skill: number, x: number) => {
+    let n = 0;
+    let held = 0;
+    for (const wing of [4, PITCH_H - 4])
+      for (const dy of [-4, -2, 0, 2, 4])
+        for (const seed of [1, 2, 3, 4]) {
+          n++;
+          if (cross(seed, skill, { x: 82 + 2 * seed, y: wing }, { x, y: PITCH_H / 2 + dy })) held++;
+        }
+    return held / n;
+  };
+
+  test('nobody near him, he comes and holds a cross dropping into his six-yard box', () => {
+    // Before: he went to where it first came into reach, a metre off its line, and it dropped past
+    // him: under 20% held, whatever his goalkeeping.
+    expect(claims(0.6, PITCH_W - 3.5)).toBeGreaterThan(0.85);
+  }, 30_000);
+
+  test('a better keeper comes further for one', () => {
+    // Before: he came no further than 7-8 m, whatever his goalkeeping: 23% held at 10 m for 0.4 and 0.8 alike.
+    const weak = claims(0.4, PITCH_W - 10);
+    const strong = claims(0.8, PITCH_W - 10);
+    console.log(`crosses held at 10 m: keeper 0.4 ${(weak * 100).toFixed(0)}%, keeper 0.8 ${(strong * 100).toFixed(0)}%`);
+    expect(strong).toBeGreaterThan(weak + 0.1);
+  }, 30_000);
+});

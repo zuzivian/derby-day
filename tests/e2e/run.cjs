@@ -60,7 +60,9 @@ function pickFiles(files, spec) {
 }
 
 const SHARD = process.env.E2E_SHARD || '';
-const FILES = pickFiles(ALL_FILES, SHARD);
+// E2E_FILES=replay,club runs only the test files whose name contains one of these (for soaking one file under load).
+const ONLY = String(process.env.E2E_FILES || '').split(',').map((x) => x.trim()).filter(Boolean);
+const FILES = pickFiles(ALL_FILES, SHARD).filter((f) => !ONLY.length || ONLY.some((o) => f.includes(o)));
 const fileOf = new Map(); // test name -> file, for the per-file timings
 for (const f of FILES) {
   const before = registry.length;
