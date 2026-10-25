@@ -1,0 +1,10 @@
+import { live, clearPitch, MID, PITCH_W, player } from './lib.ts';
+import { inOffsidePosition, secondLastOpponentX } from '/tmp/rt/rules/repo/src/sim/field.ts';
+const s = live(2, true); clearPitch(s);
+const opp = s.players.filter((p) => p.team === 1);
+opp.forEach((p, k) => (p.pos = p.role === 'GK' ? { x: 80, y: MID } : k === 1 ? { x: 103, y: MID + 2 } : { x: 70, y: 10 + k * 4 }));
+const att = player(s, 0, 'ST'); att.pos = { x: 85, y: MID - 5 };
+s.ball.pos = { x: 60, y: MID };
+console.log(`keeper rushed out to x=80, one defender back on the line at x=103: second-last opponent at x=${(secondLastOpponentX(s, 0) * PITCH_W).toFixed(1)}; attacker at x=85 is ${inOffsidePosition(s, att) ? 'in an offside position (correct: beyond the second-last opponent, the keeper)' : 'onside'}`);
+att.pos = { x: 79, y: MID - 5 };
+console.log(`attacker at x=79 (behind the keeper): ${inOffsidePosition(s, att) ? 'offside position' : 'onside (correct)'}`);

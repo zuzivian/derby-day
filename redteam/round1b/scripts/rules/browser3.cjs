@@ -1,0 +1,23 @@
+const { chromium } = require('playwright');
+const { openApp, startRanked, SEL } = require('/tmp/rt/rules/repo/tests/e2e/lib/helpers.cjs');
+const OUT = '/tmp/rt/rules/out/shots';
+(async () => {
+  const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  const W = Number(process.env.W || 1280), H = Number(process.env.H || 800);
+  const t = { newPage: async (o) => { const ctx = await browser.newContext(o); await ctx.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort()); return ctx.newPage(); } };
+  const page = await openApp(t, { width: W, height: H, prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d' });
+  page.on('pageerror', (e) => console.log('PAGEERROR', e.message));
+  await startRanked(page);
+  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'kickoff', null, { timeout: 30000 });
+  await page.waitForTimeout(300);
+  const pos = () => page.evaluate(() => { const s = window.__derbyMatch; const gk = (t) => s.players.find((p) => p.team === t && p.role === 'GK'); return { half: s.half, phase: s.phase, kickoffTeam: s.kickoffTeam, homeGK: +gk(0).pos.x.toFixed(1), awayGK: +gk(1).pos.x.toFixed(1), owner: s.ball.owner }; });
+  console.log('1st half', await pos());
+  await page.screenshot({ path: `${OUT}/ends-1st-${W}.png` });
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play', null, { timeout: 30000 });
+  await page.evaluate(() => { const s = window.__derbyMatch; s.clock = s.halfTicks - 2; });
+  await page.waitForFunction(() => window.__derbyMatch.half === 2 && window.__derbyMatch.phase === 'kickoff', null, { timeout: 60000 });
+  await page.waitForTimeout(600);
+  console.log('2nd half', await pos());
+  await page.screenshot({ path: `${OUT}/ends-2nd-${W}.png` });
+  await browser.close();
+})();
