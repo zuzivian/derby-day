@@ -3,7 +3,7 @@
 import { FORMATION_IDS, formationOf, type Role } from '../sim/constants.ts';
 import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
-import { askingPrice, formatMoney, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
+import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, type UnlockId } from '../meta/levels.ts';
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -175,7 +175,7 @@ function formChips(save: Save): string {
     .map((m) => {
       const r = m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L';
       const d = m.eloAfter - m.eloBefore;
-      return `<li><span class="res res-${r}">${r}</span><span class="res-score">${m.goalsFor}–${m.goalsAgainst}</span><span class="res-opp">${esc(m.opponent)}</span><span class="res-elo">${m.ranked ? `${d >= 0 ? '+' : ''}${d}` : esc(m.competition ?? 'friendly')}</span></li>`;
+      return `<li><span class="res res-${r}">${r}</span><span class="res-score">${m.goalsFor}–${m.goalsAgainst}</span><span class="res-opp">${esc(m.opponent)}</span><span class="res-elo">${m.ranked ? signed(d) : esc(m.competition ?? 'friendly')}</span></li>`;
     })
     .join('')}</ul>`;
 }
@@ -232,13 +232,17 @@ function attrCell(v: number): string {
   return `<td class="num attr opt t-${tier}">${v}</td>`;
 }
 
+/** The name, and (shown only on the narrowest phones, where the Pos column goes) the position chip under it. */
+const nameCell = (p: Player): string =>
+  `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>`;
+
 function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
   return `<tr${starter ? ' class="starter"' : ''}>
-    <td class="num${showNumber ? '' : ' muted'}">${showNumber ? p.number : '–'}</td>
-    <td class="name">${esc(fullName(p))}${starter ? ' <span class="pill">XI</span>' : ''}</td>
+    <td class="num${showNumber ? '' : ' muted opt'}">${showNumber ? p.number : '–'}</td>
+    <td class="name">${nameCell(p)}${starter ? ' <span class="pill">XI</span>' : ''}</td>
     <td class="opt">${esc(nation(p))}</td>
     <td class="num opt">${p.age}</td>
-    <td><span class="pos pos-${p.role}">${p.role}</span></td>
+    <td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td>
     <td class="num ovr">${overall(p)}</td>
     <td class="num muted opt">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
@@ -277,7 +281,7 @@ export function squadScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
       </table></div>
     </article>
@@ -299,8 +303,8 @@ export function transfersScreen(app: App): string {
         <h2 class="eyebrow">Transfer market · refreshes after every ranked match</h2>
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
-      <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th>Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th></th></tr></thead>
+      <div class="table-scroll"><table class="tbl has-action">
+        <thead><tr><th class="num opt">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
@@ -311,11 +315,11 @@ export function transfersScreen(app: App): string {
     </article>
     <article class="panel">
       <h2 class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</h2>
-      <div class="table-scroll"><table class="tbl compact">
-        <thead><tr><th class="num">#</th><th>Name</th><th>Pos</th><th class="num">Age</th><th class="num">OVR</th><th class="num">Offer</th><th></th></tr></thead>
-        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num">${p.number}</td><td class="name">${esc(fullName(p))}</td><td><span class="pos pos-${p.role}">${p.role}</span></td><td class="num">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
+      <div class="table-scroll"><table class="tbl compact has-action">
+        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
+        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm sale</button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone"> sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
         }</td></tr>`).join('')}</tbody>
       </table></div>
@@ -362,8 +366,8 @@ export function ladderScreen(app: App): string {
   <article class="panel">
     <h2 class="eyebrow">Ladder · ranked by Elo · CPU clubs also play each other between your matches</h2>
     <div class="table-scroll"><table class="tbl ladder">
-      <thead><tr><th class="num">Pos</th><th>Club</th><th class="num">P</th><th class="num">W</th><th class="num">D</th><th class="num">L</th><th class="num">Elo</th></tr></thead>
-      <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
+      <thead><tr><th class="num">Pos</th><th>Club</th><th class="num opt-narrow">P</th><th class="num opt-narrow">W</th><th class="num opt-narrow">D</th><th class="num opt-narrow">L</th><th class="num">Elo</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num opt-narrow">${r.played}</td><td class="num opt-narrow">${r.won}</td><td class="num opt-narrow">${r.drawn}</td><td class="num opt-narrow">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
     </table></div>
   </article>`;
 }
@@ -451,7 +455,6 @@ function resultModal(app: App): string {
   const us = c.short;
   const them = r.opp.short;
   const sum = r.summary;
-  const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '±0');
   const chips = sum
     ? [
         r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
@@ -465,7 +468,7 @@ function resultModal(app: App): string {
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
-      <div class="rs-scroll">
+      <div class="rs-scroll" tabindex="0" role="region" aria-labelledby="result-title">
       <header class="rs-hero">
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : OUTCOME_WORD[outcome]}</h2>

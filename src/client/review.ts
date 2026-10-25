@@ -3,7 +3,7 @@
 // The rules live in src/meta/progression.ts; this file only renders and wires.
 // Styles are in review.css (appended to the page by scripts/build.ts).
 
-import type { Save } from '../meta/game.ts';
+import { signed, type Save } from '../meta/game.ts';
 import { scoutMatchesFor, squadCap } from '../meta/levels.ts';
 import { overall, type Player } from '../meta/player.ts';
 import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText, type IntakeEntry, type PlayerChange, type SeasonReview } from '../meta/progression.ts';
@@ -12,7 +12,6 @@ import type { App } from './ui.ts';
 const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-const sign = (n: number): string => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : '0');
 
 function stars(n: number): string {
   return `<span class="stars" role="img" aria-label="Scouting estimate: ${n} out of 5 stars"><span aria-hidden="true">${starText(n)}</span></span>`;
@@ -24,7 +23,7 @@ function changeRow(c: PlayerChange): string {
   const d = c.after - c.before;
   return `<li class="rv-row">
     <span class="rv-main"><b>${esc(c.name)}</b>${rolePill(c.role)}<span class="muted">age ${c.age}</span></span>
-    <span class="rv-nums"><span class="muted">${c.before}</span> → <b>${c.after}</b> <span class="${d > 0 ? 'up' : 'down'}">(${sign(d)})</span></span>
+    <span class="rv-nums"><span class="muted">${c.before}</span> → <b>${c.after}</b> <span class="${d > 0 ? 'up' : 'down'}">(${signed(d)})</span></span>
   </li>`;
 }
 
@@ -77,7 +76,7 @@ export function reviewModal(app: App): string {
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
     <div class="modal-card review-card">
-      <div class="rv-scroll">
+      <div class="rv-scroll" tabindex="0" role="region" aria-label="Season review">
         <header class="rv-hero">
           <div class="rv-eyebrow">End of season</div>
           <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
@@ -102,8 +101,8 @@ function recordSection(rv: SeasonReview): string {
   const tile = (label: string, value: string, sub = '', cls = '') => `<div class="rv-tile${cls}"><dt>${label}</dt><dd>${value}</dd>${sub ? `<dd class="rv-tile-sub">${sub}</dd>` : ''}</div>`;
   return `<dl class="rv-record" aria-label="Season record">
     ${tile('Record', `${r.won}W ${r.drawn}D ${r.lost}L`, `in ${r.played} match${r.played === 1 ? '' : 'es'}`)}
-    ${tile('Goals', `${r.gf}–${r.ga}`, `${sign(r.gf - r.ga)} difference`)}
-    ${tile('Elo', `${r.eloEnd}`, `${r.eloStart} → ${r.eloEnd} <span class="${elo >= 0 ? 'up' : 'down'}">(${sign(elo)})</span>`)}
+    ${tile('Goals', `${r.gf}–${r.ga}`, `${signed(r.gf - r.ga)} difference`)}
+    ${tile('Elo', `${r.eloEnd}`, `${r.eloStart} → ${r.eloEnd} <span class="${elo >= 0 ? 'up' : 'down'}">(${signed(elo)})</span>`)}
     ${r.trophies.length ? tile('Trophies', r.trophies.map(esc).join(', '), '', ' rv-trophy') : ''}
   </dl>`;
 }
@@ -125,7 +124,7 @@ function ladderBody(rv: SeasonReview): string {
   if (!rows.length) return '';
   return section(
     'Around the ladder',
-    `<ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${sign(m.after - m.before)})</span></span></li>`).join('')}</ul>`,
+    `<ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${signed(m.after - m.before)})</span></span></li>`).join('')}</ul>`,
   );
 }
 

@@ -80,8 +80,9 @@ describe('the XP curve', () => {
     expect(levelForXp(300).level).toBe(3);
     expect(levelForXp(830)).toEqual({ level: 4, intoLevel: 230, needed: 400, maxed: false });
     expect(levelForXp(485_099)).toEqual({ level: 98, intoLevel: 9_799, needed: 9_800, maxed: false });
-    expect(levelForXp(485_100)).toEqual({ level: 99, intoLevel: 0, needed: 9_900, maxed: false });
-    expect(levelForXp(494_999).maxed).toBe(false);
+    // Reaching 99 is the cap: there is no level 100 to count towards.
+    expect(levelForXp(485_100)).toEqual({ level: 99, intoLevel: 0, needed: 9_900, maxed: true });
+    expect(levelForXp(494_999).maxed).toBe(true);
     expect(levelForXp(495_000)).toEqual({ level: 99, intoLevel: 9_900, needed: 9_900, maxed: true });
     // XP keeps counting past the cap.
     expect(levelForXp(2_000_000)).toEqual({ level: 99, intoLevel: 2_000_000 - 485_100, needed: 9_900, maxed: true });

@@ -75,7 +75,8 @@ test('replay: a played match is recorded, listed under Recent, and the viewer dr
 
   // The result modal offers the code; goals (if any) get a Watch goals button.
   expect(await page.locator('.modal [data-replay="copy"]').count(), 'copy button in the result modal').toBe(1);
-  expect(await page.locator('.modal').innerText(), 'size shown').toMatch(/\d+(\.\d)? (B|KB)/);
+  // The code's size is developer detail: the result dialog doesn't show it (the copy toast does).
+  expect(/\d+(\.\d)? (B|KB)/.test(await page.locator('.modal').innerText()), 'no code size in the dialog').toBe(false);
   const stored = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '[]'), REPLAYS_KEY);
   expect(stored.length, 'one replay stored').toBe(1);
   expect(stored[0].code.startsWith('DD1.'), 'code prefix').toBe(true);
