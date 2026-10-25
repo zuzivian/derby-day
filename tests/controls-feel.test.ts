@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { DOUBLE_CLICK_MS, InputController } from '../src/client/input.ts';
+import { PINCH_GAIN, wheelZoom } from '../src/client/renderer.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
@@ -422,5 +423,21 @@ describe('human shots rise with power', () => {
     const over = (shooting: number) => seeds.filter((sd) => shotHeight(20, 1, shooting, sd).atLine > 2.44).length;
     expect(over(0.2)).toBeGreaterThan(over(0.95));
     expect(over(0.95)).toBeLessThanOrEqual(5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minor: trackpad pinch zooms the camera
+
+describe('trackpad pinch (ctrl+wheel) zooms the camera', () => {
+  test('15 pinch-out events of 4 px zoom the camera in clearly; a plain wheel still zooms as before', () => {
+    let z = 1;
+    for (let i = 0; i < 15; i++) z = wheelZoom(z, { deltaY: -4, deltaMode: 0, ctrlKey: true });
+    // Main ignored ctrl+wheel (the page zoomed instead): z stayed 1.
+    expect(z).toBeLessThan(0.75);
+    let w = 1;
+    for (let i = 0; i < 15; i++) w = wheelZoom(w, { deltaY: -4, deltaMode: 0, ctrlKey: false });
+    expect(w).toBeGreaterThan(0.9);
+    expect(PINCH_GAIN).toBeGreaterThan(1);
   });
 });

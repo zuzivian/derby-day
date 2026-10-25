@@ -422,3 +422,25 @@ test('training ground: the move and pass drills are done with the pointer', asyn
   await click(page, mate);
   await page.waitForSelector('.coach-dots li[data-drill="pass"].done', { timeout: 15_000 });
 });
+
+test('trackpad: a pinch (ctrl+wheel) over the pitch zooms the 3D camera, not the page', async (t) => {
+  const page = await openApp(t, { prefs: { halfSeconds: 600, controls: 'mouse', onboarded: true }, renderer: '3d' });
+  await startRanked(page);
+  if ((await page.evaluate(() => document.querySelector('#pitch').dataset.renderer)) !== '3d') return; // no WebGL2 here
+  const zoom = () => page.evaluate(() => Number(localStorage.getItem('derby-zoom') || '1'));
+  // A Mac trackpad pinch out arrives as wheel events with ctrlKey and small negative deltas.
+  const prevented = await page.evaluate(() => {
+    const el = document.querySelector('#pitch');
+    let n = 0;
+    for (let i = 0; i < 15; i++) if (!el.dispatchEvent(new WheelEvent('wheel', { deltaY: -4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true }))) n++;
+    return n;
+  });
+  expect(prevented, 'every pinch event is kept from zooming the page').toBe(15);
+  const zin = await zoom();
+  expect(zin, 'a pinch out zooms the camera in').toBeLessThan(0.8);
+  await page.evaluate(() => {
+    const el = document.querySelector('#pitch');
+    for (let i = 0; i < 15; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true }));
+  });
+  expect(await zoom(), 'a pinch in zooms back out').toBeGreaterThan(zin);
+});
