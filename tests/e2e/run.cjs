@@ -41,6 +41,56 @@ for (const f of fs.readdirSync(__dirname).filter((n) => n.endsWith('.e2e.cjs')).
 
 const filter = (process.argv[2] || '').toLowerCase();
 const TIMEOUT = Number(process.env.E2E_TIMEOUT_MS || 90_000);
+/** How long closing a test's contexts (and the browser) may take before the runner gives up on it. */
+const CLOSE_TIMEOUT = Number(process.env.E2E_CLOSE_TIMEOUT_MS || 20_000);
+
+/** The close stalled: which page will not close, can the browser still make a context, and what are the Chrome processes doing? */
+async function probeStall(browser, contexts) {
+  const out = [];
+  const within = (p, ms, label) => Promise.race([p.then(() => `${label}: ok`, (e) => `${label}: failed ${String(e.message).split('\n')[0]}`), new Promise((r) => setTimeout(() => r(`${label}: STILL BLOCKED after ${ms} ms`), ms))]);
+  for (const [ci, ctx] of contexts.entries()) for (const [pi, pg] of ctx.pages().entries()) out.push(await within(pg.close(), 4000, `page.close() context ${ci} page ${pi}`));
+  out.push(await within(browser.newContext().then((c) => c.close()), 4000, 'browser.newContext()+close'));
+  try {
+    const ps = require('node:child_process').execSync("ps -eo pid,stat,pcpu,etime,args --sort=-pcpu | grep -E 'chrome|chromium' | grep -v grep | head -8 | cut -c1-150", { encoding: 'utf8' });
+    for (const l of ps.trim().split('\n')) out.push(`ps: ${l}`);
+  } catch {
+    /* no ps */
+  }
+  return out;
+}
+
+/** One line per open page: what it shows and which Web Locks are held or waited for. Used when a test times out. */
+async function diagnose(contexts) {
+  const lines = [];
+  for (const [ci, ctx] of contexts.entries()) {
+    for (const [pi, p] of ctx.pages().entries()) {
+      const look = p
+        .evaluate(async () => {
+          let locks = null;
+          try {
+            const q = await navigator.locks.query();
+            locks = { held: q.held.map((l) => `${l.name}:${l.mode}`), pending: q.pending.map((l) => `${l.name}:${l.mode}`) };
+          } catch {
+            /* no Web Locks here */
+          }
+          return {
+            url: location.href.slice(-50),
+            visible: document.visibilityState,
+            guard: document.getElementById('guard-title')?.textContent || null,
+            crash: !!document.getElementById('crash-panel'),
+            appChildren: document.getElementById('app')?.children.length ?? null,
+            pitch: !!document.getElementById('pitch'),
+            note: document.getElementById('guard-note')?.textContent || null,
+            locks,
+          };
+        })
+        .catch((e) => `evaluate failed: ${e.message.split('\n')[0]}`);
+      const info = await Promise.race([look, new Promise((r) => setTimeout(() => r('the page did not answer within 3 s'), 3000))]);
+      lines.push(`context ${ci} page ${pi}: ${typeof info === 'string' ? info : JSON.stringify(info)}`);
+    }
+  }
+  return lines;
+}
 
 function executablePath() {
   if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
@@ -73,10 +123,15 @@ async function main() {
   console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}\n`);
 
   const results = [];
+  let wedged = false;
   for (const t of tests) {
     const started = Date.now();
     const contexts = [];
     const problems = [];
+    const sessions = []; // CDP sessions the runner attached (CPU throttle): released before the contexts are closed
+    let onCrash;
+    const crashed = new Promise((_, rej) => (onCrash = rej));
+    crashed.catch(() => {}); // only the race below reads it
     const harness = {
       browser,
       /** Open a page in a fresh, isolated context that is collected for page-error checks. */
@@ -91,8 +146,11 @@ async function main() {
           const throttle = Number(process.env.E2E_CPU_THROTTLE || 0);
           if (throttle > 1) {
             const cdp = await ctx.newCDPSession(p);
+            sessions.push(cdp);
             await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
           }
+          // A tab whose renderer dies would leave the test waiting for it for ever: fail the test now, saying which page.
+          p.on('crash', () => onCrash(new Error(`a page crashed (its renderer process died): ${String(p.url()).slice(-60)}`)));
           p.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
           p.on('console', (m) => {
             if (m.type() !== 'error') return;
@@ -110,8 +168,10 @@ async function main() {
     };
     let error = null;
     let timer;
+    let diag = [];
     try {
       await Promise.race([
+        crashed,
         t.fn(harness),
         new Promise((_, rej) => {
           timer = setTimeout(() => rej(new Error(`timed out after ${TIMEOUT} ms`)), TIMEOUT);
@@ -121,16 +181,51 @@ async function main() {
       if (problems.length) throw new Error(`page reported errors:\n      ${problems.join('\n      ')}`);
     } catch (e) {
       error = e;
+      // A timeout says nothing about *where*: look at every page now, before the contexts are closed.
+      if (/timed out/.test(String(e && e.message))) diag = await diagnose(contexts);
     } finally {
       clearTimeout(timer);
-      await Promise.all(contexts.map((c) => c.close().catch(() => {})));
+      // Closing can itself stall (a wedged page, the GPU process): bound it, say so, and carry on with the next test.
+      // Orderly: put the CPU rate back and detach our CDP sessions, close the pages one at a time, then the contexts.
+      // (With the sessions left attached, context.close() was seen to stall about one run in five under throttle while
+      // page.close() on the same pages worked at once, with the browser otherwise healthy.)
+      const bounded = (p, ms) => Promise.race([Promise.resolve(p).catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
+      await Promise.all(sessions.map((c) => bounded(c.send('Emulation.setCPUThrottlingRate', { rate: 1 }).then(() => c.detach()), 3000)));
+      await Promise.all(contexts.flatMap((c) => c.pages().map((pg) => bounded(pg.close(), 5000))));
+      const stalledAt = [];
+      const closed = await Promise.race([
+        Promise.all(
+          contexts.map(async (c, ci) => {
+            const t0 = Date.now();
+            const tick = setTimeout(() => stalledAt.push(`context ${ci} still closing after ${(CLOSE_TIMEOUT / 2000).toFixed(0)} s; pages: ${c.pages().map((pg) => (pg.isClosed() ? 'closed' : 'open')).join(',')}`), CLOSE_TIMEOUT / 2);
+            await c.close().catch(() => {});
+            clearTimeout(tick);
+            if (Date.now() - t0 > 2000) stalledAt.push(`context ${ci} took ${Date.now() - t0} ms to close`);
+          }),
+        ).then(() => true),
+        new Promise((r) => setTimeout(() => r(false), CLOSE_TIMEOUT)),
+      ]);
+      for (const line of stalledAt) diag.push(line);
+      if (!closed) diag = diag.concat(await probeStall(browser, contexts));
+      if (!closed) {
+        diag = diag.concat(await diagnose(contexts));
+        error = new Error(`${error ? error.message + '\n      ' : ''}closing the test's browser contexts did not finish within ${CLOSE_TIMEOUT / 1000} s`);
+        wedged = true;
+      }
     }
     const ms = Date.now() - started;
     results.push({ name: t.name, ok: !error, ms, error });
     console.log(`${error ? 'FAIL' : 'PASS'}  ${t.name}  (${(ms / 1000).toFixed(1)}s)`);
     if (error) console.log(`      ${String(error && error.message ? error.message : error).split('\n').join('\n      ')}`);
+    for (const line of diag) console.log(`      [page state] ${line}`);
+    // A browser that would not close a context is not going to run the next test sensibly: stop with a clear message.
+    if (wedged) {
+      console.log('\nThe browser is wedged (a context would not close); stopping here instead of hanging.');
+      results.push({ name: '(runner) browser wedged after the test above', ok: false, ms: 0, error: new Error('wedged') });
+      break;
+    }
   }
-  await browser.close();
+  await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_TIMEOUT))]);
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${results.length} total`);

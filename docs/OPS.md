@@ -148,6 +148,11 @@ system-font fallbacks without them.
   hand over; the owner refuses while a *match* is on screen, and the asking tab waits, so a result is never lost;
   menus and first-run setup do not block it) and **Use as a guest tab** (the game runs read-only, which is what
   Link play's second tab needs).
+- **The guard cannot hang the page or a hand-over.** Boot never waits more than 3 s for the browser's lock manager (if it
+  does not answer, the lease takes over, and a lock it grants late is released at once). A page that finds the lock held
+  waits 0.8 s for it before deciding another tab owns the club, because a reload (and the reload that ends "Play here
+  instead") starts while the page it replaces is still letting go. A hand-over asks the owner (1.5 s), then waits up to 3 s for
+  the lock to come free (an owner that closes or crashes releases it at once), and only then takes it by force.
 - **Saves are written defensively.** Each write first copies the previous readable save to
   `derbyday.save.v1.bak`. A save that fails validation on load is replaced by the backup (the unreadable text
   is kept as `derbyday.save.v1.corrupt` for support) and the player is told. A full disk (quota) or blocked
