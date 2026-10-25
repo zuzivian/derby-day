@@ -614,7 +614,6 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
   return false;
 }
 
-/** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 /** A corner played along the ground: only this short (m), and only with nobody in its lane. */
 const CORNER_SHORT = 20;
 
@@ -632,6 +631,7 @@ function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
   return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
 }
 
+/** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   const r = s.restart!;
   const b = s.ball;
@@ -848,7 +848,80 @@ const POSTS: Vec[] = [
 ];
 
 /** The goal frame: net on three sides behind the line, and the posts. There are no boards. */
-function goalFrame(s: MatchState, prevX: number): void {
+/** Radius of a post and of the crossbar (m), and how much of its pace into the woodwork a ball keeps. */
+const POST_R = 0.06;
+const WOODWORK_E = 0.7;
+
+/**
+ * The earliest point (0..1 along the step) at which a ball moving from `a` to `b` comes within `r`
+ * of the point `c` (a post seen from above, or the bar seen side-on), or -1 if it doesn't.
+ */
+function sweptHit(a: Vec, b: Vec, c: Vec, r: number): number {
+  const d = sub(b, a);
+  const f = sub(a, c);
+  const cc = f.x * f.x + f.y * f.y - r * r;
+  if (cc <= 0) return 0;
+  const aa = d.x * d.x + d.y * d.y;
+  if (aa < 1e-12) return -1;
+  const bb = 2 * (f.x * d.x + f.y * d.y);
+  const disc = bb * bb - 4 * aa * cc;
+  if (disc < 0) return -1;
+  const t = (-bb - Math.sqrt(disc)) / (2 * aa);
+  return t >= 0 && t <= 1 ? t : -1;
+}
+
+/**
+ * The ball against the woodwork, along its whole path this tick (a fast shot moves 0.5 m a tick, more
+ * than a post is wide, so testing only where it ends lets it pass through). Posts are tested from
+ * above, up to the bar; the bar side-on, in the vertical plane through the ball's path, between the posts.
+ */
+function woodwork(s: MatchState, prev: Vec, prevZ: number): void {
+  const b = s.ball;
+  const r = BALL_R + POST_R;
+  let best = Infinity;
+  let hit: (() => void) | null = null;
+  for (const post of POSTS) {
+    const t = sweptHit(prev, b.pos, post, r);
+    if (t < 0 || t >= best) continue;
+    if (prevZ + (b.z - prevZ) * t > GOAL_BAR_H + BALL_R) continue;
+    best = t;
+    hit = () => {
+      const at = add(prev, scale(sub(b.pos, prev), t));
+      const n = norm(sub(at, post));
+      b.pos = add(post, scale(n, r));
+      const vn = b.vel.x * n.x + b.vel.y * n.y;
+      if (vn < 0) b.vel = sub(b.vel, scale(n, (1 + WOODWORK_E) * vn));
+    };
+  }
+  for (const lineX of [0, PITCH_W]) {
+    // Side-on: x along the path toward the goal, z up; the bar is the point (lineX, GOAL_BAR_H).
+    const t = sweptHit({ x: prev.x, y: prevZ }, { x: b.pos.x, y: b.z }, { x: lineX, y: GOAL_BAR_H }, r);
+    if (t < 0 || t >= best) continue;
+    const y = prev.y + (b.pos.y - prev.y) * t;
+    if (y < GOAL_TOP || y > GOAL_BOTTOM) continue;
+    best = t;
+    hit = () => {
+      const at = add(prev, scale(sub(b.pos, prev), t));
+      const z = prevZ + (b.z - prevZ) * t;
+      const n = norm({ x: at.x - lineX, y: z - GOAL_BAR_H });
+      b.pos = { x: lineX + n.x * r, y: at.y };
+      b.z = Math.max(0, GOAL_BAR_H + n.y * r);
+      const vn = b.vel.x * n.x + b.vz * n.y;
+      if (vn < 0) {
+        b.vel = { x: b.vel.x - (1 + WOODWORK_E) * vn * n.x, y: b.vel.y };
+        b.vz -= (1 + WOODWORK_E) * vn * n.y;
+      }
+    };
+  }
+  if (hit) {
+    hit();
+    b.redirectedAt = s.tick;
+  }
+}
+
+function goalFrame(s: MatchState, prev: Vec, prevZ: number): void {
+  woodwork(s, prev, prevZ);
+  const prevX = prev.x;
   const b = s.ball;
   const p = b.pos;
   const behind = p.x < 0 || p.x > PITCH_W;
@@ -866,17 +939,6 @@ function goalFrame(s: MatchState, prevX: number): void {
     }
     if (b.z > GOAL_BAR_H - BALL_R) { b.z = GOAL_BAR_H - BALL_R; b.vz = Math.min(0, b.vz); }
     return;
-  }
-  if (b.z > GOAL_BAR_H + 0.2) return;
-  for (const post of POSTS) {
-    const d = sub(p, post);
-    const l = len(d);
-    if (l < BALL_R + 0.06 && l > 1e-6) {
-      const n = scale(d, 1 / l);
-      b.pos = add(post, scale(n, BALL_R + 0.06));
-      const vn = b.vel.x * n.x + b.vel.y * n.y;
-      if (vn < 0) b.vel = sub(b.vel, scale(n, 1.7 * vn));
-    }
   }
 }
 
@@ -926,6 +988,7 @@ function updateBall(s: MatchState, live: boolean): void {
     return;
   }
   const speed = len(b.vel);
+  const prevZ = b.z;
   if (b.z > 0 || b.vz > 0) {
     // In the air: gravity, light drag, damped bounce. z never goes below 0.
     b.vz -= GRAVITY * DT;
@@ -944,7 +1007,7 @@ function updateBall(s: MatchState, live: boolean): void {
   }
   const prev = { ...b.pos };
   b.pos = add(b.pos, scale(b.vel, DT));
-  goalFrame(s, prev.x);
+  goalFrame(s, prev, prevZ);
   if (!live) return;
   if (checkLines(s)) return;
   contacts(s, prev);
