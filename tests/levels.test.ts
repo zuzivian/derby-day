@@ -230,7 +230,7 @@ describe('XP awards', () => {
     expect(scale).toBeGreaterThan(1.75);
     const b = applyResult(s, top, { name: 'B', short: 'B' }, 2, 0, true, []);
     expect(b.xp.total).toBe(Math.round(120 * scale) + Math.round(20 * scale) + Math.round(20 * scale));
-    expect(b.xp.parts[0].label).toBe(`win ×${scale}`);
+    expect(b.xp.parts[0].label).toBe('win');
     const c = applyResult(s, null, { name: 'Veterans Select', short: 'VET' }, 0, 1, false, [], undefined, false, 'hard');
     expect(c.xp.total).toBe(60);
     expect(s.xp).toBe(250 + b.xp.total + 60);
@@ -276,7 +276,7 @@ describe('XP awards', () => {
     want = matchXpAgainst();
     last = recordCupMatch(s, 2, 0, [], homeWins);
     expect(last.trophy).not.toBeNull();
-    expect(last.summary.xp.parts.map((p) => p.label.replace(/ ×.*/, ''))).toEqual(['win', '2 goals', 'clean sheet', 'cup winners', 'first trophy']);
+    expect(last.summary.xp.parts.map((p) => p.label)).toEqual(['win', '2 goals', 'clean sheet', 'cup winners', 'first trophy']);
     expect(last.summary.xp.total).toBe(want + XP.cup.winner + 200);
   });
   test('a forfeited cup final pays nothing', () => {

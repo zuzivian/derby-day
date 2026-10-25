@@ -312,15 +312,14 @@ export interface XpGain {
 
 export type MatchKind = 'ranked' | 'competition' | 'practice';
 
-/** "×1.45" for a multiplier other than 1. */
-const times = (scale: number) => (scale === 1 ? '' : ` ×${Math.round(scale * 100) / 100}`);
 const scaled = (p: XpPart, scale: number): XpPart => ({ label: p.label, xp: Math.round(p.xp * scale) });
 
 /**
  * XP for one match. Ranked and competition: result + goals + clean sheet,
  * times `scale` (the opponent's division and strength for ranked, your
  * division for the cup and league: rankedScale in game.ts, DIVISION_XP in
- * world.ts), which the first part's label shows ("win ×1.45"). Practice: a
+ * world.ts). The labels stay short ("win 174"): the result's XP line has to fit
+ * a 320 px phone, and the Club level panel explains the scaling. Practice: a
  * flat amount by difficulty. Forfeits: nothing.
  */
 export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = false, practice: PracticeLevel = 'normal', scale = 1): XpPart[] {
@@ -333,7 +332,7 @@ export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = fal
   if (gf > 0) parts.push({ label: `${gf} goal${gf === 1 ? '' : 's'}`, xp: gf * XP.goal });
   if (ga === 0) parts.push({ label: 'clean sheet', xp: XP.cleanSheet });
   if (scale === 1) return parts;
-  return parts.map((p, i) => ({ ...scaled(p, scale), label: i ? p.label : p.label + times(scale) }));
+  return parts.map((p) => scaled(p, scale));
 }
 
 /** Cup finishing bonus for the round you went out in (0 = quarter-final) or won the final in, times your division's XP scale. */
