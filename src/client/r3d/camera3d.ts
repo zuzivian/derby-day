@@ -33,6 +33,11 @@ export interface CameraFocus {
    * all be in shot, the ball among them (fitLong).
    */
   long?: { points: { x: number; z: number }[]; corner?: boolean } | null;
+  /**
+   * A penalty: from behind the spot (scene x/z), looking at the goal at scene x = goalX, so the taker
+   * aims left or right at a goal seen face on (the broadcast view showed it edge on).
+   */
+  penalty?: { x: number; z: number; goalX: number } | null;
   /** An instant-replay shot: 'low' from the side near pitch level, 'goal' from behind the goal at scene x = goalX. */
   replay?: { kind: 'low' | 'goal'; goalX: number } | null;
 }
@@ -56,6 +61,13 @@ export const LONG_MIN = 70;
 export const LONG_ELEV = 46;
 /** On upright screens the long view looks more steeply down, so less of the frame is stand and car park. */
 export const LONG_ELEV_NARROW = 60;
+
+/** The penalty view looks at a point this far in front of the spot, m, this many degrees down: steep enough that the taker, his name and his marker sit below the goal mouth, not over the keeper. */
+export const PEN_LOOK = 5;
+export const PEN_ELEV = 28;
+/** Frame width there, m: the goal (7.32 m) is about a third of the frame on a desktop, half on an upright phone. */
+export const PEN_WIDTH = 16;
+export const PEN_WIDTH_NARROW = 12;
 
 /** A fairly wide lens for visible perspective: the far side recedes, the near side looms. */
 const VFOV = 40;
@@ -284,6 +296,20 @@ export class MatchCamera {
       tx = f.close.x;
       tz = f.close.z;
     }
+    // A penalty: from behind the spot, face on to the goal. A cut both ways (the camera turns 90°), not a pan.
+    const pen = f.penalty && !close && !f.replay ? f.penalty : null;
+    const penDir = pen ? (pen.goalX > pen.x ? 1 : -1) : 0;
+    if (pen) {
+      // Wider than 3:2 (a landscape phone), wider still, so the goal keeps its height in the frame.
+      width = (aspect < 1 ? PEN_WIDTH_NARROW : PEN_WIDTH * Math.max(1, aspect / 1.5)) * this.zoom;
+      elev = PEN_ELEV;
+      tx = pen.x + penDir * PEN_LOOK;
+      tz = pen.z;
+    }
+    if (penDir !== this.penaltyDir) {
+      this.penaltyDir = penDir;
+      this.snapped = false;
+    }
     const o = this.override;
     if (o) {
       width = o.width;
@@ -322,11 +348,11 @@ export class MatchCamera {
     const dist = this.width.x / 2 / Math.tan(hfov / 2);
     const e = (this.elev.x * Math.PI) / 180;
     this.target.set(this.tx.x, 0, this.tz.x);
-    if (this.mode === 'broadcast') {
+    const endOn = this.penaltyDir || (this.mode === 'end' ? f.humanDir : 0);
+    if (!endOn) {
       cam.position.set(this.tx.x, Math.sin(e) * dist, this.tz.x + Math.cos(e) * dist);
     } else {
-      const d = f.humanDir;
-      cam.position.set(this.tx.x - d * Math.cos(e) * dist, Math.sin(e) * dist, this.tz.x);
+      cam.position.set(this.tx.x - endOn * Math.cos(e) * dist, Math.sin(e) * dist, this.tz.x);
     }
     cam.fov = VFOV;
     cam.near = Math.max(0.5, dist * 0.05);
@@ -402,8 +428,12 @@ export class MatchCamera {
 
   /** Keyboard direction in screen terms (x right, y down) to world terms, for this camera. */
   screenDir(d: { x: number; y: number }, humanDir: 1 | -1): { x: number; y: number } {
-    if (this.mode === 'broadcast') return d;
-    // Looking along +x·humanDir: screen right is +y·humanDir, screen up is +x·humanDir.
-    return { x: -d.y * humanDir, y: d.x * humanDir };
+    const dir = this.penaltyDir || (this.mode === 'end' ? humanDir : 0);
+    if (!dir) return d;
+    // Looking along +x·dir: screen right is +y·dir, screen up is +x·dir.
+    return { x: -d.y * dir, y: d.x * dir };
   }
+
+  /** The penalty view's direction along x while it is on (+1 / -1), else 0. */
+  penaltyDir = 0;
 }

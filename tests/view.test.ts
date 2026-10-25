@@ -6,7 +6,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { HighlightSpotter, ReplayBuffer, SNAP_EVERY, BUFFER_TICKS, cloneState, type Highlight } from '../src/client/highlights.ts';
 import { loftGauge, passGauge, shotGauge, kickGauge, SHOT_SWEET, SHOT_WILD } from '../src/client/power.ts';
 import { BROADCAST_WIDTH, MatchCamera, ZOOM_MAX, ZOOM_MIN, clampZoom } from '../src/client/r3d/camera3d.ts';
-import { longView } from '../src/client/r3d/renderer3d.ts';
+import { longView, penaltyView } from '../src/client/r3d/renderer3d.ts';
 import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
 import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
@@ -311,6 +311,62 @@ describe('camera', () => {
         }
       }
     }
+  });
+
+  // Penalty camera: the broadcast view showed the goal edge on (a 43 px tall mouth on an upright
+  // phone, 96 px at 1280x800); now from behind the spot, face on, with the taker below the goal mouth.
+  test('a penalty is seen from behind the spot: the whole goal face on, the taker and his marker below it, keys aim at the goal', () => {
+    for (const [aspect, w] of [
+      [1010 / 677, 1010],
+      [358 / 636, 358],
+      [828 / 374, 828],
+    ]) {
+      for (const d of [1, -1] as const) {
+        const spot = { x: d * (PITCH_W / 2 - 11), z: 0 };
+        const gx = d * (PITCH_W / 2);
+        const c = new MatchCamera();
+        const f = { ...focus, x: spot.x, z: spot.z, phase: 'restart', penalty: { x: spot.x, z: spot.z, goalX: gx } };
+        for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
+        // Behind the spot, on the line through it to the goal.
+        expect((c.camera.position.x - spot.x) * d).toBeLessThan(0);
+        expect(Math.abs(c.camera.position.z)).toBeLessThan(1e-6);
+        const ndc = (x: number, y: number, z: number) => new Vector3(x, y, z).project(c.camera);
+        for (const z of [-3.66, 3.66]) {
+          for (const y of [0, 2.44]) {
+            const v = ndc(gx, y, z);
+            if (Math.abs(v.x) > 0.9 || Math.abs(v.y) > 0.9) throw new Error(`penalty ${d} aspect ${aspect.toFixed(2)}: post (${z}, ${y}) at ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
+          }
+        }
+        // The goal mouth is wide on screen: a third of the frame at least (of a 3:2 frame, on a wider
+        // screen, which shows the same with more either side).
+        expect((Math.abs(ndc(gx, 0, 3.66).x - ndc(gx, 0, -3.66).x) / 2) * Math.max(1, aspect / 1.5)).toBeGreaterThan(0.33);
+        // The taker, his feet in shot and his marker (about 3.1 m up) below the goal line.
+        const behind = spot.x - d * 0.5;
+        expect(ndc(behind, 3.1, 0).y).toBeLessThan(ndc(gx, 0, 0).y);
+        expect(ndc(behind, 0, 0).y).toBeGreaterThan(-0.9);
+        // Keys: screen up runs toward the goal, screen right to the taker's right.
+        const k = (v: { x: number; y: number }) => ({ x: v.x + 0, y: v.y + 0 });
+        expect(k(c.screenDir({ x: 0, y: -1 }, 1))).toEqual({ x: d, y: 0 });
+        expect(k(c.screenDir({ x: 1, y: 0 }, 1))).toEqual({ x: 0, y: d });
+        // And back to the broadcast view after: from the long side, keys as on screen.
+        const g = { ...f, phase: 'play', penalty: null };
+        for (let i = 0; i < 60; i++) c.update(1 / 60, g, aspect, w, false);
+        expect(c.camera.position.z).toBeGreaterThan(10);
+        expect(k(c.screenDir({ x: 0, y: -1 }, 1))).toEqual({ x: 0, y: -1 });
+      }
+    }
+  });
+
+  test('penaltyView: a penalty being set up or taken, for either side, not while the ball is still dead', () => {
+    const s = match(17);
+    s.restart = { kind: 'penalty', team: 0, spot: { x: PITCH_W - 11, y: PITCH_H / 2 }, stage: 'ready' } as MatchState['restart'];
+    expect(penaltyView(s)).toEqual({ spot: { x: PITCH_W - 11, y: PITCH_H / 2 }, goalX: PITCH_W });
+    s.restart = { kind: 'penalty', team: 1, spot: { x: 11, y: PITCH_H / 2 }, stage: 'setup' } as MatchState['restart'];
+    expect(penaltyView(s)).toEqual({ spot: { x: 11, y: PITCH_H / 2 }, goalX: 0 });
+    s.restart = { kind: 'penalty', team: 1, spot: { x: 11, y: PITCH_H / 2 }, stage: 'whistle' } as MatchState['restart'];
+    expect(penaltyView(s)).toBe(null);
+    s.restart = { kind: 'freekick', team: 0, spot: { x: 80, y: PITCH_H / 2 }, stage: 'ready' } as MatchState['restart'];
+    expect(penaltyView(s)).toBe(null);
   });
 
   test('a portrait phone shows at least 40 m across at the ball', () => {
