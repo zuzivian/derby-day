@@ -570,3 +570,41 @@ test('a corner: a man comes short, and left held where the cross should land put
   // Headed or taken before it lands, it was still on its way there: within a few metres.
   expect(d, 'the cross came down where left went down').toBeLessThan(landed.touched ? 6 : 2);
 });
+
+test('a goal kick: left held on the centre circle puts it there', async (t) => {
+  const page = await openMatch(t);
+  await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    Object.assign(s.ball, { owner: -1, receiver: -1, passFrom: -1, inHands: false, setPiece: null, kickedBy: -1, restartBy: -1, noHands: -1, pos: { x: 5.5, y: 30 }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+    s.offside = null;
+    s.advantage = null;
+    s.restart = { kind: 'goalkick', team: 0, spot: { x: 5.5, y: 30 }, taker: -1, stage: 'whistle', ticks: 0, direct: true, reason: 'out', wait: 0 };
+    s.phase = 'restart';
+  });
+  await page.waitForFunction(() => window.__derbyMatch.restart?.stage === 'ready' && window.__derbyMatch.controlled[0] === window.__derbyMatch.restart.taker, null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__holdRestart = setInterval(() => {
+      const r = window.__derbyMatch.restart;
+      if (r && r.stage === 'ready') r.ticks = 0;
+    }, 50);
+  });
+  const spot = await screen(page, { x: 52.5, y: 34 });
+  await page.mouse.move(spot.x, spot.y);
+  await frames(page);
+  await page.mouse.down();
+  await page.waitForTimeout(450);
+  await page.mouse.up();
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner < 0, null, { timeout: 10_000 });
+  await page.evaluate(() => clearInterval(window.__holdRestart));
+  const landed = await page.evaluate(() => new Promise((resolve) => {
+    const s = window.__derbyMatch;
+    const by = s.ball.lastTouch;
+    const tick = () => {
+      if (s.ball.z === 0 || s.ball.lastTouch !== by || s.phase !== 'play') resolve({ x: s.ball.pos.x, y: s.ball.pos.y, touched: s.ball.lastTouch !== by });
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  // Before, a held goal kick came down 10-20 m short of the centre circle.
+  expect(Math.hypot(landed.x - 52.5, landed.y - 34), 'it came down where left went down').toBeLessThan(landed.touched ? 8 : 3);
+});

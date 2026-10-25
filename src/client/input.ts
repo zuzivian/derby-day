@@ -12,8 +12,8 @@
 //     Right click          shot toward the pointer; hold right for more power, release to strike
 //     (free kick)          the shot goes where right went down; drag sideways while holding to curl it
 //                          that way (CURL_DRAG_M, about 4 m of pitch, for full bend; see curlFrom)
-//     (corner, free kick)  hold left: a cross that lands where left went down at any range, driven for a
-//                          short hold and floated for a long one; drag sideways while holding to swing it
+//     (corner, free kick,  hold left: a ball that lands where left went down at any range, driven for a
+//      goal kick)          short hold and floated for a long one; drag sideways while holding to swing it
 //     (keeper)             left click rolls it out, left hold throws or kicks it high, right click punts
 //   Without the ball
 //     Left click           switch to the teammate under the pointer, else the nearest one in that direction
@@ -187,10 +187,10 @@ export function curlFrom(ball: Vec, at: Vec, cursor: Vec): number {
   return Math.max(-1, Math.min(1, (across - Math.sign(across) * CURL_DEAD_M) / (CURL_DRAG_M - CURL_DEAD_M)));
 }
 
-/** The ball's spot while `team`'s steered man is over a free kick or a corner he takes (InputController.setPiece), else null. */
+/** The ball's spot while `team`'s steered man is over a free kick, a corner or a goal kick he takes (InputController.setPiece), else null. */
 export function setPieceSpot(s: MatchState, team: 0 | 1): Vec | null {
   const r = s.restart;
-  return r && (r.kind === 'freekick' || r.kind === 'corner') && r.team === team && r.stage !== 'whistle' && s.controlled[team] === r.taker ? r.spot : null;
+  return r && (r.kind === 'freekick' || r.kind === 'corner' || r.kind === 'goalkick') && r.team === team && r.stage !== 'whistle' && s.controlled[team] === r.taker ? r.spot : null;
 }
 
 /** Tap on a touch screen: at most this long and this many CSS pixels of travel. */

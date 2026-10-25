@@ -40,8 +40,11 @@
  *  16  corners: a cross comes down where it was aimed, driven or floated by the hold and bent by a drag;
  *      a man comes short; the box waits out of its zones and attacks them as it is struck; markers
  *      challenge in the air; a keeper comes for a floated ball into his six-yard box
+ *  17  throw-ins and goal kicks: a long throw reaches 18 m (+14 m by passing) and is meant for the man nearest where
+ *      it comes down; a throw led to where a marker stands goes to its man's feet instead; a lofted goal kick
+ *      comes down where it was aimed (the set-piece delivery)
  */
-export const SIM_VERSION = 16;
+export const SIM_VERSION = 17;
 
 export const TICK_HZ = 60;
 
