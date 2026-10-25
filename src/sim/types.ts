@@ -69,6 +69,18 @@ export interface MatchPlayer {
   ai?: AiMemory;
   /** A keeper's dive in progress (match.ts keeperDives), or absent. Renderers can read it for the dive pose. */
   dive?: KeeperDive | null;
+  /** A slide tackle in progress (match.ts): he travels along `dir` and wins or fouls when his feet reach the ball or the man. */
+  slide?: SlideTackle | null;
+}
+
+/** A sliding tackle under way: judged each tick of the lunge, not once at the click. */
+export interface SlideTackle {
+  /** Unit vector, the way he is sliding. */
+  dir: Vec;
+  /** Metres still to slide. */
+  left: number;
+  /** Ticks the slide has run. */
+  ticks: number;
 }
 
 /** A goalkeeper diving to meet a shot: committed for `ticks` more ticks, then on the floor for a moment. */

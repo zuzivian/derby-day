@@ -48,6 +48,8 @@ import {
   PITCH_H,
   PITCH_W,
   PLAYER_R,
+  SLIDE_TRAVEL,
+  STAND_REACH,
   TEAM_SIZE,
   TICK_HZ,
 } from './constants.ts';
@@ -237,6 +239,7 @@ function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): vo
     p.vel = { x: 0, y: 0 };
     p.facing = { x: attackDir(p.team), y: 0 };
     p.stun = 0;
+    p.slide = null;
     p.tackleCd = 0;
     p.kickCd = 0;
     p.holdTicks = 0;
@@ -358,60 +361,143 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     return;
   }
   if (a.kind === 'tackle' && p.tackleCd === 0 && b.owner !== p.i && s.phase === 'play') {
-    // A slide is a committed lunge: it reaches further (and has to be roughly toward the carrier),
-    // is a little less sure, and leaves the tackler on the floor for longer either way.
-    const slide = !!a.slide;
-    p.tackleCd = slide ? 70 : 36;
     const before = len(p.vel);
     const lunge = norm(sub(a.target, p.pos));
-    p.vel = add(p.vel, scale(lunge, slide ? 13 : 3));
-    const owner = b.owner >= 0 ? s.players[b.owner] : null;
-    const reach = slide ? 3 : 1.7;
-    const onLine = !slide || !owner || dot(lunge, norm(sub(owner.pos, p.pos))) > 0.4;
-    if (!owner || owner.team === team || dist(owner.pos, p.pos) > reach || !onLine || b.inHands) {
-      // A late one: the man has just released the ball and is right there.
-      if (!owner) {
-        const victim = s.players.find((q) => q.team !== team && !q.sentOff && q.kickCd > 9 && b.lastTouch === q.i && dist(q.pos, p.pos) < 1.4);
-        if (victim && next(s.rng) < 0.5 * (1.3 - care(s, p))) {
-          const sev = severityOf(0.42 + 0.3 * clamp((before - 4) / 4, 0, 1) + 0.25 * next(s.rng));
-          const kept = b.receiver >= 0 && s.players[b.receiver].team === victim.team;
-          if (judgeFoul(s, { offender: p, victim, severity: sev, attempt: false, keptBall: kept })) return;
-        }
-      }
-      p.stun = slide ? 30 : 10;
+    if (a.slide) {
+      // A slide is a committed lunge along the ground toward the target. It is judged each tick
+      // of the slide (slideTackles), when his feet reach the ball or he meets the man.
+      p.tackleCd = 70;
+      p.slide = { dir: lunge, left: clamp(dist(a.target, p.pos), 1, SLIDE_TRAVEL), ticks: 0 };
+      p.stun = SLIDE_TICKS + SLIDE_DOWN;
+      p.vel = scale(lunge, Math.max(SLIDE_SPEED, before));
+      slideContact(s, p, before);
       return;
     }
-    // Coming through the back of the man: rarely gets the ball, often fouls. A slide is riskier still.
-    const fromBehind = dot(norm(sub(owner.pos, p.pos)), owner.facing) > 0.5;
-    let pWin = clamp(0.35 + 0.7 * p.attrs.defending - 0.5 * owner.attrs.dribbling - (slide ? 0.08 : 0), 0.1, 0.88);
-    if (fromBehind) pWin *= 0.8;
-    if (owner.role === 'GK' && inOwnBox(owner.team, owner.pos)) pWin *= 0.25;
-    const won = next(s.rng) < pWin;
-    const fast = slide ? 1 : clamp((before - 6.5) / 2.5, 0, 1);
-    let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
-    pFoul *= 2.05 - 0.9 * care(s, p);
-    // A booked CPU player goes in more carefully.
-    if (p.yellow > 0 && !isHumanControlled(s, p)) pFoul *= 0.45;
-    if (next(s.rng) < pFoul) {
-      const sev = severityOf((fromBehind ? 0.3 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
-      if (judgeFoul(s, { offender: p, victim: owner, severity: sev, attempt: true, keptBall: !won })) return;
+    p.tackleCd = 36;
+    p.vel = add(p.vel, scale(lunge, 3));
+    const owner = b.owner >= 0 ? s.players[b.owner] : null;
+    if (!owner || owner.team === team || dist(owner.pos, p.pos) > STAND_REACH || b.inHands) {
+      if (!owner) lateChallenge(s, p, before);
+      p.stun = 10;
+      return;
     }
-    if (won) {
-      b.owner = -1;
-      b.inHands = false;
-      b.vel = add(scale(norm(sub(b.pos, p.pos)), 3.5), scale(p.vel, 0.3));
-      b.lastTouch = p.i;
-      b.kickedBy = -1;
-      b.receiver = -1;
-      b.touch = 0;
-      b.noPickup[owner.i] = 24;
-      owner.stun = 18;
-      if (slide) p.stun = 14;
-      s.stats[team].tackles++;
-      s.offside = null;
-    } else {
-      p.stun = slide ? 40 : 26;
-      p.tackleCd = slide ? 90 : 50;
+    resolveTackle(s, p, owner, false, before);
+  }
+}
+
+/** A slide (SLIDE_TRAVEL at most): how fast it starts, how long it lasts, how long he is down after. */
+const SLIDE_SPEED = 11;
+const SLIDE_TICKS = 30;
+const SLIDE_DOWN = 16;
+/** Where his feet are ahead of him while sliding, and how close to the ball they must come. */
+const SLIDE_FEET = 0.6;
+const SLIDE_TOUCH = 0.6;
+
+/** A late one: the man has just released the ball and is right there. */
+function lateChallenge(s: MatchState, p: MatchPlayer, before: number): boolean {
+  const b = s.ball;
+  const victim = s.players.find((q) => q.team !== p.team && !q.sentOff && q.kickCd > 9 && b.lastTouch === q.i && dist(q.pos, p.pos) < 1.4);
+  if (!victim || next(s.rng) >= 0.5 * (1.3 - care(s, p))) return false;
+  const sev = severityOf(0.42 + 0.3 * clamp((before - 4) / 4, 0, 1) + 0.25 * next(s.rng));
+  const kept = b.receiver >= 0 && s.players[b.receiver].team === victim.team;
+  return judgeFoul(s, { offender: p, victim, severity: sev, attempt: false, keptBall: kept });
+}
+
+/** A challenge on the man with the ball that has reached him: won, missed, or a foul. */
+function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide: boolean, before: number): void {
+  const b = s.ball;
+  const team = p.team;
+  // Coming through the back of the man: rarely gets the ball, often fouls. A slide is riskier still.
+  const fromBehind = dot(norm(sub(owner.pos, p.pos)), owner.facing) > 0.5;
+  let pWin = clamp(0.35 + 0.7 * p.attrs.defending - 0.5 * owner.attrs.dribbling - (slide ? 0.08 : 0), 0.1, 0.88);
+  if (fromBehind) pWin *= 0.8;
+  if (owner.role === 'GK' && inOwnBox(owner.team, owner.pos)) pWin *= 0.25;
+  // A standing tackle at full stretch is a little less sure.
+  if (!slide) pWin *= 1 - 0.25 * clamp((dist(owner.pos, p.pos) - 1.7) / (STAND_REACH - 1.7), 0, 1);
+  const won = next(s.rng) < pWin;
+  const fast = slide ? 1 : clamp((before - 6.5) / 2.5, 0, 1);
+  let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
+  pFoul *= 2.05 - 0.9 * care(s, p);
+  // A booked CPU player goes in more carefully.
+  if (p.yellow > 0 && !isHumanControlled(s, p)) pFoul *= 0.45;
+  if (next(s.rng) < pFoul) {
+    const sev = severityOf((fromBehind ? 0.3 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
+    if (judgeFoul(s, { offender: p, victim: owner, severity: sev, attempt: true, keptBall: !won })) return;
+  }
+  if (won) {
+    b.owner = -1;
+    b.inHands = false;
+    b.vel = add(scale(norm(sub(b.pos, p.pos)), 3.5), scale(p.vel, 0.3));
+    b.lastTouch = p.i;
+    b.kickedBy = -1;
+    b.receiver = -1;
+    b.touch = 0;
+    b.noPickup[owner.i] = 24;
+    owner.stun = 18;
+    if (slide) p.stun = 14;
+    s.stats[team].tackles++;
+    s.offside = null;
+  } else {
+    p.stun = slide ? 40 : 26;
+    p.tackleCd = slide ? 90 : 50;
+  }
+}
+
+/** Has a slide reached the ball or the man this tick? Judge it there. True when it is over. */
+function slideContact(s: MatchState, p: MatchPlayer, before: number): boolean {
+  const sl = p.slide;
+  if (!sl || s.phase !== 'play') return false;
+  const b = s.ball;
+  const feet = add(p.pos, scale(sl.dir, SLIDE_FEET));
+  const owner = b.owner >= 0 ? s.players[b.owner] : null;
+  const done = () => {
+    p.slide = null;
+    p.vel = scale(p.vel, 0.3);
+    return true;
+  };
+  if (owner && owner.team !== p.team && !b.inHands) {
+    // His feet reach the ball, or he slides into the man from in front of him or the side.
+    const toMan = sub(owner.pos, p.pos);
+    if (dist(feet, b.pos) < SLIDE_TOUCH + BALL_R || (len(toMan) < PLAYER_R * 2 + 0.1 && dot(sl.dir, norm(toMan)) > 0.4)) {
+      resolveTackle(s, p, owner, true, before);
+      return done();
+    }
+    return false;
+  }
+  if (!owner && b.z < FOOT_Z && dist(feet, b.pos) < SLIDE_TOUCH + BALL_R && b.noPickup[p.i] === 0) {
+    // A loose ball: he gets a foot to it and pokes it on.
+    touched(s, p);
+    b.vel = add(scale(sl.dir, 4), scale(b.vel, 0.2));
+    b.kickedBy = -1;
+    b.receiver = -1;
+    b.passFrom = -1;
+    b.noPickup[p.i] = 12;
+    return done();
+  }
+  if (!owner && lateChallenge(s, p, before)) return done();
+  return false;
+}
+
+/** Slides under way: carry each slider along, then see whether he has reached the ball or the man. */
+function slideTackles(s: MatchState): void {
+  for (const p of s.players) {
+    const sl = p.slide;
+    if (!sl) continue;
+    if (p.sentOff || s.phase !== 'play') {
+      p.slide = null;
+      continue;
+    }
+    sl.ticks++;
+    const speed = Math.max(4, SLIDE_SPEED - 0.25 * sl.ticks);
+    const stepLen = Math.min(sl.left, speed * DT);
+    p.vel = scale(sl.dir, speed);
+    p.pos = add(p.pos, scale(sl.dir, stepLen));
+    sl.left -= stepLen;
+    if (slideContact(s, p, speed)) continue;
+    if (sl.left <= 1e-6 || sl.ticks >= SLIDE_TICKS) {
+      p.slide = null;
+      p.vel = scale(p.vel, 0.2);
+      p.stun = Math.min(p.stun, SLIDE_DOWN);
     }
   }
 }
@@ -528,7 +614,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
 // Physics
 
 function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
-  if (p.sentOff) return;
+  if (p.sentOff || p.slide) return; // a slide carries him (slideTackles)
   if (p.dive) {
     if (p.dive.ticks > 0) {
       // Committed to the dive: it carries him across the goal whatever he wanted, he stays
@@ -1054,7 +1140,8 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
     p.holdTicks = 0;
     p.aiTimer = Math.max(p.aiTimer, 4);
     s.poss = p.team;
-    if (isHumanControlled(s, p) && s.ctlHold) s.ctlHold[p.team] = true;
+    // No hold here: the man the human already steers runs on with it. An automatic change of
+    // player arms the hold where it happens (give() in human.ts, the handover in step()).
     return;
   }
   // Too hot to control. Not at his body: the stretch may miss it (likelier the further out it is, and for a poor defender).
@@ -1387,7 +1474,10 @@ function beginSetup(s: MatchState, r: Restart): void {
     if (s.ctlHold) s.ctlHold[r.team] = true;
   }
   // Anyone still on the floor gets up.
-  for (const p of s.players) p.stun = Math.min(p.stun, 10);
+  for (const p of s.players) {
+    p.stun = Math.min(p.stun, 10);
+    p.slide = null;
+  }
 }
 
 function beginReady(s: MatchState, r: Restart): void {
@@ -1547,6 +1637,7 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   for (let i = 0; i < s.players.length && s.phase === 'play'; i++) applyAction(s, s.players[i], intents[i]);
   if (s.phase === 'play') keeperDives(s);
   s.players.forEach((p, i) => movePlayer(s, p, intents[i]));
+  slideTackles(s);
   separate(s);
   updateBall(s, s.phase === 'play');
   if (s.phase === 'play') tickAdvantage(s);

@@ -158,3 +158,8 @@ export const rollDecel = (v: number): number => ROLL_A + ROLL_B * Math.min(v, RO
 
 /** Horizontal drag on a ball in the air, per second (much weaker than floor friction). */
 export const AIR_DRAG = 0.12;
+
+/** Standing tackle reach (m). A human's right click stands within this of the man and slides beyond it. */
+export const STAND_REACH = 2;
+/** How far a slide tackle goes at most (m). */
+export const SLIDE_TRAVEL = 4;

@@ -22,7 +22,7 @@
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
 import { aiIntent } from './ai.ts';
-import { BOX_DEPTH, BOX_W, PITCH_H, SPRINT_MULT } from './constants.ts';
+import { BOX_DEPTH, BOX_W, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
@@ -69,10 +69,12 @@ export function pointerThrottle(d: number): { throttle: number; sprint: boolean 
 // ---------------------------------------------------------------------------
 // Tackles
 
-/** Pointer closer than this: a standing tackle. Further: a slide. */
-export const STAND_TACKLE_R = 2.4;
+/** Closer than this: a standing tackle. Further: a slide. The same as a standing tackle's reach. */
+export const STAND_TACKLE_R = STAND_REACH;
 /** A slide never goes further than this, however far the pointer is. */
-export const SLIDE_MAX = 6;
+export const SLIDE_MAX = SLIDE_TRAVEL;
+/** A right click this close to an opponent with the ball (or the ball he has) is a tackle on him. */
+const ON_CARRIER = 1.5;
 
 // ---------------------------------------------------------------------------
 // Picking a player
@@ -255,9 +257,14 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     sprint = !!it.sprint;
   }
   if (input.tackle) {
-    const target = aim ?? s.ball.pos;
+    let target = aim ?? s.ball.pos;
+    // A click on (or near) the man with the ball goes in on him: stand or slide by how far
+    // he is, so the choice always matches what can reach.
+    const carrier = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    const onHim = pointer && !!carrier && carrier.team !== team && Math.min(dist(target, carrier.pos), dist(target, s.ball.pos)) < ON_CARRIER;
+    if (onHim) target = s.ball.pos;
     const to = sub(target, p.pos);
-    const d = len(to);
+    const d = onHim ? dist(carrier!.pos, p.pos) : len(to);
     if (pointer && d > STAND_TACKLE_R) {
       const slideTo = add(p.pos, scale(norm(to), Math.min(d, SLIDE_MAX)));
       return { move, throttle, sprint, action: { kind: 'tackle', target: slideTo, slide: true } };
