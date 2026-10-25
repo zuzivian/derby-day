@@ -370,6 +370,26 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     cleanup.push(() => el.removeEventListener(type, fn as EventListener));
   };
 
+  // A hidden tab stops the clock: every phase's start moves on by the time away, so a keeper's window
+  // or a charging kick carries on where it was instead of being decided while nobody watches.
+  let hiddenAt = 0;
+  on(document, 'visibilitychange', () => {
+    const now = performance.now();
+    if (document.hidden) {
+      if (!hiddenAt) hiddenAt = now;
+      keys.clear(); // their keyups go to another tab
+      return;
+    }
+    if (!hiddenAt) return;
+    const away = now - hiddenAt;
+    hiddenAt = 0;
+    kickStart += away;
+    chargeStart += away;
+    flightStart += away;
+    resultStart += away;
+    last += away;
+  });
+
   function pointerToAim(e: PointerEvent): Aim {
     const r = canvas.getBoundingClientRect();
     const g = goalRect();
@@ -537,6 +557,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     raf = requestAnimationFrame(frame);
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
+    if (hiddenAt) return; // a browser that still runs frames in a hidden tab: hold everything
     update(now, dt);
     draw(now);
     if (section.dataset.phase !== phase) section.dataset.phase = phase;
