@@ -2,7 +2,7 @@
 // "play next match", which launches the normal live match via playLive().
 // The rules live in src/meta/competitions.ts; this file only renders and wires.
 
-import { autoLineup, cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
+import { cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
 import {
   canStart,
   clubById,
@@ -36,9 +36,10 @@ import {
 import { formatMoney, signed, type Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, unlockOf } from '../meta/levels.ts';
 import { maybeRollover } from '../meta/progression.ts';
-import { penaltySide } from '../meta/shootout.ts';
+import { matchPenaltySides } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { possessionShare } from '../sim/match.ts';
+import { scoreAwarded } from '../sim/rules.ts';
 import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
@@ -353,11 +354,13 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
     if (forfeited) [gf, ga] = [0, Math.max(3, ga)];
     // A drawn cup tie you played goes to a live shootout; the result feeds the bracket.
     if (kind === 'cup' && !forfeited && gf === ga) {
+      // Law 10: the players on the pitch at full time, the sides made equal in number.
+      const [you, them] = matchPenaltySides(m);
       ctx.playShootout(
         {
           seed: hashString(`${s.cup!.seed}:live-pens:${s.cup!.round}`) >>> 1,
-          you: penaltySide(s.club.name, s.squad, s.lineup),
-          opp: penaltySide(opp.name, squad, autoLineup(squad)),
+          you,
+          opp: them,
           youClub: s.club,
           oppClub: opp,
           label,
@@ -374,9 +377,10 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   }, 'Forfeit (counts as 0–3)');
 
   function finishMatch(m: MatchState, forfeited: boolean, shown: TeamSetup, gf: number, ga: number, pens?: HumanPens) {
-    // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
-    const scorersFor = forfeited ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-    const scorersAgainst = forfeited ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+    // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand; so is a
+    // match abandoned with a side down to six and awarded 3-0 (Law 3), the score in m.score.
+    const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+    const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
     // Quick-simulating the rest of the round happens here (~250 ms).
     const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited, pens) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);

@@ -104,11 +104,13 @@ export class CoachTracker {
     if (s.tick >= RUN_AT_TICK && s.phase !== 'fulltime') this.offer('run');
     const ready = this.offered.has('run');
 
-    if (ready && live && me >= 0 && owner === me) {
+    // The kick-off is a kick (Law 8): taking it is the first pass, so say how to pass.
+    const kickoff = s.phase === 'restart' && s.restart?.kind === 'kickoff' && s.restart.stage === 'ready';
+    if (ready && (live || kickoff) && me >= 0 && owner === me) {
       this.offer('pass');
       // The first time with the ball in the attacking half is the time to say how to shoot.
       const x = s.players[me].pos.x;
-      if (attackDir(human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
+      if (attackDir(s, human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
     }
     // Lost it: the human's team had the ball and the other side has it now.
     if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');

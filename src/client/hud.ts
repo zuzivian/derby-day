@@ -10,7 +10,7 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
-import { matchSeconds } from '../sim/rules.ts';
+import { inAddedTime, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { Gauge } from './power.ts';
@@ -99,6 +99,15 @@ export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?:
     case 'card':
       // A second yellow is followed by its red in the same tick; the red is the word left showing.
       return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
+    case 'restart':
+      // The advantage came to nothing: play comes back for the foul.
+      if (e.reason === 'advantage') return { word: e.restart === 'penalty' ? 'Penalty' : 'Free kick', sub: 'Advantage brought back' };
+      if (e.reason === 'second-touch') return { word: 'Free kick', sub: `${s.teams[e.team].name} · second touch` };
+      return null;
+    case 'addedTime':
+      return { word: `+${e.minutes}`, sub: `minute${e.minutes === 1 ? '' : 's'} added`, live: true };
+    case 'abandoned':
+      return { word: 'Abandoned', sub: `${s.teams[e.team].name} down to six` };
     default:
       return null;
   }
@@ -109,7 +118,9 @@ export function matchClock(s: MatchState): string {
   const secs = matchSeconds(s);
   const mm = Math.floor(secs / 60);
   const ss = secs % 60;
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  const clock = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  // Law 7: the board is up; the clock holds while the added time is played.
+  return inAddedTime(s) && s.added ? `${clock} +${s.added.minutes}` : clock;
 }
 
 export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
