@@ -368,6 +368,20 @@ function trajectory(pos: Vec, vel: Vec, z0: number, vz0: number): Trajectory {
   return { pts, z: zs, v0 };
 }
 
+/** Height a keeper takes a dropping ball at: above his head is the stretch, below his chest the scramble. */
+const CATCH_Z = 1.8;
+
+/**
+ * Where a keeper claiming a high ball stands: on its line where it comes down to CATCH_Z, from
+ * the ball as it is now. His hands reach well under a metre standing (match.ts standReach), so
+ * "near where it first comes into reach" leaves it dropping past him.
+ */
+function catchSpot(ball: MatchState['ball'], fallback: Vec): Vec {
+  const tr = trajectory(ball.pos, ball.vel, ball.z, ball.vz);
+  for (let k = 1; k < TRAJ_STEPS; k++) if (tr.z[k] < tr.z[k - 1] && tr.z[k] <= CATCH_Z) return tr.pts[k];
+  return fallback;
+}
+
 function interceptOn(s: MatchState, p: MatchPlayer, traj: Trajectory): AiInterception {
   const { pts, z, v0 } = traj;
   if (p.sentOff) return { t: 1e9, pt: pts[0] };
@@ -1357,11 +1371,12 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
     const mine = plan.icpt[p.i];
     const receiver = ball.receiver >= 0 ? s.players[ball.receiver] : null;
     const toTeammate = receiver && receiver.team === p.team && receiver.i !== p.i;
-    // A high ball he can only claim near goal; a ball on the floor anywhere in his area.
-    const reachX = s.ball.z > 0.5 || s.ball.vz > 0.5 ? 6 + 2 * skill : BOX_DEPTH - 3 + 4 * skill;
+    // A high ball he can only claim near goal, further out the better a keeper he is; a ball on the floor anywhere in his area.
+    const high = s.ball.z > 0.5 || s.ball.vz > 0.5;
+    const reachX = high ? 5 + 2 * skill + 4 * p.attrs.goalkeeping : BOX_DEPTH - 3 + 4 * skill;
     if (mine && !toTeammate && teamX(s, p.team, mine.pt.x) * PITCH_W < reachX && Math.abs(mine.pt.y - MID_Y) < BOX_W / 2 - 2) {
       const margin = 0.45 - 0.3 * skill;
-      if (mine.t + margin < plan.bestThem && mine.t <= plan.bestUs + 0.2) return seek(p, mine.pt, 0.8);
+      if (mine.t + margin < plan.bestThem && mine.t <= plan.bestUs + 0.2) return seek(p, high ? catchSpot(ball, mine.pt) : mine.pt, high ? 0.4 : 0.8);
     }
   }
 
