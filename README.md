@@ -98,12 +98,12 @@ One person steers one player among 22, so two things decide whether a match is f
 
 | Player | First 3 ranked: W-D-L, goal diff | All ranked: W-D-L | Won | Shown | Settled: won (shown) | CPU skill faced | vs top 3 clubs: won (shown) |
 |---|---|---|---|---|---|---|---|
-| Never touches the mouse | 0-22-14, −0.53 | 0-57-34 | 0% | 15% | 0% (10%) | −0.30 | 0% (0%) |
-| Pointer on the ball, no clicks | 0-4-32, −2.17 | 0-12-62 | 0% | 12% | 0% (9%) | −0.30 | 0% (0%) |
-| Chaser: runs at the ball, shoots early | 20-10-6, +1.17 | 59-25-23 | 55% | 53% | 55% (54%) | 0.04 | 0% (5%) |
-| Competent: passes to open teammates, shoots in range | 17-10-9, +0.50 | 53-31-26 | 48% | 55% | 49% (54%) | 0.11 | 3% (3%) |
-| Strong: the CPU's pass choice, patient tackles | 19-6-11, +0.31 | 61-24-33 | 52% | 56% | 51% (56%) | 0.36 | 8% (10%) |
-| (The same club run by the CPU) | 23-9-4, +0.97 | 64-30-24 | 54% | 57% | 50% (56%) | 0.40 | 6% (11%) |
+| Never touches the mouse | 0-19-17, −0.61 | 1-50-40 | 1% | 19% | 2% (13%) | −0.28 | 3% (0%) |
+| Pointer on the ball, no clicks | 0-3-33, −2.28 | 0-10-62 | 0% | 12% | 0% (9%) | −0.30 | 0% (0%) |
+| Chaser: runs at the ball, shoots early | 15-7-14, +0.47 | 50-28-27 | 48% | 53% | 51% (53%) | 0.04 | 0% (3%) |
+| Competent: passes to open teammates, shoots in range | 19-4-13, +0.64 | 49-29-27 | 47% | 54% | 43% (54%) | 0.07 | 3% (3%) |
+| Strong: the CPU's pass choice, patient tackles | 17-6-13, +0.42 | 61-22-36 | 51% | 57% | 53% (57%) | 0.40 | 6% (14%) |
+| (The same club run by the CPU) | 21-9-6, +0.89 | 66-28-23 | 56% | 58% | 56% (58%) | 0.42 | 11% (17%) |
 
 The top three clubs are the first division's best, so even the CPU running a new club's squad rarely beats them.
 
@@ -114,7 +114,7 @@ Without the band, at a CPU skill of 0.6 against every formation and mentality, t
 - the strong bot doesn't win most of its ranked matches, or doesn't win clearly fewer against the top clubs;
 - once settled, the chance shown drifts from the chance measured beyond sampling noise.
 
-The estimate learns from wins, since a win is what the gauge shows. A player who never shoots draws 0–0 often but never wins. His estimate sinks to the rookie CPU within a few matches, and the chance shown falls with it (10% once settled, toward 0 later). Before it has learned, a new player is shown a newcomer's chance.
+The estimate learns from wins, since a win is what the gauge shows. A player who never shoots draws 0–0 often but never wins. His estimate sinks to the rookie CPU within a few matches, and the chance shown falls with it (about 13% once settled, toward 0 later). Before it has learned, a new player is shown a newcomer's chance.
 
 Every finished match leaves a replay: the match options plus the per-tick input log (run-length and delta encoded, cursor to 1 cm, then compressed with a small adaptive range coder, `src/meta/pack.ts`), which the deterministic sim re-runs exactly. A full match is a code of about 45-70K characters. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club tab (fewer only if they are unusually long), and **Copy replay code** / **Paste replay code** share one as an `OVR1.…` string. Scrubbing a whole match is held at the part already prepared while the rest loads. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
 
