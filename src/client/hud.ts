@@ -8,7 +8,7 @@
 // (it carries both club names for screen readers).
 
 import type { CrestPattern } from '../meta/names.ts';
-import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
 import { inAddedTime, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
@@ -67,6 +67,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden role="status"></div>
+      <div class="hud-prompt" hidden role="status"></div>
     </div>`;
 }
 
@@ -126,8 +127,27 @@ export function matchClock(s: MatchState): string {
   return inAddedTime(s) && s.added ? `${clock} +${s.added.minutes}` : clock;
 }
 
-export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
+/**
+ * A human's kick-off waiting to be taken (Law 8: it is a kick): the side, and the seconds left before the CPU takes it
+ * for them (RESTART_HUMAN_WAIT). Null otherwise, or when the CPU takes this one (its side has no human on the taker).
+ */
+export function kickoffWait(s: MatchState): { team: 0 | 1; secs: number } | null {
+  const r = s.restart;
+  if (s.phase !== 'restart' || !r || r.kind !== 'kickoff' || r.stage !== 'ready' || !s.humans[r.team] || s.controlled[r.team] !== r.taker) return null;
+  return { team: r.team, secs: Math.max(1, Math.ceil((RESTART_HUMAN_WAIT - r.ticks) / TICK_HZ)) };
+}
+
+/**
+ * What the kick-off prompt says for a side: who kicks off and how (e.g. "Player 2 kicks off: press Enter"), or null for none.
+ * Each view knows its players and keys (hot-seat has two on one keyboard; Link and Online one per screen).
+ */
+export type KickoffPrompt = (team: 0 | 1) => string | null;
+
+export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: KickoffPrompt | null = null): Hud {
   const q = <T extends HTMLElement>(sel: string) => wrap.querySelector<T>(sel)!;
+  // A human's kick-off waiting: who kicks off, with which key, and how long before the CPU takes it.
+  const prompt = q('.hud-prompt');
+  let lastPrompt = '';
   const banner = q('#banner');
   const clock = q('#sb-clock');
   const radar = q<HTMLCanvasElement>('.hud-radar');
@@ -154,6 +174,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   let lastClock = '';
   let lastCharge = -1;
   const colors: [string, string] = [s0.teams[0].primary, s0.teams[1].primary];
+  // Radar dot outlines: light round a dark kit, dark round a light one, so every team's dots stand
+  // off the dark radar panel.
+  const rims = colors.map((c) => (luma(c) < 0.35 ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.9)'));
 
   function drawRadar(s: MatchState) {
     if (!ctx) return;
@@ -172,7 +195,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     const oy = (h - PITCH_H * k) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(10,16,14,.28)';
+    // A dark panel, so kit-coloured dots read even when the kit is the grass's colour (a green team's
+    // dots on a see-through radar over green grass vanished).
+    ctx.fillStyle = 'rgba(8,12,10,.62)';
     ctx.fillRect(0, 0, w, h);
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.strokeStyle = 'rgba(255,255,255,.85)';
@@ -192,8 +217,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
       if (p.sentOff) continue;
       const ctrl = s.humans[p.team] && s.controlled[p.team] === p.i;
       ctx.fillStyle = colors[p.team];
-      ctx.strokeStyle = ctrl ? HUMAN_COLORS[s.humans[0] && s.humans[1] ? p.team : 0] : 'rgba(0,0,0,.7)';
-      ctx.lineWidth = (ctrl ? 1.6 : 0.8) * dpr / k;
+      ctx.strokeStyle = ctrl ? HUMAN_COLORS[s.humans[0] && s.humans[1] ? p.team : 0] : rims[p.team];
+      ctx.lineWidth = (ctrl ? 1.6 : 1.1) * dpr / k;
       ctx.beginPath();
       if (p.team === 0) ctx.arc(p.pos.x, p.pos.y, dot, 0, Math.PI * 2);
       else {
@@ -237,6 +262,14 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
 
   const hud: Hud = {
     update(s, charge, gauge) {
+      const ko = kickoffPrompt ? kickoffWait(s) : null;
+      const say = ko ? kickoffPrompt!(ko.team) : null;
+      const pr = say && ko ? `${say} · the CPU takes it in ${ko.secs} s` : '';
+      if (pr !== lastPrompt) {
+        lastPrompt = pr;
+        prompt.hidden = !pr;
+        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>the CPU takes it in ${ko.secs} s</small>`;
+      }
       const c = matchClock(s);
       if (c !== lastClock) {
         clock.textContent = c;
@@ -304,4 +337,15 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     },
   };
   return hud;
+}
+
+/** Relative luminance (0..1) of a #rrggbb colour, for picking a contrasting outline. */
+function luma(hex: string): number {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(f.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }

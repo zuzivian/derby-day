@@ -168,7 +168,8 @@ describe('Law 8: the teams change ends at half-time', () => {
   test('a whole match plays the same either way round: CPU attacks the right goal in each half', () => {
     let shots1 = [0, 0];
     let shots2 = [0, 0];
-    for (const seed of [11, 12, 13]) {
+    // Enough halves that each one sees a few shots whatever the AI's version (the check is the direction).
+    for (const seed of [11, 12, 13, 14]) {
       const s = createMatch({ seed, ...teams(seed), halfSeconds: 90, humanTeam: -1 });
       while (s.phase !== 'fulltime') {
         const before = [s.stats[0].shots, s.stats[1].shots];
@@ -264,7 +265,8 @@ describe('Laws 8, 13-17: no second touch by the taker', () => {
     }
     expect(restarts).toBeGreaterThan(60);
     expect(secondTouches).toBe(0);
-  });
+    // Six whole matches: more than bun's 5 s default under load.
+  }, 30_000);
 });
 
 describe('Law 12: a keeper may not handle his own goal kick or release', () => {

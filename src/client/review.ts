@@ -7,6 +7,7 @@ import { signed, type Save } from '../meta/game.ts';
 import { scoutMatchesFor, squadCap } from '../meta/levels.ts';
 import { overall, type Player } from '../meta/player.ts';
 import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText, type IntakeEntry, type PlayerChange, type SeasonReview } from '../meta/progression.ts';
+import { divisionName } from '../meta/world.ts';
 import type { App } from './ui.ts';
 
 const esc = (t: string | number): string =>
@@ -119,13 +120,31 @@ function intakeBody(s: Save, rv: SeasonReview): string {
     <ul class="rv-list">${rv.intake.map((e) => intakeRow(s, e)).join('')}</ul>`;
 }
 
+/** Moves by destination division, top first: [[1, "A and B"], ...]. */
+function grouped(moves: { name: string; to: number }[]): [number, string][] {
+  const by = new Map<number, string[]>();
+  for (const m of moves) by.set(m.to, [...(by.get(m.to) ?? []), m.name]);
+  return [...by.entries()].sort((a, b) => a[0] - b[0]).map(([to, names]) => [to, names.join(' and ')]);
+}
+
 function ladderBody(rv: SeasonReview): string {
   const rows = [...rv.risers.map((m) => ({ m, up: true })), ...rv.fallers.map((m) => ({ m, up: false }))];
-  if (!rows.length) return '';
-  return section(
-    'Around the ladder',
-    `<ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${signed(m.after - m.before)})</span></span></li>`).join('')}</ul>`,
-  );
+  const w = rv.world;
+  if (!rows.length && !w) return '';
+  // Risers and fallers are squad quality since the world (src/meta/world.ts); older reviews showed Elo.
+  const movers = rows.length
+    ? `<p class="muted small">${w ? 'Squad quality' : 'Elo'}, before → after.</p><ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${signed(m.after - m.before)})</span></span></li>`).join('')}</ul>`
+    : '';
+  if (!w) return section('Around the ladder', movers);
+  const line = (text: string, cls = '') => `<li class="rv-row"><span class="rv-main${cls}">${esc(text)}</span></li>`;
+  const lines = [
+    ...w.champions.map((c) => line(`${c.name} top ${divisionName(c.division)}.`)),
+    ...grouped(w.promoted).map(([to, names]) => line(`Up to ${divisionName(to)}: ${names}.`, ' up')),
+    ...grouped(w.relegated).map(([to, names]) => line(`Down to ${divisionName(to)}: ${names}.`, ' down')),
+    ...w.transfers.map((t) => line(t)),
+    ...w.retired.map((t) => line(t)),
+  ];
+  return section('Around the world', `${lines.length ? `<ul class="rv-list">${lines.join('')}</ul>` : ''}${movers}`);
 }
 
 /** Panel at the top of the Squad screen while academy offers are waiting. */

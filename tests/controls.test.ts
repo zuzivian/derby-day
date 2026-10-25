@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
-import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
+import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
 import { assistRadius, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -414,14 +414,15 @@ describe('left click without the ball picks a player', () => {
     return { s, cur, east, northeast, west, south };
   }
 
-  test('clicking on a teammate (within 1.5 m of the pointer) switches control to him', () => {
+  test('clicking on or near a teammate (within 4 m of the pointer) switches control to him', () => {
     const { s, cur, east, south } = setup();
     expect(pickTeammate(s, 0, { x: east.pos.x + 1, y: east.pos.y - 0.8 })).toBe(east.i);
     step(s, { cursor: { x: south.pos.x - 0.6, y: south.pos.y + 0.7 }, select: true });
     expect(s.controlled[0]).toBe(south.i);
     expect(s.controlled[0]).not.toBe(cur.i);
-    // The pointer leaves the radius (and the direction holds nobody): you stay on him.
-    expect(pickTeammate(s, 0, { x: south.pos.x, y: south.pos.y + SELECT_R + 0.3 })).toBe(-1);
+    // A couple of metres off him is still him; past PICK_R, with nobody that way, you stay as you are.
+    expect(pickTeammate(s, 0, { x: south.pos.x, y: south.pos.y + SELECT_R + 0.3 })).toBe(south.i);
+    expect(pickTeammate(s, 0, { x: south.pos.x, y: south.pos.y + PICK_R + 0.3 })).toBe(-1);
   });
 
   test('the player under the pointer beats one in the cone', () => {
@@ -478,6 +479,60 @@ describe('left click without the ball picks a player', () => {
     s.ball.pos = { x: 31, y: 20 };
     step(s, { cursor: east.pos, select: true });
     expect(s.controlled[0]).toBe(cur.i);
+  });
+
+  test('a click a couple of metres off a man picks him, not someone nearer you in that direction', () => {
+    // Before: past 1.5 m the click fell to the cone search, which took whoever in that direction
+    // lay nearest the current player: northeast (10 m from cur) for a click 2.5 m off east.
+    const { s, east, northeast } = setup();
+    northeast.pos = { x: 37, y: 18 }; // nearer cur, and inside the cone toward east
+    for (const [dx, dy] of [[-2.5, 0], [0, 2.5], [1.8, -1.8], [0, -3]]) {
+      expect(pickTeammate(s, 0, { x: east.pos.x + dx, y: east.pos.y + dy })).toBe(east.i);
+    }
+  });
+});
+
+describe('the automatic switch does not surprise', () => {
+  /** A loose ball rolling along y = 30; our men placed by the caller; the opponent far away. */
+  function loose(ballAt: Vec, vel: Vec) {
+    const s = livePlay();
+    for (const p of s.players) {
+      p.pos = { x: 95 + (p.i % 5), y: 60 + (p.i % 3) };
+      p.vel = { x: 0, y: 0 };
+      p.stun = 100000;
+    }
+    Object.assign(s.ball, { owner: -1, receiver: -1, lastTouch: -1, kickedBy: -1, pos: { ...ballAt }, vel: { ...vel }, z: 0, vz: 0 });
+    s.ball.noPickup.fill(0);
+    const ours = s.players.filter((p) => p.team === 0 && p.role !== 'GK');
+    return { s, a: ours[0], b: ours[1] };
+  }
+
+  test('once it has switched, it keeps the new man a moment instead of flicking back', () => {
+    const { s, a, b } = loose({ x: 40, y: 30 }, { x: 0, y: 0 });
+    a.pos = { x: 52, y: 30 };
+    b.pos = { x: 41, y: 30 };
+    s.controlled[0] = a.i;
+    s.switchTimer[0] = 0;
+    step(s, { cursor: s.ball.pos });
+    expect(s.controlled[0]).toBe(b.i);
+    // Now a is the nearer one by far: still b for AUTO_KEEP ticks.
+    a.pos = { x: 41, y: 30 };
+    b.pos = { x: 52, y: 30 };
+    for (let t = 0; t < 40; t++) {
+      step(s, { cursor: s.ball.pos });
+      expect(s.controlled[0]).toBe(b.i);
+    }
+  });
+
+  test('never off a man the ball is coming to and nearly at', () => {
+    // The ball, fast, is 2 m from a and running at him; b is nearer where it will be in 0.3 s.
+    const { s, a, b } = loose({ x: 40, y: 30 }, { x: 25, y: 0 });
+    a.pos = { x: 42, y: 30.5 };
+    b.pos = { x: 47.5, y: 30 };
+    s.controlled[0] = a.i;
+    s.switchTimer[0] = 0;
+    step(s, { cursor: a.pos });
+    expect(s.controlled[0]).toBe(a.i);
   });
 });
 
