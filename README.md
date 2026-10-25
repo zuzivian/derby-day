@@ -91,38 +91,30 @@ CPU difficulty is `TeamSetup.aiSkill` (0..1, and down to −0.3 for a rookie sid
 
 One person steers one player among 22, so two things decide whether a match is fair: what the other ten do around them, and how sharp the CPU opposite is.
 
-- **Teammates cover for you.** When your man isn't going in on the carrier (too far, or running elsewhere), the next-best teammate presses or chases the loose ball for you, instead of nobody. If you stop steering (no pointer on the pitch and no keys for 0.75 s), or right after the game switches you to a new man and before you move the pointer, your man holds his place in the shape, marks, and jockeys a carrier who comes at him from 2 m goal-side. He never tackles for you. When you take your man out of his zone, a free teammate picks up the attackers in it. Defending, the automatic switch gives you the man who can press from goal-side, not one chasing back behind the ball. A pointer resting on the pitch is always a command ("run there and stay"), never treated as idle. Code: `humanEngaging`, `humanAuto` and the plan in `src/sim/ai.ts`; `jockey` and `updateControl` in `src/sim/human.ts`.
+- **Teammates cover for you.** When your man isn't going in on the carrier (too far, or running elsewhere), the next-best teammate presses or chases the loose ball for you, instead of nobody. If you give no input at all for 0.75 s (in mouse mode, the pointer not on the pitch), or right after the game switches you to a new man and before you move the pointer, your man holds his place in the shape, marks, and jockeys a carrier who comes at him from 2 m goal-side. He never tackles for you. When you take your man out of his zone, a free teammate picks up the attackers in it. Defending, the automatic switch gives you the man who can press from goal-side, not one chasing back behind the ball. A pointer resting on the pitch is always a command ("run there and stay"), and so is the keyboard with no key down ("stand still"): neither is treated as idle. Code: `humanEngaging`, `humanAuto` and the plan in `src/sim/ai.ts`; `jockey` and `updateControl` in `src/sim/human.ts`.
 - **Difficulty that fits you.** Every club carries a hidden skill estimate, separate from Elo (`src/meta/skill.ts`). It learns from every match against the CPU, fast at first, then steadier. For ranked and cup or league matches it sets the opposing CPU's `aiSkill` within a band: from 0.75 below the club's natural skill (no lower than a rookie side) to 0.25 above it. The aim is a 55% chance of a win for you. The ladder club's squad, shape and Elo are never touched, so Elo stays the honest ladder. Practice levels stay fixed as labelled. The **win chance** on Home is the same model's chance against the opponent as he will really play you (`winChance`). Its constants are fitted to the fairness harness (`bun run fairness --calibrate`).
 
-`bun run fairness` measures all of this. Scripted humans, from one who never touches the mouse to a sharp one, each start a new club and play it the way the game does: first match, warm-ups, then ranked against `pickOpponent`'s choice with the CPU's skill from the estimate. Each then plays three friendlies against the top of the ladder. 12 careers of 12 matches per bot:
+`bun run fairness` measures all of this. Scripted humans, from one who never touches the mouse to a sharp one, each start a new club and play it the way the game does: first match, warm-ups, then ranked against the offered opponent (`offeredOpponent`) with the CPU's skill from the estimate. Each then plays three friendlies against the top of the ladder. "Settled" means the ranked matches after the first three, once the estimate has had something to learn from. 12 careers of 12 matches per bot:
 
-| Player | First 3 ranked: W-D-L, goal diff | All ranked: W-D-L | Won | Shown | CPU skill faced | vs top 3 clubs: won (shown) |
-|---|---|---|---|---|---|---|
-| Never touches the mouse | 0-11-25, −1.36 | 1-29-49 | 1% | 14% | −0.29 | 0% (0%) |
-| Pointer on the ball, no clicks | 0-7-29, −1.97 | 0-10-65 | 0% | 10% | −0.29 | 0% (0%) |
-| Chaser: runs at the ball, shoots early | 14-17-5, +0.61 | 49-36-15 | 49% | 44% | −0.22 | 22% (9%) |
-| Competent: passes to open teammates, shoots in range | 16-11-9, +0.39 | 55-28-23 | 52% | 48% | −0.17 | 14% (13%) |
-| Strong: the CPU's pass choice, patient tackles | 25-3-8, +0.89 | 70-21-21 | 63% | 53% | 0.00 | 14% (23%) |
-| (The same club run by the CPU) | 27-7-2, +1.42 | 75-28-12 | 65% | 54% | 0.16 | 39% (37%) |
+| Player | First 3 ranked: W-D-L, goal diff | All ranked: W-D-L | Won | Shown | Settled: won (shown) | CPU skill faced | vs top 3 clubs: won (shown) |
+|---|---|---|---|---|---|---|---|
+| Never touches the mouse | 0-22-14, −0.53 | 0-57-34 | 0% | 15% | 0% (10%) | −0.30 | 0% (0%) |
+| Pointer on the ball, no clicks | 0-4-32, −2.17 | 0-12-62 | 0% | 12% | 0% (9%) | −0.30 | 0% (0%) |
+| Chaser: runs at the ball, shoots early | 20-10-6, +1.17 | 59-25-23 | 55% | 53% | 55% (54%) | 0.04 | 0% (5%) |
+| Competent: passes to open teammates, shoots in range | 17-10-9, +0.50 | 53-31-26 | 48% | 55% | 49% (54%) | 0.11 | 3% (3%) |
+| Strong: the CPU's pass choice, patient tackles | 19-6-11, +0.31 | 61-24-33 | 52% | 56% | 51% (56%) | 0.36 | 8% (10%) |
+| (The same club run by the CPU) | 23-9-4, +0.97 | 64-30-24 | 54% | 57% | 50% (56%) | 0.40 | 6% (11%) |
 
-Against a new club's first ranked opponent at its natural CPU skill, which every match used before the estimate existed, the same bots win 0-21%. The CPU running the same squad wins 46%. Over 24 seeds the teammates' cover changes that as follows (`bun run fairness 24 --tiers=first`, before → after):
+The top three clubs are the first division's best, so even the CPU running a new club's squad rarely beats them.
 
-| Player | Goal diff | Shots against | Carrier pressed by nobody, and no CPU presser |
-|---|---|---|---|
-| Never touches the mouse | −3.00 → −2.29 | 16.0 → 11.7 | 55% → 0% |
-| Pointer on the ball | −3.50 → −3.67 | 16.1 → 14.6 | 61% → 33% |
-| Chaser | −0.38 → −0.21 | 8.0 → 7.3 | 54% → 34% |
-| Competent | −1.00 → −0.96 | 11.5 → 9.6 | 49% → 34% |
-| Strong | −0.75 → −1.04 | 10.5 → 9.2 | 45% → 29% |
-
-So the cover fixes the shape: someone always presses, and fewer shots come in. For players who do steer, the scores move within the noise (about ±0.3 goals on 24 matches). What makes their matches winnable is the difficulty band. `bun run fairness 12 --assert` fails CI if any of these break:
+Without the band, at a CPU skill of 0.6 against every formation and mentality, the tactics stream's probe (`bun run scripts/offball-probe.ts 32 --human`, 416 matches) shows what the cover alone does. On main 50b7a1c: 0.40 goals for, 4.34 against, 2.7 shots to 22.6. On this branch: 0.44 for, 4.26 against, 2.8 shots to 21.5. Earlier, on main 8e4ce9f, `bun run fairness 24 --tiers=first` (before → after) showed the same: the cover fixes the shape (the carrier pressed by nobody, with no CPU presser either, fell from 45-61% of the time to 0-34%; shots against fell for every bot). Goals move within the noise, about ±0.3 a match. What makes matches winnable is the difficulty band. `bun run fairness 12 --assert` fails CI if any of these break:
 
 - a passive human is routed (goal difference worse than −3 in the first ranked matches);
 - the competent bot is far from an even chance (outside 40-65% wins);
 - the strong bot doesn't win most of its ranked matches, or doesn't win clearly fewer against the top clubs;
-- the chance shown drifts from the chance measured, beyond sampling noise.
+- once settled, the chance shown drifts from the chance measured beyond sampling noise.
 
-The model reads the extremes a little conservatively: a player who never shoots is still shown about 10-14% (he draws 0–0 a third of the time and never wins). Strong players win about ten points more often than shown.
+The estimate learns from wins, since a win is what the gauge shows. A player who never shoots draws 0–0 often but never wins. His estimate sinks to the rookie CPU within a few matches, and the chance shown falls with it (10% once settled, toward 0 later). Before it has learned, a new player is shown a newcomer's chance.
 
 Every finished match leaves a replay: the match options plus the per-tick input log (run-length and delta encoded, cursor to 1 cm, then compressed with a small adaptive range coder, `src/meta/pack.ts`), which the deterministic sim re-runs exactly. A full match is a code of about 45-70K characters. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club tab (fewer only if they are unusually long), and **Copy replay code** / **Paste replay code** share one as an `OVR1.…` string. Scrubbing a whole match is held at the part already prepared while the rest loads. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
 

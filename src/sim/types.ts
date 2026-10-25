@@ -394,8 +394,8 @@ export interface MatchState {
   /** Per team: ticks the pointer has really moved since the hold began (it ends at HOLD_MOVES, human.ts). */
   ctlHoldMoves?: [number, number];
   /**
-   * Per team: ticks the human has given no input at all: no pointer on the pitch, no key, no
-   * button (human.ts). From IDLE_TICKS (ai.ts) his player is positioned by the CPU, as during ctlHold.
+   * Per team: ticks the human has given no input at all: no pointer on the pitch, no keyboard
+   * input (key mode always sends `dir`), no button (human.ts). From IDLE_TICKS (ai.ts) his player is positioned by the CPU, as during ctlHold.
    */
   idleTicks?: [number, number];
   /** Per team: a first-time kick queued while a pass was on its way to the human's player (human.ts). */

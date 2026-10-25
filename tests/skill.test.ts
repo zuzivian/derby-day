@@ -174,8 +174,11 @@ describe('a human who gives no input', () => {
     expect(humanAuto(s, 0)).toBe(true);
     step(s, { dir: { x: 1, y: 0 } });
     expect(humanAuto(s, 0)).toBe(false);
-    // A pointer resting on the pitch is a command ("stay there"), never idle.
+    // A pointer resting on the pitch is a command ("stay there"), never idle; so is the keyboard with no key down.
     for (let i = 0; i < IDLE_TICKS + 5; i++) step(s, { cursor: { x: 40, y: 30 } });
     expect(s.idleTicks?.[0]).toBe(0);
+    for (let i = 0; i < IDLE_TICKS + 5; i++) step(s, { dir: { x: 0, y: 0 } });
+    expect(s.idleTicks?.[0]).toBe(0);
+    expect(humanAuto(s, 0)).toBe(false);
   });
 });

@@ -373,10 +373,12 @@ function give(s: MatchState, team: 0 | 1, i: number, auto: boolean): void {
 
 /**
  * Is the human steering this tick? A pointer on the pitch is: a still mouse means "run there and
- * stay", so it is never idle. With no pointer, a direction key or any button is.
+ * stay", so it is never idle. So is the keyboard (the client always sends `dir` in key mode): no
+ * key down means "stand still". Idle is only no pointer and no keys at all, as when the mouse has
+ * never been moved over the pitch, with no button either.
  */
 const active = (input: HumanInput): boolean =>
-  input.cursor !== undefined || (!!input.dir && (input.dir.x !== 0 || input.dir.y !== 0)) || !!input.pass || !!input.select || !!input.tackle || !!input.sprint || !!input.switchPlayer || input.shoot !== undefined || input.loft !== undefined;
+  input.cursor !== undefined || input.dir !== undefined || !!input.pass || !!input.select || !!input.tackle || !!input.sprint || !!input.switchPlayer || input.shoot !== undefined || input.loft !== undefined;
 
 export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): void {
   if (!s.humans[team]) return;

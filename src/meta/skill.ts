@@ -39,7 +39,7 @@ export const EST_MAX = 1.3;
  * STRENGTH_W * (their squad - ours, rating points); then win = L((x - DRAW_W) / SPREAD),
  * loss = L((-x - DRAW_W) / SPREAD), the rest a draw (an ordered logit).
  */
-export const MODEL = { spread: 0.28, drawW: 0.22, strengthW: 0.035 } as const;
+export const MODEL = { spread: 0.2, drawW: 0.1, strengthW: 0.025 } as const;
 
 /** How far the CPU's aiSkill may go below and above a club's natural skill (club.ts toTeamSetup). */
 export const BAND_DOWN = 0.75;
@@ -80,8 +80,6 @@ function outlookAt(x: number): Outlook {
   return { win, loss, draw: Math.max(0, 1 - win - loss) };
 }
 
-const expected = (o: Outlook): number => o.win + 0.5 * o.draw;
-
 /** The edge at which the chance of a win is TARGET_WIN (the inverse of outlookAt's win). */
 const TARGET_EDGE = MODEL.drawW + MODEL.spread * Math.log(TARGET_WIN / (1 - TARGET_WIN));
 
@@ -105,17 +103,19 @@ export function opponentSetup(save: Save, opp: LadderClub, home: TeamSetup): Tea
 }
 
 /** Learning rate: fast for the first few matches so a newcomer's level is found quickly, then steadier. */
-export const kFor = (n: number): number => (n < 4 ? 0.4 : n < 10 ? 0.25 : 0.12);
+export const kFor = (n: number): number => (n < 4 ? 0.6 : n < 10 ? 0.35 : 0.15);
 
 /**
  * Learn from a finished match against the CPU (any: ranked, competition, practice, warm-up),
- * Elo-style: move the estimate by how much better or worse the result was than the model
- * expected, a bigger margin counting a little more. A forfeit counts as a defeat.
+ * Elo-style: move the estimate by whether he won against the chance the model gave him, a
+ * bigger margin counting a little more. It learns from wins, not points, because the win
+ * chance is what the gauge shows: a player who draws 0–0 a lot but never wins (one who never
+ * shoots) has his chance fall toward nothing, as it really is. A forfeit counts as a defeat.
  */
 export function learnSkill(save: Save, home: TeamSetup, away: TeamSetup, goalsFor: number, goalsAgainst: number): SkillEstimate {
   const cur = skillOf(save);
-  const e = expected(outlook(cur.est, home, away));
-  const actual = goalsFor > goalsAgainst ? 1 : goalsFor === goalsAgainst ? 0.5 : 0;
+  const e = outlook(cur.est, home, away).win;
+  const actual = goalsFor > goalsAgainst ? 1 : 0;
   const margin = 1 + 0.25 * Math.min(3, Math.max(0, Math.abs(goalsFor - goalsAgainst) - 1));
   const next = { est: clamp(cur.est + kFor(cur.n) * margin * (actual - e), EST_MIN, EST_MAX), n: cur.n + 1 };
   save.skill = next;

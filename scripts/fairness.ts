@@ -110,8 +110,8 @@ else careerTable(results as CareerResult[]);
 
 function careerTable(rs: CareerResult[]): void {
   console.log(`${seeds} careers of ${careerLength} matches per side, then ${TOP_MATCHES} against the ladder's top three; ${jobs.length * (careerLength + TOP_MATCHES)} matches on ${workers} workers in ${secs.toFixed(0)}s`);
-  console.log('side        first 3 ranked     all ranked                                   final     vs top 3 clubs');
-  console.log('            W-D-L     GD       W-D-L     win  shown  GD       CPU skill   estimate  W-D-L     win  shown  GD');
+  console.log('side        first 3 ranked     all ranked                                   settled      final     vs top 3 clubs');
+  console.log('            W-D-L     GD       W-D-L     win  shown  GD       CPU skill   win  shown   estimate  W-D-L     win  shown  GD');
   const problems: string[] = [];
   const by = new Map<Side, CareerResult[]>();
   jobs.forEach((j, idx) => by.set(j.side, [...(by.get(j.side) ?? []), rs[idx]]));
@@ -121,13 +121,17 @@ function careerTable(rs: CareerResult[]): void {
     const top = cs.flatMap((c) => c.top);
     const est = mean(cs.map((c) => c.career.at(-1)!.est));
     const shown = mean(ranked.map((m) => m.shown));
+    // Settled: the ranked matches after the first three, once the estimate has had the warm-ups and a few
+    // ranked results to learn from. The chance shown is held to the chance measured here.
+    const settled = cs.flatMap((c) => c.career.filter((m) => m.ranked).slice(3));
+    const settledShown = mean(settled.map((m) => m.shown));
     console.log(
-      `${side.padEnd(10)}  ${wdl(first).padEnd(9)} ${sgn(gdOf(first)).padEnd(7)}  ${wdl(ranked).padEnd(9)} ${pct(winOf(ranked)).padStart(4)}  ${pct(shown).padStart(4)}   ${sgn(gdOf(ranked)).padEnd(7)}  ${mean(ranked.map((m) => m.aiSkill)).toFixed(2).padStart(6)}      ${est.toFixed(2).padStart(5)}    ${wdl(top).padEnd(9)} ${pct(winOf(top)).padStart(4)}  ${pct(mean(top.map((m) => m.shown))).padStart(4)}   ${sgn(gdOf(top))}`,
+      `${side.padEnd(10)}  ${wdl(first).padEnd(9)} ${sgn(gdOf(first)).padEnd(7)}  ${wdl(ranked).padEnd(9)} ${pct(winOf(ranked)).padStart(4)}  ${pct(shown).padStart(4)}   ${sgn(gdOf(ranked)).padEnd(7)}  ${mean(ranked.map((m) => m.aiSkill)).toFixed(2).padStart(6)}      ${pct(winOf(settled)).padStart(4)}  ${pct(settledShown).padStart(4)}    ${est.toFixed(2).padStart(5)}    ${wdl(top).padEnd(9)} ${pct(winOf(top)).padStart(4)}  ${pct(mean(top.map((m) => m.shown))).padStart(4)}   ${sgn(gdOf(top))}`,
     );
     if (!ranked.length) problems.push(`${side}: no ranked matches in ${careerLength}`);
-    // Honest numbers: the chance shown is the chance measured (sampling noise allowed for).
-    const tol = 2.2 * Math.sqrt(Math.max(0.05, shown * (1 - shown)) / Math.max(1, ranked.length)) + 0.05;
-    if (Math.abs(winOf(ranked) - shown) > tol) problems.push(`${side}: won ${pct(winOf(ranked))} of ranked matches but was shown ${pct(shown)} (tolerance ±${pct(tol)})`);
+    // Honest numbers: once settled, the chance shown is the chance measured (sampling noise allowed for).
+    const tol = 2.2 * Math.sqrt(Math.max(0.05, settledShown * (1 - settledShown)) / Math.max(1, settled.length)) + 0.05;
+    if (Math.abs(winOf(settled) - settledShown) > tol) problems.push(`${side}: won ${pct(winOf(settled))} of its settled ranked matches but was shown ${pct(settledShown)} (tolerance ±${pct(tol)})`);
     if (side === 'passive' && !(gdOf(first) > -3)) problems.push(`passive: goal difference ${gdOf(first).toFixed(2)} in the first ranked matches is a rout (target better than −3)`);
     if (side === 'competent' && !(winOf(ranked) >= 0.4 && winOf(ranked) <= 0.65)) problems.push(`competent: won ${pct(winOf(ranked))} of ranked matches (target about 45-60%)`);
     if (side === 'strong' && !(winOf(ranked) > 0.5)) problems.push(`strong: won ${pct(winOf(ranked))} of its ranked matches against a new club's opponents (target: most)`);
