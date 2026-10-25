@@ -845,7 +845,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
       break;
     case 'WM':
       nx = L + (attacking ? 0.32 : 0.21) * depth + adj;
-      if (attacking) ny = side < 0 ? (ballSide ? 0.06 : 0.16) : ballSide ? 0.94 : 0.84;
+      if (attacking) ny = side < 0 ? (ballSide ? 0.06 : 0.1) : ballSide ? 0.94 : 0.9;
       break;
     case 'W':
       nx = L + (attacking ? 0.42 : 0.36) * depth + adj;
@@ -1623,6 +1623,10 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   // Who commits forward is the mentality's call: a low block keeps everyone but the strikers back.
   const runner = runsIntoBox(k, sub_);
 
+  // The far-side wide man holds the width for a switch of play until the ball reaches the final
+  // third (then he may come in for the far post). Metres he is in from his touchline past 10 m cost him.
+  const holdWidth = (sub_ === 'W' || sub_ === 'WM') && fx < 0.7 && Math.abs(focus.y - MID_Y) > 10 && (anchor.y - MID_Y) * (focus.y - MID_Y) < 0;
+
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
   if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(s, team, p.pos.x) > onsideX - 0.06) {
@@ -1630,7 +1634,8 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
     if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
       mem.retarget = Math.round(40 + 20 * next(s.rng));
-      const y = clamp(p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 6, PITCH_H - 6);
+      // In behind, angled in; down the line for a wide man holding the width.
+      const y = clamp(holdWidth ? p.pos.y + range(s.rng, -3, 3) : p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 4, PITCH_H - 4);
       mem.target = fromTeam(s, team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
       return mem.target;
     }
@@ -1683,6 +1688,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     let score = space * 0.3 + lane * 0.4 - (lane < 1.2 ? 2 : 0) + cx * PITCH_W * 0.05 * roleW;
     const dG = dist(c, oppG);
     if (forward && runner && dG < 20) score += (20 - dG) * 0.06;
+    if (holdWidth) score -= Math.max(0, Math.min(c.y, PITCH_H - c.y) - 10) * 0.3;
     for (const m of s.players) {
       if (m.team !== team || m.i === p.i || m.role === 'GK' || m.sentOff) continue;
       const spot = m.i === carrier?.i ? focus : m.ai?.target && m.ai.attacking ? m.ai.target : m.pos;

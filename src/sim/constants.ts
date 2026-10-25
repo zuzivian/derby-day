@@ -41,8 +41,10 @@
  *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
  *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
  *      CPU below skill 0 (AI_SKILL_MIN)
+ *  17  far-side width: the wide man on the far side holds the touchline for a switch until the
+ *      final third, and makes his run in behind down the line
  */
-export const SIM_VERSION = 16;
+export const SIM_VERSION = 17;
 
 export const TICK_HZ = 60;
 
