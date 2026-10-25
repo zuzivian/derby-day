@@ -1,16 +1,26 @@
 // The tab guard against a lock manager that answers late. A fake navigator.locks stands in for the browser's.
 
-import { expect, test } from 'bun:test';
+import { afterAll, expect, test } from 'bun:test';
 
-const mem = new Map<string, string>();
-Object.assign(globalThis, {
-  localStorage: { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, String(v)), removeItem: (k: string) => void mem.delete(k) },
+// Bun runs every test file in one process, so whatever is stubbed here is put back afterwards.
+const g = globalThis as unknown as Record<string, unknown>;
+const saved = new Map<string, PropertyDescriptor | undefined>();
+function stub(name: string, value: unknown): void {
+  if (!saved.has(name)) saved.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
+  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
+}
+afterAll(() => {
+  for (const [name, d] of saved) {
+    if (d) Object.defineProperty(globalThis, name, d);
+    else delete g[name];
+  }
 });
 
-const g = globalThis as unknown as Record<string, unknown>;
-g.addEventListener ??= () => {};
-g.location ??= { reload() {} };
-g.document ??= { visibilityState: 'visible', querySelector: () => null };
+const mem = new Map<string, string>();
+stub('localStorage', { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, String(v)), removeItem: (k: string) => void mem.delete(k) });
+stub('addEventListener', () => {});
+stub('location', { reload() {} });
+stub('document', { visibilityState: 'visible', querySelector: () => null });
 
 type Opts = { ifAvailable?: boolean; steal?: boolean; signal?: AbortSignal };
 const held: string[] = [];
@@ -34,7 +44,7 @@ function fakeLocks(stealAfterMs: number) {
 }
 
 test('a steal the lock manager answers after the 3 s patience still makes this tab the owner', async () => {
-  Object.defineProperty(globalThis, 'navigator', { value: { locks: fakeLocks(3500) }, configurable: true });
+  stub('navigator', { locks: fakeLocks(3500) });
   const guard = await import('../src/client/tabguard.ts');
   expect(await guard.claim({ onLost: () => {} })).toBe(false); // the other tab owns the club
   expect(guard.owns()).toBe(false);
