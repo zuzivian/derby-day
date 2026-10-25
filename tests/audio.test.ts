@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { crowdLevel, detectSfx, initialSnapshot, snapshot, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
-import { GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
-import type { MatchState } from '../src/sim/types.ts';
+import type { MatchEvent, MatchState } from '../src/sim/types.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -147,6 +147,68 @@ describe('detectSfx', () => {
   });
 });
 
+describe('detectSfx: referee, crowd and keeper', () => {
+  const ev = (e: Record<string, unknown>) => e as unknown as MatchEvent;
+
+  test('a foul or an offside gets one short whistle, however many events came at once', () => {
+    const s = liveMatch();
+    const before = snapshot(s);
+    s.events.push(ev({ kind: 'foul', tick: s.tick }), ev({ kind: 'card', tick: s.tick }), ev({ kind: 'restart', tick: s.tick, restart: 'freekick', reason: 'foul' }));
+    expect(detectSfx(before, s)).toEqual([{ type: 'whistle', kind: 'foul' }]);
+    const again = snapshot(s);
+    s.events.push(ev({ kind: 'offside', tick: s.tick }));
+    expect(detectSfx(again, s)).toEqual([{ type: 'whistle', kind: 'foul' }]);
+  });
+
+  test('a shot going out just wide of the post draws an "ooh"; one well wide, or a slow ball, does not', () => {
+    for (const [y, speed, want] of [
+      [GOAL_TOP - 2, 22, true],
+      [GOAL_BOTTOM + 3, 18, true],
+      [(GOAL_TOP + GOAL_BOTTOM) / 2, 20, true], // over the bar
+      [GOAL_TOP - 9, 22, false],
+      [GOAL_TOP - 2, 6, false],
+    ] as const) {
+      const s = liveMatch();
+      s.ball.pos = { x: PITCH_W - 1, y };
+      s.ball.vel = { x: speed, y: 0 };
+      const before = snapshot(s);
+      s.phase = 'restart';
+      s.events.push(ev({ kind: 'restart', tick: s.tick, restart: 'goalkick', reason: 'out' }));
+      expect(types(detectSfx(before, s)).includes('ooh'), `y ${y}, ${speed} m/s`).toBe(want);
+    }
+  });
+
+  test('a keeper catching a hard shot is a catch and an "ooh"; gathering a slow ball is just a catch', () => {
+    for (const [speed, want] of [
+      [24, ['catch', 'ooh']],
+      [9, ['catch']],
+    ] as const) {
+      const s = liveMatch();
+      const gk = s.players.find((p) => p.role === 'GK')!;
+      s.ball.pos = { ...gk.pos };
+      s.ball.vel = { x: speed, y: 0 };
+      const before = snapshot(s);
+      s.ball.owner = gk.i;
+      s.ball.inHands = true;
+      s.ball.vel = { x: 0, y: 0 };
+      expect(types(detectSfx(before, s))).toEqual([...want]);
+    }
+  });
+
+  test('a ball at head height turned by a nearby player is a header; with nobody near it is not', () => {
+    for (const near of [true, false]) {
+      const s = liveMatch();
+      s.ball.pos = { x: 60, y: 30 };
+      s.ball.z = 1.8;
+      s.ball.vel = { x: 12, y: 0 };
+      if (near) s.players[3].pos = { x: 60.5, y: 30 };
+      const before = snapshot(s);
+      s.ball.vel = { x: -9, y: 3 };
+      expect(types(detectSfx(before, s)).includes('header')).toBe(near);
+    }
+  });
+});
+
 describe('detectSfx over a real match', () => {
   test('emits plausible, bounded events when stepping a CPU match', () => {
     const s = createMatch({ seed: 11, ...teams(3), halfSeconds: 40, humanTeam: -1 });
@@ -154,15 +216,24 @@ describe('detectSfx over a real match', () => {
     const counts: Record<string, number> = {};
     while (s.phase !== 'fulltime') {
       step(s);
-      for (const e of detectSfx(prev, s)) counts[e.type] = (counts[e.type] ?? 0) + 1;
+      for (const e of detectSfx(prev, s)) {
+        const k = e.type === 'whistle' ? `whistle:${e.kind === 'foul' ? 'foul' : 'phase'}` : e.type;
+        counts[k] = (counts[k] ?? 0) + 1;
+      }
       prev = snapshot(s);
     }
     const total = s.score[0] + s.score[1];
     expect(counts.goal ?? 0).toBe(total);
     expect(counts.kick).toBeGreaterThan(10);
     // opening kick-off, a restart per goal, second half, half-time, full-time
-    expect(counts.whistle).toBe(1 + total + 1 + 1 + 1);
+    expect(counts['whistle:phase']).toBe(1 + total + 1 + 1 + 1);
+    // One foul whistle per tick with a foul or offside in it.
+    const foulTicks = new Set(s.events.filter((e) => e.kind === 'foul' || e.kind === 'offside').map((e) => e.tick)).size;
+    expect(counts['whistle:foul'] ?? 0).toBe(foulTicks);
     expect(counts.knock ?? 0).toBeLessThan(counts.kick * 2);
+    // The crowd's "ooh" and the keeper's catch are occasional, not every kick.
+    expect(counts.ooh ?? 0).toBeLessThan(counts.kick / 4);
+    expect(counts.catch ?? 0).toBeLessThan(counts.kick / 2);
   });
 });
 
