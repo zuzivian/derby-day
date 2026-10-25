@@ -424,6 +424,7 @@ export function runRollover(save: Save): SeasonReview {
   };
   save.review = review;
   save.year = year + 1;
+  save.nextOpp = null; // the world moved: a fresh ranked offer
   const top = changes[0];
   save.news.push(
     `Season ${year} review: ${record.won}W ${record.drawn}D ${record.lost}L.${top ? ` Biggest mover: ${top.name} ${top.before} → ${top.after}.` : ''}${retired.length ? ` ${retired.length} retired.` : ''}`,

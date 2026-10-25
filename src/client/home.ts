@@ -12,8 +12,8 @@
 // styles.css.
 
 import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
-import { expectedScore, kFactor } from '../meta/elo.ts';
-import type { Save } from '../meta/game.ts';
+import { kFactor } from '../meta/elo.ts';
+import { winChance, type Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
@@ -118,7 +118,7 @@ function hero(app: App): string {
   const ranked = rankedOpen(s);
   const opp = ranked ? app.nextOpp : warmupIdentity(s);
   const gaugeOn = ranked && showGauge(s);
-  const p = ranked ? expectedScore(c.elo, app.nextOpp.elo) : 0.5;
+  const p = ranked ? winChance(s, app.nextOpp) : 0.5; // the same chance the rewards are scaled by
   const pct = Math.round(p * 100);
   const k = kFactor(c.played);
   const gain = Math.round(k * (1 - p));

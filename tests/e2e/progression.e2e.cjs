@@ -28,20 +28,20 @@ function nearSeasonEndFullSquad(save) {
 }
 
 /** A ranked match that ends at once by forfeiting (still counted: 0-3). */
-async function forfeitRanked(page) {
+/** Play a short ranked match to the end (two 3 s halves): a forfeit no longer counts toward the calendar. */
+const SHORT = { halfSeconds: 3 };
+async function playRanked(page) {
   await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playRanked).click();
   await page.waitForSelector(SEL.pitch);
-  await page.keyboard.press('Escape');
-  await page.locator(SEL.forfeit).click();
-  await page.locator(SEL.modalClose).waitFor();
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
 }
 
 test('the 10th counted match rolls the season over and shows the review after the result', async (t) => {
-  const page = await openApp(t, { width: 390, height: 844, mutateSave: (save) => ((save.week = 9), (save.year = 1)) });
+  const page = await openApp(t, { width: 390, height: 844, prefs: SHORT, mutateSave: (save) => ((save.week = 9), (save.year = 1)) });
   const before = await readSave(page);
   expect(before.week, 'week before').toBe(9);
-  await forfeitRanked(page);
+  await playRanked(page);
 
   const after = await readSave(page);
   expect(after.year, 'year advanced').toBe(2);
@@ -72,8 +72,8 @@ test('the 10th counted match rolls the season over and shows the review after th
 
 test('a full squad is only offered prospects; you can release someone to sign one', async (t) => {
   // Level 14: the calendar is on and the squad cap is still 24 (level 15 adds a place).
-  const page = await openApp(t, { level: 14, mutateSave: nearSeasonEndFullSquad });
-  await forfeitRanked(page);
+  const page = await openApp(t, { level: 14, prefs: SHORT, mutateSave: nearSeasonEndFullSquad });
+  await playRanked(page);
   await page.locator(SEL.modalClose).click();
   await page.locator(R.review).waitFor();
   const s = await readSave(page);

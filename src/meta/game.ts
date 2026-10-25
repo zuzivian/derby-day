@@ -325,14 +325,25 @@ export function offeredOpponent(save: Save): LadderClub {
 }
 
 /**
+ * Your chance of beating `opp` (an expected score, 0 to 1): the one number the
+ * win-chance gauge, the reward scale and (with the fairness stream) the
+ * opponent's difficulty all read, so the chance shown, the stake and the CPU
+ * you meet agree. For now it is the public Elo expectation; the fairness
+ * stream owns its body.
+ */
+export function winChance(save: Save, opp: LadderClub): number {
+  return expectedScore(save.club.elo, opp.elo);
+}
+
+/**
  * What a ranked match against `opp` pays, as a multiplier on the money and XP
  * tables (cup and league matches use its XP side): the opponent's division (DIVISION_MONEY, DIVISION_XP), times 0.7 to
- * 1.3 by how unlikely you were to win (expected score 1 to 0). Beating a weak
+ * 1.3 by how unlikely you were to win (winChance 1 to 0). Beating a weak
  * club pays less than beating an equal one, so losing Elo on purpose to meet
  * weaker clubs never pays.
  */
 export function rankedScale(save: Save, opp: LadderClub): { xp: number; money: number } {
-  const odds = 0.7 + 0.6 * (1 - expectedScore(save.club.elo, opp.elo));
+  const odds = 0.7 + 0.6 * (1 - winChance(save, opp));
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return { xp: r2(divisionXp(opp.division) * odds), money: r2(divisionMoney(opp.division) * odds) };
 }

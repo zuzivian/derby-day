@@ -99,6 +99,8 @@ function toast(text: string, ok = true) {
 }
 
 function persist() {
+  // A rollover or a promotion clears the ranked offer; the next one is picked here so it is saved with the change.
+  app.nextOpp = offeredOpponent(app.save);
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
   if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);

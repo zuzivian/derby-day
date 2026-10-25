@@ -373,5 +373,6 @@ export function applyLeagueFinish(save: Save, pos: number): LeagueMove {
   const other = there[0];
   if (other) other.division = from;
   save.division = to;
+  save.nextOpp = null; // a new division: a fresh ranked offer
   return { moved: up ? 'up' : 'down', division: to, swapped: other?.name };
 }
