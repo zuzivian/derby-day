@@ -5,7 +5,7 @@
 import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
 import { humanPass, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
-import { freeKickPlan } from '../../sim/match.ts';
+import { freeKickPlan, setPieceDelivery } from '../../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
 import { GAUGE_COLORS, kickGauge } from '../power.ts';
 import type { RenderExtras } from '../render.ts';
@@ -404,7 +404,18 @@ export class AimLayer {
       ty = aimAt.y;
       showWedge = true;
       showRet = pointerOn;
-      if (armed?.kind === 'loft') {
+      if (armed?.kind === 'loft' && armed.at) {
+        // A cross from a corner or a free kick: its real flight as dots (driven or floated, swung by the drag),
+        // and the ring where it comes down, where the button went down.
+        const plan = setPieceDelivery(s, ctrl, armed.at, armed.power, armed.curl ?? 0);
+        this.dotPath(strikePath(plan.from, plan, this.chipDots.count - 1));
+        this.chipRing.visible = true;
+        this.chipRing.position.set(sx(plan.landing.x), 0.045, sz(plan.landing.y));
+        tx = plan.landing.x;
+        ty = plan.landing.y;
+        showRet = false;
+        wedgeAlpha = 0.75;
+      } else if (armed?.kind === 'loft') {
         // Lofted ball: the real flight as dots in the air, and the landing ring. The wedge under it
         // runs to the landing spot, lit as far as the hold has charged.
         const plan = loftPlan(s.ball.pos, aimAt, armed.power);

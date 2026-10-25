@@ -43,9 +43,12 @@
  *      CPU below skill 0 (AI_SKILL_MIN)
  *  17  far-side width: the wide man on the far side holds the touchline for a switch until the
  *      final third, and makes his run in behind down the line
- *  18  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
+ *  18  corners: a cross comes down where it was aimed, driven or floated by the hold and bent by a drag;
+ *      a man comes short; the box waits out of its zones and attacks them as it is struck; markers
+ *      challenge in the air; a keeper comes for a floated ball into his six-yard box
+ *  19  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
  */
-export const SIM_VERSION = 18;
+export const SIM_VERSION = 19;
 
 export const TICK_HZ = 60;
 

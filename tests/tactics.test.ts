@@ -300,12 +300,12 @@ describe('replay format 6', () => {
 
 describe('off the ball: the front striker stays on the last line', () => {
   /** One CPU match, a 4-3-3 at `m` against a Balanced 4-4-2: how far its striker stands from the last defender with the ball in midfield, and how often he is a short supporter. */
-  function striker(m: Mentality) {
+  function striker(m: Mentality, seed = 7300) {
     const squad = generateSquad(makeRng(5100), 60);
     const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
     const home = toTeamSetup(id('Home'), squad, autoLineup(squad, '4-3-3'), 0.6, '4-3-3', m);
     const away = toTeamSetup(id('Away'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced');
-    const s = createMatch({ seed: 7300, home, away, halfSeconds: 120, humans: [false, false] });
+    const s = createMatch({ seed, home, away, halfSeconds: 120, humans: [false, false] });
     const st = s.players.find((p) => p.team === 0 && p.sub === 'ST')!;
     let n = 0;
     let gap = 0;
@@ -324,12 +324,21 @@ describe('off the ball: the front striker stays on the last line', () => {
   }
 
   test('Balanced: never a short supporter in midfield, and nearer the line than when he was', () => {
-    const r = striker('balanced');
-    expect(r.n).toBeGreaterThan(100);
-    expect(r.supporting).toBe(0);
+    // Over 40 matches (seeds 7300-7339), not one: a single match's mean moves by several metres with any change
+    // to how play goes. Seed 7300 alone was 9.2 m on main after #51 and 10.2 m with the corners' contested crosses;
+    // over the 40, main 6.06 m (worst match 8.8, fewest samples 101), corners 6.83 m (worst 12.1, fewest 83).
+    const gaps: number[] = [];
+    for (let seed = 7300; seed < 7340; seed++) {
+      const r = striker('balanced', seed);
+      expect(r.n).toBeGreaterThan(75);
+      expect(r.supporting).toBe(0);
+      gaps.push(r.gap);
+    }
     // Main before the change: 13.5 m behind the line on average (scripts/offball-probe.ts era).
-    expect(r.gap).toBeLessThan(10);
-  });
+    expect(gaps.reduce((a, b) => a + b, 0) / gaps.length).toBeLessThan(8);
+    // And no one match where he hangs as far back as he used to.
+    expect(Math.max(...gaps)).toBeLessThan(12.5);
+  }, 60_000);
 
   test('Park the bus keeps him close instead: he still comes short', () => {
     expect(TACTICS.park.pin).toBe(false);

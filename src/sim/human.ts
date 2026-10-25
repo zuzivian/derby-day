@@ -313,7 +313,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.
       const target = aim ?? add(s.ball.pos, scale(norm(sub(heading, p.pos)), 40));
-      return { move, throttle, sprint, action: { kind: 'loft', target, power: clamp(input.loft, 0, 1) } };
+      const curl = input.curl ? clamp(input.curl, -1, 1) : 0;
+      return { move, throttle, sprint, action: { kind: 'loft', target, power: clamp(input.loft, 0, 1), ...(curl ? { curl } : {}) } };
     }
     if (input.pass) {
       if (pointer) {

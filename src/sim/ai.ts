@@ -52,6 +52,8 @@ import {
   PITCH_W,
   REACH_Z,
   RETREAT,
+  SIX_DEPTH,
+  SIX_W,
   SPRINT_MULT,
   TICK_HZ,
   type Mentality,
@@ -1481,7 +1483,13 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
     const reachX = high ? 5 + 2 * skill + 4 * p.attrs.goalkeeping : BOX_DEPTH - 3 + 4 * skill;
     if (mine && !toTeammate && teamX(s, p.team, mine.pt.x) * PITCH_W < reachX && Math.abs(mine.pt.y - MID_Y) < BOX_W / 2 - 2) {
       const margin = 0.45 - 0.3 * skill;
-      if (mine.t + margin < plan.bestThem && mine.t <= plan.bestUs + 0.2) return seek(p, high ? catchSpot(ball, mine.pt) : mine.pt, high ? 0.4 : 0.8);
+      // A floated ball dropping into his six-yard box he comes for when he gets there about as soon as anyone (a good
+      // keeper even a touch later), without the margin he wants further out: he reaches above the forwards with his
+      // hands. A driven one is too quick to come for.
+      const floated = ball.z + (ball.vz > 0 ? (ball.vz * ball.vz) / (2 * GRAVITY) : 0) > 5;
+      const six = floated && teamX(s, p.team, mine.pt.x) * PITCH_W < SIX_DEPTH + 1.5 && Math.abs(mine.pt.y - MID_Y) < SIX_W / 2 + 1;
+      const first = six ? mine.t < plan.bestThem + 0.1 * p.attrs.goalkeeping : mine.t + margin < plan.bestThem;
+      if (first && mine.t <= plan.bestUs + 0.2) return seek(p, high ? catchSpot(ball, mine.pt) : mine.pt, high ? 0.4 : 0.8);
     }
   }
 
@@ -1848,18 +1856,37 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
       ];
   const ours = s.players.filter((p) => p.team === att && !p.sentOff && p.i !== r.taker && p.role !== 'GK' && !t[p.i]).sort((a, b) => aerialRank(b) - aerialRank(a));
   const inBox: number[] = [];
-  ours.forEach((p, k) => {
+  const runs: (Vec | null)[] = s.players.map(() => null);
+  s.runs = runs;
+  // A corner the human takes (or a good side's) has a man short, near the flag: free until it is played, as the
+  // defence must stand 9.15 m off the ball.
+  const dir = attackDir(s, att);
+  const short = r.kind === 'corner' && (s.humans[att] || skillOf(s, att) > 0.55) ? clampToPitch({ x: r.spot.x - dir * 6, y: r.spot.y - near * 4.5 }, 1) : null;
+  // The short man: whoever of the rest is nearest the spot.
+  const shortMan = short ? ours.slice(attackers).sort((a, b) => dist(a.pos, short) - dist(b.pos, short))[0] : undefined;
+  let k = 0;
+  for (const p of ours) {
+    if (p === shortMan) {
+      t[p.i] = short;
+      continue;
+    }
     if (k < attackers) {
-      t[p.i] = zones[k % zones.length];
+      // He waits a few metres out from his zone and attacks it as the ball is struck (aiIntent).
+      const zone = zones[k % zones.length];
+      runs[p.i] = zone;
+      t[p.i] = line ? zone : add(zone, { x: -dir * 4, y: 0 });
       inBox.push(p.i);
     } else if (k < attackers + 2) t[p.i] = fromOpp(s, att, 20, MID_Y + (k % 2 ? 9 : -9)); // edge of the box, for the second ball
     else t[p.i] = fromTeam(s, att, 0.55, k % 2 ? 0.35 : 0.65); // rest defence
-  });
+    k++;
+  }
   // Defending: keeper on his line, one on the near post, mark the men in the box, someone on the edge, the forwards stay up.
   const gk = goalkeeper(s, def);
   if (!t[gk.i]) t[gk.i] = { x: ownGoal(s, def).x + attackDir(s, def) * 0.6, y: MID_Y + near * 0.8 };
   const theirs = s.players.filter((p) => p.team === def && !p.sentOff && p.i !== gk.i && !t[p.i]);
   const used = new Set<number>();
+  const marks = s.players.map(() => -1);
+  s.marks = marks;
   const postMan = theirs.filter((p) => p.sub === 'FB' || p.sub === 'WB').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot))[0];
   if (postMan && r.kind === 'corner') {
     t[postMan.i] = { x: ownGoal(s, def).x + attackDir(s, def) * 0.5, y: MID_Y + near * (GOAL_W / 2 - 0.3) };
@@ -1874,10 +1901,22 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
     }
     if (!best) break;
     used.add(best.i);
+    marks[best.i] = ai;
     // Goal-side and a touch toward the ball.
     t[best.i] = add(a, scale(norm(add(sub(ownGoal(s, def), a), scale(sub(r.spot, a), 0.15))), 1.1));
   }
-  let k = 0;
+  // One defender goes out to the short man, 9.15 m off the ball, between him and the goal.
+  if (short) {
+    const cover = theirs.filter((d) => !used.has(d.i) && d.sub !== 'ST').sort((a, b) => dist(a.pos, short) - dist(b.pos, short))[0];
+    if (cover) {
+      used.add(cover.i);
+      // Goal-side of him, not in the lane from the ball to him (the ball has to be played before he can close).
+      const at = add(short, scale(norm(sub(ownGoal(s, def), short)), 4.5));
+      const off = sub(at, r.spot);
+      t[cover.i] = len(off) < RETREAT + 0.3 ? add(r.spot, scale(norm(off), RETREAT + 0.3)) : at;
+    }
+  }
+  k = 0;
   for (const d of theirs) {
     if (used.has(d.i)) continue;
     if (d.sub === 'ST') t[d.i] = fromTeam(s, def, 0.42, k++ % 2 ? 0.4 : 0.6);
@@ -2048,7 +2087,8 @@ export function restartIntent(s: MatchState, p: MatchPlayer): Intent {
   // A man in the wall walks right onto his mark and then stands there, shoulder to shoulder, until it is struck.
   if (s.wall?.players.includes(p.i) && r.stage !== 'whistle') return d < (r.stage === 'ready' ? 0.3 : 0.12) ? IDLE : { ...seek(p, target, 0.6, 1), sprint: d > 3 };
   const it = seek(p, target, 2, r.stage === 'whistle' ? 0.65 : 1);
-  return { ...it, sprint: d > 18 && r.stage !== 'whistle' && sprintOk(s, p, true) };
+  // Up for a corner, they hurry to their places (the corner waits for them, match.ts cornerSet).
+  return { ...it, sprint: d > (r.kind === 'corner' ? 6 : 18) && r.stage !== 'whistle' && sprintOk(s, p, true) };
 }
 
 // ---------------------------------------------------------------------------
@@ -2177,6 +2217,16 @@ export function aiIntent(s: MatchState, p: MatchPlayer): Intent {
   if (!owner && p.i === plan.chaser) {
     const ic = plan.icpt[p.i];
     return { ...seek(p, ic ? ic.pt : ball.pos, 0.8), sprint: sprintOk(s, p, plan.bestThem - plan.bestUs < 0.6) };
+  }
+  // A corner or a free kick into the box, in the air: the attackers attack their zones (they ran from a few metres
+  // out as it was struck).
+  const run = s.runs?.[p.i];
+  if (run && !owner && (ball.setPiece === 'corner' || ball.setPiece === 'freekick') && ball.receiver !== p.i) return { ...seek(p, run, 0.8), sprint: true };
+  // Marking at a corner or a free kick into the box: stay goal-side of your man, at his shoulder, while it is in the air.
+  const marked = s.marks?.[p.i] ?? -1;
+  if (marked >= 0 && !owner && (ball.setPiece === 'corner' || ball.setPiece === 'freekick')) {
+    const a = s.players[marked];
+    if (!a.sentOff) return { ...seek(p, add(a.pos, scale(norm(sub(ownGoal(s, p.team), a.pos)), 0.8)), 0.5), sprint: true };
   }
   if (plan.attacking) {
     const carrier = owner && owner.team === p.team ? owner : null;
