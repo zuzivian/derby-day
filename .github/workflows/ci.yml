@@ -1,8 +1,10 @@
 name: CI
 
-# Run on every push and on every pull request.
+# Run on every pull request, and on pushes to main. A push to a PR branch is covered by the pull_request run, so it
+# does not start a second full run of the same commit.
 on:
   push:
+    branches: [main]
   pull_request:
 
 # Cancel superseded runs of the same ref so a fast follow-up push does not queue behind an old one.
@@ -103,7 +105,9 @@ jobs:
   e2e-all:
     name: Browser end-to-end tests
     needs: e2e
-    if: always()
+    # Not always(): a cancelled workflow (a newer push superseded it) skips this job instead of posting a red check.
+    # A shard that fails or is skipped still runs it, and it fails.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Every shard passed
