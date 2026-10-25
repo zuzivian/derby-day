@@ -13,7 +13,17 @@
       "docs/*": false,
       "ci/*": false,
       "assets/*": false,
-      "review/*": false
+      "review/*": false,
+      "perf/*": false,
+      "ui/*": false,
+      "claude/*": false,
+      "physics/*": false,
+      "tactics/*": false,
+      "rules/*": false,
+      "audio/*": false,
+      "test/*": false,
+      "wip/*": false,
+      "pr*": false
     }
   },
   "headers": [
