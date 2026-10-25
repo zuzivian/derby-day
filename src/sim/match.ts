@@ -1554,8 +1554,11 @@ function runClock(s: MatchState): void {
   }
   const penaltyPending = s.restart?.kind === 'penalty' || (s.phase === 'play' && s.ball.setPiece === 'penalty' && s.ball.owner < 0);
   if (penaltyPending) return;
-  // Not while a shot is on its way: the referee lets it finish (a goal, a save, or out).
-  if (s.phase === 'play' && a.hold < ADDED_HOLD_MAX && (goalBound(s, 0) || goalBound(s, 1) || !!s.advantage?.late)) {
+  // Not while a shot is on its way, or a man is through on goal with it: the referee lets the
+  // attack finish (a goal, a save, out of play, or the defence has it).
+  const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+  const through = !!owner && !s.ball.inHands && dist(owner.pos, oppGoal(s, owner.team)) < 20;
+  if (s.phase === 'play' && a.hold < ADDED_HOLD_MAX && (goalBound(s, 0) || goalBound(s, 1) || through || !!s.advantage?.late)) {
     a.hold++;
     return;
   }

@@ -39,6 +39,21 @@ describe('coach tracker', () => {
     for (let i = 0; i < 120; i++) { step(s, {}); expect(c.observe(s)).not.toContain('run'); }
   });
 
+  test('the kick-off he takes is a pass (Law 8): the pass tip follows the run tip while he stands over the ball', () => {
+    const s = match();
+    const c = new CoachTracker();
+    for (let i = 0; i < 60; i++) {
+      step(s, {});
+      c.observe(s);
+    }
+    expect(s.phase).toBe('restart');
+    expect(s.restart!.kind).toBe('kickoff');
+    expect(s.restart!.taker).toBe(s.controlled[0]);
+    expect(c.queue).toEqual(['run', 'pass']);
+    expect(c.take()).toBe('run');
+    expect(c.relevant('pass', s)).toBe(true);
+  });
+
   test('nothing else is offered before the run tip', () => {
     const s = match();
     toPlay(s);
