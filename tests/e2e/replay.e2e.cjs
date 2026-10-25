@@ -4,7 +4,7 @@
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, skipOnboarding, startRanked, pageWidths } = require('./lib/helpers.cjs');
+const { reload, SEL, openApp, goTab, skipOnboarding, startRanked, pageWidths } = require('./lib/helpers.cjs');
 
 const REPLAYS_KEY = 'derbyday.replays.v1';
 const SHORT = { halfSeconds: 3 };
@@ -19,7 +19,7 @@ function goalCode() {
 
 async function storeReplay(page, code) {
   await page.evaluate(([key, c]) => localStorage.setItem(key, JSON.stringify([{ id: 'e2e-fixture', at: 1700000000, code: c }])), [REPLAYS_KEY, code]);
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   await goTab(page, 'club');
@@ -247,7 +247,7 @@ test('replay: when the clipboard is refused, the code is offered in a selected t
     delete save.unlocksSeen;
     localStorage.setItem('derbyday.save.v1', JSON.stringify(save));
   });
-  await page.reload();
+  await reload(page);
   await skipOnboarding(page);
   await startRanked(page);
   await page.locator(SEL.modal).waitFor({ timeout: 60_000 });

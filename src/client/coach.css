@@ -21,6 +21,11 @@
 @media (max-width: 640px) {
   .coach-tip { left: 6px; right: 108px; top: 64px; width: auto; max-width: none; font-size: 12px; padding: 7px 8px; }
 }
+/* Touch phones held upright put that column in two rows instead (Menu, then [−] camera [+], hud.css), so the card
+   goes under it, the full width of the pitch: 6 px + two 44 px rows with 8 px between, plus 8 px clear. */
+@media (max-width: 640px) and (pointer: coarse) and (orientation: portrait) {
+  .coach-tip { top: 110px; right: 6px; }
+}
 /* The first tip also says which player is you. A card that long would cover the kick-off on a narrow phone, so there the sentence
    becomes a one-line banner in the free strip above the radar and the Pass and Shoot pad, and the card keeps only its own tip. */
 .coach-intro { display: none; }

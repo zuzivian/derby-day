@@ -719,7 +719,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     for (let i = 0; i < rows; i++) {
       const top = FRONT + i * RISE;
       // Steps in a dark shade of the fans' colour, barely striped: empty places blend into the block.
-      const k = i % 2 ? 0.5 : 0.45;
+      const k = i % 2 ? 0.66 : 0.62;
       blocks.push({ geo: new BoxGeometry(along, top, ROW_D).translate(0, top / 2, 0.4 + i * ROW_D + ROW_D / 2), color: [stepCol.r * k, stepCol.g * k, stepCol.b * k] });
     }
     const depth = 0.4 + rows * ROW_D;
@@ -740,7 +740,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     }
     // Seats in a dark shade of the fans' colour, so empty seats (a thin crowd on slow GPUs) blend
     // into the block instead of showing as a second pattern.
-    const seatMat = keep(new MeshLambertMaterial({ color: tone(new Color(fans.primary)).multiplyScalar(0.42) }));
+    const seatMat = keep(new MeshLambertMaterial({ color: tone(new Color(fans.primary)).multiplyScalar(0.7) }));
     const seatMesh = new Mesh(merge(seats), seatMat);
     disposables.push(seatMesh.geometry);
     seatMesh.receiveShadow = true;
@@ -783,14 +783,13 @@ export function buildStadium(o: StadiumOptions): Stadium {
     disposables.push(cm.mat);
     const im = new InstancedMesh(fanGeo, cm.mat, spots.length);
     const seeds = new Float32Array(spots.length);
-    // A calm crowd (the owner's screenshot read as random bright blocks): each stand is cut into
-    // sections about 14 m long, most in the fans' primary colour and some in their secondary, with a
-    // few fans in muted everyday clothes. Colours are pulled toward a mid grey (less contrast) and
-    // darken toward the back rows, under the roof, so the stand reads as a mass, not as noise.
-    const section = 22;
-    const nSec = Math.max(1, Math.round(along / section));
-    const secCol = Array.from({ length: nSec }, (_, k) => (k % 3 === 1 ? fans.secondary : fans.primary));
+    // A calm crowd (the owner's screenshot read as random bright blocks; then as alternating stripes
+    // of primary and secondary sections): fans are mostly in the primary colour, some in the secondary
+    // and a few in muted everyday clothes, mixed seat by seat so a stand reads as one mass of its
+    // team's colour, as in the Power Soccer references. Colours are pulled toward a mid grey (less
+    // contrast) and darken toward the back rows, under the roof.
     const casual = ['#30343b', '#3d434c', '#4b4f57', '#5a4a3c', '#2f3c52'];
+    const secondTint = new Color();
     spots.forEach(([x, y, z, row], i) => {
       const sc = 0.92 + r() * 0.16;
       tmpQ.setFromAxisAngle(UP, Math.PI + (r() - 0.5) * 0.5);
@@ -798,9 +797,11 @@ export function buildStadium(o: StadiumOptions): Stadium {
       tmpS.set(sc, sc, sc);
       tmpM.compose(tmpP, tmpQ, tmpS);
       im.setMatrixAt(i, tmpM);
-      const sec = Math.min(nSec - 1, Math.max(0, Math.floor(((x + along / 2) / along) * nSec)));
       const pick = r();
-      crowdColor.set(pick < 0.93 ? secCol[sec] : casual[Math.floor(r() * casual.length)]);
+      if (pick < 0.78) crowdColor.set(fans.primary);
+      // The secondary colour, part-way to the primary: scattered seat by seat at full contrast it speckled.
+      else if (pick < 0.92) crowdColor.set(fans.secondary).lerp(secondTint.set(fans.primary), 0.4);
+      else crowdColor.set(casual[Math.floor(r() * casual.length)]);
       tone(crowdColor);
       // Darker toward the back (under the roof), and only a slight per-fan variation.
       crowdColor.multiplyScalar((1 - 0.5 * (row / Math.max(1, rows - 1))) * (0.95 + r() * 0.06));
@@ -816,8 +817,9 @@ export function buildStadium(o: StadiumOptions): Stadium {
     im.frustumCulled = false;
     sg.add(im);
 
-    // Flags in the fans' colours, one every few metres along random rows.
-    const nFlags = hi ? Math.round((along / 3.2) * (rows / 12)) : 0;
+    // Flags in the fans' colours, one every 8 m or so along random rows (one every 3 m was a wall of
+    // waving rectangles over the crowd).
+    const nFlags = hi ? Math.round((along / 8) * (rows / 12)) : 0;
     const fm = crowdMaterial('flag');
     fanMats.push(fm);
     disposables.push(fm.mat);

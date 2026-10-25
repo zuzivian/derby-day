@@ -109,6 +109,15 @@
 }
 .hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
+/* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
+.hud-prompt {
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: 4px; padding: 4px 10px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
+}
+.hud-prompt b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 15px; letter-spacing: .04em; }
+.hud-prompt small { font-weight: 600; font-size: 11px; opacity: .8; margin-left: 4px; }
+.hud-prompt[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
 .pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
@@ -143,6 +152,8 @@
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt b { font-size: 13px; }
   .hud-tag b { font-size: 13px; }
   .hud-replay small { font-size: 10px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
@@ -194,9 +205,21 @@
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
   #pitch.pitch-3d { aspect-ratio: auto; height: calc(100dvh - 16px); }
-  .match .controls-hint, .match .controls-hint.clamp, .match .hint-more { display: none; }
+  .match .controls-hint, .match .controls-hint.clamp, .match .controls-hint.clamp:has(.hint-key), .match .hint-more { display: none; }
   .hud-tr { flex-direction: row; align-items: flex-start; }
   .hud-power { bottom: 84px; }
+}
+/* Touch screens held upright: Menu on its own row, then the camera chip between its zoom buttons
+   ([−] CAM [+]), so the corner takes two rows of the pitch instead of three. The mode label goes,
+   as it already does on phones. */
+@media (pointer: coarse) and (orientation: portrait) {
+  .hud-tr { display: grid; grid-template-columns: repeat(3, auto); justify-items: end; column-gap: 8px; }
+  .hud-tr .hud-menu { grid-area: 1 / 1 / 2 / -1; }
+  .hud-tr .hud-mode { display: none; }
+  .hud-tr .pitch-zoom { display: contents; }
+  .hud-tr .pitch-zoom [data-zoom="1"] { grid-area: 2 / 1; }
+  .hud-tr .pitch-cam { grid-area: 2 / 2; }
+  .hud-tr .pitch-zoom [data-zoom="-1"] { grid-area: 2 / 3; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }
@@ -204,6 +227,10 @@
 
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+/* A split hint (matchView.ts) shows its essentials whole, wrapping on a phone rather than ending in
+   an ellipsis; the detail waits behind "All controls". */
+.controls-hint.clamp:has(.hint-key) { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.controls-hint.clamp .hint-rest { display: none; }
 .hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .hint-more:hover { color: var(--ink); }
 @media (pointer: coarse) {
