@@ -9,6 +9,7 @@ const KEY = 'derbyday.replays.v1';
 /** Used when storage throws, so the result screen can still offer the replay it just recorded. */
 let memory: StoredReplay[] = [];
 let lastId: string | null = null;
+/** Decoded replays, only for entries still stored (prune): a decoded match is about 0.2-2 MB. */
 const decoded = new Map<string, Replay>();
 /** How many replays to keep: 5, more with the club-level replay-shelf perks (main.ts sets it from the save). */
 let keep = KEEP_REPLAYS;
@@ -42,6 +43,7 @@ export function storeReplay(r: Replay): StoredReplay | null {
     const next = addRecent(load(), entry, keep, Math.round((KEEP_CHARS * keep) / KEEP_REPLAYS));
     memory = next;
     lastId = entry.id;
+    prune(next);
     try {
       localStorage.setItem(KEY, JSON.stringify(next));
     } catch {
@@ -64,6 +66,16 @@ export interface RecentReplay {
   replay: Replay;
 }
 
+/** Forget decoded replays whose entry storage no longer keeps. */
+function prune(kept: StoredReplay[]): void {
+  if (decoded.size <= kept.length) return;
+  const ids = new Set(kept.map((e) => e.id));
+  for (const id of decoded.keys()) if (!ids.has(id)) decoded.delete(id);
+}
+
+/** Tests: how many decoded replays are held in memory. */
+export const decodedReplays = (): number => decoded.size;
+
 function open(e: StoredReplay): RecentReplay | null {
   let replay = decoded.get(e.id);
   if (!replay) {
@@ -80,7 +92,9 @@ function open(e: StoredReplay): RecentReplay | null {
 /** Newest first. Entries that no longer decode are skipped. */
 export function recentReplays(): RecentReplay[] {
   const out: RecentReplay[] = [];
-  for (const e of [...load()].reverse()) {
+  const stored = load();
+  prune(stored);
+  for (const e of [...stored].reverse()) {
     const r = open(e);
     if (r) out.push(r);
   }
