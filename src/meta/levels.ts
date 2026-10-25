@@ -283,9 +283,9 @@ export const XP = {
   practice: { easy: 30, normal: 40, hard: 60 } as Record<PracticeLevel, number>,
   trainingSession: 5,
   /** Cup finishing bonus, times your division's XP scale (DIVISION_XP in world.ts). */
-  cup: { winner: 160, runnerUp: 70, semiFinal: 35 },
+  cup: { winner: 140, runnerUp: 60, semiFinal: 30 },
   /** League finishing bonus by position, 1st to 8th, times your division's XP scale. */
-  league: [500, 300, 150, 120, 80, 60, 40, 30],
+  league: [400, 240, 120, 100, 70, 50, 35, 25],
 } as const;
 
 export type MilestoneId = 'first-match' | 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';

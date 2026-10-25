@@ -25,7 +25,7 @@ So the roadmap tests feel before building netcode, and plans for low concurrency
 As of 2026-10-23. Everything below runs in one 240 KB HTML file with no dependencies, and CI (typecheck, ~175 unit tests, a balance guard, ~26 browser tests) runs on every push.
 
 **Engine**
-- **Eleven-a-side under the Laws.** A 105 × 68 m pitch with real markings, 4-4-2 and 4-3-3, throw-ins, goal kicks, corners, offside (judged when the ball is played, an offence on involvement), fouls with advantage, direct and indirect free kicks with walls, live penalties, yellow and red cards (DOGSO, second yellow, a man short), and a referee who follows play. All seeded and deterministic (`src/sim/rules.ts`).
+- **Eleven-a-side under the Laws.** A 105 × 68 m pitch with real markings, nine formations and five mentalities from Park the bus to High press, throw-ins, goal kicks, corners, offside (judged when the ball is played, an offence on involvement), fouls with advantage, direct and indirect free kicks with walls, live penalties, yellow and red cards (DOGSO, second yellow, a man short), and a referee who follows play. All seeded and deterministic (`src/sim/rules.ts`).
 - **Deterministic sim.** `src/sim` is pure TypeScript: fixed 60 Hz tick, seeded RNG, no DOM, no clock, no `Math.random`, `sqrt` instead of `Math.hypot`. The same seed plus the same input log reproduces a match exactly (tested). That one property unlocks server authority, replays, rollback netcode and bot-driven balance testing.
 - **Inputs are tiny.** A tick of human input is a cursor point plus a few flags. A recorded 2×2-minute match with constant mouse movement is about 39 KB as a replay code; an idle one is 1–3 KB.
 - **Replays prove it.** Every match is recorded as its input log and re-simulated for goal highlights, with seeking (keyframes every 600 ticks, warm seeks ~3 ms) and a hash check that warns if the engine changed since recording.
@@ -191,8 +191,8 @@ A feature is available when the club's level reaches it, when the save is alread
 | Ranked, cup or league match | win 120, draw 80, loss 50; +10 per goal scored; +20 for a clean sheet; all times the opponent's division (×1, ×1.2, ×1.45, ×1.75 from the bottom up) and 0.7 to 1.3 by how unlikely the win was (`rankedScale` in game.ts): an equal club in the bottom division pays the table, a weak one less |
 | Practice | Easy 30, Normal 40, Hard 60 (flat) |
 | Training session | 5 each |
-| Cup finish | winners +160, runners-up +70, out in the semi-final +35; times your division's XP scale |
-| League finish | 1st +500, 2nd +300, 3rd +150, 4th +120, 5th +80, 6th +60, 7th +40, 8th +30; times your division's XP scale and the share of matchdays played |
+| Cup finish | winners +140, runners-up +60, out in the semi-final +30; times your division's XP scale |
+| League finish | 1st +400, 2nd +240, 3rd +120, 4th +100, 5th +70, 6th +50, 7th +35, 8th +25; times your division's XP scale and the share of matchdays played |
 | First-time milestones | finish the training ground +100, first ranked win +100, first signing +50, first trophy +200 |
 | Forfeits, abandoned matches | 0 (a forfeited cup final loses its finish bonus; a league finish is paid for the matchdays played) |
 | Local 2P, Link two tabs | 0 (they record nothing) |
@@ -203,15 +203,15 @@ XP is per match whatever the match length, like money and Elo. A cup tie settled
 
 | Level | Total XP | Match | Hours | Before the world (main, Oct 2026) |
 |---|---|---|---|---|
-| 5 | 1,000 | 5 | 0.6 | 0.9 h |
-| 10 | 4,500 | 24 | 2.8 | 4.2 h |
-| 20 | 19,000 | 96 | 11.2 | 16.6 h |
-| 30 | 43,500 | 213 | 24.9 | |
-| 50 | 122,500 | 601 | 70 | 99 h |
-| 75 | 277,500 | 1,310 | 153 | |
-| 99 | 485,100 | 2,289 | 267 | 379 h |
+| 5 | 1,000 | 6 | 0.7 | 0.9 h |
+| 10 | 4,500 | 27 | 3.1 | 4.2 h |
+| 20 | 19,000 | 103 | 12.0 | 16.6 h |
+| 30 | 43,500 | 229 | 26.7 | |
+| 50 | 122,500 | 620 | 72 | 99 h |
+| 75 | 277,500 | 1,337 | 156 | |
+| 99 | 485,100 | 2,325 | 271 | 379 h |
 
-XP a match rises from about 120 in the bottom division to about 240 in the top one, so level 98 to 99 takes about 40 matches (4.6 h) instead of 64 (7.5 h). Per match after the first 30: ranked 176 XP, cup 230, league 231 (the cup and league include their finish bonuses), practice 58. `bun run career --assert` (in CI) fails if level 5 takes over 1.5 h, level 10 leaves 2–7 h, level 20 8–25 h, level 50 40–110 h or level 99 150–320 h; if a cup or league match pays over 1.35× a ranked one; if from match 200 the strongest CPU XI is ever more than 3 below yours or you win over 70% of a block of ranked matches; if fewer than 3 promotions happen; or if the save passes 160 KB.
+XP a match rises from about 120 in the bottom division to about 240 in the top one, so level 98 to 99 takes about 40 matches (4.6 h) instead of 64 (7.5 h). Per match after the first 30: ranked 178 XP, cup 224, league 224 (the cup and league include their finish bonuses), practice 57. `bun run career --assert` (in CI) fails if level 5 takes over 1.5 h, level 10 leaves 2–7 h, level 20 8–25 h, level 50 40–110 h or level 99 150–320 h; if a cup or league match pays over 1.35× a ranked one; if from match 200 the strongest CPU XI is ever more than 3 below yours or you win over 70% of a block of ranked matches; if fewer than 3 promotions happen; or if the save passes 160 KB.
 
 **CPU fixtures.** Matches between CPU clubs (the rest of a cup round or league matchday, and the modelled CPU seasons) get a full-length scoreline from a Poisson model on the two XIs (`quickScore` in world.ts): 1.3 goals a side between equal XIs (about 2.6 a match, a quarter drawn, like your own matches), and a stronger XI scoring e^(0.07 × gap) times as often. The strength effect comes from 600 full-length CPU v CPU sims (fit 0.09 a point; 0.07 keeps upsets alive). Between evenly matched CPU XIs the full sim scores only about 1.1 a match with half drawn, so a straight full-length sim would have made the CPU table look stranger, not more real.
 

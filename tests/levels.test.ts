@@ -255,14 +255,14 @@ describe('XP awards', () => {
   test('cup and league finishing bonuses', () => {
     expect(cupFinishXp(0, false)).toBeNull();
     expect(cupFinishXp(0, true)).toBeNull();
-    expect(cupFinishXp(1, false)!.xp).toBe(35);
-    expect(cupFinishXp(2, false)!.xp).toBe(70);
-    expect(cupFinishXp(2, true)!.xp).toBe(160);
-    expect(cupFinishXp(2, true, 1.75)!.xp).toBe(280); // a top-division cup
-    expect(leagueFinishXp(1)!.xp).toBe(500);
-    expect(leagueFinishXp(2)!.xp).toBe(300);
-    expect(leagueFinishXp(8)!.xp).toBe(30);
-    expect(leagueFinishXp(1, 1.45)!.xp).toBe(725);
+    expect(cupFinishXp(1, false)!.xp).toBe(30);
+    expect(cupFinishXp(2, false)!.xp).toBe(60);
+    expect(cupFinishXp(2, true)!.xp).toBe(140);
+    expect(cupFinishXp(2, true, 1.75)!.xp).toBe(245); // a top-division cup
+    expect(leagueFinishXp(1)!.xp).toBe(400);
+    expect(leagueFinishXp(2)!.xp).toBe(240);
+    expect(leagueFinishXp(8)!.xp).toBe(25);
+    expect(leagueFinishXp(1, 1.45)!.xp).toBe(580);
   });
   test('winning the cup pays the match, the trophy bonus and the first trophy', () => {
     const s = atLevel(14, 5);
