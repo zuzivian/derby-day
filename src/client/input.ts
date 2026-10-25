@@ -51,6 +51,27 @@ export interface WorldPicker {
 }
 
 /**
+ * Does the focused control use this key itself, so the game should leave it alone? Text fields keep
+ * every key; radios, sliders and selects keep Space, Enter and the arrows; buttons, checkboxes and
+ * links keep only Space and Enter. Everything else (WASD, the arrows on a button, the shoot and
+ * switch keys) still reaches the game, so a keyboard player who Tabs onto a HUD button keeps moving.
+ */
+export function controlKeepsKey(t: EventTarget | null, canvas: unknown, key: string): boolean {
+  const el = t as { tagName?: string; type?: string; isContentEditable?: boolean; getAttribute?: (n: string) => string | null } | null;
+  if (!el || el === canvas || !el.tagName) return false;
+  const tag = el.tagName;
+  const type = (el.type ?? '').toLowerCase();
+  const role = el.getAttribute?.('role') ?? '';
+  if (el.isContentEditable || tag === 'TEXTAREA') return true;
+  if (tag === 'INPUT' && !/^(button|submit|reset|checkbox|radio|range|color|file|image)$/.test(type)) return true;
+  const press = key === ' ' || key === 'Enter';
+  const arrow = key.startsWith('Arrow');
+  if (tag === 'SELECT' || (tag === 'INPUT' && (type === 'radio' || type === 'range')) || role === 'radio' || role === 'slider') return press || arrow;
+  if (/^(BUTTON|INPUT|A|SUMMARY)$/.test(tag) || role === 'button' || role === 'checkbox' || role === 'link' || role === 'switch') return press;
+  return false;
+}
+
+/**
  * The world point for a pointer event, keeping the latched point when the pointer hasn't moved on
  * screen since it was taken (a click with a still mouse goes where the ring and wedge show, even if
  * the camera has panned since). Shared by InputController and the hot-seat HotseatInput.
@@ -200,7 +221,7 @@ export class InputController {
     const steers = (e: PointerEvent) => e.pointerType === 'mouse' || (e.pointerId === this.steerTouch && this.touches.size < 2);
     on(canvas, 'pointermove', (e) => {
       if (!steers(e)) return;
-      if (e.pointerType === 'mouse') this.mode = 'mouse';
+      this.mode = 'mouse';
       if (this.client) this.travel += Math.hypot(e.clientX - this.client.x, e.clientY - this.client.y);
       this.cursor = toWorld(e);
     });
@@ -220,6 +241,8 @@ export class InputController {
       }
       this.cursor = toWorld(e);
       if (e.pointerType !== 'mouse') {
+        // Touching the pitch hands you to the pointer scheme, even if the keys were chosen.
+        this.mode = 'mouse';
         // Touch steers by dragging; a quick tap with no ball picks a player (checked on release).
         this.touchTap = { t: performance.now(), x: e.clientX, y: e.clientY, id: e.pointerId };
         this.travel += MOVE_PX;
@@ -259,6 +282,9 @@ export class InputController {
         if (!e.repeat) this.onPause();
         return;
       }
+      // A focused control (the pause menu, the HUD) takes the keys it uses: Space presses a button
+      // rather than passing, but WASD still moves. Nothing is queued for the game while it is paused.
+      if (this.paused() || controlKeepsKey(e.target, canvas, e.key)) return;
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' '].includes(k)) e.preventDefault();
       if (e.repeat) return;
       if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) this.mode = 'keys';
@@ -393,6 +419,22 @@ export class InputController {
     if (this.mode !== 'mouse' || !this.cursor || this.hasBall() || s.controlled[team] < 0) return -1;
     const pick = pickTeammate(s, team, this.cursor);
     return pick === s.controlled[team] ? -1 : pick;
+  }
+
+  /** The match is paused (set by the match view): game keys are ignored, not queued for later. */
+  paused: () => boolean = () => false;
+
+  /**
+   * Forget every queued kick, tackle, switch and charge, and any held key: called on pause, on resume
+   * and around an instant replay, so nothing pressed then fires when play goes on.
+   */
+  reset(): void {
+    this.pass = this.tackle = this.select = this.switchReq = false;
+    this.loft = this.shoot = null;
+    this.leftStart = this.shotStart = this.loftKeyStart = null;
+    this.press = null;
+    this.aim = null;
+    this.keys.clear();
   }
 
   /** Called once per sim tick. One-shot actions are consumed here. */

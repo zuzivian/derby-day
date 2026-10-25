@@ -103,7 +103,10 @@ test('quick tactics: a mentality picked in the pause menu changes the side in th
   await page.keyboard.press('Escape');
   await page.locator(SEL.pause).waitFor({ state: 'visible' });
   expect(await page.locator('#quick-tactics input').count(), 'five steps').toBe(5);
-  await page.locator(SEL.quickMentality('press')).click();
+  await page.locator(SEL.quickMentality('attacking')).click();
+  // The pause menu keeps its arrow keys: the radios step along (the match does not take them).
+  await page.keyboard.press('ArrowRight');
+  expect(await page.locator('#quick-tactics input:checked').getAttribute('value'), 'arrow right steps to High press').toBe('press');
   // Paused: nothing has changed yet; it goes to the sim with the first tick after resuming.
   expect(await mentality(), 'not while paused').toBe('balanced');
   await page.locator(SEL.resume).click();

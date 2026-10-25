@@ -15,6 +15,7 @@ import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, 
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
 import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
+import { avoidClash } from './kits.ts';
 import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
@@ -273,18 +274,6 @@ function startTraining() {
 // Matches
 
 /** Away side switches to its second kit if the colours are too close to ours. */
-function avoidClash(home: TeamSetup, away: TeamSetup): TeamSetup {
-  const rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  const near = (a: string, b: string) => {
-    const [x, y] = [rgb(a), rgb(b)];
-    return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) < 120;
-  };
-  if (!near(home.primary, away.primary)) return away;
-  const swapped = { ...away, primary: away.secondary, secondary: away.primary };
-  if (!near(home.primary, swapped.primary)) return swapped;
-  return { ...away, primary: near(home.primary, '#f5f5f5') ? '#1c1c1c' : '#f5f5f5', secondary: near(home.primary, '#f5f5f5') ? '#f5f5f5' : '#1c1c1c' };
-}
-
 /**
  * Mount a live match against `opponent` and hand back the final state. Shared
  * by ranked, practice and competition matches. Returns false (with a toast)

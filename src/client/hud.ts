@@ -55,7 +55,7 @@ export function hudMarkup(o: HudOptions): string {
         </div>
       </div>
       <div class="hud-tr">
-        <button class="hud-menu" id="${o.menuId ?? 'pause-btn'}" type="button" aria-keyshortcuts="Escape P"><kbd>Esc</kbd>${esc(o.menuText ?? 'Menu')}</button>
+        <button class="hud-menu" id="${o.menuId ?? 'pause-btn'}" type="button" aria-keyshortcuts="Escape P" aria-label="${esc(o.menuText ?? 'Menu')}"><kbd aria-hidden="true">Esc</kbd>${esc(o.menuText ?? 'Menu')}</button>
         <span class="hud-mode">${esc(o.mode)}</span>
       </div>
       <div class="banner hud-word" id="banner" hidden></div>

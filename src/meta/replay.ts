@@ -6,6 +6,7 @@
 // The only places this file touches the sim are createMatch(), step() and
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
+import { pack, unpack } from './pack.ts';
 import { FORMATION_IDS, HALF_SECONDS, MENTALITY_IDS, mentalityOf, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Mentality, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
@@ -277,6 +278,11 @@ export class ReplaySeeker {
     return this.warmState === null;
   }
 
+  /** How far the background pass has got, in ticks: keyframes exist up to here, so seeks below it are cheap. */
+  get warmedTo(): number {
+    return this.warmState ? this.warmState.tick : this.replay.ticks;
+  }
+
   private stepOnce(s: MatchState): void {
     advance(s, this.inputs[s.tick] ?? {});
     this.steps++;
@@ -475,16 +481,17 @@ function writeTeam(w: Writer, t: TeamSetup) {
   }
 }
 
-/** `withFormation`: version 3 and later carry the formation; version 2 teams were six-a-side. */
-function readTeam(r: Reader, withFormation: boolean): TeamSetup {
+/** Version 3 and later carry the formation (version 2 teams were six-a-side); version 6 and later the mentality with it. */
+function readTeam(r: Reader, version: number): TeamSetup {
+  const withFormation = version >= 3;
   const name = r.str();
   const short = r.str();
   const primary = readColour(r);
   const secondary = readColour(r);
   const aiSkill = r.num();
   const shape = withFormation ? r.byte() : 0;
-  const formation = withFormation ? FORMATION_IDS[shape & 15] : undefined;
-  const mentality = MENTALITY_CODES[shape >> 4];
+  const formation = withFormation ? FORMATION_IDS[version >= 6 ? shape & 15 : shape] : undefined;
+  const mentality = version >= 6 ? MENTALITY_CODES[shape >> 4] : 'balanced';
   if ((withFormation && !formation) || !mentality) throw new Error('Replay code is damaged or cut short.');
   const count = r.uvar();
   if (count < 1 || count > TEAM_SIZE) throw new Error('Replay code has the wrong squad size.');
@@ -528,7 +535,7 @@ const E_LOFT = 8;
 const E_SWITCH = 16;
 /** Format 4: an aim point follows the cursor and axes, delta-coded against the cursor. */
 const E_AIM = 32;
-/** Format 5: a mentality change (HumanInput.tactic) byte follows everything else in the run. */
+/** Format 6: a mentality change (HumanInput.tactic) byte follows everything else in the run. */
 const E_TACTIC = 64;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
@@ -618,7 +625,7 @@ function readRuns(r: Reader, ticks: number, version: number): InputRun[] {
     if (e & E_TACKLE) input.tackle = true;
     if (version >= 4 ? e & E_SWITCH : f & F_SWITCH_V3) input.switchPlayer = true;
     if (version >= 4 && f & F_MOVED) input.moved = true;
-    if (version >= 5 && e & E_TACTIC) {
+    if (version >= 6 && e & E_TACTIC) {
       input.tactic = r.byte();
       if (input.tactic < 1 || input.tactic > MENTALITY_IDS.length) throw new Error('Replay code is damaged or cut short.');
     }
@@ -662,10 +669,27 @@ function checksum(b: Uint8Array): number {
  * 4: inputs carry `aim` (a click aims where the button went down) and `moved` (the pointer
  * really moved); switch player moved to the extra byte to make room. Version 3 codes still
  * open (recorded on an earlier sim, so flagged as from another version).
- * 5: inputs may carry `tactic` (a mentality change from the pause menu). Version 4 codes still
- * open (an earlier sim, so flagged as from another version).
+ * 5: the input runs (the bulk of a code) are compressed with pack.ts, an adaptive range coder:
+ * same inputs, about half the length, so five full matches fit the Recent shelf and a code is
+ * easier to share. Version 4 codes still open unchanged.
+ *
+ * Layout of a format 5 body: version byte, seed (ivar), half length in ms (uvar), human team + 1
+ * (byte), SIM_VERSION (uvar), home and away teams, label, timestamp, score, goals, final hash
+ * (u32), tick count (uvar), then the raw length of the runs (uvar), the packed length (uvar) and
+ * the packed runs. A 4-byte checksum follows the body. pack.ts compresses bytes and knows nothing
+ * about inputs, so adding a HumanInput field never touches it.
+ *
+ * Adding a field (format 6 and later): each run is a flag byte F, then an extra byte E when F has
+ * F_EXT. F bit 128 is reserved and rejected; E bits 64 and 128 are free. Give the new field an E
+ * bit (or, once those run out, make E bit 128 mean "a second extra byte follows"), write its value
+ * after the existing fields, and read it only when `version >= 6`, so older codes decode as before.
+ * Bump REPLAY_VERSION, and SIM_VERSION too if the field changes what the sim does.
+ * 6: inputs may carry `tactic` (a mentality change from the pause menu, E bit 64, a byte after
+ * the other fields), and a team's mentality rides in the high four bits of its formation byte
+ * (0 is Balanced, as every older code has). Version 5 and 4 codes still open, flagged as from
+ * another sim version.
  */
-export const REPLAY_VERSION = 5;
+export const REPLAY_VERSION = 6;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
@@ -689,7 +713,14 @@ export function encodeReplay(r: Replay): string {
   }
   w.u32(r.fp);
   w.uvar(r.ticks);
-  writeRuns(w, r.runs);
+  // Format 5: the runs are written to their own buffer and packed.
+  const rw = new Writer();
+  writeRuns(rw, r.runs);
+  const raw = rw.bytes();
+  const packed = pack(raw);
+  w.uvar(raw.length);
+  w.uvar(packed.length);
+  for (const b of packed) w.byte(b);
   const body = w.bytes();
   const out = new Uint8Array(body.length + 4);
   out.set(body);
@@ -731,8 +762,8 @@ function decodeBody(code: string): Replay {
   const humanTeam = (r.byte() - 1) as 0 | 1 | -1;
   if (halfSeconds < 1 || halfSeconds > 3600 || ![-1, 0, 1].includes(humanTeam)) throw new Error('Replay code is damaged or cut short.');
   const sim = version >= 3 ? r.uvar() : 1;
-  const home = readTeam(r, version >= 3);
-  const away = readTeam(r, version >= 3);
+  const home = readTeam(r, version);
+  const away = readTeam(r, version);
   const label = r.str();
   const at = r.uvar();
   const score: [number, number] = [r.uvar(), r.uvar()];
@@ -748,7 +779,17 @@ function decodeBody(code: string): Replay {
   const fp = r.u32();
   const ticks = r.uvar();
   if (ticks > MAX_TICKS) throw new Error('Replay code is damaged or cut short.');
-  const runs = readRuns(r, ticks, version);
+  let runs: InputRun[];
+  if (version >= 5) {
+    const rawLen = r.uvar();
+    const packedLen = r.uvar();
+    if (rawLen > MAX_TICKS * 32 || packedLen > rawLen + 64) throw new Error('Replay code is damaged or cut short.');
+    const packed = new Uint8Array(packedLen);
+    for (let i = 0; i < packedLen; i++) packed[i] = r.byte();
+    const rr = new Reader(unpack(packed, rawLen));
+    runs = readRuns(rr, ticks, version);
+    if (!rr.done) throw new Error('Replay code is damaged or cut short.');
+  } else runs = readRuns(r, ticks, version);
   if (!r.done) throw new Error('Replay code is damaged or cut short.');
   return { seed, halfSeconds, humanTeam, home, away, ticks, runs, goals, score, fp, label, at, sim };
 }
@@ -770,8 +811,12 @@ export interface StoredReplay {
 }
 
 export const KEEP_REPLAYS = 5;
-/** Total characters of the stored JSON. */
-export const KEEP_CHARS = 300_000;
+/**
+ * Total characters of the stored JSON for KEEP_REPLAYS replays. A full match's code is about 45-70K
+ * characters since format 5 (pack.ts; it was 70-117K), so five fit with room to spare, well within
+ * a browser's roughly 5M characters of localStorage.
+ */
+export const KEEP_CHARS = 500_000;
 
 /** Newest last. Adds `entry`, then drops the oldest until there are at most `maxCount` and the JSON fits `maxChars`. */
 export function addRecent(list: StoredReplay[], entry: StoredReplay, maxCount = KEEP_REPLAYS, maxChars = KEEP_CHARS): StoredReplay[] {

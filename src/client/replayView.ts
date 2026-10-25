@@ -8,7 +8,7 @@
 // capture-phase key handler keeps Esc, Tab and the replay keys away from the
 // rest of the app.
 
-import { clipsFor, codeSize, decodeReplay, formatSize, ReplaySeeker, type Clip, type Replay } from '../meta/replay.ts';
+import { clipsFor, codeSize, decodeReplay, KEYFRAME_EVERY, formatSize, ReplaySeeker, type Clip, type Replay } from '../meta/replay.ts';
 import { DT } from '../sim/constants.ts';
 import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
@@ -63,7 +63,7 @@ export function recentReplaysHtml(): string {
     .join('');
   return `<div class="replays">
     <h3 class="eyebrow">Recent replays</h3>
-    ${rows ? `<ul class="replay-list">${rows}</ul>` : `<p class="muted small">Your last ${replaySlots()} matches are kept here to watch again.</p>`}
+    ${rows ? `<ul class="replay-list">${rows}</ul>` : `<p class="muted small">Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).</p>`}
     <div class="replay-paste">
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">
@@ -435,7 +435,16 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     }
   });
   scrub.addEventListener('input', () => {
-    seeker.seek(clip.start + Number(scrub.value));
+    // While the background pass is still filling keyframes, a scrub past it would simulate the whole
+    // gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
+    let want = clip.start + Number(scrub.value);
+    const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
+    if (want > ready) {
+      want = ready;
+      scrub.value = String(Math.max(0, want - clip.start));
+      status.textContent = 'Still loading the rest of the match…';
+    }
+    seeker.seek(want);
     acc = 0;
     sync();
   });
@@ -483,6 +492,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       warmTimer = window.setTimeout(warm, 0);
       return;
     }
+    if (status.textContent?.startsWith('Still loading')) status.textContent = '';
     if (seeker.verified === false) {
       status.textContent = 'This replay was recorded on a different version of the game, so it may not match what happened.';
       status.classList.add('bad');

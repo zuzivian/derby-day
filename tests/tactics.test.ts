@@ -6,7 +6,7 @@
 import { beforeAll, describe, expect, test } from 'bun:test';
 import { autoLineup, clubFormation, clubMentality, cpuTeam, generateLadder, generateSquad, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { ensureElevenASide, newGame, setFormation, setMentality, clubTeam } from '../src/meta/game.ts';
-import { decodeReplay, encodeReplay, ReplayRecorder, ReplaySeeker, type Replay } from '../src/meta/replay.ts';
+import { decodeReplay, encodeReplay, REPLAY_VERSION, ReplayRecorder, ReplaySeeker, type Replay } from '../src/meta/replay.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { averageMetrics, measureMatch, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
 import { FORMATION_IDS, FORMATIONS, MENTALITY_IDS, SIM_VERSION, TEAM_SIZE, type FormationId, type Mentality } from '../src/sim/constants.ts';
@@ -253,3 +253,36 @@ describe('quick tactics (pause menu)', () => {
     expect(seeker.seek(200).teams[0].mentality ?? 'balanced').toBe('balanced');
   });
 });
+
+describe('replay format 6', () => {
+  // A format-5 code made by main at 2cfa17c (#19's packed runs, SIM_VERSION 4): a 6 s-a-half
+  // match, seed 21, recorded 2026-10-25. It must still open, flagged as from another sim version.
+  const FORMAT5 = 'DD1.BSrwLgEEClNlbG5lc3MgSUYDU05TAQ50kAH95oqwCQALCDEwN3g3YmQxCkouIEhhZXNlb2sBAMwIsAS0C9AF-AqACoAKB2gyNTYxajYNVC4gVGhvcm53b3J0aAMB6AyoBeAI4AjgCJwJwAIHenpkYjlzMwlILiBBbGRkZW4CAeAI4AOkCOQFoAuQCMgBCDFzM3ZyOXg0CVQuIE1hcnRvbgUBsAmUBcgGkAjsCZgM3AEIMWN1OGMyazUMQS4gQnJvb2t3ZWxsBAHsCbQG1AecCYAKuAgUB3hqcm1qcDkLQi4gUGVtd29ydGgIAsgLpAiMC9gJ_AfECZwECDE1cWZjZzI4C0EuIE11c2JhcmFuDwGICZgHsAn4CowLwAz8AggxcnY5M2w4YQpPLiBGZW5tb3JlCgK8CvQIgArgCPwHqArcAQd0eGV1bW5iCUouIEtpcmtieQcChAfIBpQK4AjAB4QMxAQHdGIwbzVjZglULiBEb2JpYWsJA-wJnAn8B_gKqAXECfABCDFxdjY4dDBjDEsuIEJyb29rd2VsbA4C5ArkCqgKpAjQBeAIyAERSGFsZGdyb3ZlIE9seW1waWMDSEdFAR0_jwH___-2BwELB2IzMjZ2dGoKSC4gV29sYm9uZwEAjAbMA-QKuAjcBqAL7AkIMWlhaTZndG4JUy4gRG9zZW9rBAHECeQFkAisB9AKsAl4CDF3ZnJvcGtvCk0uIEtheW9taW4DAYgJ0AXECcwIxAnQCvABB3dwaGlxbXEKSi4gSGFlYm9uZw8BpAigBvAGpAjIC_QI8AEHNjZqMDJwbQpILiBDaHVib25nBQH8B6QD2ASgBtwL4AjMAwgxcHd5a3lpdwhTLiBXb2xqdRECrAeMBowLvAq0BqgKoAEIMTM4a2MwbXMIWS4gV29sanUKAvQIrAe0C-AIiAnwBuADCDExdXphMDV2DkouIEhhZWFuZ3llb25nEALoB9QH-ArgCMgGmAc8B3h0c2o0M3UKSi4gWWVvaHl1bg4C9AioCuAInAmMBvALyAEIMWZ4dTQwOXgJUy4gT2Jpb3JlCQPIBqgKtAb0CCjUB8gBB3U3Nzl2enkNTS4gU2luYW5naHl1bgsD6AecCfgF4AjMA9AFFAdmaXh0dXJl8KLwxwYAAADisX9IrAexHecDAAHAOvAuAcVFuno93d1XJ2ETGAW7ukN-VmPsSCL_6oK1je7gqX8PKew2ka3Znt-fpm_nPF-5t8dx2PkOsYHXfwEb0gOzHKvmgJFrmqfFb5m2ikeURbrmhZRv-p6CasiXXou0ezclmtUMJX4ac0AnsvBuCqVgOJaOnT2gF2JWyW6UYh6Fa4LOBuA7ewxRrJZN9B7rTKVZW2mHOmzSehrhuWvLTiNLxN_66s8jjGnqf_g3pVQXFKtafBeUi-Py_mvx1C-ZLdQl-ZzkXTFWTo2L6FEh9TcMZ-ALrT7Xq-IwQlxu3gOUN_njjYdePndYYQUxy03NNSy1L81WhjxO8dVlnWn-kw1JfgCFpcg4wtkZ8ZfmoKOe77ROF_TAPr6eNOLFpvsLOwDwWCE0codVMyuY6vCzlvp0rVaoNEUxqhmodhcu6M1GTUAOjX2hqsYH4jPvyZJa2SBPeG9mn2DjD7AVgR_5ddfP08kBEJ5d8V4ZHCUSqlByRbewx2DK9JsI5MqYDS_feH0w6cuWMIe1Qi-EKkVBkLLxPD25VWJrG7HJcwb6gncEP63Y421HfcYwwvJP14fV2QyE-zr0ZAszwF9JwXcmrLyfualQ71AJsPTJMLhwzka9TqowayXAE0mjZvtOHu6xWppEgyCB_NQ';
+
+  test('codes are written as format 6', () => {
+    const [a, b] = generateLadder(11, 2);
+    const sq = ladderSquad(a);
+    const home = toTeamSetup(a, sq, autoLineup(sq), 0.6);
+    const away = cpuTeam(b, ladderSquad(b));
+    const rec = new ReplayRecorder({ seed: 2, home, away, halfSeconds: 4, humanTeam: 0 }, 'x');
+    const s = createMatch({ seed: 2, home, away, halfSeconds: 4, humanTeam: 0 });
+    for (let t = 0; s.phase !== 'fulltime'; t++) step(s, rec.push(t === 60 ? { tactic: 5 } : {}));
+    const code = encodeReplay(rec.finish(s, 0));
+    expect(REPLAY_VERSION).toBe(6);
+    expect(decodeReplay(code).runs.some((r) => r.input.tactic === 5)).toBe(true);
+  });
+
+  test('a format-5 code from main still decodes, and is flagged as another sim version', () => {
+    const r = decodeReplay(FORMAT5);
+    expect(r.seed).toBe(21);
+    expect(r.halfSeconds).toBe(6);
+    expect(r.sim).toBe(4);
+    expect(r.home.formation ?? '4-4-2').toBe('4-4-2');
+    expect(r.home.mentality ?? 'balanced').toBe('balanced');
+    expect(r.ticks).toBeGreaterThan(0);
+    const seeker = new ReplaySeeker(r);
+    while (!seeker.warm(5000)) {}
+    expect(seeker.verified).toBe(false);
+  });
+});
+
