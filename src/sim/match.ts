@@ -58,7 +58,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, loftPlan, passTo, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
+import { assistReceiver, chipPlan, loftPlan, passTo, passToPoint, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
 import {
   awardRestart,
   ballOut,
@@ -1494,11 +1494,18 @@ function humanOrTimeout(s: MatchState, p: MatchPlayer, input: HumanInput): Inten
   return humanIntent(s, p, input);
 }
 
+/** A team-mate this close (m) to his restart set-up place is about to stop there (queuedRestartKick). */
+const RESTART_NEAR_PLACE = 4;
+
 /** A restart kick clicked during set-up, aimed again from where the taker now stands: to the team-mate it picked, wherever he is now. */
 function queuedRestartKick(s: MatchState, p: MatchPlayer, q: { input: HumanInput; receiver: number }): Action | null {
   const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
   if (q.input.pass && mate && !mate.sentOff) {
-    const r = passTo(s, mate);
+    // Nearly at the place the restart positioning is walking him to: to that place (he stops there),
+    // not led by his set-up walk. Still on a long walk: led by his run, as a click now would be.
+    restartIntent(s, mate); // fills this tick's restart targets
+    const place = s.aiRestart?.targets[mate.i];
+    const r = place && dist(place, mate.pos) < RESTART_NEAR_PLACE ? passToPoint(s, mate, place) : passTo(s, mate);
     return { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed };
   }
   const it = humanIntent(s, p, q.input);

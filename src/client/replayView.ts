@@ -11,6 +11,7 @@
 import { clipsFor, codeSize, decodeReplay, KEYFRAME_EVERY, formatSize, ReplaySeeker, type Clip, type Replay } from '../meta/replay.ts';
 import { DT } from '../sim/constants.ts';
 import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
+import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
 
@@ -278,7 +279,8 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     </div>
   </div>`;
   const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
-  const canvas = q<HTMLCanvasElement>('#rv-canvas');
+  // let: a lost WebGL context that never comes back swaps it for a fresh 2D canvas (gfx below).
+  let canvas = q<HTMLCanvasElement>('#rv-canvas');
   const scrub = q<HTMLInputElement>('#rv-scrub');
   const playBtn = q('[data-rp="play"]');
   const slowBtn = q('[data-rp="slow"]');
@@ -295,6 +297,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   let warmTimer = 0;
   let closed = false;
   let renderer: MatchRenderer | null = null;
+  let gfx: GfxLossWatch | null = null;
   let wordTimer = 0;
   const motionOk = !reducedMotion();
 
@@ -308,6 +311,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       clearTimeout(warmTimer);
       clearTimeout(wordTimer);
       ro.disconnect();
+      gfx?.dispose();
       renderer?.dispose();
       renderer = null;
       popLayer(layer);
@@ -504,6 +508,36 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   renderer.resize();
   renderer.prepare(seeker.state);
   ro.observe(canvas);
+  // WebGL context loss (gfxloss.ts): playback stops under the note and carries on when the context is
+  // back; if it doesn't come back, the replay goes on in 2D.
+  let wasPlaying = false;
+  gfx = watchGfxLoss(renderer, q('.rp-stage'), {
+    onLost: () => {
+      wasPlaying = playing;
+      playing = false;
+      sync();
+    },
+    onRestored: () => {
+      playing = wasPlaying;
+      last = performance.now();
+      acc = 0;
+      dirty = true;
+      sync();
+    },
+    onGiveUp: () => {
+      if (closed || !renderer) return;
+      ro.unobserve(canvas);
+      ({ canvas, renderer } = fallback2D(canvas, renderer));
+      ro.observe(canvas);
+      renderer.resize();
+      renderer.prepare(seeker.state);
+      playing = wasPlaying;
+      last = performance.now();
+      acc = 0;
+      dirty = true;
+      sync();
+    },
+  });
   setClip(idx, true);
   q('#rv-title').focus();
   raf = requestAnimationFrame(frame);

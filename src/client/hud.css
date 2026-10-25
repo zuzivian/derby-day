@@ -193,9 +193,9 @@
 @media (prefers-reduced-motion: reduce) {
   .rp-word { animation: none; }
 }
-/* A lost WebGL context while the match is held (matchView.ts): a calm note over the blank pitch. */
-.pitch-wrap .gfx-note {
+/* A lost WebGL context (gfxloss.ts): a calm note over the blank pitch, in a match or the replay viewer. */
+.pitch-wrap .gfx-note, .rp-stage .gfx-note {
   position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; pointer-events: none; border-radius: 10px;
   background: rgba(8, 12, 11, .72); color: #fff; font: 800 18px/1.2 var(--font-display, 'Arial Narrow', sans-serif); letter-spacing: .06em; text-transform: uppercase;
 }
-.pitch-wrap .gfx-note[hidden] { display: none; }
+.pitch-wrap .gfx-note[hidden], .rp-stage .gfx-note[hidden] { display: none; }

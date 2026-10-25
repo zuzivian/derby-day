@@ -450,4 +450,10 @@ test('trackpad: a pinch (ctrl+wheel) over the pitch zooms the 3D camera, not the
   const mousePrevented = await page.evaluate(() => !document.querySelector('#pitch').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true })));
   expect(mousePrevented, 'a mouse ctrl+wheel still zooms the page').toBe(false);
   expect(await zoom(), 'and leaves the camera alone').toBe(before);
+  // A smooth-scrolling mouse with Ctrl held sends small deltas too, but after a real Control keydown.
+  await page.keyboard.down('Control');
+  const smoothPrevented = await page.evaluate(() => !document.querySelector('#pitch').dispatchEvent(new WheelEvent('wheel', { deltaY: 4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true })));
+  await page.keyboard.up('Control');
+  expect(smoothPrevented, 'a smooth-scrolling mouse ctrl+wheel still zooms the page').toBe(false);
+  expect(await zoom(), 'and leaves the camera alone too').toBe(before);
 });

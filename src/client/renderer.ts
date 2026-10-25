@@ -188,6 +188,15 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     toggle();
     if (e.detail > 0) btn.blur();
   });
+  // A trackpad pinch arrives as ctrl+wheel with no Control key pressed; a mouse wheel with Ctrl held
+  // (even a smooth-scrolling one with small deltas) has a real Control keydown before it.
+  let ctrlHeld = false;
+  const onCtrl = (e: KeyboardEvent) => {
+    if (e.key === 'Control') ctrlHeld = e.type === 'keydown';
+  };
+  const onBlur = () => {
+    ctrlHeld = false;
+  };
   const onKey = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
@@ -211,7 +220,7 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if ((e.target as HTMLElement | null)?.closest('#pause')) return;
     // A mouse wheel with Ctrl held zooms the page as usual; a trackpad pinch (also ctrl+wheel) over
     // the pitch zooms the camera, not the page.
-    if (e.ctrlKey && !isPinch(e)) return;
+    if (e.ctrlKey && (ctrlHeld || !isPinch(e))) return;
     e.preventDefault();
     const z = wheelZoom(r.zoom, e);
     if (z === r.zoom) return;
@@ -261,6 +270,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (b) zoom(Number(b.dataset.zoom) as 1 | -1);
   });
   window.addEventListener('keydown', onKey);
+  window.addEventListener('keydown', onCtrl);
+  window.addEventListener('keyup', onCtrl);
+  window.addEventListener('blur', onBlur);
   wheelEl?.addEventListener('wheel', onWheel, { passive: false });
   canvas?.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove);
@@ -272,6 +284,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   return () => {
     clearTimeout(flashTimer);
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('keydown', onCtrl);
+    window.removeEventListener('keyup', onCtrl);
+    window.removeEventListener('blur', onBlur);
     wheelEl?.removeEventListener('wheel', onWheel);
     canvas?.removeEventListener('pointerdown', onDown);
     window.removeEventListener('pointermove', onMove);

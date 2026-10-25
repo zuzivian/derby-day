@@ -420,27 +420,35 @@ describe('a click while our restart is being set up', () => {
   }
 });
 
-describe('a restart click made during set-up is the same as clicking him once the taker is ready', () => {
-  /** Our restart; the human clicks the second-nearest team-mate to the taker, 10 ticks into set-up (`early`) or on the first ready tick. The kick as it leaves. */
-  function restartClick(kind: 'throwin' | 'goalkick' | 'corner', at: Vec, seed: number, early: boolean) {
+describe('a restart click made during set-up reaches the team-mate clicked', () => {
+  /** Our restart; the human clicks the second-nearest team-mate (to the spot or to the taker) 10 ticks into set-up (`early`) or on the first ready tick. Did he get the ball? */
+  function restartClick(kind: 'throwin' | 'goalkick' | 'corner', at: Vec, by: 'spot' | 'taker', seed: number, early: boolean) {
     const s = livePlay(seed + 10);
     awardRestart(s, kind, 0, { ...at }, 'out');
     let t = 0;
     while (s.restart && s.restart.stage === 'whistle' && t++ < 600) step(s, { cursor: { x: 50, y: 34 } });
     const taker = s.players[s.restart!.taker];
     for (let k = 0; k < 10; k++) step(s, { cursor: { ...taker.pos } });
-    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, taker.pos) - dist(b.pos, taker.pos))[1];
+    const ref = by === 'spot' ? s.restart!.spot : taker.pos;
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[1];
     if (early) step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
-    const n = s.events.length;
     let clicked = early;
-    for (let k = 0; k < 400 && !s.events.slice(n).some((e) => e.kind === 'restartTaken'); k++) {
-      if (!clicked && s.restart?.stage === 'ready') {
+    for (let k = 0; k < 400 && s.restart; k++) {
+      if (!clicked && s.restart.stage === 'ready') {
         clicked = true;
         step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
       } else step(s, { cursor: { ...mate.pos } });
     }
-    return { mate: mate.i, receiver: s.ball.receiver, vel: { ...s.ball.vel }, tick: s.tick };
+    for (let k = 0; k < 240 && s.ball.owner < 0 && s.phase === 'play'; k++) step(s, { cursor: { ...mate.pos } });
+    return s.ball.owner === mate.i;
   }
+  const reached = (kind: 'throwin' | 'goalkick' | 'corner', at: Vec, by: 'spot' | 'taker', early: boolean) => [1, 2, 3, 4, 5, 6].filter((sd) => restartClick(kind, at, by, sd, early)).length;
+
+  test('a throw-in clicked on the second-nearest team-mate (to the taker) mid set-up reaches him', () => {
+    // The re-review of b42481e: 0 of 6. The pass led him by his set-up walk, but he stops (or slows)
+    // as he reaches his place, so the throw landed where he never went.
+    expect(reached('throwin', { x: 70, y: 68 }, 'taker', true)).toBeGreaterThanOrEqual(5);
+  });
 
   for (const [kind, at] of [
     ['throwin', { x: 40, y: 0 }],
@@ -448,17 +456,8 @@ describe('a restart click made during set-up is the same as clicking him once th
     ['goalkick', { x: 5.5, y: 30 }],
     ['corner', { x: 105, y: 0 }],
   ] as const) {
-    test(`${kind} at (${at.x}, ${at.y}): the same kick to the same man, on the same tick`, () => {
-      let same = 0;
-      for (let seed = 1; seed <= 6; seed++) {
-        const a = restartClick(kind, at, seed, true);
-        const b = restartClick(kind, at, seed, false);
-        expect(a.receiver).toBe(a.mate);
-        if (a.receiver === b.receiver && a.tick === b.tick && dist(a.vel, b.vel) < 1e-9) same++;
-      }
-      // The review on 26f49fb: the queued kick was the one built at the click, from where the taker was
-      // walking to where the team-mate had been (a throw-in reached him 0 of 6, 4 went to an opponent).
-      expect(same).toBe(6);
+    test(`${kind} at (${at.x}, ${at.y}): a click mid set-up does at least as well as clicking him once the taker is ready`, () => {
+      for (const by of ['spot', 'taker'] as const) expect(reached(kind, at, by, true)).toBeGreaterThanOrEqual(reached(kind, at, by, false));
     });
   }
 });

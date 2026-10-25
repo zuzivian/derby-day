@@ -209,8 +209,16 @@ export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Ve
 }
 
 /** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
-export function passTo(s: MatchState, m: MatchPlayer): { target: Vec; receiver: number; speed: number } {
-  const target = leadPoint(s.ball.pos, m);
+/** `lead`: play it to where he will be if he is running (false: to his feet, e.g. a man who stops when a restart is ready). */
+export function passTo(s: MatchState, m: MatchPlayer, lead = true): { target: Vec; receiver: number; speed: number } {
+  const target = lead ? leadPoint(s.ball.pos, m) : { ...m.pos };
+  const d = dist(s.ball.pos, target);
+  return { target, receiver: m.i, speed: groundPassPlan(d, receiverArrival(d)).speed };
+}
+
+/** A firm pass to team-mate `m`, played to `at` (where he is going), arriving at a controllable pace. */
+export function passToPoint(s: MatchState, m: MatchPlayer, at: Vec): { target: Vec; receiver: number; speed: number } {
+  const target = { ...at };
   const d = dist(s.ball.pos, target);
   return { target, receiver: m.i, speed: groundPassPlan(d, receiverArrival(d)).speed };
 }
