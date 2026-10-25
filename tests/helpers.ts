@@ -35,3 +35,16 @@ export function kickOff(s: MatchState, input: HumanInput | TeamInputs = {}): voi
     step(s, input);
   }
 }
+
+/**
+ * Straight into open play from the kick-off line-up, without taking the kick-off: the taker
+ * simply has the ball at the centre spot, as the sim did before the kick-off became a kick.
+ * For scene tests that teleport players and the ball and don't care about the kick-off; it
+ * draws nothing from the rng, so seeded scenes are the same as they always were.
+ */
+export function openPlay(s: MatchState): void {
+  for (let t = 0; t < 1200 && s.phase === 'kickoff' && s.phaseTicks > 1; t++) step(s);
+  s.phase = 'play';
+  s.restart = null;
+  s.phaseTicks = 0;
+}

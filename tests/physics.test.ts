@@ -16,7 +16,7 @@ import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } fr
 import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
-import { kickOff } from './helpers.ts';
+import { openPlay } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -27,7 +27,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5, humanTeam: 0 | 1 | -1 = 0): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humanTeam });
-  kickOff(s);
+  openPlay(s);
   return s;
 }
 
@@ -244,9 +244,9 @@ describe('quick click passes chain (ask 6)', () => {
     const got = { ...mate.pos };
     for (let k = 0; k < 30; k++) step(s, { cursor: stale });
     expect(dist(mate.pos, got)).toBeLessThan(0.6);
-    // Move the pointer and he goes: the hold ends after HOLD_MOVES ticks of real movement, then
-    // he is off (2.0-2.1 m in the first 30 ticks, depending on the seeded pass before).
-    for (let k = 0; k < 40; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
+    // Move the pointer and he goes: a turn with the ball, then the run (0.6 s; at 0.5 s how far he
+    // has got depends on a few centimetres of where he met the pass).
+    for (let k = 0; k < 36; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
     expect(mate.pos.x).toBeGreaterThan(got.x + 2);
   });
 

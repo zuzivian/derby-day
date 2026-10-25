@@ -270,7 +270,8 @@ describe('offside (Law 11)', () => {
   test('passive: an onside teammate playing it means no offence', () => {
     const { s, att, passer } = setup(85, 80, 60);
     noteBallPlayed(s, passer);
-    const onside = player(s, 0, 'WM');
+    // Any onside teammate (CPU clubs line up in several formations, not all with wide midfielders).
+    const onside = s.players.find((p) => p.team === 0 && p.role === 'MID' && p.i !== passer.i)!;
     onside.pos = { x: 70, y: 20 };
     expect(offsideOnTouch(s, onside, true)).toBe(false);
     expect(s.offside).toBeNull();
@@ -501,12 +502,15 @@ describe('eleven-a-side balance', () => {
   test(
     'goals, fouls, cards, corners and offsides per match are in realistic-ish ranges, and a match is quick',
     () => {
-      const clubs = generateLadder(2026, 16);
-      const n = 8;
+      // From three ladders, as scripts/balance.ts does: one ladder's mix of deep and attacking clubs swings goals a lot.
+      const ladders = [2026, 2027, 2028].map((seed) => generateLadder(seed, 16));
+      const n = 9;
       const tot = { goals: 0, fouls: 0, yellows: 0, reds: 0, corners: 0, offsides: 0, ms: 0 };
       for (let i = 0; i < n; i++) {
-        const a = clubs[i % 16];
-        const b = clubs[(i * 7 + 3) % 16];
+        const clubs = ladders[i % 3];
+        const j = Math.floor(i / 3);
+        const a = clubs[j % 16];
+        const b = clubs[(j * 7 + 3) % 16];
         const t0 = performance.now();
         const s = simulate({ seed: 100 + i, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) });
         tot.ms += performance.now() - t0;

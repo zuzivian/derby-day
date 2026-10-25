@@ -18,9 +18,10 @@ import { kickOff } from './helpers.ts';
 
 const MID = PITCH_H / 2;
 
+/** Two ladder clubs, both in 4-4-2 so the scenes below can name a striker pair, wide men and centre-backs. */
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
-  return { home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) };
+  return { home: { ...cpuTeam(a, ladderSquad(a)), formation: '4-4-2' as const }, away: { ...cpuTeam(b, ladderSquad(b)), formation: '4-4-2' as const } };
 }
 
 /** Open play, the home side human-steered unless `cpu`. */
