@@ -3,7 +3,8 @@
 import { watchPixelRatio, type PixelRatioWatch } from './dpr.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
-import { humanPass, loftPlan, pointerPass } from '../sim/kicks.ts';
+import { humanPass, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
+import { freeKickPlan } from '../sim/match.ts';
 import type { MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 
@@ -19,7 +20,7 @@ export interface RenderExtras {
   charge: number;
   showCursor: boolean;
   /** The kick being charged (InputController.armed()): a loft or a shot, and the power it would go with. */
-  armed?: { kind: 'loft' | 'shot' | null; power: number };
+  armed?: { kind: 'loft' | 'shot' | null; power: number; at?: Vec; curl?: number };
   /** Teammate a left click would switch to (InputController.switchCandidate()); computed here when absent. */
   switchTo?: number;
   /** Whose cursor, previews and charge these are. Defaults to the first team with a human. */
@@ -133,6 +134,18 @@ export class PitchRenderer {
         ctx.stroke();
         ctx.restore();
         ring(plan.landing, 0.9, 'rgba(140,220,255,.95)');
+      } else if (armed?.kind === 'shot' && armed.at) {
+        // Over a free kick: the strike's real flight, bent by the drag (match.ts freeKickPlan).
+        const plan = freeKickPlan(s, ctrl, armed.at, armed.power, armed.curl ?? 0);
+        const pts = strikePath(plan.from, plan, 20);
+        ctx.save();
+        ctx.setLineDash([0.35, 0.45]);
+        ctx.strokeStyle = armed.power > 0.85 ? 'rgba(255,90,60,.9)' : 'rgba(255,214,10,.85)';
+        ctx.lineWidth = 0.16;
+        ctx.beginPath();
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y - p.z * 0.3) : ctx.lineTo(p.x, p.y - p.z * 0.3)));
+        ctx.stroke();
+        ctx.restore();
       } else if (armed?.kind === 'shot') {
         dashed(s.ball.pos, aimAt, armed.power > 0.85 ? 'rgba(255,90,60,.9)' : 'rgba(255,214,10,.85)', 0.18);
       } else if (x.cursor && x.showCursor) {

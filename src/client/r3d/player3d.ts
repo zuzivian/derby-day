@@ -42,7 +42,7 @@ import {
 // Public types
 
 /** The subset of a sim player the model reads. A referee can supply the same shape. */
-export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role'>>;
+export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role' | 'air'>>;
 
 export type KickStyle = 'pass' | 'chip' | 'shot' | 'throw';
 
@@ -78,6 +78,8 @@ export interface PlayerContext {
   hasBall: boolean;
   /** Standing in a defensive wall at a free kick. */
   wall: boolean;
+  /** The referee's arm held straight up: an indirect free kick until someone else touches it (Law 5). */
+  armUp?: boolean;
   reducedMotion: boolean;
 }
 
@@ -504,6 +506,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let holdW = 0;
   let dribbleW = 0;
   let wallW = 0;
+  let armUpW = 0;
+  let airW = 0;
   const idleSeed = Math.random() * 10;
   let last = 0;
 
@@ -607,6 +611,19 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       stance.set('shL', -0.45, 0, -0.32).set('shR', -0.45, 0, 0.32).set('elL', -0.55).set('elR', -0.55);
       stance.set('spine', 0.08).set('head', 0.05);
       P.blend(stance, wallW * (1 - smooth(1, 3, speedS)));
+    }
+    if (airW > 0.01) {
+      // Jumping in the wall: knees drawn up, back straight, hands still guarding.
+      stance.copy(P);
+      stance.set('hipL', -0.55, 0, -0.03).set('hipR', -0.55, 0, 0.03).set('knL', 0.95).set('knR', 0.95);
+      stance.set('spine', -0.05).set('head', -0.12);
+      P.blend(stance, airW);
+    }
+    if (armUpW > 0.01) {
+      // Law 5, an indirect free kick: the right arm straight up, held.
+      stance.copy(P);
+      stance.set('shR', -3.05, 0, 0.05).set('elR', -0.05);
+      P.blend(stance, armUpW);
     }
     if (dribbleW > 0.01) {
       P.add('spine', 0.08 * dribbleW, 0, 0);
@@ -824,7 +841,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 
       // Root: position (extrapolated between ticks) and heading.
       const lead = ctx.lead;
-      root.position.set(sx(p.pos.x + p.vel.x * lead), 0, sz(p.pos.y + p.vel.y * lead));
+      // Off the ground in a jumping wall (MatchPlayer.air, metres).
+      root.position.set(sx(p.pos.x + p.vel.x * lead), p.air ?? 0, sz(p.pos.y + p.vel.y * lead));
       const target = Math.atan2(p.facing.x, p.facing.y);
       if (yaw === null) yaw = target;
       // Turn quickly, but never snap: max ~11 rad/s.
@@ -853,6 +871,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       holdW = damp(holdW, ctx.holding ? 1 : 0, 10, dt);
       dribbleW = damp(dribbleW, ctx.hasBall ? 1 : 0, 6, dt);
       wallW = damp(wallW, ctx.wall ? 1 : 0, 5, dt);
+      armUpW = damp(armUpW, ctx.armUp ? 1 : 0, 8, dt);
+      // In the air from a jumping wall: no smoothing, the sim's height is the pose.
+      airW = Math.min(1, (p.air ?? 0) / 0.3);
 
       locomotion(loco, ctx.time, ctx.dtSim, reduced);
       stances(loco);

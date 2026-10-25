@@ -1675,18 +1675,22 @@ function aerialRank(p: MatchPlayer): number {
 }
 
 /** Targets for a set piece into the box: who goes where, and who marks whom. Players already given a target (a wall) keep it. */
-function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: number): void {
+function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: number, line = 0): void {
   const att = r.team;
   const def: 0 | 1 = att === 0 ? 1 : 0;
   const near = r.spot.y < MID_Y ? -1 : 1;
-  const zones: Vec[] = [
-    fromOpp(s, att, 6.5, MID_Y + near * 3),
-    fromOpp(s, att, 8, MID_Y - near * 3),
-    fromOpp(s, att, 11, MID_Y + near * 0.5),
-    fromOpp(s, att, 9.5, MID_Y - near * 0.5),
-    fromOpp(s, att, 12, MID_Y - near * 6),
-    fromOpp(s, att, 9, MID_Y + near * 6),
-  ];
+  // `line` > 0: a free kick with a shot on. The attackers stand on the defence's line that far from goal
+  // (onside, ready to follow it in), not in the six-yard box, and their markers just goal-side of them.
+  const zones: Vec[] = line
+    ? [fromOpp(s, att, line, MID_Y + near * 7), fromOpp(s, att, line, MID_Y - near * 7), fromOpp(s, att, line, MID_Y - near * 11), fromOpp(s, att, line, MID_Y + near * 11)]
+    : [
+        fromOpp(s, att, 6.5, MID_Y + near * 3),
+        fromOpp(s, att, 8, MID_Y - near * 3),
+        fromOpp(s, att, 11, MID_Y + near * 0.5),
+        fromOpp(s, att, 9.5, MID_Y - near * 0.5),
+        fromOpp(s, att, 12, MID_Y - near * 6),
+        fromOpp(s, att, 9, MID_Y + near * 6),
+      ];
   const ours = s.players.filter((p) => p.team === att && !p.sentOff && p.i !== r.taker && p.role !== 'GK' && !t[p.i]).sort((a, b) => aerialRank(b) - aerialRank(a));
   const inBox: number[] = [];
   ours.forEach((p, k) => {
@@ -1726,21 +1730,65 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
   }
 }
 
-/** A defensive wall 9.15 m from the ball, covering the near side of the goal. */
+/** A wall stands this far from the ball: the 9.15 m the referee asks for, and a heel's width more. */
+export const WALL_AT = RETREAT + 0.15;
+/** Space between the middles of two men in a wall (shoulder to shoulder; match.ts separate() lets them stand this close). */
+export const WALL_GAP = 0.6;
+
+/** How many men a side puts in a wall `dGoal` metres from its goal (0 for no wall). */
+export const wallSize = (dGoal: number): number => (dGoal < 20 ? 4 : dGoal < 25 ? 3 : dGoal < 32 ? 2 : 0);
+
+/**
+ * A defensive wall 9.15 m from the ball, covering the near side of the goal. Its men are picked once,
+ * from those nearest its place when the restart is set up, and kept (MatchState.wall), so the wall
+ * does not reshuffle while it forms and match.ts knows whom to hold still and lift when it is struck.
+ */
 function wall(s: MatchState, r: Restart, t: (Vec | null)[], n: number): number[] {
   const def: 0 | 1 = r.team === 0 ? 1 : 0;
   const goal = ownGoal(s, def);
   const nearPost = { x: goal.x, y: MID_Y + Math.sign(r.spot.y - MID_Y || 1) * (GOAL_W / 2 - 1) };
   const aim = norm(sub(add(scale(goal, 0.4), scale(nearPost, 0.6)), r.spot));
-  const centre = add(r.spot, scale(aim, RETREAT + 0.4));
+  const centre = add(r.spot, scale(aim, WALL_AT));
   const perp = { x: -aim.y, y: aim.x };
-  const cands = s.players.filter((p) => p.team === def && !p.sentOff && p.role !== 'GK' && p.sub !== 'CB').sort((a, b) => dist(a.pos, centre) - dist(b.pos, centre));
-  const picked = cands.slice(0, n).map((p) => p.i);
-  picked.forEach((i, k) => (t[i] = add(centre, scale(perp, (k - (n - 1) / 2) * 0.75))));
-  // Keeper: on the far side of the wall, a couple of metres off his line.
+  let w = s.wall;
+  if (!w || w.team !== def || w.spot.x !== r.spot.x || w.spot.y !== r.spot.y || w.players.some((i) => s.players[i].sentOff)) {
+    // The nearest to its place, a man behind the ball counting the way round the 9.15 m he must keep.
+    const cost = (p: MatchPlayer) => dist(p.pos, centre) + Math.max(0, -dot(sub(p.pos, r.spot), aim)) * 1.5;
+    const cands = s.players.filter((p) => p.team === def && !p.sentOff && p.role !== 'GK' && p.sub !== 'CB').sort((a, b) => cost(a) - cost(b));
+    // Marks along the wall in the order the men stand across it, so nobody has to cross another to get to his.
+    const men = cands.slice(0, n).sort((a, b) => dot(sub(a.pos, centre), perp) - dot(sub(b.pos, centre), perp));
+    w = { team: def, spot: { ...r.spot }, players: men.map((p) => p.i), struck: -1 };
+    // Picked once the ball is on the spot and everyone has been sent back (set-up), not while it still rolls.
+    if (r.stage !== 'whistle') s.wall = w;
+  }
+  const picked = w.players;
+  picked.forEach((i, k) => (t[i] = add(centre, scale(perp, (k - (picked.length - 1) / 2) * WALL_GAP))));
+  // Keeper: a little to the far side of the wall's end, a step and a half off his line.
   const gk = goalkeeper(s, def);
-  t[gk.i] = { x: goal.x + attackDir(s, def) * 1, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 1.2 };
+  t[gk.i] = { x: goal.x + attackDir(s, def) * 1.2, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 0.9 };
   return picked;
+}
+
+/**
+ * At a free kick with a shot on, the kicking side keeps out of its own shooting lane: anyone whose place is
+ * inside the triangle from the ball to the posts (a metre and a half wider each side) moves out sideways.
+ */
+function clearLane(s: MatchState, r: Restart, t: (Vec | null)[]): void {
+  const goal = oppGoal(s, r.team);
+  const posts = [{ x: goal.x, y: MID_Y - GOAL_W / 2 - 1.5 }, { x: goal.x, y: MID_Y + GOAL_W / 2 + 1.5 }];
+  const toGoal = dist(r.spot, goal);
+  for (const p of s.players) {
+    const at = t[p.i];
+    if (p.team !== r.team || p.sentOff || p.i === r.taker || p.role === 'GK' || !at) continue;
+    const along = dot(sub(at, r.spot), norm(sub(goal, r.spot)));
+    if (along < 0.2 || along > toGoal) continue;
+    // The lane's edges where he stands, by straight lines from the ball to each widened post.
+    const f = along / toGoal;
+    const ya = r.spot.y + (posts[0].y - r.spot.y) * f;
+    const yb = r.spot.y + (posts[1].y - r.spot.y) * f;
+    if (at.y <= ya || at.y >= yb) continue;
+    t[p.i] = { x: at.x, y: at.y - ya < yb - at.y ? ya - 0.5 : yb + 0.5 };
+  }
 }
 
 function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
@@ -1748,7 +1796,7 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
   const att = r.team;
   const def: 0 | 1 = att === 0 ? 1 : 0;
   const ax = teamX(s, att, r.spot.x);
-  const shape = (team: 0 | 1, attacking: boolean) => {
+  const shape = (team: 0 | 1, attacking: boolean): void => {
     const plan = teamPlan(s, team);
     for (const p of s.players) {
       if (p.team !== team || p.sentOff || t[p.i]) continue;
@@ -1766,9 +1814,14 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
     case 'freekick': {
       const dGoal = dist(r.spot, oppGoal(s, att));
       const wideFinal = ax > 0.7 && Math.abs(r.spot.y - MID_Y) > BOX_W / 2 - 3;
-      if (r.direct && dGoal < 30 && !wideFinal) {
-        wall(s, r, t, dGoal < 20 ? 4 : dGoal < 25 ? 3 : 2);
-        boxSetPiece(s, r, t, 3);
+      // A wall wherever a shot is on: a direct kick, or an indirect one a single touch from a shot (not inside the area, where
+      // they stand on the line instead).
+      if (wallSize(dGoal) > 0 && !wideFinal && !inOwnBox(s, def, r.spot)) {
+        wall(s, r, t, wallSize(dGoal));
+        // The defence holds a line six metres in front of the ball, between 11 and 17 m out.
+        boxSetPiece(s, r, t, 3, clamp(Math.abs(r.spot.x - oppGoal(s, att).x) - 6, 11, 17));
+        shape(att, true);
+        clearLane(s, r, t);
       } else if (ax > 0.62) boxSetPiece(s, r, t, ax > 0.7 ? 4 : 3);
       break;
     }
@@ -1837,6 +1890,8 @@ export function restartIntent(s: MatchState, p: MatchPlayer): Intent {
   const target = cache.targets[p.i];
   if (!target) return IDLE;
   const d = dist(p.pos, target);
+  // A man in the wall walks right onto his mark and then stands there, shoulder to shoulder, until it is struck.
+  if (s.wall?.players.includes(p.i) && r.stage !== 'whistle') return d < (r.stage === 'ready' ? 0.3 : 0.12) ? IDLE : { ...seek(p, target, 0.6, 1), sprint: d > 3 };
   const it = seek(p, target, 2, r.stage === 'whistle' ? 0.65 : 1);
   return { ...it, sprint: d > 18 && r.stage !== 'whistle' && sprintOk(s, p, true) };
 }
@@ -1923,14 +1978,16 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
       }
       const angleOk = Math.abs(r.spot.y - MID_Y) < 14 + (30 - dGoal) * 0.3;
       if (r.direct && dGoal < 29 && dGoal > 15 && angleOk && chance(s.rng, 0.35 + 0.5 * p.attrs.shooting)) {
-        // Over the wall and dipping under the bar.
-        const yAim = MID_Y + (r.spot.y < MID_Y ? 1 : -1) * (GOAL_W / 2 - 0.8) * (chance(s.rng, 0.6) ? 1 : -1);
-        const speed = (13 + 17 * 0.82) * (0.8 + 0.3 * p.attrs.shooting);
-        const tWall = RETREAT / (speed * 0.98);
-        const tGoal = dGoal / (speed * 0.95);
-        // Rising as it passes the wall (a jumping wall only heads a ball on its way down), dipping to about 1.7 m at the line.
-        const vz = clamp((1.7 + 0.5 * GRAVITY * tGoal * tGoal) / tGoal, (1.4 + 0.5 * GRAVITY * tWall * tWall) / tWall, 20);
-        return { kind: 'shoot', target: { x: goal.x, y: yAim }, power: 0.82, lift: vz };
+        // Over the wall (match.ts strikeFreeKick plans it), into a corner: the near one over the wall, or the far one
+        // bent in from outside the post, away from the keeper. Struck nearly as softly as dips in, the better taker the surer.
+        const nearSide = r.spot.y < MID_Y ? -1 : 1;
+        const far = chance(s.rng, 0.6);
+        const yAim = MID_Y + (far ? -nearSide : nearSide) * (GOAL_W / 2 - 0.6 - 0.4 * (1 - p.attrs.shooting));
+        // Bent toward the middle of the goal: the curl's normal (kicks.ts setPieceStrike) is the line's left-hand side.
+        const line = norm(sub({ x: goal.x, y: yAim }, r.spot));
+        const inward = Math.sign(line.x * (MID_Y - yAim)) || 1;
+        const curl = inward * (far ? range(s.rng, 0.5, 1) : range(s.rng, 0, 0.4));
+        return { kind: 'shoot', target: { x: goal.x, y: yAim }, power: 0.55 + range(s.rng, 0, 0.15) * (1.2 - p.attrs.shooting), curl };
       }
       if (ax > 0.66) {
         const c = bestCross(s, p, noise);

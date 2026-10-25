@@ -3,6 +3,7 @@
 
 import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir, oppGoal } from '../../sim/field.ts';
+import { indirectPending } from '../../sim/rules.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
@@ -669,6 +670,7 @@ export class Renderer3D implements MatchRenderer {
       c.holding = p.i === handsOf && !throwHold;
       c.hasBall = b.owner === p.i;
       c.wall = inWall(s, p);
+      c.armUp = false;
       c.reducedMotion = this.reduced;
       model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, c);
       const ev = dir.events[p.i];
@@ -713,6 +715,7 @@ export class Renderer3D implements MatchRenderer {
       c.lead = lead;
       c.keeperSet = 0;
       c.throwHold = c.holding = c.hasBall = c.wall = false;
+      c.armUp = indirectPending(s);
       c.reducedMotion = this.reduced;
       this.referee.update(dt, rb, dir.referee, c);
     } else if (this.referee) {

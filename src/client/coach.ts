@@ -18,7 +18,7 @@ import { announce } from './a11y.ts';
 import { isUnlocked, type UnlockId } from '../meta/levels.ts';
 import type { Save } from '../meta/game.ts';
 
-export type TipId = 'run' | 'pass' | 'shoot' | 'tackle' | 'restart';
+export type TipId = 'run' | 'pass' | 'shoot' | 'tackle' | 'restart' | 'freekick';
 
 export interface Tip {
   id: TipId;
@@ -64,6 +64,13 @@ export const TIPS: Record<TipId, Tip> = {
     mouse: 'Play is stopped and your player takes it. Left click to pass where you want it. If you wait, the CPU takes it for you.',
     keys: 'Your player takes it. Press Space to pass. If you wait, the CPU takes it for you.',
     touch: 'Play is stopped and your player takes it. Tap Pass to play it. If you wait, the CPU takes it for you.',
+  },
+  freekick: {
+    id: 'freekick',
+    title: 'Free kick in range',
+    mouse: 'Right click on the goal to strike it over the wall: hold for pace, but too much and it sails over. Drag sideways while you hold to bend it. The dots show its flight.',
+    keys: 'Hold F and release to strike it over the wall. Too long a hold and it sails over.',
+    touch: 'Tap Shoot to strike it over the wall.',
   },
 };
 
@@ -115,6 +122,8 @@ export class CoachTracker {
     // Lost it: the human's team had the ball and the other side has it now.
     if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
     if (owner >= 0 || live) this.prevOwnerTeam = ownerTeam ?? this.prevOwnerTeam;
+    // A free kick with a wall to beat: how to get it over, first (it is a shot, not a pass).
+    if (ready && this.restartIsMine(s, human) && s.restart!.kind === 'freekick' && s.wall) this.offer('freekick');
     if (ready && this.restartIsMine(s, human)) this.offer('restart');
     return this.queue.slice(before);
   }
@@ -138,6 +147,8 @@ export class CoachTracker {
         return s.phase === 'play' && (owner < 0 || s.players[owner].team !== human);
       case 'restart':
         return this.restartIsMine(s, human);
+      case 'freekick':
+        return this.restartIsMine(s, human) && !!s.wall;
     }
   }
 

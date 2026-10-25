@@ -10,7 +10,7 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
-import { inAddedTime, matchSeconds } from '../sim/rules.ts';
+import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { Gauge } from './power.ts';
@@ -64,6 +64,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden role="status"></div>
+      <div class="hud-fk" hidden aria-hidden="true"></div>
     </div>`;
 }
 
@@ -113,6 +114,13 @@ export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?:
   }
 }
 
+/** The free kick the HUD names: 'direct' while one is set up, 'indirect' from its set-up until a second touch, else ''. */
+export function freeKickKind(s: MatchState): '' | 'direct' | 'indirect' {
+  if (indirectPending(s)) return 'indirect';
+  const r = s.restart;
+  return r && r.kind === 'freekick' && r.stage !== 'whistle' ? 'direct' : '';
+}
+
 /** Match clock as MM:SS of the 90 shown minutes (matchSeconds: live play only, so it holds at stoppages). */
 export function matchClock(s: MatchState): string {
   const secs = matchSeconds(s);
@@ -137,6 +145,10 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   const replayTag = q('.hud-replay');
   const callTag = q('.hud-tag');
   let tagUntil = 0;
+  // Which kind of free kick is being taken (Law 13), until it is a goal or not: from the set-up, while an
+  // indirect one is still waiting for a second touch (the referee's arm is up for that long too).
+  const fkTag = q('.hud-fk');
+  let lastFk = '';
   let lastGauge = '';
   const ctx = radar.getContext('2d');
   let until = 0;
@@ -240,6 +252,13 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         hold.classList.toggle('hot', left !== null && left <= 2);
       }
       drawRadar(s);
+      const fk = freeKickKind(s);
+      if (fk !== lastFk) {
+        lastFk = fk;
+        fkTag.hidden = !fk;
+        fkTag.classList.toggle('indirect', fk === 'indirect');
+        fkTag.innerHTML = fk === 'indirect' ? '<b>Indirect</b> free kick <small>a goal needs a second touch</small>' : fk === 'direct' ? '<b>Direct</b> free kick' : '';
+      }
       if (tagUntil && performance.now() > tagUntil) {
         callTag.hidden = true;
         tagUntil = 0;
