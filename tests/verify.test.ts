@@ -45,8 +45,9 @@ describe('server/verify', () => {
   test('a tampered input log is caught even when the claims are left alone', () => {
     const r = decodeReplay(code);
     // Nudge the pointer for a stretch in the first half: a different match, same claimed result and hash.
+    // A long stretch, so it is sure to include open play (inputs during a stoppage can change nothing).
     const k = Math.floor(r.runs.length / 4);
-    for (let i = k; i < k + 40; i++) {
+    for (let i = k; i < k + 400; i++) {
       const inp = r.runs[i].input;
       r.runs[i] = { n: r.runs[i].n, input: { ...inp, cursor: { x: 50, y: 5 }, moved: true, pass: true } };
     }

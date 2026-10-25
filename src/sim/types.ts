@@ -71,6 +71,21 @@ export interface MatchPlayer {
   ai?: AiMemory;
   /** A keeper's dive in progress (match.ts keeperDives), or absent. Renderers can read it for the dive pose. */
   dive?: KeeperDive | null;
+  /** A slide tackle in progress (match.ts): he travels along `dir` and wins or fouls when his feet reach the ball or the man. */
+  slide?: SlideTackle | null;
+}
+
+/** A sliding tackle under way: judged each tick of the lunge, not once at the click. */
+export interface SlideTackle {
+  /** Unit vector, the way he is sliding. */
+  dir: Vec;
+  /** Metres still to slide, and how far it set out to go. */
+  left: number;
+  len: number;
+  /** Ticks the slide has run. */
+  ticks: number;
+  /** A late challenge on a man who has just released the ball has been judged (once per slide). */
+  lateJudged?: boolean;
 }
 
 /** A goalkeeper diving to meet a shot: committed for `ticks` more ticks, then on the floor for a moment. */
@@ -164,6 +179,11 @@ export interface Restart {
   reason: 'out' | 'foul' | 'offside' | 'goal' | 'half' | 'start';
   /** CPU taker: ticks to wait in 'ready' before playing it. */
   wait: number;
+  /**
+   * A human taker's kick clicked during 'setup': the click (aim and kick) and the team-mate it picked,
+   * re-aimed from the spot and played as soon as it is 'ready'.
+   */
+  queued?: { input: HumanInput; receiver: number } | null;
 }
 
 export interface Referee {

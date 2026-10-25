@@ -39,6 +39,7 @@
 
 import {
   AIR_DRAG,
+  BOUNCE_KEEP,
   BOX_DEPTH,
   BOX_W,
   GOAL_BOTTOM,
@@ -348,7 +349,7 @@ function trajectory(pos: Vec, vel: Vec, z0: number, vz0: number): Trajectory {
   const airborne = z0 > 0.01 || vz0 > 0.01;
   const tLand = airborne ? (vz0 + Math.sqrt(vz0 * vz0 + 2 * GRAVITY * Math.max(0, z0))) / GRAVITY : 0;
   const dLand = airborne ? (v0 * (1 - Math.exp(-AIR_DRAG * tLand))) / AIR_DRAG : 0;
-  const vLand = airborne ? v0 * Math.exp(-AIR_DRAG * tLand) * 0.82 : v0;
+  const vLand = airborne ? v0 * Math.exp(-AIR_DRAG * tLand) * BOUNCE_KEEP : v0;
   const pts: Vec[] = new Array(TRAJ_STEPS);
   const zs: number[] = new Array(TRAJ_STEPS);
   for (let k = 0; k < TRAJ_STEPS; k++) {

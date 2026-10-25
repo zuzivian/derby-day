@@ -17,8 +17,11 @@
  *   5  nine formations and five mentalities that change how the CPU defends,
  *      presses and supports the ball (src/sim/ai.ts TACTICS); CPU shot selection and
  *      long-shot error; mentality changes from the pause menu (HumanInput.tactic)
+ *   6  controls feel: no hold on a steered man's pickup, tackles by the carrier's distance and slides
+ *      judged as they travel, lofts with a receiver and a softer bounce, rising human shots,
+ *      header aim relative to the striker, restart clicks kept, double clicks ignored
  */
-export const SIM_VERSION = 5;
+export const SIM_VERSION = 6;
 
 export const TICK_HZ = 60;
 
@@ -65,6 +68,8 @@ export const MATCH_SECONDS = 90 * 60;
 /** Ball flight. Metres and seconds, so gravity is the real thing. */
 export const GRAVITY = 9.8;
 export const BOUNCE_DAMP = 0.55;
+/** Share of its pace across the ground a ball keeps when it bounces on grass (a lofted pass sits up, not skids on). */
+export const BOUNCE_KEEP = 0.65;
 /** Above this height a ball cannot be controlled by an outfield player (headers go up to HEAD_Z). */
 export const REACH_Z = 1.2;
 /** A descending ball below this can be headed. */
@@ -257,3 +262,8 @@ export const rollDecel = (v: number): number => ROLL_A + ROLL_B * Math.min(v, RO
 
 /** Horizontal drag on a ball in the air, per second (much weaker than floor friction). */
 export const AIR_DRAG = 0.12;
+
+/** Standing tackle reach (m). A human's right click stands within this of the man and slides beyond it. */
+export const STAND_REACH = 2;
+/** How far a slide tackle goes at most (m). */
+export const SLIDE_TRAVEL = 4;
