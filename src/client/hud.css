@@ -93,6 +93,8 @@
 .pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 13px/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
 .pause-opt[hidden] { display: none; }
 .pause-opt input { width: 16px; height: 16px; accent-color: var(--accent, #ff8a1c); }
+.pause-volume input { width: 140px; height: 20px; }
+.pause-volume output { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Instant replays (matchView.ts): the REPLAY word top centre, Power Soccer style, and a skip hint. */
 .hud-replay {
