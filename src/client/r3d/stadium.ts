@@ -496,20 +496,19 @@ export function buildStadium(o: StadiumOptions): Stadium {
   group.add(sky);
   // A few chunky clouds.
   const cloudMat = keep(new MeshLambertMaterial({ color: '#ffffff', emissive: new Color('#c9d8ea'), emissiveIntensity: 0.55 } as Record<string, unknown>));
-  const cloudGeo = keep(new IcosahedronGeometry(1, 1));
+  // All puffs in one geometry: one draw call, not 36.
+  const puffs: Part[] = [];
   for (let i = 0; i < (hi ? 9 : 0); i++) {
     const a = (i / 9) * Math.PI * 2 + r();
     const d = 420 + r() * 200;
-    const cl = new Group();
-    for (let k = 0; k < 4; k++) {
-      const m = new Mesh(cloudGeo, cloudMat);
-      m.position.set((k - 1.5) * 18 + r() * 10, r() * 6, r() * 10);
-      m.scale.set(22 + r() * 16, 10 + r() * 6, 16 + r() * 8);
-      cl.add(m);
-    }
-    cl.position.set(Math.cos(a) * d, 110 + r() * 80, Math.sin(a) * d);
-    group.add(cl);
+    const puff: [number, number, number, number, number, number][] = [];
+    for (let k = 0; k < 4; k++) puff.push([(k - 1.5) * 18 + r() * 10, r() * 6, r() * 10, 22 + r() * 16, 10 + r() * 6, 16 + r() * 8]);
+    const cx = Math.cos(a) * d;
+    const cy = 110 + r() * 80;
+    const cz = Math.sin(a) * d;
+    for (const [x, y, z, ax, ay, az] of puff) puffs.push({ geo: place(new IcosahedronGeometry(1, 1), cx + x, cy + y, cz + z, 0, ax, ay, az) });
   }
+  if (puffs.length) group.add(new Mesh(keep(merge(puffs)), cloudMat));
 
   // --- ground: town, car park, verges ----------------------------------------
   const outerW = PITCH_W + 2 * (STAND_END + 40);
@@ -584,7 +583,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
   // --- goals -----------------------------------------------------------------
   const postMat = keep(new MeshStandardMaterial({ color: '#ffffff', roughness: 0.35, metalness: 0.1 }));
-  const netMat = keep(new MeshBasicMaterial({ map: keep(netTexture()), transparent: true, opacity: 0.75, side: DoubleSide, depthWrite: false, alphaTest: 0.02 }));
+  const netMat = keep(new MeshBasicMaterial({ map: keep(netTexture()), transparent: true, opacity: 0.75, side: DoubleSide, forceSinglePass: true, depthWrite: false, alphaTest: 0.02 }));
   const nets: NetPanel[][] = [];
   const goalGroups: Group[] = [];
   const POST_R = 0.06;
@@ -880,7 +879,12 @@ export function buildStadium(o: StadiumOptions): Stadium {
   const headMat = keep(new MeshLambertMaterial({ color: '#2a2d31' }));
   const pylonGeo = keep(new CylinderGeometry(0.5, 1.6, pylonH, 4, 1, true).translate(0, pylonH / 2, 0));
   const headGeo = keep(new BoxGeometry(6, 3.4, 0.6));
-  const lampGeo = keep(new PlaneGeometry(1.1, 0.7));
+  // The 12 lamps of a head in one geometry: one draw call per pylon, not 12.
+  const lampGeo = keep(
+    merge(
+      Array.from({ length: 12 }, (_, n) => ({ geo: new PlaneGeometry(1.1, 0.7).translate(-2.2 + Math.floor(n / 3) * 1.47, -1.05 + (n % 3) * 1.05, 0.31) })),
+    ),
+  );
   for (const sxs of [-1, 1]) {
     for (const szs of [-1, 1]) {
       const pg = new Group();
@@ -897,13 +901,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
       headG.lookAt(-px * 0.8, pylonH * 0.15, -pz * 0.8);
       const hm = new Mesh(headGeo, headMat);
       headG.add(hm);
-      for (let i = 0; i < 4; i++) {
-        for (let j = 0; j < 3; j++) {
-          const l = new Mesh(lampGeo, lampMat);
-          l.position.set(-2.2 + i * 1.47, -1.05 + j * 1.05, 0.31);
-          headG.add(l);
-        }
-      }
+      headG.add(new Mesh(lampGeo, lampMat));
       pg.add(headG);
       group.add(pg);
     }
@@ -1019,6 +1017,12 @@ export function buildStadium(o: StadiumOptions): Stadium {
   }
 
   // ---------------------------------------------------------------------------
+
+  // Nothing in the stadium moves (the crowd, flags and nets animate in their shaders and vertex
+  // buffers): its matrices are computed once here, not every frame (Renderer3D keeps the scene's own
+  // matrix fixed too, so nothing forces them).
+  group.updateMatrixWorld(true);
+  group.traverse((obj) => (obj.matrixAutoUpdate = false));
 
   const local = new Vector3();
   const ballLocal = new Vector3();
