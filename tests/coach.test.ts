@@ -9,6 +9,7 @@ import { pendingUnlocks, totalXpForLevel } from '../src/meta/levels.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { MatchState, Restart } from '../src/sim/types.ts';
+import { kickOff } from './helpers.ts';
 
 function match(): MatchState {
   const team = (seed: number) => {
@@ -21,7 +22,7 @@ function match(): MatchState {
 
 /** Run until the match is in open play. */
 function toPlay(s: MatchState) {
-  for (let i = 0; i < 60 * 40 && s.phase !== 'play'; i++) step(s, {});
+  kickOff(s);
   expect(s.phase).toBe('play');
 }
 
@@ -36,6 +37,21 @@ describe('coach tracker', () => {
     expect(c.take()).toBe('run'); // always first, even when the human already has the ball (then 'pass' follows)
     while (c.take()) c.observe(s);
     for (let i = 0; i < 120; i++) { step(s, {}); expect(c.observe(s)).not.toContain('run'); }
+  });
+
+  test('the kick-off he takes is a pass (Law 8): the pass tip follows the run tip while he stands over the ball', () => {
+    const s = match();
+    const c = new CoachTracker();
+    for (let i = 0; i < 60; i++) {
+      step(s, {});
+      c.observe(s);
+    }
+    expect(s.phase).toBe('restart');
+    expect(s.restart!.kind).toBe('kickoff');
+    expect(s.restart!.taker).toBe(s.controlled[0]);
+    expect(c.queue).toEqual(['run', 'pass']);
+    expect(c.take()).toBe('run');
+    expect(c.relevant('pass', s)).toBe(true);
   });
 
   test('nothing else is offered before the run tip', () => {

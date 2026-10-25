@@ -10,6 +10,7 @@ import { assistRadius, groundPassPlan, loftPlan, loftRange, pointerPass } from '
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, norm, sub, type Vec } from '../src/sim/vec.ts';
+import { kickOff } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -20,7 +21,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60 });
-  while (s.phase !== 'play') step(s);
+  kickOff(s);
   return s;
 }
 
@@ -458,7 +459,7 @@ describe('right click without the ball tackles', () => {
   /** Our player on the spot, an opponent with the ball `gap` metres east of him. */
   function duel(seed: number, gap: number) {
     const s = createMatch({ seed, ...teams(7), halfSeconds: 60 });
-    while (s.phase !== 'play') step(s);
+    kickOff(s);
     const me = s.players[s.controlled[0]];
     const opp = oppHasBall(s);
     isolate(s, me, opp);

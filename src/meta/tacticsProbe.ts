@@ -86,7 +86,7 @@ function sample(s: MatchState, acc: [Acc, Acc]): void {
       let bottom = -Infinity;
       let near = 0;
       for (const p of out) {
-        const x = teamX(team, p.pos.x) * PITCH_W;
+        const x = teamX(s, team, p.pos.x) * PITCH_W;
         lo = Math.min(lo, x);
         hi = Math.max(hi, x);
         top = Math.min(top, p.pos.y);
@@ -101,13 +101,13 @@ function sample(s: MatchState, acc: [Acc, Acc]): void {
       a.pressers += near;
       a.out++;
     } else {
-      const bx = teamX(team, s.ball.pos.x);
+      const bx = teamX(s, team, s.ball.pos.x);
       let ahead = 0;
       let open = 0;
       for (const p of out) {
-        if (teamX(team, p.pos.x) > 0.5) a.forward++;
+        if (teamX(s, team, p.pos.x) > 0.5) a.forward++;
         if (p.i === owner.i) continue;
-        if (teamX(team, p.pos.x) > bx + 0.01) ahead++;
+        if (teamX(s, team, p.pos.x) > bx + 0.01) ahead++;
         const dx = p.pos.x - owner.pos.x;
         const dy = p.pos.y - owner.pos.y;
         if (dx * dx + dy * dy > 196) continue;
@@ -140,7 +140,7 @@ export function measureMatch(o: Omit<MatchOptions, 'humanTeam' | 'humans'>): { s
     const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
     if (owner) {
       if (holder >= 0 && owner.team !== holder) {
-        acc[owner.team].regainSum += teamX(owner.team, s.ball.pos.x) * PITCH_W;
+        acc[owner.team].regainSum += teamX(s, owner.team, s.ball.pos.x) * PITCH_W;
         acc[owner.team].regains++;
       }
       holder = owner.team;

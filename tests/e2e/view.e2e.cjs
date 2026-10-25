@@ -131,6 +131,8 @@ test('3D view: instant replays can be turned off in the pause menu', async (t) =
   await box.uncheck();
   expect(await page.evaluate(() => localStorage.getItem('derby-instant-replays')), 'stored').toBe('off');
   await page.locator(SEL.resume).click();
+  // The kick-off is a kick (Law 8): wait for the ball to be in play (the CPU takes it if we don't).
+  expect(await waitFor(page, () => window.__derbyMatch.phase === 'play'), 'kicked off').toBe(true);
   await page.evaluate(() => {
     const s = window.__derbyMatch;
     const b = s.ball;

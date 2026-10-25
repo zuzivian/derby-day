@@ -47,7 +47,7 @@ function rig(s: MatchState) {
     const holder = b.owner >= 0 ? s.players[b.owner] : null;
     const fx = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
     const fy = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
-    cam.update(1 / 60, { x: sx(fx), z: sz(fy), vx: b.vel.x, vz: b.vel.y, air: b.z, attack: holder ? attackDir(holder.team) : 0, phase: s.phase, close: null, humanDir: 1 }, W / H, W, false);
+    cam.update(1 / 60, { x: sx(fx), z: sz(fy), vx: b.vel.x, vz: b.vel.y, air: b.z, attack: holder ? attackDir(s, holder.team) : 0, phase: s.phase, close: null, humanDir: 1 }, W / H, W, false);
   };
   // Where on screen a world point is, for placing the mouse.
   const screenOf = (x: number, y: number) => {
