@@ -209,8 +209,16 @@ export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Ve
 }
 
 /** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
-export function passTo(s: MatchState, m: MatchPlayer): { target: Vec; receiver: number; speed: number } {
-  const target = leadPoint(s.ball.pos, m);
+/** `lead`: play it to where he will be if he is running (false: to his feet, e.g. a man who stops when a restart is ready). */
+export function passTo(s: MatchState, m: MatchPlayer, lead = true): { target: Vec; receiver: number; speed: number } {
+  const target = lead ? leadPoint(s.ball.pos, m) : { ...m.pos };
+  const d = dist(s.ball.pos, target);
+  return { target, receiver: m.i, speed: groundPassPlan(d, receiverArrival(d)).speed };
+}
+
+/** A firm pass to team-mate `m`, played to `at` (where he is going), arriving at a controllable pace. */
+export function passToPoint(s: MatchState, m: MatchPlayer, at: Vec): { target: Vec; receiver: number; speed: number } {
+  const target = { ...at };
   const d = dist(s.ball.pos, target);
   return { target, receiver: m.i, speed: groundPassPlan(d, receiverArrival(d)).speed };
 }
@@ -256,4 +264,34 @@ export function puntPlan(from: Vec, target: Vec, power: number): ChipPlan {
  */
 export function humanPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number } {
   return resolvePassTarget(s, p, aim);
+}
+
+// ---------------------------------------------------------------------------
+// Shots
+
+/** How hard a shot is struck (m/s) for a power 0..1 and a shooting attribute 0..1. */
+export const shotSpeed = (power: number, shooting: number): number => (13 + 17 * power) * (0.8 + 0.3 * shooting);
+
+/** Height a lifted shot leaves the foot at. */
+export const SHOT_Z0 = 0.05;
+
+/** The human's shot power runs from this (a quick click) to 1 (a full hold). */
+export const HUMAN_SHOT_MIN = 0.55;
+
+/**
+ * The lift (initial vz, m/s) that puts a human shot at a height on the goal line that rises with
+ * the power: a quick click stays low (about 0.3 m), a full hold rises to about 2 m. match.ts adds
+ * a vertical scatter that grows with power and falls with shooting, so a poor shooter's blast
+ * can go over.
+ */
+export function humanShotLift(from: Vec, target: Vec, goalX: number, power: number, shooting: number): number {
+  const k = clamp((power - HUMAN_SHOT_MIN) / (1 - HUMAN_SHOT_MIN), 0, 1);
+  const h = 0.3 + 1.7 * Math.pow(k, 1.2);
+  // Planned to where the shot's line crosses the goal line (the pointer is often short of it while
+  // dribbling), or to the pointer if the shot doesn't head for the line.
+  const dx = target.x - from.x;
+  const toLine = goalX - from.x;
+  const d = Math.abs(dx) > 1e-6 && Math.sign(dx) === Math.sign(toLine) ? dist(from, target) * (toLine / dx) : dist(from, target);
+  const t = Math.max(0.15, d / shotSpeed(power, shooting));
+  return Math.max(0, (h - SHOT_Z0 + 0.5 * GRAVITY * t * t) / t);
 }

@@ -40,6 +40,11 @@ import type { Vec } from '../sim/vec.ts';
 export interface WorldPicker {
   /** Position in CSS pixels inside the canvas (the canvas's top-left is 0,0) to world metres. */
   toWorld(cssX: number, cssY: number): Vec;
+  /**
+   * A press on a player's body picks him (his feet, world metres), or null: the 3D view, where a head is
+   * metres up-screen of the feet. `who`: the human's team-mates (never the man he steers) or opponents.
+   */
+  pickPlayer?(cssX: number, cssY: number, who: 'mates' | 'opponents'): Vec | null;
   /** Keyboard direction in screen terms (x right, y down) to world terms; identity when absent (top-down view). */
   screenDir?(d: Vec): Vec;
   /**
@@ -96,6 +101,8 @@ export const LOFT_RAMP_MS = 600;
 export const AIM_DRIFT_PX = 8;
 /** On-screen pointer travel in one tick that counts as really moving it. */
 export const MOVE_PX = 2;
+/** A press without the ball this soon after your own kick is the second half of a double click: ignored. */
+export const DOUBLE_CLICK_MS = 300;
 /** A quick right click is a shot at this power; holding builds it to 1 over SHOT_FULL_MS. */
 export const SHOT_MIN = 0.55;
 export const SHOT_FULL_MS = 800;
@@ -169,6 +176,8 @@ export class InputController {
   private loft: number | null = null;
   /** Left button (or the Pass button) down with the ball: when, or null. */
   private leftStart: number | null = null;
+  /** When our last mouse kick was released (performance.now), for DOUBLE_CLICK_MS. */
+  private lastKickAt = -Infinity;
   /** Where that press was (world and client pixels) and with what, for aim-at-press and the click threshold. */
   private press: { world: Vec | null; x: number; y: number; type: string } | null = null;
   /** The aim of the kick or select being sent this tick. */
@@ -208,7 +217,8 @@ export class InputController {
     const toWorld = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       // A mouse press where the pointer already is keeps the latched point; anything else projects anew.
-      const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, () => picker.toWorld(e.clientX - r.left, e.clientY - r.top)) : picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      const project = () => picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, project) : project();
       this.client = { x: e.clientX, y: e.clientY };
       return w;
     };
@@ -250,6 +260,12 @@ export class InputController {
       }
       this.mode = 'mouse';
       this.press = { world: this.cursor, x: e.clientX, y: e.clientY, type: e.pointerType };
+      // A press on a player's body (not only his feet) picks him: a team-mate for a pass or a switch,
+      // an opponent for a tackle. Only the press: the steering cursor stays on the grass.
+      const who = e.button === 0 ? 'mates' : e.button === 2 && !this.hasBall() ? 'opponents' : null;
+      const r = canvas.getBoundingClientRect();
+      const body = who ? picker.pickPlayer?.(e.clientX - r.left, e.clientY - r.top, who) : null;
+      if (body) this.press.world = body;
       if (e.button === 0) this.pressLeft();
       if (e.button === 2) this.pressRight();
     });
@@ -324,17 +340,19 @@ export class InputController {
 
   private pressLeft(): void {
     if (this.hasBall()) this.leftStart = performance.now();
+    else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.select = true;
-      this.aim = this.cursor;
+      this.aim = this.press?.world ?? this.cursor;
     }
   }
 
   private pressRight(): void {
     if (this.hasBall()) this.shotStart = performance.now();
+    else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.tackle = true;
-      this.aim = this.cursor;
+      this.aim = this.press?.world ?? this.cursor;
     }
   }
 
@@ -350,6 +368,7 @@ export class InputController {
     if (this.leftStart === null) return;
     const held = performance.now() - this.leftStart;
     this.leftStart = null;
+    this.lastKickAt = performance.now();
     const r = leftRelease(held, this.press?.type ?? 'mouse');
     if ('pass' in r) {
       this.pass = true;
@@ -364,6 +383,7 @@ export class InputController {
     if (this.shotStart === null) return;
     this.shoot = shotPower(performance.now() - this.shotStart);
     this.shotStart = null;
+    this.lastKickAt = performance.now();
     this.aim = this.cursor;
   }
 
