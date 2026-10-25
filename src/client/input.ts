@@ -96,6 +96,8 @@ export const LOFT_RAMP_MS = 600;
 export const AIM_DRIFT_PX = 8;
 /** On-screen pointer travel in one tick that counts as really moving it. */
 export const MOVE_PX = 2;
+/** A press without the ball this soon after your own kick is the second half of a double click: ignored. */
+export const DOUBLE_CLICK_MS = 300;
 /** A quick right click is a shot at this power; holding builds it to 1 over SHOT_FULL_MS. */
 export const SHOT_MIN = 0.55;
 export const SHOT_FULL_MS = 800;
@@ -169,6 +171,8 @@ export class InputController {
   private loft: number | null = null;
   /** Left button (or the Pass button) down with the ball: when, or null. */
   private leftStart: number | null = null;
+  /** When our last mouse kick was released (performance.now), for DOUBLE_CLICK_MS. */
+  private lastKickAt = -Infinity;
   /** Where that press was (world and client pixels) and with what, for aim-at-press and the click threshold. */
   private press: { world: Vec | null; x: number; y: number; type: string } | null = null;
   /** The aim of the kick or select being sent this tick. */
@@ -324,6 +328,7 @@ export class InputController {
 
   private pressLeft(): void {
     if (this.hasBall()) this.leftStart = performance.now();
+    else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.select = true;
       this.aim = this.cursor;
@@ -332,6 +337,7 @@ export class InputController {
 
   private pressRight(): void {
     if (this.hasBall()) this.shotStart = performance.now();
+    else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.tackle = true;
       this.aim = this.cursor;
@@ -350,6 +356,7 @@ export class InputController {
     if (this.leftStart === null) return;
     const held = performance.now() - this.leftStart;
     this.leftStart = null;
+    this.lastKickAt = performance.now();
     const r = leftRelease(held, this.press?.type ?? 'mouse');
     if ('pass' in r) {
       this.pass = true;
@@ -364,6 +371,7 @@ export class InputController {
     if (this.shotStart === null) return;
     this.shoot = shotPower(performance.now() - this.shotStart);
     this.shotStart = null;
+    this.lastKickAt = performance.now();
     this.aim = this.cursor;
   }
 

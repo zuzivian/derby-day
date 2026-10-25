@@ -73,6 +73,8 @@ export function pointerThrottle(d: number): { throttle: number; sprint: boolean 
 export const STAND_TACKLE_R = STAND_REACH;
 /** A slide never goes further than this, however far the pointer is. */
 export const SLIDE_MAX = SLIDE_TRAVEL;
+/** A click this close to the man a pass is coming to is "take it", not a first-time pass. */
+const TAKE_IT_R = 3;
 /** A right click this close to an opponent with the ball (or the ball he has) is a tackle on him. */
 const ON_CARRIER = 1.5;
 
@@ -226,7 +228,9 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
 
   // A pass is on its way to him: he goes to meet it, and a click now is played first time.
   if (passIncoming(s, p)) {
-    if (input.select || input.pass || input.tackle) {
+    // A click on himself (the second half of a double click, say) means take it, not play it on.
+    const onHimself = !!aim && !input.tackle && dist(aim, p.pos) < TAKE_IT_R;
+    if ((input.select || input.pass || input.tackle) && !onHimself) {
       const target = aim ?? heading;
       const kind = input.tackle && pointer ? 'shoot' : 'pass';
       // Who the click picks is settled now, from where he will receive it.
@@ -291,7 +295,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     throttle = it.throttle;
     sprint = !!it.sprint;
   }
-  if (input.tackle) {
+  // Not straight after his own kick: a second right click just after a shot is not a slide.
+  if (input.tackle && p.kickCd === 0) {
     let target = aim ?? s.ball.pos;
     // A click on (or near) the man with the ball goes in on him: stand or slide by how far
     // he is, so the choice always matches what can reach.

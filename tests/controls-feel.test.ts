@@ -2,6 +2,7 @@
 // clicks) as tests. Each measures what the finding measured, and failed on main 96f9618.
 
 import { describe, expect, test } from 'bun:test';
+import { DOUBLE_CLICK_MS, InputController } from '../src/client/input.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -250,5 +251,91 @@ describe('lofted passes to a team-mate (hold left)', () => {
     expect(ours).toBeGreaterThan(0);
     expect(ours).toBeLessThan(4 * 60);
     expect([me.i, mate.i]).toContain(s.ball.owner);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minor: double clicks
+
+/** The human at (20,34) with the ball; a team-mate `d` m on. */
+function dblScene(d: number) {
+  const s = livePlay(3);
+  const me = role(s, 0, 'MID');
+  const mate = role(s, 0, 'MID', 1);
+  isolate(s, me, mate);
+  s.switchTimer[0] = 1e9;
+  s.controlled[0] = me.i;
+  me.pos = { x: 20, y: 34 };
+  me.vel = { x: 0, y: 0 };
+  me.facing = { x: 1, y: 0 };
+  me.stun = 0;
+  mate.pos = { x: 20 + d, y: 34 };
+  mate.vel = { x: 0, y: 0 };
+  mate.stun = 0;
+  Object.assign(s.ball, { owner: me.i, pos: { x: 20.99, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
+  return { s, me, mate };
+}
+
+describe('a double click is not two actions', () => {
+  test('sim: a second left press on the receiver while the pass travels (the select the controller sends) leaves him the ball', () => {
+    for (const [d, gap] of [[8, 5], [12, 6], [15, 8], [20, 10], [12, 20]] as const) {
+      const { s, mate } = dblScene(d);
+      const aim = { ...mate.pos };
+      step(s, { cursor: aim, aim, pass: true, moved: true });
+      for (let k = 1; k < gap; k++) step(s, { cursor: aim });
+      step(s, { cursor: aim, aim, select: true });
+      let t = 0;
+      while (s.ball.owner !== mate.i && t++ < 200) step(s, { cursor: aim });
+      expect(s.ball.owner).toBe(mate.i);
+      // Main: he controlled it and pushed it straight on, 6-14 m from him.
+      for (let k = 0; k < 40; k++) step(s, { cursor: aim });
+      expect(s.ball.owner).toBe(mate.i);
+      expect(dist(s.ball.pos, mate.pos)).toBeLessThan(1.5);
+    }
+  });
+
+  test('sim: a second right press just after a shot does not slide the striker onto the floor', () => {
+    for (const gap of [6, 10, 15]) {
+      const { s, me } = dblScene(10);
+      const goal = { x: 105, y: 34 };
+      step(s, { cursor: goal, aim: goal, shoot: 0.6, moved: true });
+      for (let k = 1; k < gap; k++) step(s, { cursor: goal });
+      step(s, { cursor: goal, aim: goal, tackle: true });
+      // Main: a slide toward the goal, 30 ticks on the floor and a 70-tick cooldown.
+      expect(me.slide ?? null).toBeNull();
+      expect(me.stun).toBe(0);
+      expect(me.tackleCd).toBe(0);
+    }
+  });
+
+  test('client: the controller drops a press without the ball that comes within DOUBLE_CLICK_MS of our kick', () => {
+    const { s, mate } = dblScene(12);
+    (globalThis as Record<string, unknown>).window ??= new EventTarget();
+    const win = (globalThis as unknown as { window: EventTarget }).window;
+    const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 700 }) }) as unknown as HTMLCanvasElement;
+    const picker = { toWorld: (x: number, y: number) => ({ x: x / 10, y: y / 10 }) };
+    const input = new InputController(canvas, picker, () => s.ball.owner === s.controlled[0], () => {});
+    const ev = (type: string, button: number) => {
+      const e = new Event(type);
+      for (const [k, v] of Object.entries({ clientX: mate.pos.x * 10, clientY: mate.pos.y * 10, pointerType: 'mouse', pointerId: 1, button, isPrimary: true })) Object.defineProperty(e, k, { value: v });
+      return e;
+    };
+    canvas.dispatchEvent(ev('pointermove', 0));
+    canvas.dispatchEvent(ev('pointerdown', 0));
+    win.dispatchEvent(ev('pointerup', 0));
+    const first = input.take();
+    expect(first.pass).toBe(true);
+    step(s, first);
+    expect(s.ball.owner).toBe(-1);
+    // The second press of a double click, a moment later: no ball now, so it would be a select (or a tackle).
+    canvas.dispatchEvent(ev('pointerdown', 0));
+    win.dispatchEvent(ev('pointerup', 0));
+    canvas.dispatchEvent(ev('pointerdown', 2));
+    win.dispatchEvent(ev('pointerup', 2));
+    const second = input.take();
+    expect(second.select).toBeUndefined();
+    expect(second.tackle).toBeUndefined();
+    expect(DOUBLE_CLICK_MS).toBeGreaterThanOrEqual(250);
+    input.dispose();
   });
 });
