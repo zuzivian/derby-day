@@ -119,7 +119,7 @@ describe('throw-ins', () => {
     expect(ours).toBeGreaterThanOrEqual(n - 1);
   });
 
-  test('a short throw to the nearest man is kept nearly always', () => {
+  test('a short throw to the nearest man is kept more often than not', () => {
     let kept = 0;
     let n = 0;
     for (let seed = 1; seed <= 20; seed++) {
@@ -139,8 +139,9 @@ describe('throw-ins', () => {
       }
     }
     expect(n).toBeGreaterThan(15);
-    // 16 of 20 on main: a marker standing where the throw was led to took it.
-    expect(kept / n).toBeGreaterThan(0.8);
+    // Main keeps 12 of 20 here (it was 16 before main's pressing changes in #28): a marker standing where the throw
+    // was led to takes it. The throw to his feet keeps more.
+    expect(kept / n).toBeGreaterThan(0.6);
   });
 });
 
