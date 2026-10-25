@@ -23,7 +23,8 @@ export interface FirstMatchOutcome {
 }
 
 export function completeFirstMatch(save: Save, prefs: Prefs, r: FirstMatchResult): FirstMatchOutcome {
-  const summary = applyResult(save, null, r.opponent, r.gf, r.ga, false, r.scorers, undefined, false, 'easy');
+  // Paid like any other non-ranked match (a win, a goal and a clean sheet all count) plus the first-match bonus, so how it went matters.
+  const summary = applyResult(save, null, r.opponent, r.gf, r.ga, false, r.scorers, 'First match', false, 'easy');
   award(save, [claimMilestone(save, 'first-match')], summary.xp);
   const opened = pendingUnlocks(save).map((u) => u.name);
   markUnlocksSeen(save);

@@ -24,6 +24,8 @@ export interface Gauge {
   band: PowerBand;
   /** Where the sweet spot ends, 0..1 along the bar. */
   tick: number;
+  /** What the bar measures, for its label on the HUD. */
+  kind: 'pass' | 'loft' | 'shot';
 }
 
 /** Shot power at which the strike starts to fly off target. */
@@ -42,13 +44,13 @@ const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 export function shotGauge(power: number): Gauge {
   const band: PowerBand = power > SHOT_WILD ? 'red' : power > SHOT_SWEET ? 'amber' : 'green';
-  return { fill: clamp01(power), band, tick: SHOT_SWEET };
+  return { fill: clamp01(power), band, tick: SHOT_SWEET, kind: 'shot' };
 }
 
 /** A ground pass kicked at `speed` m/s. */
 export function passGauge(speed: number): Gauge {
   const band: PowerBand = speed > PASS_HARD ? 'red' : speed > PASS_FIRM ? 'amber' : 'green';
-  return { fill: clamp01(speed / PASS_FULL), band, tick: PASS_FIRM / PASS_FULL };
+  return { fill: clamp01(speed / PASS_FULL), band, tick: PASS_FIRM / PASS_FULL, kind: 'pass' };
 }
 
 /**
@@ -57,7 +59,7 @@ export function passGauge(speed: number): Gauge {
  */
 export function loftGauge(hold: number, reach: number, want: number): Gauge {
   const short = reach < want - 0.5;
-  return { fill: clamp01(Math.max(0.04, hold)), band: short ? 'amber' : 'green', tick: 1 };
+  return { fill: clamp01(Math.max(0.04, hold)), band: short ? 'amber' : 'green', tick: 1, kind: 'loft' };
 }
 
 /**
