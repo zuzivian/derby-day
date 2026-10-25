@@ -676,14 +676,14 @@ function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
   return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
 }
 
-/** How a lofted ball from the corner or free kick in progress would fly (kicks.ts deliveryPlan): no error, for the aim preview too. */
+/** How a lofted ball from the corner, free kick or goal kick in progress would fly (kicks.ts deliveryPlan): no error, for the aim preview too. */
 export function setPieceDelivery(s: MatchState, p: MatchPlayer, target: Vec, hold: number, curl: number): StrikePlan & { landing: Vec; from: Vec } {
   const from = s.restart?.spot ?? s.ball.pos;
   return { ...deliveryPlan(from, target, hold, curl, p.attrs.passing), from };
 }
 
 /**
- * A lofted ball from a corner or a free kick (kicks.ts deliveryPlan): it comes down where it was aimed, driven or
+ * A lofted ball from a corner, a free kick or a goal kick (kicks.ts deliveryPlan): it comes down where it was aimed, driven or
  * floated by the hold and bent by the curl, meant for the team-mate nearest where it drops (the same assist as an
  * open-play loft), with the passer's error on top.
  */
@@ -714,17 +714,22 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   b.noPickup.fill(0);
   p.stun = 0;
   if (r.kind === 'throwin') {
-    // Law 15: from the hands, both feet on or behind the line, into the field.
+    // Law 15: from the hands, both feet on or behind the line, into the field. A long throw (a held or right
+    // click) goes up to where it was aimed, as far as his arms go, and is meant for the team-mate nearest where
+    // it comes down (the same assist as a lofted pass); a short one goes to the man clicked.
     const long = action.kind !== 'pass';
-    const maxD = long ? 16 + 14 * p.attrs.passing : 22;
-    let to = sub(action.target, r.spot);
+    const maxD = long ? LONG_THROW + 14 * p.attrs.passing : 22;
+    // Led to a place an opponent is standing on: to his feet instead.
+    const mate = action.kind === 'pass' && action.receiver !== undefined && action.receiver >= 0 ? s.players[action.receiver] : null;
+    const aim = mate && dist(mate.pos, action.target) > 2 && s.players.some((o) => o.team !== p.team && !o.sentOff && dist(o.pos, action.target) < Math.min(THROW_MARKED, dist(mate.pos, action.target))) ? mate.pos : action.target;
+    let to = sub(aim, r.spot);
     const inward = r.spot.y < PITCH_H / 2 ? 1 : -1;
     if (to.y * inward < 0.5) to = { x: to.x, y: inward * Math.max(1.5, Math.abs(to.y)) };
     const d = clamp(len(to), 3, maxD);
     const target = add(r.spot, scale(norm(to), d));
     const T = clamp(0.4 + 0.034 * d, 0.5, 1.4);
     const speed = (d * AIR_DRAG) / (1 - Math.exp(-AIR_DRAG * T));
-    kick(s, p, target, speed, 0.03 + 0.05 * (1 - p.attrs.passing), action.kind === 'pass' ? action.receiver : -1);
+    kick(s, p, target, speed, 0.03 + 0.05 * (1 - p.attrs.passing), action.kind === 'pass' ? action.receiver : longThrowReceiver(s, p, r.spot, target, T));
     b.z = THROW_Z0;
     b.vz = (0.5 * GRAVITY * T * T - THROW_Z0) / T;
     b.passFrom = p.i;
@@ -735,7 +740,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   } else {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
     if (r.kind === 'corner') action = cornerKick(s, p, action);
-    if ((r.kind === 'corner' || r.kind === 'freekick') && action.kind === 'loft') deliver(s, p, action);
+    if ((r.kind === 'corner' || r.kind === 'freekick' || r.kind === 'goalkick') && action.kind === 'loft') deliver(s, p, action);
     else applyAction(s, p, { move: { x: 0, y: 0 }, throttle: 0, action });
     if (b.owner === p.i) {
       // Not a kick (a tackle input): ignore, stay ready.
@@ -1861,6 +1866,29 @@ function wallPlanted(s: MatchState): number[] {
   const t = s.aiRestart?.targets;
   if (!s.restart || s.restart.stage === 'whistle' || !t) return [];
   return w.players.filter((i) => !!t[i] && dist(s.players[i].pos, t[i]!) < WALL_FORMED);
+}
+
+/** An opponent this close (m) to where a throw was led to is standing on it: the throw goes to its man's feet. */
+const THROW_MARKED = 3;
+
+/** A long throw reaches this far (m), and up to 14 m more for a good passer. */
+const LONG_THROW = 18;
+
+/** Who a long throw is for: the pass assist's pick, else the nearest outfield team-mate who can get there while it's in the air. */
+function longThrowReceiver(s: MatchState, p: MatchPlayer, from: Vec, target: Vec, T: number): number {
+  const assisted = assistReceiver(s, p, from, target);
+  if (assisted >= 0) return assisted;
+  let best = -1;
+  let bestD = 3 + 7 * T;
+  for (const m of s.players) {
+    if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
+    const d = dist(m.pos, target);
+    if (d < bestD) {
+      bestD = d;
+      best = m.i;
+    }
+  }
+  return best;
 }
 
 /** At a corner, the attacking side's men are this close to their places (m) when it is ready to be taken. */
