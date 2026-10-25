@@ -57,7 +57,9 @@ describe('avoidClash', () => {
 
 // Shirts against the grass (review of #19). tests/fixtures/kit-probe.json is scripts/kit-probe.cjs's
 // reading of every ladder shirt as the 3D view draws it, at both quality levels (three near-black
-// shirts left out, where the probe picked up shorts or grass instead of the shirt).
+// shirts left out, where the probe picked up shorts or grass instead of the shirt). The grass is the
+// natural turf of the match-look pass, read off whole-pitch screenshots (scripts/view-probe.cjs);
+// the lighting did not change, so the shirt readings still hold.
 describe('shirts against the grass, as drawn', () => {
   const rows = probe as { quality: Quality; hex: string; drawn: string; grass: [string, string] }[];
 
@@ -82,9 +84,9 @@ describe('shirts against the grass, as drawn', () => {
     }
   });
 
-  test('red, green, yellow, amber, cream and orange shirts get the rim; blue, purple, black, white and the rest do not', () => {
+  test('yellow, amber, cream, orange, white, grey, red and the lighter green get the rim; blue, purple, black, dark red and dark green do not', () => {
     const clash = [...new Set([...KIT_COLORS.flat(), NEUTRAL_DARK, NEUTRAL_LIGHT])].filter(grassClash);
-    expect(clash.sort()).toEqual(['#0b7a3e', '#c8102e', '#ea580c', '#f2a900', '#f4d03f', '#fde68a']);
+    expect(clash.sort()).toEqual(['#0b7a3e', '#c8102e', '#e5e7eb', '#ea580c', '#f2a900', '#f4d03f', '#f5f5f5', '#fde68a', '#ffffff']);
   });
 
   test('keepers read against both shirts and the grass, for every pairing and every vision', () => {

@@ -7,7 +7,7 @@ import { showGuardScreen } from './guardView.ts';
 import { registerServiceWorker } from './pwa.ts';
 import { lastWriteFailed, previousClub, restorePrevious, setSaveGuest } from './store.ts';
 import { SAVE_VERSION } from '../meta/game.ts';
-import { claim } from './tabguard.ts';
+import { claim, expectRestore, handoverReady } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
 
 /** The web-font sheet is linked as media=print so it cannot block first paint; switch it on once it has loaded. */
@@ -30,7 +30,7 @@ installErrorHandlers({
   unsaved: lastWriteFailed,
   recover: () => {
     const prev = previousClub();
-    return prev ? { name: prev.name, run: () => restorePrevious() && location.reload() } : null;
+    return prev ? { name: prev.name, run: () => restorePrevious() && (expectRestore(), location.reload()) } : null;
   },
 });
 
@@ -94,15 +94,27 @@ function guardSkippedForTests(): boolean {
   }
 }
 
-if (guardSkippedForTests()) startGame();
-else
+if (guardSkippedForTests()) {
+  // No guard, but the check of what a reload meets still applies (it is a no-op when no restore or hand-over just happened).
+  void handoverReady().then((ok) => {
+    if (ok) startGame();
+    else {
+      setSaveGuest(true);
+      guard('other-tab');
+    }
+  });
+} else
   void claim({
     onLost: () => {
       setSaveGuest(true);
       guard('taken');
     },
-  }).then((owned) => {
-    if (owned && newerSave()) {
+  }).then(async (owned) => {
+    // Took the club from another tab: do not start (and so never write) until storage shows what that tab left.
+    if (owned && !(await handoverReady())) {
+      setSaveGuest(true);
+      guard('other-tab');
+    } else if (owned && newerSave()) {
       setSaveGuest(true);
       guard('newer');
     } else if (owned) startGame();

@@ -4,7 +4,7 @@
 // in both themes, and the keyboard reaches Kick off first after the skip link.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, PREFS_KEY, openApp, readSave, pageWidths, tabScreens } = require('./lib/helpers.cjs');
+const { reload, SEL, PREFS_KEY, openApp, readSave, pageWidths, tabScreens } = require('./lib/helpers.cjs');
 
 const SHORT = { halfSeconds: 3, controls: 'mouse', onboarded: true };
 
@@ -68,13 +68,13 @@ test('home: Kick off starts a ranked match against the opponent shown', async (t
 test('home: the mode cards arrive with level 2; locked ones are teasers, not controls', async (t) => {
   const page = await openApp(t, { level: 4 });
   const modes = await page.$$eval(SEL.modeCard, (els) => els.map((e) => e.getAttribute('data-mode')));
-  expect(modes, 'mode cards at level 4, in order').toEqual(['player', 'practice', 'cup', 'league']);
+  expect(modes, 'mode cards at level 4, in order: the League is not teased until it is next').toEqual(['player', 'practice', 'cup']);
   const locked = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => [e.getAttribute('data-mode'), e.getAttribute('data-locked-level')]));
-  expect(locked, 'locked Cup and League with their levels').toEqual([['cup', '5'], ['league', '8']]);
-  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badges').toBe(2);
+  expect(locked, 'only the Cup, the next unlock, is teased, with its level').toEqual([['cup', '5']]);
+  expect(await page.locator(`${SEL.lockedCard} .lock-badge`).count(), 'padlock badge').toBe(1);
   const inside = await page.$$eval(SEL.lockedCard, (els) => els.map((e) => e.querySelectorAll('button, a, input, select, [tabindex], [data-action]').length));
-  expect(inside, 'nothing focusable or actionable inside').toEqual([0, 0]);
-  for (const mode of ['cup', 'league']) {
+  expect(inside, 'nothing focusable or actionable inside').toEqual([0]);
+  for (const mode of ['cup']) {
     await page.locator(SEL.modeCardFor(mode)).click();
     await page.waitForTimeout(150);
     expect(await page.locator(`${SEL.tabFor('home')}[aria-current]`).count(), `still on Home after clicking ${mode}`).toBe(1);
@@ -112,7 +112,7 @@ for (const width of [1280, 390]) {
 
 test('home: the keyboard reaches Kick off first after the skip link', async (t) => {
   const page = await openApp(t, { level: null });
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.kickOff);
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   await page.keyboard.press('Tab');
@@ -151,12 +151,14 @@ test('home: the dashboard gains one element per unlock', async (t) => {
   expect((await stats(3)).stats, 'level 3: nothing yet').toEqual([]);
   expect((await stats(4)).stats, 'level 4: sessions').toEqual(['sessions']);
   const five = await stats(5);
-  expect(five.locked, 'level 5: the Cup opens').toEqual(['league']);
+  expect(five.locked, 'level 5: the Cup opens, and the League is not teased yet').toEqual([]);
   expect(five.hard, 'and Practice Hard').toBe(1);
-  expect(five.cards, 'still four mode cards').toBe(4);
+  expect(five.cards, 'three mode cards: vs Player, Practice, Cup').toBe(3);
   expect(five.stats, 'level 5: still just sessions').toEqual(['sessions']);
   expect((await stats(6)).stats, 'level 6: money').toEqual(['sessions', 'money']);
-  expect((await stats(7)).stats, 'level 7: ladder position').toEqual(['sessions', 'money', 'rank']);
+  const seven = await stats(7);
+  expect(seven.stats, 'level 7: ladder position').toEqual(['sessions', 'money', 'rank']);
+  expect(seven.locked, 'level 7: the League is next, so it is teased now').toEqual(['league']);
   const eight = await stats(8);
   expect(eight.locked, 'level 8: the League opens').toEqual([]);
   expect((await stats(10)).stats, 'level 10: the season week').toEqual(['sessions', 'money', 'rank', 'week']);

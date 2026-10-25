@@ -9,6 +9,7 @@ import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { tickDue } from './ticks.ts';
@@ -129,8 +130,17 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
 }
 
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-/** The controls line on phones and tablets: no mouse or keys to talk about. */
-const TOUCH_HINT = `<b>Drag</b> to run · <b>Pass</b> (hold to loft) · <b>Shoot</b> (hold for power; tackles without the ball) · <b>tap</b> a player to pick him. Your player runs toward your finger, faster the further it is.`;
+/** The controls line: the essentials (always shown whole) and the detail behind "All controls" (hud.css). */
+const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
+/** On phones and tablets: no mouse or keys to talk about. */
+const TOUCH_HINT = hint(
+  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power, tackles off the ball · <b>tap</b> a man to pick him`,
+  `Your player runs toward your finger, faster the further it is.`,
+);
+const MOUSE_HINT = hint(
+  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`,
+);
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -157,6 +167,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           </div>
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
+          <label class="pause-opt pause-volume">Sound <input type="range" id="opt-volume" min="0" max="100" step="5" aria-label="Sound volume"><output id="opt-volume-out" for="opt-volume"></output></label>
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
@@ -165,7 +176,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot (hold for power) · without the ball <b>right click</b> tackles, <b>left click</b> picks a man · <b>Keys</b> WASD, Space, F, C, Shift, E. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Without the ball:</b> a far right click slides. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : MOUSE_HINT)}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
@@ -234,7 +245,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.resize();
   renderer.prepare(s);
   const juice = mountJuice(root, s);
-  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  // Who kicks off and with which key: hot-seat has both players on one keyboard (Player 2 passes with Enter).
+  const kickoffPrompt = (team: 0 | 1): string | null => {
+    if (s.humans[0] && s.humans[1]) return team === 0 ? 'Player 1 kicks off: press Space' : 'Player 2 kicks off: press Enter';
+    if (coarsePointer()) return 'Your kick-off: tap Pass';
+    return (input.mode?.() ?? o.controls ?? 'mouse') === 'keys' ? 'Your kick-off: press Space to pass' : 'Your kick-off: click to pass';
+  };
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s, kickoffPrompt);
   const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, mode: () => input.mode?.() ?? o.controls ?? 'mouse' }) : null;
   let offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
 
@@ -247,6 +264,18 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   optReplays.addEventListener('change', () => {
     replaysOn = optReplays.checked;
     setInstantReplaysPref(replaysOn);
+  });
+  // Sound volume (the HUD's speaker button still mutes): remembered in this browser.
+  const optVolume = root.querySelector<HTMLInputElement>('#opt-volume')!;
+  const volumeOut = root.querySelector<HTMLOutputElement>('#opt-volume-out')!;
+  const showVolume = () => {
+    volumeOut.textContent = `${optVolume.value}%`;
+  };
+  optVolume.value = String(Math.round(getSound().volume * 100));
+  showVolume();
+  optVolume.addEventListener('input', () => {
+    getSound().setVolume(Number(optVolume.value) / 100);
+    showVolume();
   });
   // A mentality picked in the pause menu goes to the sim with the next tick's input.
   let pendingTactic = 0;
@@ -510,6 +539,20 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   canvas.focus({ preventScroll: true });
   announce(`${o.label} match. ${home.name} against ${away.name}. Esc pauses.`);
 
+  // The browser's Back (and Android's Back gesture) during a live match opens the pause menu instead of leaving the page
+  // and losing the match: the match owns one history entry, put back after each Back press, and removes it when it ends.
+  let guardingBack = false;
+  const onPop = () => {
+    if (done) return;
+    try { history.pushState({ derbyMatch: true }, ''); } catch { /* sandboxed viewer: no history to guard */ }
+    setPaused(true);
+  };
+  try {
+    history.pushState({ derbyMatch: true }, '');
+    guardingBack = true;
+    window.addEventListener('popstate', onPop);
+  } catch { /* sandboxed viewer */ }
+
   function dispose() {
     gfx.dispose();
     input.dispose();
@@ -523,6 +566,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    if (guardingBack) {
+      window.removeEventListener('popstate', onPop);
+      guardingBack = false;
+      // Take the match's own entry back off, so the player's Back button goes where it went before the match.
+      try { if ((history.state as { derbyMatch?: boolean } | null)?.derbyMatch) history.back(); } catch { /* no history */ }
+    }
     replay?.skip.remove();
     replay = null;
   }

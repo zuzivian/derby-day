@@ -85,12 +85,17 @@ const ON_CARRIER = 1.5;
 export const SELECT_R = 1.5;
 /** Half-angle of the cone searched for a teammate "in the direction of the click". */
 export const SELECT_CONE_COS = Math.cos((40 * Math.PI) / 180);
+/** A click within this many metres of a teammate picks the one nearest it, before any cone search. */
+export const PICK_R = 4;
+/** Ticks an automatically switched-to player is kept before the auto-switch looks again. */
+const AUTO_KEEP = 45;
 /** Ticks a hand-picked player is kept before the auto-switch may take him away again. */
 export const SELECT_LOCK = 180;
 
 /**
  * Who a click at `point` picks for `team`, given the player now steered:
- *  1. an outfield teammate within SELECT_R of the point (the closest one);
+ *  1. an outfield teammate within PICK_R of the point (the closest one): a click a couple of
+ *     metres off a man means him, not whoever happens to lie nearer you in that direction;
  *  2. else the nearest outfield teammate inside a 40 degree cone around the
  *     direction from the steered player to the point;
  *  3. else -1 (stay as you are).
@@ -99,7 +104,7 @@ export const SELECT_LOCK = 180;
 export function pickTeammate(s: MatchState, team: 0 | 1, point: Vec): number {
   const cur = s.players[s.controlled[team]];
   let under = -1;
-  let underD = SELECT_R;
+  let underD = PICK_R;
   for (const m of s.players) {
     if (m.team !== team || m.role === 'GK') continue;
     const d = dist(m.pos, point);
@@ -187,6 +192,17 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
     return { move: norm(to), throttle: 1, sprint: v > 4 };
   }
   const onLine = add(b.pos, scale(dir, along));
+  // Played ahead of him as he runs its way (a ball into his path): keep running along its line
+  // and let it catch him, easing only to a pace it can still catch, rather than stopping on the
+  // line to wait for it.
+  const pace = dot(p.vel, dir);
+  if (pace > 2.5) {
+    // Slow enough that it closes the gap to him in about 0.6 s.
+    const keep = Math.max(0, Math.min(pace, v - along / 0.6));
+    const go = sub(add(onLine, scale(dir, Math.max(1.5, keep * 0.5))), p.pos);
+    const effort = clamp(keep / 6.5, 0.3, SPRINT_MULT);
+    return effort > 1 ? { move: norm(go), throttle: effort / SPRINT_MULT, sprint: true } : { move: norm(go), throttle: effort };
+  }
   const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
   const to = sub(target, p.pos);
   const d = len(to);
@@ -395,5 +411,11 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   }
   if (--s.switchTimer[team] > 0) return;
   s.switchTimer[team] = 12;
-  if (!cur || dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) give(s, team, byDist[0].i, true);
+  // Never off a man the ball is coming to and nearly at: he is about to play it.
+  if (cur && dist(cur.pos, ball.pos) < 3 && dot(sub(cur.pos, ball.pos), ball.vel) > 0) return;
+  if (!cur || dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) {
+    give(s, team, byDist[0].i, true);
+    // Then keep him a moment: not straight back to the last man as the ball runs on.
+    s.switchTimer[team] = AUTO_KEEP;
+  }
 }

@@ -4,6 +4,7 @@
 // away he is. All of them are one draw call (Points). They fade in as players shrink below DOT_BELOW
 // px tall and are gone above it, so the normal broadcast view is unchanged.
 
+import { PLAYER_SCALE } from './player3d.ts';
 import { clamp01 } from './space.ts';
 import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Points, PointsMaterial, SRGBColorSpace, Vector3, type PerspectiveCamera } from './three.ts';
 
@@ -17,12 +18,12 @@ export const DOT_FADE = 3;
  */
 export const DOT_ORDER = 0.9;
 /** Dot diameter, CSS px. */
-export const DOT_PX = 10;
+export const DOT_PX = 11;
 
-/** How tall a 1.8 m player standing at the camera's target is drawn, in CSS px. */
+/** How tall a player (1.8 m, drawn at PLAYER_SCALE) standing at the camera's target is drawn, in CSS px. */
 export function playerPx(cam: PerspectiveCamera, target: Vector3, cssH: number): number {
   const a = tmpA.set(target.x, 0, target.z).project(cam);
-  const b = tmpB.set(target.x, 1.8, target.z).project(cam);
+  const b = tmpB.set(target.x, 1.8 * PLAYER_SCALE, target.z).project(cam);
   return Math.abs(b.y - a.y) * 0.5 * cssH;
 }
 const tmpA = new Vector3();
@@ -93,7 +94,7 @@ export class PlayerDots {
     this.mat.opacity = alpha;
     (this.mat as unknown as { size: number }).size = DOT_PX * pixelRatio;
     // Lift each dot by half its size plus a pixel, in metres at this scale, so it sits on the head.
-    const lift = ((DOT_PX / 2 + 1) * 1.8) / Math.max(1, px);
+    const lift = ((DOT_PX / 2 + 1) * 1.8 * PLAYER_SCALE) / Math.max(1, px);
     for (let i = 0; i < heads.length; i++) {
       const h = heads[i];
       this.pos[i * 3] = h.x;

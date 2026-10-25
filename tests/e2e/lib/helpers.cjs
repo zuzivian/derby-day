@@ -239,6 +239,57 @@ async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
 /** The player's next visit, with the live-match hook (window.__e2e) on. */
 const nextVisit = (page) => openSecondPage(page);
 
+/**
+ * page.reload() for tests that check what a reload meets. Chromium now and then starts the reloaded page on storage that
+ * lacks what the page wrote just before (see openSecondPage), so what the page holds is copied first and put back before
+ * the page's own boot, once. A no-op when the browser delivered it. Every test that needs a reload goes through this.
+ */
+async function reload(page) {
+  const held = await page.evaluate(() => Object.entries(localStorage)).catch(() => []);
+  const nonce = Math.random().toString(36).slice(2);
+  await page.addInitScript(
+    ([entries, n]) => {
+      try {
+        if (sessionStorage.getItem('__reloaded:' + n)) return;
+        sessionStorage.setItem('__reloaded:' + n, '1');
+        for (const [k, v] of entries) if (localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+      } catch {
+        /* storage unavailable: nothing to restore */
+      }
+    },
+    [held, nonce],
+  );
+  await page.reload();
+}
+
+/**
+ * Wait for Home's Kick off on a returning visit. When it never shows, say what the page showed instead (the welcome after lost
+ * storage, the one-club-per-browser screen, a slow boot), with the page's text, the storage it could see and a screenshot, so
+ * the failure explains itself.
+ */
+async function waitForHome(page, label = 'next visit') {
+  try {
+    await page.waitForSelector(SEL.kickOff, { timeout: 20_000 });
+  } catch (err) {
+    const seen = await page
+      .evaluate(([saveKey, prefsKey]) => {
+        const save = localStorage.getItem(saveKey);
+        const prefs = localStorage.getItem(prefsKey);
+        return {
+          url: location.href.slice(0, 80),
+          app: (document.getElementById('app')?.innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+          save: save ? `${save.length} bytes` : 'none',
+          prefs: prefs ? `onboarded=${JSON.parse(prefs).onboarded}` : 'none',
+          skipGuard: !!window.__e2eSkipTabGuard,
+        };
+      }, [SAVE_KEY, PREFS_KEY])
+      .catch((e) => ({ unreadable: String(e).slice(0, 80) }));
+    const shot = path.join(process.env.E2E_SHOTS || require('node:os').tmpdir(), `${label.replace(/\W+/g, '-')}-${Date.now()}.png`);
+    await page.screenshot({ path: shot }).catch(() => {});
+    throw new Error(`${label}: Home's Kick off never showed. The page showed ${JSON.stringify(seen)} (screenshot: ${shot}). ${String(err.message).split('\n')[0]}`);
+  }
+}
+
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
   await page.waitForSelector(`${SEL.tabFor(screen)}[aria-current]`).catch(() => {});
@@ -261,4 +312,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { nextVisit, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { reload, nextVisit, waitForHome, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
