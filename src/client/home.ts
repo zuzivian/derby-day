@@ -4,9 +4,11 @@
 // picture has a text equivalent. Locked modes are visible teasers with a
 // padlock and the level that opens them; they are not controls.
 //
-// As the club levels up the screen gains one thing at a time: Practice (level
-// 4), vs Player (5), the Hard practice button and the Cup card (7) and the
-// League card (8). At level 1 it is the hero and its Kick off, nothing else.
+// As the club levels up the screen gains one thing at a time: vs Player and
+// Easy practice (level 2), the Normal practice button (4), the Hard button and
+// the Cup card (5) and the League card (8). A locked card or button shows only
+// when it is the next unlock (or the practice button one level before it).
+// At level 1 it is the hero and its Kick off, nothing else.
 // Everything secondary (news, replays, club level details, tutorial, reset)
 // lives on the Club tab (clubScreen in ui.ts). Styles: the "Home" section of
 // styles.css.
@@ -14,7 +16,7 @@
 import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import type { Save } from '../meta/game.ts';
-import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
+import { clubLevel, isUnlocked, nextUnlocks, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS } from '../sim/constants.ts';
@@ -161,7 +163,7 @@ function hero(app: App): string {
 function versusCard(s: Save): string {
   const local = isUnlocked(s, 'local2p');
   const link = isUnlocked(s, 'link');
-  if (!local && !link) return isUnlocked(s, 'practice') ? lockedCard(s, 'player', 'vs Player', ICON.players, 'local2p') : '';
+  if (!local && !link) return teased(s, 'local2p') ? lockedCard(s, 'player', 'vs Player', ICON.players, 'local2p') : '';
   return `
   <article class="mode-card" data-mode="player" aria-labelledby="mode-player">
     <div class="mode-top"><span class="mode-icon">${ICON.players}</span><div><h3 id="mode-player" class="mode-title">vs Player</h3><p class="mode-sub">Friendly · no Elo</p></div></div>
@@ -182,13 +184,22 @@ function practiceCard(s: Save): string {
     <div class="mode-top"><span class="mode-icon">${ICON.cone}</span><div><h3 id="mode-practice" class="mode-title">Practice</h3><p class="mode-sub">vs CPU · no Elo</p></div></div>
     <div class="mode-actions diff" role="group" aria-label="CPU difficulty: each button starts a practice match">
       ${PRACTICE.map((x, i) =>
-        practiceUnlocked(s, x.id)
+        !practiceUnlocked(s, x.id) && !nearlyOpen(s, PRACTICE_UNLOCK[x.id])
+          ? ''
+          : practiceUnlocked(s, x.id)
           ? `<button class="mode-btn diff-btn" id="practice-${x.id}" data-action="play-practice" data-level="${x.id}" aria-label="Practice against ${x.label} CPU">${bars(i + 1)}<span>${x.label}</span></button>`
           : `<span class="mode-btn diff-btn is-locked">${ICON.lock(14)}<span aria-hidden="true">${x.label}</span><b class="lvl" aria-hidden="true">${unlockLevel(s, PRACTICE_UNLOCK[x.id])}</b><span class="sr-only">${x.label}: unlocks at club level ${unlockLevel(s, PRACTICE_UNLOCK[x.id])}</span></span>`,
       ).join('')}
     </div>
   </article>`;
 }
+
+/**
+ * Only the next thing to unlock is teased, so Home grows a card at a time instead of jumping to a row of padlocks: a locked
+ * card (or locked practice button) shows only when it is among the next unlocks, or at most one level away.
+ */
+const teased = (s: Save, id: UnlockId): boolean => isUnlocked(s, 'practice') && nextUnlocks(s).some((u) => u.id === id);
+const nearlyOpen = (s: Save, id: UnlockId): boolean => unlockLevel(s, id) - clubLevel(s) <= 1;
 
 /** A visible teaser for a mode that is still locked: padlock and level badge, no control inside. */
 function lockedCard(s: Save, mode: string, title: string, icon: string, id: UnlockId): string {
@@ -200,7 +211,7 @@ function lockedCard(s: Save, mode: string, title: string, icon: string, id: Unlo
 }
 
 function cupCard(s: Save): string {
-  if (!isUnlocked(s, 'cup')) return !isUnlocked(s, 'practice') ? '' : lockedCard(s, 'cup', 'Cup', ICON.cup, 'cup');
+  if (!isUnlocked(s, 'cup')) return teased(s, 'cup') ? lockedCard(s, 'cup', 'Cup', ICON.cup, 'cup') : '';
   const cup = s.cup;
   const opp = cup && !cup.done ? cupOpponent(s, cup) : null;
   const action = opp
@@ -214,7 +225,7 @@ function cupCard(s: Save): string {
 }
 
 function leagueCard(s: Save): string {
-  if (!isUnlocked(s, 'league')) return !isUnlocked(s, 'practice') ? '' : lockedCard(s, 'league', 'League', ICON.league, 'league');
+  if (!isUnlocked(s, 'league')) return teased(s, 'league') ? lockedCard(s, 'league', 'League', ICON.league, 'league') : '';
   const season = s.season;
   const opp = season && !season.done ? seasonOpponent(s, season) : null;
   const action = opp

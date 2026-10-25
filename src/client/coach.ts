@@ -11,7 +11,7 @@
 // Which tips and marks were shown is kept in prefs (coachSeen, marks), so a
 // returning player, whose prefs hold neither, never sees any. Styles: coach.css.
 
-import { PITCH_W } from '../sim/constants.ts';
+import { PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
 import { announce } from './a11y.ts';
@@ -33,7 +33,7 @@ export const TIPS: Record<TipId, Tip> = {
   run: {
     id: 'run',
     title: 'Run',
-    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrow keys.',
+    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrows.',
     keys: 'Use WASD or the arrow keys to run, and hold Shift to sprint. With a mouse, your player runs to the pointer instead.',
     touch: 'Drag on the pitch and your player runs toward your finger. The further away it is, the faster he runs.',
   },
@@ -67,8 +67,14 @@ export const TIPS: Record<TipId, Tip> = {
   },
 };
 
-/** The run tip is the first thing a new player sees, a moment after the whistle. */
+/** The first tip of a first match starts by saying which player is you and which way you attack (team 0 always attacks the right-hand goal). */
+export const INTRO = 'You are the player with the yellow ring, attacking the goal on the right.';
+
+/** Tips start a moment after the whistle. */
 const RUN_AT_TICK = 45;
+
+/** A shot tip is only worth it when the goal is this close (metres): the sim's shots reach about 35 m and a new player should not be shooting from the halfway line. */
+export const SHOOT_RANGE = 28;
 
 /**
  * Watches a match and says which tips have just become relevant, in the order
@@ -100,21 +106,28 @@ export class CoachTracker {
     const ownerTeam = owner >= 0 ? s.players[owner].team : null;
     const live = s.phase === 'play';
 
-    // Running comes first: nothing else is offered until the run tip has been (or was, in an earlier match).
-    if (s.tick >= RUN_AT_TICK && s.phase !== 'fulltime') this.offer('run');
-    const ready = this.offered.has('run');
+    // Tips start a moment after the whistle. Which comes first depends on the situation: a player on the ball at the
+    // kick-off is told about the ball (pass) before how to run, because that is what is on his mind; a player without
+    // it is told how to run. Nothing else is offered before then.
+    const started = s.tick >= RUN_AT_TICK && s.phase !== 'fulltime';
+    const withBall = me >= 0 && owner === me;
+    if (started && withBall && (live || s.phase === 'kickoff')) this.offer('pass');
+    if (started) this.offer('run');
 
-    if (ready && live && me >= 0 && owner === me) {
-      this.offer('pass');
-      // The first time with the ball in the attacking half is the time to say how to shoot.
-      const x = s.players[me].pos.x;
-      if (attackDir(human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
-    }
+    // Shooting is only worth saying when a shot is on: the ball at his feet in open play and the goal within range.
+    if (started && live && withBall && this.inShootingRange(s, human, me)) this.offer('shoot');
     // Lost it: the human's team had the ball and the other side has it now.
-    if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
+    if (started && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');
     if (owner >= 0 || live) this.prevOwnerTeam = ownerTeam ?? this.prevOwnerTeam;
-    if (ready && this.restartIsMine(s, human)) this.offer('restart');
+    if (started && this.restartIsMine(s, human)) this.offer('restart');
     return this.queue.slice(before);
+  }
+
+  /** Within SHOOT_RANGE metres of the centre of the goal the human's team attacks. */
+  private inShootingRange(s: MatchState, human: 0 | 1, me: number): boolean {
+    const goalX = attackDir(human) > 0 ? PITCH_W : 0;
+    const p = s.players[me].pos;
+    return Math.hypot(p.x - goalX, p.y - PITCH_H / 2) < SHOOT_RANGE;
   }
 
   private restartIsMine(s: MatchState, human: 0 | 1): boolean {
@@ -126,12 +139,14 @@ export class CoachTracker {
   relevant(id: TipId, s: MatchState, human: 0 | 1 = 0): boolean {
     const me = s.controlled[human];
     const owner = s.ball.owner;
+    const withBall = me >= 0 && owner === me;
     switch (id) {
       case 'run':
         return s.phase !== 'fulltime';
       case 'pass':
+        return withBall && (s.phase === 'play' || s.phase === 'kickoff');
       case 'shoot':
-        return me >= 0 && owner === me;
+        return withBall && s.phase === 'play' && this.inShootingRange(s, human, me);
       case 'tackle':
         return s.phase === 'play' && (owner < 0 || s.players[owner].team !== human);
       case 'restart':
@@ -186,9 +201,10 @@ export const minTipMs = (text: string): number => Math.max(5000, text.trim().spl
 const autoHideMs = (text: string): number => Math.max(10_000, minTipMs(text) + 4000);
 
 /** The words of a tip for the way the player is playing right now: touch first, then whichever input was used last. */
-export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean): string {
+export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean, intro = false): string {
   const t = TIPS[id];
-  return touch ? t.touch : mode === 'keys' ? t.keys : t.mouse;
+  const body = touch ? t.touch : mode === 'keys' ? t.keys : t.mouse;
+  return intro ? `${INTRO} ${body}` : body;
 }
 
 export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
@@ -201,6 +217,8 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   host.appendChild(el);
   const touch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let shown: TipId | null = null;
+  let introPending = o.seen.length === 0;
+  let introTip: TipId | null = null;
   let text = '';
   let age = 0;
   let counted = false;
@@ -220,7 +238,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   };
   const draw = (id: TipId) => {
     const tip = TIPS[id];
-    text = tipText(id, o.mode(), touch());
+    text = tipText(id, o.mode(), touch(), introTip === id);
     el.dataset.coachTip = id;
     el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${text}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
   };
@@ -228,6 +246,11 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     shown = id;
     age = 0;
     counted = false;
+    // The first tip of a first match also says which player is you and which way you attack.
+    if (introPending) {
+      introTip = id;
+      introPending = false;
+    }
     draw(id);
     el.hidden = false;
     // Next frame, so the fade-in runs.
@@ -250,7 +273,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
       if (shown) {
         age += dtMs;
         if (!counted && age >= SEEN_AFTER_MS) countSeen();
-        if (dtMs > 0 && text !== tipText(shown, o.mode(), touch())) draw(shown); // the player switched input: say it their way
+        if (dtMs > 0 && text !== tipText(shown, o.mode(), touch(), introTip === shown)) draw(shown); // the player switched input: say it their way
         if (age >= autoHideMs(text)) hide();
         // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
         else if (tracker.queue.length && age >= minTipMs(text)) hide();

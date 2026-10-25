@@ -33,12 +33,13 @@ describe('coach tracker', () => {
     for (let i = 0; i < 60; i++) step(s, {});
     expect(c.observe(s)).toContain('run');
     expect(c.observe(s)).toEqual([]);
-    expect(c.take()).toBe('run'); // always first, even when the human already has the ball (then 'pass' follows)
+    expect(c.take()).toBe('pass'); // the human holds the ball at kick-off, so what to do with it comes before how to run
+    expect(c.take()).toBe('run');
     while (c.take()) c.observe(s);
     for (let i = 0; i < 120; i++) { step(s, {}); expect(c.observe(s)).not.toContain('run'); }
   });
 
-  test('nothing else is offered before the run tip', () => {
+  test('nothing is offered before the whistle has settled', () => {
     const s = match();
     toPlay(s);
     const me = s.controlled[0];
@@ -48,7 +49,7 @@ describe('coach tracker', () => {
     const c = new CoachTracker();
     expect(c.observe(s)).toEqual([]);
     s.tick = 50;
-    expect(c.observe(s)).toEqual(['run', 'pass', 'shoot']);
+    expect(c.observe(s)).toEqual(['pass', 'run', 'shoot']);
   });
 
   test('tips already seen are never offered again', () => {
@@ -156,7 +157,7 @@ describe('coach timing and relevance', () => {
   test('a tip cut short is forgotten, so it comes back', () => {
     const s = match();
     for (let i = 0; i < 60; i++) step(s, {});
-    const c = new CoachTracker();
+    const c = new CoachTracker(['pass']);
     c.observe(s);
     expect(c.take(s)).toBe('run');
     expect(c.observe(s)).toEqual([]);
@@ -175,14 +176,38 @@ describe('coach timing and relevance', () => {
     expect(c.relevant('restart', s)).toBe(false);
   });
 
-  test('the shoot tip is offered on the first possession in the attacking half, not only in the box', () => {
+  test('the shoot tip waits until the player is in range of goal', () => {
     const s = match();
     toPlay(s);
     const me = s.controlled[0];
     const c = new CoachTracker(['run']);
     s.players[me].pos = { x: 60, y: 10 };
     s.ball.owner = me;
-    expect(c.observe(s)).toEqual(['pass', 'shoot']);
+    expect(c.observe(s)).toEqual(['pass']); // 51 m out
+    expect(c.relevant('shoot', s)).toBe(false);
+    s.players[me].pos = { x: 85, y: 30 };
+    expect(c.observe(s)).toEqual(['shoot']); // about 20 m out
+    expect(c.relevant('shoot', s)).toBe(true);
+  });
+
+  test('no shoot tip at kick-off, 52 m from goal', () => {
+    const s = match();
+    const c = new CoachTracker();
+    for (let i = 0; i < 60; i++) step(s, {});
+    expect(c.observe(s)).not.toContain('shoot');
+    expect(c.relevant('shoot', s)).toBe(false);
+  });
+
+  test('a queued shoot tip is dropped once the player has dribbled out of range', () => {
+    const s = match();
+    toPlay(s);
+    const me = s.controlled[0];
+    const c = new CoachTracker(['run', 'pass']);
+    s.players[me].pos = { x: 90, y: 34 };
+    s.ball.owner = me;
+    expect(c.observe(s)).toEqual(['shoot']);
+    s.players[me].pos = { x: 50, y: 34 };
+    expect(c.take(s)).toBeUndefined();
   });
 
   test('the words follow the live input: touch first, then keys or mouse; the run tip mentions both', () => {
@@ -255,7 +280,7 @@ describe('the end of the first match', () => {
 
   test('what level 2 opens is named for the celebration and marked seen, so no dialog or mark repeats it', () => {
     const { s, prefs, out } = firstMatch(1, 0);
-    expect(out.opened).toEqual(['Squad', 'Local 2P', 'Link two tabs', 'Practice (Easy)']);
+    expect(out.opened).toEqual(['Squad', 'vs Player: one screen', 'vs Player: two tabs', 'Practice: Easy']);
     expect(pendingUnlocks(s)).toEqual([]);
     expect(prefs.marks).toEqual(['home', 'squad']);
     expect(pendingMark(s, prefs.marks, 'home')).toBeNull();

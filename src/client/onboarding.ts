@@ -11,7 +11,9 @@ import type { Save } from '../meta/game.ts';
 import { NAME_MAX, NAME_MIN, renameClub, rerollColours, rerollName, validateClubName } from '../meta/identity.ts';
 import { levelForXp, nextUnlockText, type XpGain } from '../meta/levels.ts';
 import { announce, captureFocus, restoreFocus } from './a11y.ts';
+import { xpCardHtml } from './levels.ts';
 import { crestSvg } from './crest.ts';
+import { armXpCard } from './screenFx.ts';
 import { esc } from './ui.ts';
 
 const ballIcon = `<svg class="icon" viewBox="0 0 24 24" width="30" height="30" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.2 15.6 9.8 14.2 14H9.8L8.4 9.8Z" fill="currentColor"/></svg>`;
@@ -109,7 +111,6 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
     if (step === 'celebrate') {
       const w = celebrationWords(o.gf, o.ga);
       const p = levelForXp(o.save.xp ?? 0);
-      const pct = Math.min(100, Math.round((p.intoLevel / p.needed) * 100));
       const next = nextUnlockText(o.save);
       return `<section class="panel ob-card ob-celebrate" aria-labelledby="ob-title">
         <p class="eyebrow">Full time</p>
@@ -122,8 +123,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <p class="ob-lede">${w.sub}</p>
         <div class="ob-xp" aria-labelledby="ob-xp-title">
           <h3 id="ob-xp-title" class="eyebrow">Club level ${p.level}</h3>
-          <p class="xp-gain"><b>+${o.xp.total} XP</b> <span class="muted">${o.xp.parts.map((x) => `${esc(x.label.startsWith('practice') ? 'the match' : x.label)} ${x.xp}`).join(' · ')}</span></p>
-          <div class="ob-xp-bar" role="progressbar" aria-label="XP to the next level" aria-valuemin="0" aria-valuemax="${p.needed}" aria-valuenow="${Math.min(p.intoLevel, p.needed)}"><i style="width:${pct}%"></i></div>
+          ${xpCardHtml(o.save, o.xp, false)}
           ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.` : 'The club opens up as it levels.'}</p>` : ''}
           ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
         </div>
@@ -164,6 +164,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
     host.innerHTML = `
       <header class="ob-top"><h1 class="wordmark">Derby Day</h1></header>
       <main id="main" class="ob-main" tabindex="-1">${body()}</main>`;
+    armXpCard(host); // the celebration's XP card waits for this to start its bar and level-up flourish
     if (focusTitle) host.querySelector<HTMLElement>('#ob-title')?.focus();
     else restoreFocus(host, key);
   }
@@ -197,8 +198,25 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         announce('New colours and crest.');
         return;
       case 'skip':
-      case 'done':
         return finish();
+      case 'done': {
+        // A name typed in the box counts when the big button is pressed, not only when "Use this name" is: nobody
+        // should lose what they typed. An invalid one keeps the step open and says why.
+        const draft = nameDraft.trim();
+        if (draft && draft !== s.club.name) {
+          const check = validateClubName(draft);
+          if (!check.ok) {
+            nameError = check.error;
+            render();
+            host.querySelector<HTMLInputElement>('#ob-name')?.focus();
+            return;
+          }
+          renameClub(s, check.name);
+          o.persist();
+          announce(`Club renamed to ${s.club.name}, short code ${s.club.short.split('').join(' ')}.`);
+        }
+        return finish();
+      }
     }
   });
 

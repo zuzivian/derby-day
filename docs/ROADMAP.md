@@ -96,7 +96,7 @@ Goal: two people, two browsers, one fair match.
 
 ### Multiplayer spike (October 2026)
 
-Two humans can now play one match, in two ways, from the **vs Player** card on Home (open from club level 1):
+Two humans can now play one match, in two ways, from the **vs Player** card on Home (open from club level 2):
 
 - **Local 2P:** hot-seat on one keyboard against a ladder club you pick. Player 1 has W A S D, Space, F, E and Left Shift (or the mouse); player 2 has the arrows, Enter or `/`, `.`, `,` and Right Shift. No Elo, no rewards.
 - **Link two tabs:** two tabs of the same browser play each other over `BroadcastChannel`, with no server. One tab hosts and shows a 4-letter room code; the other joins with it. The host sends the seed and both team setups, both tabs build the same `MatchState`, and from then on only inputs cross between them.
@@ -139,17 +139,17 @@ The club opens up as it gains experience. A new player starts with Home and one 
 |---|---|---|---|
 | 1 | Feature | Home and Kick off | Kick off your next match from Home. Everything else opens as the club levels up. |
 | 2 | Feature | Squad | See your players and pick the starting eleven. |
-| 2 | Feature | Local 2P | vs Player on one screen: two humans, one keyboard. Nothing recorded. |
-| 2 | Feature | Link two tabs | vs Player in two tabs of this browser, in lockstep. Nothing recorded. |
-| 2 | Feature | Practice (Easy) | Friendlies against an Easy CPU. No Elo. |
-| 3 | Feature | Ranked matches | Play ladder clubs near your Elo, live. Until then, Kick off is a warm-up friendly. |
+| 2 | Feature | vs Player: one screen | Two humans, one keyboard, one screen. Nothing recorded. |
+| 2 | Feature | vs Player: two tabs | Two tabs of this browser play each other, in lockstep. Nothing recorded. |
+| 2 | Feature | Practice: Easy | Friendlies against an Easy CPU. No Elo. |
+| 3 | Feature | Ranked matches | Kick off now plays ladder clubs near your Elo, live. |
 | 3 | Feature | Club | Club news, your club level and every unlock still to come. |
 | 3 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
 | 3 | Feature | Practice skills | The training-ground drills: run, pass, shoot and tackle, any time you like. |
 | 4 | Feature | Training | Spend the sessions you earn on player attributes. |
-| 4 | Feature | Practice Normal | A fairer CPU friendly: the Academy Select. |
+| 4 | Feature | Practice: Normal | A fairer CPU friendly: the Academy Select. |
 | 5 | Feature | The Cup | The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy. |
-| 5 | Feature | Practice Hard | A tougher CPU friendly: the Veterans Select. |
+| 5 | Feature | Practice: Hard | A tougher CPU friendly: the Veterans Select. |
 | 6 | Feature | Transfers | Sign players from the market and sell to CPU clubs. |
 | 7 | Feature | Ladder | The full Elo table of all 16 clubs. |
 | 8 | Feature | League season | An 8-club round robin over 7 matchdays, with prize money for every place. |
@@ -170,7 +170,7 @@ The club opens up as it gains experience. A new player starts with Home and one 
 | 80 | Perk | Scouting network | Two more players on the transfer market (12 to 14). |
 | 99 | Perk | Legend badge | Level 99. The bar keeps counting toward a future prestige. |
 
-The schedule is the owner's. One change since the first cut (October 2026 home redesign): Local 2P and Link two tabs moved from levels 7 and 12 to level 1, because "vs Player" is one of the home screen's play modes from the start; level-1 features never open a level-up dialog, so older saves just find them there. Two notes on it: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
+The schedule is the owner's. History: Local 2P and Link two tabs were first at levels 7 and 12, moved to level 1 with the October 2026 home redesign, and now open at level 2 with the Squad and Easy practice, because level 1 is Home and one Kick off and "vs Player" is the first play mode after it. Level-1 features never open a level-up dialog. Two notes: the calendar starts counting with the first counted match after level 10 (no week passes and nothing ages or rolls over before then), and the perks past level 12 are deliberately small, cosmetic or convenience, never strength for money: a slightly bigger squad, a deeper market, faster scouting, one more training session per win.
 
 A feature is available when the club's level reaches it, when the save is already using it (a cup or league in progress, a trophy of that kind, a running calendar or academy offers), or when it was unlocked once before (`unlocksSeen`). So nothing is ever taken away, even if the XP table is rebalanced. Locked tabs and buttons are hidden, not disabled.
 

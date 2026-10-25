@@ -4,7 +4,7 @@ import { FORMATION_IDS, formationOf, type Role } from '../sim/constants.ts';
 import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
-import { isUnlocked, squadCap, type UnlockId } from '../meta/levels.ts';
+import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
@@ -458,8 +458,8 @@ function resultModal(app: App): string {
   const chips = sum
     ? [
         r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
-        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : 'banked for Transfers') : '',
-        sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : 'banked for Training') : '',
+        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`) : '',
+        sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : `kept until Training opens at level ${unlockLevel(app.save, 'training')}`) : '',
       ].filter(Boolean)
     : [];
   const dev = sum?.developments ?? [];
