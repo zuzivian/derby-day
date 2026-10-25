@@ -66,7 +66,9 @@ function strike(s: MatchState, input: HumanInput, ticks = 240) {
     const prevX = s.ball.pos.x;
     path.push({ ...s.ball.pos });
     step(s, still(s));
-    if (!line && prevX < PITCH_W && s.ball.pos.x >= PITCH_W) line = { y: s.ball.pos.y, z: s.ball.z };
+    // Where the strike crosses the line: as struck, or as the keeper turned it (not a defender's clearance later).
+    const by = s.ball.lastTouch;
+    if (!line && prevX < PITCH_W && s.ball.pos.x >= PITCH_W && (by === taker || (by >= 0 && s.players[by].role === 'GK'))) line = { y: s.ball.pos.y, z: s.ball.z };
   }
   const goal = s.score[0] > goals;
   return { zAtWall, first, wall, goal, line, path, over: !goal && first < 0 && !!line && line.z > GOAL_BAR_H };

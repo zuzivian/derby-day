@@ -29,7 +29,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
-import { freeKickSpot, InputController } from './input.ts';
+import { setPieceSpot, InputController } from './input.ts';
 import { mountMatch } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
@@ -674,7 +674,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const makeInput = () => {
     const c = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
     c.mode = o.controls;
-    c.setPiece = () => freeKickSpot(s, me);
+    c.setPiece = () => setPieceSpot(s, me);
     return c;
   };
   let input = makeInput();

@@ -482,3 +482,34 @@ export function strikePath(from: Vec, plan: StrikePlan, n = 24, seconds = plan.f
   }
   return pts;
 }
+
+// ---------------------------------------------------------------------------
+// Set-piece deliveries: a cross from a corner or a free kick
+
+/** How far (m) a fully curled cross swings off the straight line, for a perfect passer (an inswinger or outswinger). */
+export const DELIVERY_BEND = 6;
+
+/**
+ * A lofted set-piece delivery (a corner or a free-kick cross): it comes down on `target`, wherever that is,
+ * instead of at the end of the open-play loft's range (loftPlan). `hold` 0..1 picks the ball: a quick press is
+ * driven (about 1.7 s over 30 m, up to about 3.5 m); a full hold floats it, high and slow (about 2.5 s, 7.5 m up). `curl` -1..1
+ * bends it (an inswinger or an outswinger), setting off to the other side so it still lands on the target.
+ */
+export function deliveryPlan(from: Vec, target: Vec, hold: number, curl: number, passing: number): StrikePlan & { landing: Vec } {
+  const k = AIR_DRAG;
+  const h = clamp(hold, 0, 1);
+  const d = clamp(dist(from, target), 3, 55);
+  const base = norm(sub(target, from));
+  const normal = { x: -base.y, y: base.x };
+  const T = clamp(1 + 0.022 * d + h * (0.5 + 0.01 * d), 0.8, 2.8);
+  const reach = (1 - Math.exp(-k * T)) / k;
+  // Full curl swings it about DELIVERY_BEND across, however long it hangs.
+  const side = (clamp(curl, -1, 1) * DELIVERY_BEND * (0.6 + 0.4 * passing)) / ((T - reach) / k);
+  const bend = (side / k) * (T - reach);
+  const fwd = d / reach;
+  const lat0 = -bend / reach;
+  const speed = Math.hypot(fwd, lat0);
+  const dir = norm(add(scale(base, fwd), scale(normal, lat0)));
+  const vz = (GRAVITY * T) / 2 - CHIP_Z0 / T;
+  return { dir, normal, speed, vz, side, top: 0, flight: T, over: false, landing: add(from, scale(base, d)) };
+}

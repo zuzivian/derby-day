@@ -4,7 +4,7 @@ import { watchPixelRatio, type PixelRatioWatch } from './dpr.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
 import { humanPass, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
-import { freeKickPlan } from '../sim/match.ts';
+import { freeKickPlan, setPieceDelivery } from '../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 
@@ -140,7 +140,20 @@ export class PitchRenderer {
     const aimAt = x.cursor && x.showCursor ? x.cursor : ctrl ? { x: ctrl.pos.x + ctrl.facing.x * 14, y: ctrl.pos.y + ctrl.facing.y * 14 } : null;
     const armed = x.armed;
     if (ctrl && hasBall && aimAt) {
-      if (armed?.kind === 'loft') {
+      if (armed?.kind === 'loft' && armed.at) {
+        // A cross from a corner or a free kick: its real flight, and where it comes down.
+        const plan = setPieceDelivery(s, ctrl, armed.at, armed.power, armed.curl ?? 0);
+        const pts = strikePath(plan.from, plan, 20);
+        ctx.save();
+        ctx.setLineDash([0.35, 0.45]);
+        ctx.strokeStyle = 'rgba(140,220,255,.85)';
+        ctx.lineWidth = 0.12;
+        ctx.beginPath();
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y - p.z * 0.3) : ctx.lineTo(p.x, p.y - p.z * 0.3)));
+        ctx.stroke();
+        ctx.restore();
+        ring(plan.landing, 0.9, 'rgba(140,220,255,.95)');
+      } else if (armed?.kind === 'loft') {
         // Lofted ball: landing ring plus the arc the ball will fly.
         const plan = loftPlan(s.ball.pos, aimAt, armed.power);
         const a = s.ball.pos;

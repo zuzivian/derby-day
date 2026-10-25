@@ -937,7 +937,7 @@ describe('the woodwork', () => {
 });
 
 describe('a corner played to a team-mate', () => {
-  /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker. Who has it 4 s later? */
+  /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker, past the short man. Who has it 4 s later? */
   function cornerTo(at: Vec, by: 'flag' | 'taker', seed: number) {
     const s = livePlay(seed + 10);
     awardRestart(s, 'corner', 0, { ...at }, 'out');
@@ -945,7 +945,8 @@ describe('a corner played to a team-mate', () => {
     while (s.restart && s.restart.stage !== 'ready' && t++ < 900) step(s, { cursor: { x: 90, y: 34 } });
     const taker = s.players[s.restart!.taker];
     const ref = by === 'flag' ? s.restart!.spot : taker.pos;
-    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[0];
+    // Not the man who comes short to the flag (tests/corners.test.ts): the nearest of the others, out on the edge of the box.
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK' && dist(p.pos, s.restart!.spot) > 30).sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[0];
     step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
     let high = 0;
     for (let k = 0; k < 240 && s.ball.owner < 0 && s.phase === 'play'; k++) {

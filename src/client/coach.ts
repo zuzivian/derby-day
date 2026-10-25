@@ -18,7 +18,7 @@ import { announce } from './a11y.ts';
 import { isUnlocked, type UnlockId } from '../meta/levels.ts';
 import type { Save } from '../meta/game.ts';
 
-export type TipId = 'run' | 'pass' | 'shoot' | 'tackle' | 'restart' | 'freekick';
+export type TipId = 'run' | 'pass' | 'shoot' | 'tackle' | 'restart' | 'freekick' | 'corner';
 
 export interface Tip {
   id: TipId;
@@ -71,6 +71,13 @@ export const TIPS: Record<TipId, Tip> = {
     mouse: 'Right click on the goal to strike it over the wall: hold for pace, but too much and it sails over. Drag sideways while you hold to bend it. The dots show its flight.',
     keys: 'Hold F and release to strike it over the wall. Too long a hold and it sails over.',
     touch: 'Tap Shoot to strike it over the wall.',
+  },
+  corner: {
+    id: 'corner',
+    title: 'Your corner',
+    mouse: 'Hold left where the cross should come down: a short hold drives it, a long one floats it. Drag sideways while you hold to swing it in or out. Or click the man short.',
+    keys: 'Hold C and release to cross it into the box, or press Space to play it short.',
+    touch: 'Hold Pass to cross it into the box, or tap Pass to play it short.',
   },
 };
 
@@ -135,6 +142,7 @@ export class CoachTracker {
     if (owner >= 0 || live) this.prevOwnerTeam = ownerTeam ?? this.prevOwnerTeam;
     // A free kick with a wall to beat: how to get it over, first (it is a shot, not a pass).
     if (started && this.restartIsMine(s, human) && s.restart!.kind === 'freekick' && s.wall) this.offer('freekick');
+    if (started && this.restartIsMine(s, human) && s.restart!.kind === 'corner') this.offer('corner');
     if (started && this.restartIsMine(s, human)) this.offer('restart');
     return this.queue.slice(before);
   }
@@ -169,6 +177,8 @@ export class CoachTracker {
         return this.restartIsMine(s, human);
       case 'freekick':
         return this.restartIsMine(s, human) && !!s.wall;
+      case 'corner':
+        return this.restartIsMine(s, human) && s.restart?.kind === 'corner';
     }
   }
 
