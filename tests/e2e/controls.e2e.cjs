@@ -445,4 +445,9 @@ test('trackpad: a pinch (ctrl+wheel) over the pitch zooms the 3D camera, not the
     for (let i = 0; i < 15; i++) el.dispatchEvent(new WheelEvent('wheel', { deltaY: 4, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true }));
   });
   expect(await zoom(), 'a pinch in zooms back out').toBeGreaterThan(zin);
+  // A mouse wheel notch with Ctrl held is left to the browser's page zoom.
+  const before = await zoom();
+  const mousePrevented = await page.evaluate(() => !document.querySelector('#pitch').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true })));
+  expect(mousePrevented, 'a mouse ctrl+wheel still zooms the page').toBe(false);
+  expect(await zoom(), 'and leaves the camera alone').toBe(before);
 });

@@ -251,7 +251,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     const q = s.queued?.[team];
     if (q && q.player === p.i && !s.ball.inHands) {
       s.queued![team] = null;
-      if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, q.target, FIRST_TIME_SHOT, p.attrs.shooting) } };
+      if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, q.target, oppGoal(p.team).x, FIRST_TIME_SHOT, p.attrs.shooting) } };
       const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
       const r = mate && !mate.sentOff ? passTo(s, mate) : pointerPass(s, p, q.target);
       return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
@@ -266,7 +266,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
       // The harder he hits it, the higher it rises (a click stays low).
       const power = clamp(input.shoot, 0, 1);
-      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, power, p.attrs.shooting) } };
+      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting) } };
     }
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.

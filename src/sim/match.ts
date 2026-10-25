@@ -58,7 +58,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, loftPlan, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
+import { assistReceiver, chipPlan, loftPlan, passTo, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
 import {
   awardRestart,
   ballOut,
@@ -484,6 +484,16 @@ function slideContact(s: MatchState, p: MatchPlayer, before: number): boolean {
     const toMan = sub(owner.pos, p.pos);
     if (dist(feet, b.pos) < SLIDE_TOUCH + BALL_R || (len(toMan) < PLAYER_R * 2 + 0.1 && dot(sl.dir, norm(toMan)) > 0.4)) {
       resolveTackle(s, p, owner, true, before, clamp((sl.len - sl.left) / SLIDE_COMMITTED, 0.2, 1));
+      return done();
+    }
+    return false;
+  }
+  if (owner && owner.team !== p.team && b.inHands) {
+    // A keeper with the ball in his hands may not be challenged (Law 12): sliding into him is a foul.
+    const toMan = sub(owner.pos, p.pos);
+    if (len(toMan) < PLAYER_R * 2 + 0.1) {
+      const commit = clamp((sl.len - sl.left) / SLIDE_COMMITTED, 0.2, 1);
+      judgeFoul(s, { offender: p, victim: owner, severity: severityOf(0.3 + 0.25 * commit + 0.32 * next(s.rng)), attempt: false, keptBall: true });
       return done();
     }
     return false;
@@ -1484,6 +1494,17 @@ function humanOrTimeout(s: MatchState, p: MatchPlayer, input: HumanInput): Inten
   return humanIntent(s, p, input);
 }
 
+/** A restart kick clicked during set-up, aimed again from where the taker now stands: to the team-mate it picked, wherever he is now. */
+function queuedRestartKick(s: MatchState, p: MatchPlayer, q: { input: HumanInput; receiver: number }): Action | null {
+  const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
+  if (q.input.pass && mate && !mate.sentOff) {
+    const r = passTo(s, mate);
+    return { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed };
+  }
+  const it = humanIntent(s, p, q.input);
+  return isKick(it.action) ? it.action : null;
+}
+
 function setupLength(r: Restart): number {
   switch (r.kind) {
     case 'throwin':
@@ -1583,15 +1604,16 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
         movePlayer(s, p, l < 0.2 ? IDLE_INTENT : { move: norm(d), throttle: Math.min(1, l / 1.5), sprint: l > 12 });
         // A human's click while he walks to the ball is kept and played the moment it is ready.
         if (humanCtl) {
-          const it = humanIntent(s, p, inputs[p.team]);
-          if (isKick(it.action)) r.queued = it.action;
+          const input = inputs[p.team];
+          const it = humanIntent(s, p, input);
+          if (isKick(it.action)) r.queued = { input: { ...input, cursor: input.cursor && { ...input.cursor }, aim: input.aim && { ...input.aim } }, receiver: it.action.kind === 'pass' ? (it.action.receiver ?? -1) : -1 };
         }
       } else {
         // Over the ball (or holding it): stays put until it is played.
         if (humanCtl && r.ticks < RESTART_HUMAN_WAIT) {
           const it = humanIntent(s, p, inputs[p.team]);
           if (isKick(it.action)) kickAction = it.action;
-          else if (r.queued) kickAction = r.queued;
+          else if (r.queued) kickAction = queuedRestartKick(s, p, r.queued);
           r.queued = null;
           if (it.throttle > 0.15) p.facing = norm(add(scale(p.facing, 0.8), scale(it.move, 0.2)));
         } else if (r.ticks >= r.wait) kickAction = restartAction(s, p);

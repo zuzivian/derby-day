@@ -128,6 +128,13 @@ export const WHEEL_ZOOM_PER_PX = Math.log(1.12) / 100;
 /** A trackpad pinch arrives as a wheel event with ctrlKey and small deltas: this much more gain. */
 export const PINCH_GAIN = 6;
 
+/**
+ * Is this ctrl+wheel a trackpad pinch (small, often fractional pixel deltas) rather than a mouse wheel
+ * with Ctrl held (a notch is about 100 px, or lines/pages)? A mouse's ctrl+wheel is left to the browser's
+ * page zoom, which people rely on.
+ */
+export const isPinch = (e: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): boolean => e.ctrlKey && e.deltaMode === 0 && Math.abs(e.deltaY) < 50;
+
 /** The camera zoom after one wheel event over the pitch (a trackpad pinch is a ctrl+wheel). */
 export function wheelZoom(zoom: number, e: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): number {
   const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1) * (e.ctrlKey ? PINCH_GAIN : 1);
@@ -202,7 +209,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   let flashAt = 0;
   const onWheel = (e: WheelEvent) => {
     if ((e.target as HTMLElement | null)?.closest('#pause')) return;
-    // A trackpad pinch (ctrl+wheel) over the pitch zooms the camera, not the page.
+    // A mouse wheel with Ctrl held zooms the page as usual; a trackpad pinch (also ctrl+wheel) over
+    // the pitch zooms the camera, not the page.
+    if (e.ctrlKey && !isPinch(e)) return;
     e.preventDefault();
     const z = wheelZoom(r.zoom, e);
     if (z === r.zoom) return;

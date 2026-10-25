@@ -276,9 +276,14 @@ export const HUMAN_SHOT_MIN = 0.55;
  * a vertical scatter that grows with power and falls with shooting, so a poor shooter's blast
  * can go over.
  */
-export function humanShotLift(from: Vec, target: Vec, power: number, shooting: number): number {
+export function humanShotLift(from: Vec, target: Vec, goalX: number, power: number, shooting: number): number {
   const k = clamp((power - HUMAN_SHOT_MIN) / (1 - HUMAN_SHOT_MIN), 0, 1);
   const h = 0.3 + 1.7 * Math.pow(k, 1.2);
-  const t = Math.max(0.15, dist(from, target) / shotSpeed(power, shooting));
+  // Planned to where the shot's line crosses the goal line (the pointer is often short of it while
+  // dribbling), or to the pointer if the shot doesn't head for the line.
+  const dx = target.x - from.x;
+  const toLine = goalX - from.x;
+  const d = Math.abs(dx) > 1e-6 && Math.sign(dx) === Math.sign(toLine) ? dist(from, target) * (toLine / dx) : dist(from, target);
+  const t = Math.max(0.15, d / shotSpeed(power, shooting));
   return Math.max(0, (h - SHOT_Z0 + 0.5 * GRAVITY * t * t) / t);
 }

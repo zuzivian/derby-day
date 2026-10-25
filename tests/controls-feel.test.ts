@@ -3,9 +3,9 @@
 
 import { describe, expect, test } from 'bun:test';
 import { DOUBLE_CLICK_MS, InputController } from '../src/client/input.ts';
-import { PINCH_GAIN, wheelZoom } from '../src/client/renderer.ts';
+import { isPinch, PINCH_GAIN, wheelZoom } from '../src/client/renderer.ts';
 import { MatchCamera } from '../src/client/r3d/camera3d.ts';
-import { pickBody } from '../src/client/r3d/renderer3d.ts';
+import { pickable, pickBody } from '../src/client/r3d/renderer3d.ts';
 import { sx, sz, wx, wy } from '../src/client/r3d/space.ts';
 import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
 import { TIPS } from '../src/client/coach.ts';
@@ -148,6 +148,36 @@ function tackleAt(gap: number, seed: number, opts: { still?: boolean; pointer?: 
   const foul = s.stats[0].fouls > fouls0 || s.phase === 'restart';
   return { won, foul, judged: won || foul || lost, closest };
 }
+
+describe('a slide at a keeper holding the ball', () => {
+  test('is a foul (Law 12), and the keeper keeps the ball', () => {
+    let fouls = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const s = livePlay(seed);
+      const me = role(s, 0, 'FWD');
+      const gk = s.players.find((p) => p.team === 1 && p.role === 'GK')!;
+      isolate(s, me, gk);
+      s.controlled[0] = me.i;
+      s.switchTimer[0] = 1e9;
+      gk.pos = { x: 100, y: 34 };
+      gk.vel = { x: 0, y: 0 };
+      gk.stun = 0;
+      Object.assign(s.ball, { owner: gk.i, inHands: true, pos: { x: 100, y: 34 }, vel: { x: 0, y: 0 }, z: 1.1, vz: 0, receiver: -1, lastTouch: gk.i });
+      me.pos = { x: 96.5, y: 34 };
+      me.vel = { x: 0, y: 0 };
+      me.stun = 0;
+      me.tackleCd = 0;
+      const n = s.events.length;
+      step(s, { cursor: { x: 100, y: 34 }, aim: { x: 100, y: 34 }, tackle: true, moved: true });
+      for (let k = 0; k < 30 && s.phase === 'play'; k++) step(s, { cursor: { x: 100, y: 34 } });
+      if (s.events.slice(n).some((e) => e.kind === 'foul' && e.player === me.i)) fouls++;
+      expect(s.ball.owner === gk.i || s.phase === 'restart').toBe(true);
+      expect(me.slide ?? null).toBeNull();
+    }
+    // The review on 26f49fb: the slide passed through him with no contact and no foul.
+    expect(fouls).toBeGreaterThanOrEqual(8);
+  });
+});
 
 describe('right-click tackles (no dead band, slides that reach the ball can win it)', () => {
   const seeds = Array.from({ length: 30 }, (_, i) => i + 1);
@@ -390,11 +420,54 @@ describe('a click while our restart is being set up', () => {
   }
 });
 
+describe('a restart click made during set-up is the same as clicking him once the taker is ready', () => {
+  /** Our restart; the human clicks the second-nearest team-mate to the taker, 10 ticks into set-up (`early`) or on the first ready tick. The kick as it leaves. */
+  function restartClick(kind: 'throwin' | 'goalkick' | 'corner', at: Vec, seed: number, early: boolean) {
+    const s = livePlay(seed + 10);
+    awardRestart(s, kind, 0, { ...at }, 'out');
+    let t = 0;
+    while (s.restart && s.restart.stage === 'whistle' && t++ < 600) step(s, { cursor: { x: 50, y: 34 } });
+    const taker = s.players[s.restart!.taker];
+    for (let k = 0; k < 10; k++) step(s, { cursor: { ...taker.pos } });
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, taker.pos) - dist(b.pos, taker.pos))[1];
+    if (early) step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+    const n = s.events.length;
+    let clicked = early;
+    for (let k = 0; k < 400 && !s.events.slice(n).some((e) => e.kind === 'restartTaken'); k++) {
+      if (!clicked && s.restart?.stage === 'ready') {
+        clicked = true;
+        step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+      } else step(s, { cursor: { ...mate.pos } });
+    }
+    return { mate: mate.i, receiver: s.ball.receiver, vel: { ...s.ball.vel }, tick: s.tick };
+  }
+
+  for (const [kind, at] of [
+    ['throwin', { x: 40, y: 0 }],
+    ['throwin', { x: 70, y: 68 }],
+    ['goalkick', { x: 5.5, y: 30 }],
+    ['corner', { x: 105, y: 0 }],
+  ] as const) {
+    test(`${kind} at (${at.x}, ${at.y}): the same kick to the same man, on the same tick`, () => {
+      let same = 0;
+      for (let seed = 1; seed <= 6; seed++) {
+        const a = restartClick(kind, at, seed, true);
+        const b = restartClick(kind, at, seed, false);
+        expect(a.receiver).toBe(a.mate);
+        if (a.receiver === b.receiver && a.tick === b.tick && dist(a.vel, b.vel) < 1e-9) same++;
+      }
+      // The review on 26f49fb: the queued kick was the one built at the click, from where the taker was
+      // walking to where the team-mate had been (a throw-in reached him 0 of 6, 4 went to an opponent).
+      expect(same).toBe(6);
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Minor: human shots rise with power, by shooting skill
 
 /** The human strikes from `d` m out at the middle of the goal; nobody else on the pitch. Height as it crosses the line (or its peak if short). */
-function shotHeight(d: number, power: number, shooting: number, seed: number) {
+function shotHeight(d: number, power: number, shooting: number, seed: number, ahead?: number) {
   const s = livePlay(seed);
   const me = role(s, 0, 'FWD');
   isolate(s, me);
@@ -405,7 +478,8 @@ function shotHeight(d: number, power: number, shooting: number, seed: number) {
   me.stun = 0;
   me.attrs.shooting = shooting;
   Object.assign(s.ball, { owner: me.i, pos: { x: 105 - d, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
-  const goal = { x: 105, y: 34 };
+  // The pointer on the goal line, or `ahead` m in front of the ball on the way there (as while dribbling).
+  const goal = ahead === undefined ? { x: 105, y: 34 } : { x: 105 - d + ahead, y: 34 };
   step(s, { cursor: goal, aim: goal, shoot: power });
   let peak = 0;
   for (let t = 0; t < 120 && s.ball.pos.x < 105; t++) {
@@ -430,6 +504,19 @@ describe('human shots rise with power', () => {
     }
   });
 
+  test('the rise is planned to the goal line, not the pointer: with the pointer 3, 6 or 10 m ahead a shot behaves as if aimed at the line', () => {
+    for (const power of [0.8, 1]) {
+      const atLine = seeds.map((sd) => shotHeight(18, power, 0.7, sd).atLine);
+      const overLine = atLine.filter((h) => h > 2.44).length;
+      for (const ahead of [3, 6, 10]) {
+        const hs = seeds.map((sd) => shotHeight(18, power, 0.7, sd, ahead).atLine);
+        // The review on 26f49fb: power 1 went over 20/20, 20/20 and 15/20 with the pointer 3/6/10 m ahead.
+        expect(hs.filter((h) => h > 2.44).length).toBeLessThanOrEqual(overLine + 2);
+        expect(Math.abs(median(hs) - median(atLine))).toBeLessThan(0.4);
+      }
+    }
+  });
+
   test('it stays skill-based: a poor shooter puts a full-power strike over the bar more often than a good one', () => {
     const over = (shooting: number) => seeds.filter((sd) => shotHeight(20, 1, shooting, sd).atLine > 2.44).length;
     expect(over(0.2)).toBeGreaterThan(over(0.95));
@@ -450,6 +537,17 @@ describe('trackpad pinch (ctrl+wheel) zooms the camera', () => {
     for (let i = 0; i < 15; i++) w = wheelZoom(w, { deltaY: -4, deltaMode: 0, ctrlKey: false });
     expect(w).toBeGreaterThan(0.9);
     expect(PINCH_GAIN).toBeGreaterThan(1);
+  });
+
+  test('a mouse wheel with Ctrl held is left to the browser (page zoom); only a pinch is taken', () => {
+    // Trackpad pinches: small, often fractional pixel deltas.
+    for (const deltaY of [-4, 2.5, -0.75, 12]) expect(isPinch({ deltaY, deltaMode: 0, ctrlKey: true })).toBe(true);
+    // A mouse notch with Ctrl: about 100 px, or lines.
+    expect(isPinch({ deltaY: 100, deltaMode: 0, ctrlKey: true })).toBe(false);
+    expect(isPinch({ deltaY: -120, deltaMode: 0, ctrlKey: true })).toBe(false);
+    expect(isPinch({ deltaY: 3, deltaMode: 1, ctrlKey: true })).toBe(false);
+    // No Ctrl: a plain scroll, zoomed by the camera as before.
+    expect(isPinch({ deltaY: -4, deltaMode: 0, ctrlKey: false })).toBe(false);
   });
 });
 
@@ -547,5 +645,80 @@ describe('coach tips', () => {
     expect(TIPS.pass.mouse).toMatch(/hold/i);
     expect(TIPS.pass.mouse).toMatch(/loft/i);
     expect(TIPS.pass.touch).toMatch(/loft/i);
+  });
+});
+
+describe('3D body pick only on presses', () => {
+  /** An InputController whose picker finds a body (at `body`) under every pixel, and grass at pixel / 10. */
+  function rig(s: MatchState, body: Vec) {
+    (globalThis as Record<string, unknown>).window ??= new EventTarget();
+    const win = (globalThis as unknown as { window: EventTarget }).window;
+    const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 700 }) }) as unknown as HTMLCanvasElement;
+    const picks: string[] = [];
+    const picker = {
+      toWorld: (x: number, y: number) => ({ x: x / 10, y: y / 10 }),
+      pickPlayer: (_x: number, _y: number, who: 'mates' | 'opponents') => {
+        picks.push(who);
+        return { ...body };
+      },
+    };
+    const input = new InputController(canvas, picker, () => s.ball.owner === s.controlled[0], () => {});
+    const ev = (type: string, at: Vec, button = 0) => {
+      const e = new Event(type);
+      for (const [k, v] of Object.entries({ clientX: at.x * 10, clientY: at.y * 10, pointerType: 'mouse', pointerId: 1, button, isPrimary: true })) Object.defineProperty(e, k, { value: v });
+      return e;
+    };
+    return { input, picks, move: (at: Vec) => canvas.dispatchEvent(ev('pointermove', at)), down: (at: Vec, b = 0) => canvas.dispatchEvent(ev('pointerdown', at, b)), up: (at: Vec, b = 0) => win.dispatchEvent(ev('pointerup', at, b)) };
+  }
+
+  test('steering over and through bodies follows the grass; a press on a body picks him for the pass or the switch', () => {
+    const { s, mate } = dblScene(12);
+    const r = rig(s, mate.pos);
+    // Main: the cursor jumped to a body's feet whenever the pointer crossed one (or your own player).
+    for (const at of [{ x: 25, y: 30 }, { x: 26, y: 31 }, { x: 27.5, y: 32.2 }]) {
+      r.move(at);
+      expect(dist(r.input.cursor!, at)).toBeLessThan(1e-9);
+    }
+    expect(r.picks.length).toBe(0);
+    // A left press with the ball, on the team-mate's head 3 m up-screen of his feet: the pass goes to his feet.
+    const head = { x: mate.pos.x, y: mate.pos.y - 3 };
+    r.move(head);
+    r.down(head);
+    r.up(head);
+    const kick = r.input.take();
+    expect(kick.pass).toBe(true);
+    expect(dist(kick.aim!, mate.pos)).toBeLessThan(1e-9);
+    expect(dist(r.input.cursor!, head)).toBeLessThan(1e-9); // the steering cursor is still the grass
+    expect(r.picks).toEqual(['mates']);
+    r.input.dispose();
+  });
+
+  test('a right press without the ball picks an opponent; with the ball (a shot) nothing is picked', () => {
+    const { s } = dblScene(12);
+    const opp = role(s, 1, 'MID');
+    const r = rig(s, opp.pos);
+    s.ball.owner = -1;
+    const at = { x: opp.pos.x, y: opp.pos.y - 2 };
+    r.move(at);
+    r.down(at, 2);
+    const t = r.input.take();
+    expect(t.tackle).toBe(true);
+    expect(dist(t.aim!, opp.pos)).toBeLessThan(1e-9);
+    expect(r.picks).toEqual(['opponents']);
+    r.input.dispose();
+  });
+
+  test('the man you steer is never pickable; team-mates and opponents are by side', () => {
+    const s = livePlay();
+    const me = s.controlled[0];
+    const mates = pickable(s, 0, 'mates');
+    const opps = pickable(s, 0, 'opponents');
+    expect(mates[me]).toBe(false);
+    expect(opps[me]).toBe(false);
+    for (const p of s.players) {
+      if (p.i === me) continue;
+      expect(mates[p.i]).toBe(p.team === 0);
+      expect(opps[p.i]).toBe(p.team === 1);
+    }
   });
 });

@@ -178,6 +178,12 @@ function teamKey(t: TeamSetup): string {
 export const PICK_BODY_R = 0.38;
 export const PICK_BODY_TOP = 1.9;
 
+/** Which players a press may pick: `me`'s team-mates but never the man he steers, or the opponents; nobody sent off. */
+export function pickable(s: MatchState, me: 0 | 1, who: 'mates' | 'opponents'): boolean[] {
+  const mine = s.controlled[me];
+  return s.players.map((p) => !p.sentOff && p.i !== mine && (who === 'mates' ? p.team === me : p.team !== me));
+}
+
 /**
  * The first body a ray meets, as an index into `bodies` (scene x, z of each player's feet), or -1.
  * Bodies are vertical cylinders PICK_BODY_R wide from the grass to PICK_BODY_TOP, entered through
@@ -432,11 +438,17 @@ export class Renderer3D implements MatchRenderer {
     return { x: Math.max(-m, Math.min(HALF_W * 2 + m, wx(x))), y: Math.max(-m, Math.min(HALF_H * 2 + m, wy(z))) };
   }
 
-  /** A click on a player's body (not just his feet) picks him: his feet in world metres, or null if the ray meets no one. */
-  pickPlayer(cssX: number, cssY: number): Vec | null {
+  /**
+   * A press on a player's body (not just his feet) picks him: his feet in world metres, or null if the
+   * ray meets no one. `who`: our team-mates (never the man we steer) or the opponents.
+   */
+  pickPlayer(cssX: number, cssY: number, who: 'mates' | 'opponents'): Vec | null {
+    const s = this.lastState;
+    if (!s) return null;
     this.ndc.set((cssX / this.cssW) * 2 - 1, -(cssY / this.cssH) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.cam.camera);
-    const bodies = this.players.map((m) => (m.object.visible ? m.object.position : null));
+    const can = pickable(s, this.me, who);
+    const bodies = this.players.map((m, i) => (can[i] && m.object.visible ? m.object.position : null));
     const i = pickBody(this.raycaster.ray.origin, this.raycaster.ray.direction, bodies);
     if (i < 0) return null;
     const at = this.players[i].object.position;

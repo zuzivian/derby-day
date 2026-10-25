@@ -40,8 +40,11 @@ import type { Vec } from '../sim/vec.ts';
 export interface WorldPicker {
   /** Position in CSS pixels inside the canvas (the canvas's top-left is 0,0) to world metres. */
   toWorld(cssX: number, cssY: number): Vec;
-  /** A click on a player's body picks him (his feet, world metres), or null: the 3D view, where a head is metres up-screen of the feet. */
-  pickPlayer?(cssX: number, cssY: number): Vec | null;
+  /**
+   * A press on a player's body picks him (his feet, world metres), or null: the 3D view, where a head is
+   * metres up-screen of the feet. `who`: the human's team-mates (never the man he steers) or opponents.
+   */
+  pickPlayer?(cssX: number, cssY: number, who: 'mates' | 'opponents'): Vec | null;
   /** Keyboard direction in screen terms (x right, y down) to world terms; identity when absent (top-down view). */
   screenDir?(d: Vec): Vec;
   /**
@@ -214,8 +217,7 @@ export class InputController {
     const toWorld = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       // A mouse press where the pointer already is keeps the latched point; anything else projects anew.
-      // A player's body under the pointer picks him; otherwise the grass under it.
-      const project = () => picker.pickPlayer?.(e.clientX - r.left, e.clientY - r.top) ?? picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      const project = () => picker.toWorld(e.clientX - r.left, e.clientY - r.top);
       const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, project) : project();
       this.client = { x: e.clientX, y: e.clientY };
       return w;
@@ -258,6 +260,12 @@ export class InputController {
       }
       this.mode = 'mouse';
       this.press = { world: this.cursor, x: e.clientX, y: e.clientY, type: e.pointerType };
+      // A press on a player's body (not only his feet) picks him: a team-mate for a pass or a switch,
+      // an opponent for a tackle. Only the press: the steering cursor stays on the grass.
+      const who = e.button === 0 ? 'mates' : e.button === 2 && !this.hasBall() ? 'opponents' : null;
+      const r = canvas.getBoundingClientRect();
+      const body = who ? picker.pickPlayer?.(e.clientX - r.left, e.clientY - r.top, who) : null;
+      if (body) this.press.world = body;
       if (e.button === 0) this.pressLeft();
       if (e.button === 2) this.pressRight();
     });
@@ -335,7 +343,7 @@ export class InputController {
     else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.select = true;
-      this.aim = this.cursor;
+      this.aim = this.press?.world ?? this.cursor;
     }
   }
 
@@ -344,7 +352,7 @@ export class InputController {
     else if (performance.now() - this.lastKickAt < DOUBLE_CLICK_MS) return;
     else {
       this.tackle = true;
-      this.aim = this.cursor;
+      this.aim = this.press?.world ?? this.cursor;
     }
   }
 
