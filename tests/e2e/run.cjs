@@ -32,46 +32,35 @@ function loadPlaywright() {
   process.exit(2);
 }
 
-const { chromium } = loadPlaywright();
+const { chromium } = process.argv[2] === '--list' ? {} : loadPlaywright(); // listing needs no browser
 const { registry } = require('./lib/harness.cjs');
+const { shardFiles } = require('./lib/shard.cjs');
 const { APP_URL } = require('./lib/helpers.cjs');
 
 // Test files: every *.e2e.cjs next to this runner, in name order.
 const ALL_FILES = fs.readdirSync(__dirname).filter((n) => n.endsWith('.e2e.cjs')).sort();
 
 /**
- * Sharding for CI: E2E_SHARD=k/n runs the k-th of n groups of test files (1-based). Files go to the group with the least
- * work so far, heaviest first, by the seconds in tests/e2e/shard-weights.json (measured on a full run: the runner prints
- * them at the end); a file missing from it counts as the median. Deterministic, so every job agrees on the split.
+ * Sharding for CI: E2E_SHARD=k/n runs the k-th of n groups of test files (1-based), balanced by the seconds in
+ * tests/e2e/shard-weights.json (E2E_TIMINGS=1 prints fresh ones at the end of a full run). See lib/shard.cjs.
  */
-function shardFiles(files, spec) {
-  const m = /^(\d+)\/(\d+)$/.exec(spec || '');
-  if (!m) return files;
-  const [k, n] = [Number(m[1]), Number(m[2])];
-  if (!(n >= 1 && k >= 1 && k <= n)) {
-    console.error(`E2E_SHARD must look like 2/3, got "${spec}".`);
-    process.exit(2);
-  }
+function pickFiles(files, spec) {
   let weights = {};
   try {
     weights = JSON.parse(fs.readFileSync(path.join(__dirname, 'shard-weights.json'), 'utf8'));
   } catch {
     /* no weights yet: equal */
   }
-  const known = Object.values(weights).filter((v) => typeof v === 'number').sort((a, b) => a - b);
-  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
-  const w = (f) => (typeof weights[f] === 'number' ? weights[f] : median);
-  const groups = Array.from({ length: n }, () => ({ load: 0, files: [] }));
-  for (const f of [...files].sort((a, b) => w(b) - w(a) || a.localeCompare(b))) {
-    const g = groups.reduce((best, cur) => (cur.load < best.load ? cur : best));
-    g.files.push(f);
-    g.load += w(f);
+  try {
+    return shardFiles(files, spec, weights);
+  } catch (e) {
+    console.error(e.message);
+    process.exit(2);
   }
-  return groups[k - 1].files.sort();
 }
 
 const SHARD = process.env.E2E_SHARD || '';
-const FILES = shardFiles(ALL_FILES, SHARD);
+const FILES = pickFiles(ALL_FILES, SHARD);
 const fileOf = new Map(); // test name -> file, for the per-file timings
 for (const f of FILES) {
   const before = registry.length;
@@ -186,11 +175,16 @@ async function main() {
     const contexts = [];
     const problems = [];
     const sessions = []; // CDP sessions the runner attached (CPU throttle): released before the contexts are closed
+    const expectedCrash = new WeakSet(); // pages the test is about to crash on purpose (t.expectCrash)
     let onCrash;
     const crashed = new Promise((_, rej) => (onCrash = rej));
     crashed.catch(() => {}); // only the race below reads it
     const harness = {
       browser,
+      /** Say that this page is about to be crashed on purpose, so its renderer dying does not fail the test. */
+      expectCrash(page) {
+        expectedCrash.add(page);
+      },
       /** Open a page in a fresh, isolated context that is collected for page-error checks. */
       async newPage(contextOptions = {}) {
         const ctx = await browser.newContext(contextOptions);
@@ -207,7 +201,7 @@ async function main() {
             await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
           }
           // A tab whose renderer dies would leave the test waiting for it for ever: fail the test now, saying which page.
-          p.on('crash', () => onCrash(new Error(`a page crashed (its renderer process died): ${String(p.url()).slice(-60)}`)));
+          p.on('crash', () => expectedCrash.has(p) || onCrash(new Error(`a page crashed (its renderer process died): ${String(p.url()).slice(-60)}`)));
           p.on('pageerror', (e) => problems.push(`pageerror: ${e.message}`));
           p.on('console', (m) => {
             if (m.type() !== 'error') return;
