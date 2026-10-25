@@ -186,10 +186,12 @@ for (const renderer of ['3d', '2d']) test(
           ob.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
           let frames = 0;
           const t0 = window.__derbyMatch.tick;
+          const s0 = [...window.__derbyMatch.score];
           const f = () => {
             if (++frames < 120) return requestAnimationFrame(f);
             ob.disconnect();
-            res({ by, ticks: window.__derbyMatch.tick - t0 });
+            const s1 = window.__derbyMatch.score;
+            res({ by, ticks: window.__derbyMatch.tick - t0, goals: [s1[0] - s0[0], s1[1] - s0[1]] });
           };
           requestAnimationFrame(f);
         }),
@@ -197,8 +199,11 @@ for (const renderer of ['3d', '2d']) test(
     const total = Object.values(r.by).reduce((a, b) => a + b, 0);
     console.log(`      120 frames (${r.ticks} ticks): ${total} mutations ${JSON.stringify(r.by)}`);
     const n = (k) => Object.entries(r.by).filter(([key]) => key.includes(k)).reduce((a, [, v]) => a + v, 0);
-    // The score and the phase did not change; the minute changes once a match-minute (every 2 s of a 3-minute half).
-    for (const id of ['#sb-h', '#sb-a', '#sb-phase']) expect(n(id), `${id} is not rewritten`).toBe(0);
+    // The score is rewritten only for a goal scored in the window (once each), the phase not at all; the minute changes
+    // once a match-minute (every 2 s of a 3-minute half).
+    expect(n('#sb-h'), `#sb-h is rewritten only for a goal (${r.goals[0]})`).toBeLessThanOrEqual(r.goals[0]);
+    expect(n('#sb-a'), `#sb-a is rewritten only for a goal (${r.goals[1]})`).toBeLessThanOrEqual(r.goals[1]);
+    expect(n('#sb-phase'), '#sb-phase is not rewritten').toBe(0);
     expect(n('#sb-min'), '#sb-min only when the minute changes').toBeLessThanOrEqual(4);
     expect(n('#pitch[data-camera]'), '#pitch[data-camera] only when the camera changes').toBeLessThanOrEqual(4);
   },
