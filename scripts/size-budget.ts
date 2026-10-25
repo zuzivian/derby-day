@@ -3,7 +3,9 @@
 // The budget is the size when this check was added (2026-10-24: 1,001,948 bytes) plus 25%. When a feature
 // really needs more, raise BUDGET_BYTES in the same PR and say why in the description; never delete the check.
 
-const BUDGET_BYTES = 1_252_000;
+// 2026-10-25: 1,280,000 (+28 KB) for free kicks (the strike planner and its aim preview, curl from the mouse, the wall's
+// jump, the HUD's direct/indirect tag): main had reached 100% of the old budget with the living world (#26).
+const BUDGET_BYTES = 1_280_000;
 
 const file = new URL('../dist/index.html', import.meta.url).pathname;
 const f = Bun.file(file);
