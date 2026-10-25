@@ -140,8 +140,8 @@ export const GRASS_DE = 20;
 
 /** Light on a player's shirt, linear RGB before exposure (sun, sky and the green bounce off the grass), fitted per quality. */
 export const SHIRT_LIGHT: Record<Quality, RGB> = {
-  low: [1, 1, 1],
-  high: [1, 1, 1],
+  low: [0.559, 0.627, 0.564],
+  high: [0.566, 0.639, 0.588],
 };
 
 /** The renderer's tone mapping exposure (renderer3d.ts). */

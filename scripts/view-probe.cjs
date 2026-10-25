@@ -69,8 +69,13 @@ async function waitFor(page, fn, arg, ms = 30_000) {
       s.ball.vel = { x: 0, y: 0 };
       s.ball.z = 1;
     });
-    await page.waitForTimeout(2500);
-    const cam = await page.evaluate(() => document.querySelector('#pitch').dataset.camera);
+    // Software rendering runs at a few frames a second here, so the camera takes seconds to ease in.
+    await page.waitForTimeout(8000);
+    const cam = await page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const k = s.players[s.controlled[s.humans[0] ? 0 : 1]];
+      return `${document.querySelector('#pitch').dataset.camera}, controlled ${k.role} at ${k.pos.x.toFixed(1)}, ${k.pos.y.toFixed(1)}`;
+    });
     await page.screenshot({ path: path.join(outDir, `${quality}-long-${width}x${height}.png`) });
     console.log(`${quality}: camera ${cam}`);
     await page.context().close();
