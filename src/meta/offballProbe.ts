@@ -23,9 +23,8 @@ import { oppGoal, secondLastOpponentX, slotOf, teamX } from '../sim/field.ts';
 import { createMatch, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../sim/types.ts';
 
-// The field helpers become half-aware with rules #24; these wrappers keep the change to one place.
-const tx = (_s: MatchState, team: 0 | 1, x: number): number => teamX(team, x);
-const goalOf = (_s: MatchState, team: 0 | 1) => oppGoal(team);
+const tx = teamX;
+const goalOf = oppGoal;
 
 const LINES: Role[] = ['DEF', 'MID', 'FWD'];
 
@@ -225,11 +224,22 @@ function sampleOptions(s: MatchState, c: MatchPlayer, onBall: number, a: OptAcc)
 /**
  * The scripted human: with the ball he runs at goal, and after 1 to 2 s on it
  * passes to the open teammate furthest forward (or shoots inside 22 m); without
- * it he chases the ball and tackles when close. Deterministic (no RNG draws).
+ * it he chases the ball and tackles when close. He takes his side's restarts short
+ * at once. Deterministic (no RNG draws).
  */
 export function humanBot(s: MatchState, team: 0 | 1, held: { since: number }): HumanInput {
-  if (s.phase !== 'play') return {};
   const me = s.players[s.controlled[team]];
+  const r = s.restart;
+  if (s.phase === 'restart' && r && r.team === team && r.stage === 'ready' && r.taker === me.i) {
+    // Take our restarts at once, short to the nearest teammate, as a player clicking would.
+    let mate: MatchPlayer | null = null;
+    for (const m of s.players) {
+      if (m.team !== team || m.i === me.i || m.sentOff || m.role === 'GK') continue;
+      if (!mate || Math.hypot(m.pos.x - me.pos.x, m.pos.y - me.pos.y) < Math.hypot(mate.pos.x - me.pos.x, mate.pos.y - me.pos.y)) mate = m;
+    }
+    return mate ? { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true } : {};
+  }
+  if (s.phase !== 'play') return {};
   const goal = goalOf(s, team);
   const b = s.ball;
   if (b.owner === me.i) {
@@ -284,7 +294,6 @@ export function measureOffball(o: Omit<MatchOptions, 'humanTeam' | 'humans'>, hu
   const held = { since: -1 };
   let carrier = -1;
   let since = 0;
-  // Kick-offs before #24 start themselves; after it a human must kick off, and the CPU takes it after 5 s.
   while (s.phase !== 'fulltime') {
     step(s, humanHome ? [humanBot(s, 0, held), {}] : undefined);
     if (s.ball.owner !== carrier) {
