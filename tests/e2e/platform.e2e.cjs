@@ -226,7 +226,19 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect(await a.locator('#settings-dialog').count(), 'Esc closes').toBe(0);
 
   // A different club in another browser: a bad file is refused with a reason, a good one previews, then replaces.
-  const c = await openApp(t, { level: 3 });
+  // The restore ends in a page load, and Chromium now and then drops the write that the unloading page made (see helpers.cjs),
+  // so what the app wrote is read back from sessionStorage, where this script copies it, instead of from the storage that the
+  // next page may have started without.
+  const c = await openApp(t, {
+    level: 3,
+    init: () => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (this === localStorage && /^derbyday\.save\.v1(\.pre-import)?$/.test(k)) sessionStorage.setItem('__wrote:' + k, v);
+        return set.call(this, k, v);
+      };
+    },
+  });
   const nameC = (await readSave(c)).club.name;
   expect(nameC, 'different clubs').notToBe(nameA);
   await goTab(c, SEL.clubScreen);
@@ -243,8 +255,9 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect((await readSave(c)).club.name, 'nothing replaced before confirming').toBe(nameC);
   await Promise.all([c.waitForNavigation(), c.locator('#bk-confirm').click()]);
   await c.waitForSelector(SEL.tab);
-  expect((await readSave(c)).club.name, 'club restored from the file').toBe(nameA);
-  expect(JSON.parse(await c.evaluate((k) => localStorage.getItem(k + '.pre-import'), SAVE_KEY)).club.name, 'old club kept as a safety copy').toBe(nameC);
+  const wrote = (k) => c.evaluate((key) => JSON.parse(sessionStorage.getItem('__wrote:' + key)).club.name, k);
+  expect(await wrote(SAVE_KEY), 'club restored from the file').toBe(nameA);
+  expect(await wrote(SAVE_KEY + '.pre-import'), 'old club kept as a safety copy').toBe(nameC);
 
   // The code works the same way.
   const d = await openApp(t, { level: 5 });
