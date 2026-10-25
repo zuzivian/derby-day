@@ -125,6 +125,22 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
 
 /** Wheel zoom: the zoom scales by exp(px * this) for px pixels of scroll (100 px ≈ ×1.13). */
 export const WHEEL_ZOOM_PER_PX = Math.log(1.12) / 100;
+/** A trackpad pinch arrives as a wheel event with ctrlKey and small deltas: this much more gain. */
+export const PINCH_GAIN = 6;
+
+/**
+ * Is this ctrl+wheel a trackpad pinch (small, often fractional pixel deltas) rather than a mouse wheel
+ * with Ctrl held (a notch is about 100 px, or lines/pages)? A mouse's ctrl+wheel is left to the browser's
+ * page zoom, which people rely on.
+ */
+export const isPinch = (e: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): boolean => e.ctrlKey && e.deltaMode === 0 && Math.abs(e.deltaY) < 50;
+
+/** The camera zoom after one wheel event over the pitch (a trackpad pinch is a ctrl+wheel). */
+export function wheelZoom(zoom: number, e: Pick<WheelEvent, 'deltaY' | 'deltaMode' | 'ctrlKey'>): number {
+  const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1) * (e.ctrlKey ? PINCH_GAIN : 1);
+  if (!px) return zoom;
+  return zoom * Math.exp(Math.max(-150, Math.min(150, px)) * WHEEL_ZOOM_PER_PX);
+}
 
 /**
  * A small "Camera" chip on the pitch (and the V key) that switches between the broadcast and
@@ -172,6 +188,15 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     toggle();
     if (e.detail > 0) btn.blur();
   });
+  // A trackpad pinch arrives as ctrl+wheel with no Control key pressed; a mouse wheel with Ctrl held
+  // (even a smooth-scrolling one with small deltas) has a real Control keydown before it.
+  let ctrlHeld = false;
+  const onCtrl = (e: KeyboardEvent) => {
+    if (e.key === 'Control') ctrlHeld = e.type === 'keydown';
+  };
+  const onBlur = () => {
+    ctrlHeld = false;
+  };
   const onKey = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement | null;
@@ -186,18 +211,20 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (e.repeat) return;
     if (k.toLowerCase() === 'v') toggle();
   };
-  // Wheel down (toward you) pulls the camera back, like map apps. Zoom follows how far the wheel
+  // Wheel down (toward you) pulls the camera back, like map apps, and a trackpad pinch out zooms in. Zoom follows how far the wheel
   // or trackpad scrolls (a mouse notch of about 100 px is about one ZOOM_STEP), so a gentle trackpad
   // scroll zooms a little rather than jumping to a limit. Listened for on the whole pitch area, so
   // the HUD buttons over it don't scroll the page either.
   let flashAt = 0;
   const onWheel = (e: WheelEvent) => {
-    if (e.ctrlKey) return; // pinch-zoom of the page
     if ((e.target as HTMLElement | null)?.closest('#pause')) return;
+    // A mouse wheel with Ctrl held zooms the page as usual; a trackpad pinch (also ctrl+wheel) over
+    // the pitch zooms the camera, not the page.
+    if (e.ctrlKey && (ctrlHeld || !isPinch(e))) return;
     e.preventDefault();
-    const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
-    if (!px) return;
-    r.setZoom(r.zoom * Math.exp(Math.max(-150, Math.min(150, px)) * WHEEL_ZOOM_PER_PX));
+    const z = wheelZoom(r.zoom, e);
+    if (z === r.zoom) return;
+    r.setZoom(z);
     label();
     const now = performance.now();
     if (now - flashAt > 120) {
@@ -243,6 +270,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
     if (b) zoom(Number(b.dataset.zoom) as 1 | -1);
   });
   window.addEventListener('keydown', onKey);
+  window.addEventListener('keydown', onCtrl);
+  window.addEventListener('keyup', onCtrl);
+  window.addEventListener('blur', onBlur);
   wheelEl?.addEventListener('wheel', onWheel, { passive: false });
   canvas?.addEventListener('pointerdown', onDown);
   window.addEventListener('pointermove', onMove);
@@ -254,6 +284,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   return () => {
     clearTimeout(flashTimer);
     window.removeEventListener('keydown', onKey);
+    window.removeEventListener('keydown', onCtrl);
+    window.removeEventListener('keyup', onCtrl);
+    window.removeEventListener('blur', onBlur);
     wheelEl?.removeEventListener('wheel', onWheel);
     canvas?.removeEventListener('pointerdown', onDown);
     window.removeEventListener('pointermove', onMove);

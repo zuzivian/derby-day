@@ -390,10 +390,23 @@ describe('keeping the last few', () => {
         return i;
       };
     };
+    // A code's size depends on the inputs and the match's length, not on how play went, so one
+    // full-length match is simulated (for its real length and final state) and each mouse is then
+    // recorded over that many ticks. Simulating all six took 4.6 to 7.7 s, near bun's 5 s timeout;
+    // playback itself is checked by the format 5 test below.
+    const { s: end, replay: first } = playLive(50, HALF_SECONDS, mouse(50));
+    const t = teams(50);
+    const opts = { seed: 50, ...t, halfSeconds: HALF_SECONDS, humanTeam: 0 as const };
+    const replays = [first];
+    for (let seed = 51; seed < 56; seed++) {
+      const rec = new ReplayRecorder(opts, 'Test');
+      const input = mouse(seed);
+      for (let n = 0; n < first.ticks; n++) rec.push(input(n));
+      replays.push(rec.finish(end, 1_700_000_000 + seed));
+    }
     let list: StoredReplay[] = [];
     let biggest = 0;
-    for (let seed = 50; seed < 56; seed++) {
-      const { replay } = playLive(seed, HALF_SECONDS, mouse(seed));
+    for (const replay of replays) {
       const code = encodeReplay(replay);
       biggest = Math.max(biggest, code.length);
       list = addRecent(list, { id: replayId(replay), at: replay.at, code });

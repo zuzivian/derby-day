@@ -40,7 +40,7 @@ export const TIPS: Record<TipId, Tip> = {
   pass: {
     id: 'pass',
     title: 'You have the ball',
-    mouse: 'Left click to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running.',
+    mouse: 'Left click to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running. Hold the button for a lofted ball: the dots show where it lands.',
     keys: 'Press Space to pass to the teammate you are facing.',
     touch: 'Tap Pass to pass to where you are aiming. Hold it a little longer to loft the ball.',
   },

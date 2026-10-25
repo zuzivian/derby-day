@@ -482,10 +482,14 @@ describe('right click without the ball tackles', () => {
     let wins = 0;
     let cd = 0;
     for (let seed = 1; seed <= n; seed++) {
-      const { s, me, opp } = duel(seed, gap);
-      step(s, { cursor: { x: me.pos.x + cursorDx, y: me.pos.y }, tackle: true });
+      const { s, me } = duel(seed, gap);
+      const tk = s.stats[0].tackles;
+      const cursor = { x: me.pos.x + cursorDx, y: me.pos.y };
+      step(s, { cursor, tackle: true });
       cd = me.tackleCd;
-      if (s.ball.owner !== opp.i) wins++;
+      // A slide is judged as it travels (match.ts slideTackles), so watch it play out.
+      for (let t = 0; t < 30 && s.phase === 'play'; t++) step(s, { cursor });
+      if (s.stats[0].tackles > tk) wins++;
     }
     return { wins, cd };
   };
@@ -497,8 +501,10 @@ describe('right click without the ball tackles', () => {
   });
 
   test('a far pointer slides: it reaches a carrier a standing tackle cannot, and costs a longer recovery', () => {
-    const standing = winsOver(2.6, 2);
-    expect(standing.wins).toBe(0); // 2.6 m is out of a standing tackle's 1.7 m reach
+    // 2.6 m is out of a standing tackle's 2 m reach, so a click on him (or the ball) there slides too.
+    const onHim = winsOver(2.6, 2);
+    expect(onHim.cd).toBe(70);
+    expect(onHim.wins).toBeGreaterThan(8);
     const slide = winsOver(2.6, 5);
     expect(slide.wins).toBeGreaterThan(8);
     expect(slide.cd).toBe(70);

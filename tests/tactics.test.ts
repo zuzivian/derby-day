@@ -147,8 +147,9 @@ describe('CPU clubs', () => {
 });
 
 describe('mentality changes how a side plays (fixed seeds, equal squads, each vs Balanced)', () => {
-  // Sixteen matches a mentality at 90 s a half: enough for these averages to settle, quick enough for every run.
-  const N = 16;
+  // Thirty-two matches a mentality at 90 s a half: sixteen left one step of the line within noise of
+  // its 2 m bar (it moved by 3 m when an unrelated physics change reshuffled the seeds).
+  const N = 32;
   const HALF = 90;
   const id = (name: string, primary: string) => ({ id: name, name, short: name, primary, secondary: '#fff', crest: 'plain' as const });
   const metrics = new Map<Mentality, TeamMetrics>();
@@ -167,7 +168,7 @@ describe('mentality changes how a side plays (fixed seeds, equal squads, each vs
       }
       metrics.set(m, averageMetrics(list));
     }
-  }, 120_000);
+  }, 240_000);
 
   test('the defensive line climbs, and more players commit forward, step by step from Park the bus to High press', () => {
     const lines = MENTALITY_IDS.map((m) => vsBalanced(m).line);

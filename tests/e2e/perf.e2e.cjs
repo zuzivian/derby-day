@@ -5,7 +5,7 @@
 // the canvas it found, which looks exactly like a leak in the game. Use locator.waitFor() here.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab } = require('./lib/helpers.cjs');
+const { APP_URL, SEL, openApp, goTab, skipOnboarding } = require('./lib/helpers.cjs');
 
 /** CDP helpers on one page: forced GC, Performance metrics, live instance counts. */
 async function probe(page) {
@@ -171,36 +171,49 @@ for (const renderer of ['3d', '2d']) test(
     await page.locator(SEL.pitch).waitFor();
     await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
     await page.waitForTimeout(1000);
+    // A write is redundant when it sets what was already there: those are what cost a style and layout
+    // pass for nothing. Real changes (a goal, the minute ticking over, a camera cut) are fine however
+    // many happen, so this does not depend on how much play a slow machine packs into 120 frames.
     const r = await page.evaluate(
       () =>
         new Promise((res) => {
           const root = document.querySelector('.match');
-          const by = {};
+          const watched = ['sb-h', 'sb-a', 'sb-min', 'sb-phase'];
+          const writes = {};
+          const redundant = {};
+          const count = (k, same) => {
+            writes[k] = (writes[k] || 0) + 1;
+            if (same) redundant[k] = (redundant[k] || 0) + 1;
+          };
+          const camera = [];
           const ob = new MutationObserver((list) => {
             for (const m of list) {
               const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
-              const k = `${m.type}:${el?.id ? '#' + el.id : el?.className || el?.tagName}${m.attributeName ? '[' + m.attributeName + ']' : ''}`;
-              by[k] = (by[k] || 0) + 1;
+              if (m.type === 'attributes' && el?.id === 'pitch' && m.attributeName === 'data-camera') camera.push(m.oldValue);
+              else if (m.type === 'childList' && watched.includes(el?.id)) {
+                const before = [...m.removedNodes].map((x) => x.textContent).join('');
+                const after = [...m.addedNodes].map((x) => x.textContent).join('');
+                count(`#${el.id}`, before === after);
+              }
             }
           });
-          ob.observe(root, { subtree: true, childList: true, characterData: true, attributes: true });
+          ob.observe(root, { subtree: true, childList: true, characterData: true, attributes: true, attributeOldValue: true });
           let frames = 0;
           const t0 = window.__derbyMatch.tick;
           const f = () => {
             if (++frames < 120) return requestAnimationFrame(f);
+            ob.takeRecords();
             ob.disconnect();
-            res({ by, ticks: window.__derbyMatch.tick - t0 });
+            // Record i's old value is what write i-1 set; the last write set the current value.
+            const values = [...camera.slice(1), document.querySelector('#pitch').dataset.camera];
+            camera.forEach((old, i) => count('#pitch[data-camera]', old === values[i]));
+            res({ writes, redundant, ticks: window.__derbyMatch.tick - t0 });
           };
           requestAnimationFrame(f);
         }),
     );
-    const total = Object.values(r.by).reduce((a, b) => a + b, 0);
-    console.log(`      120 frames (${r.ticks} ticks): ${total} mutations ${JSON.stringify(r.by)}`);
-    const n = (k) => Object.entries(r.by).filter(([key]) => key.includes(k)).reduce((a, [, v]) => a + v, 0);
-    // The score and the phase did not change; the minute changes once a match-minute (every 2 s of a 3-minute half).
-    for (const id of ['#sb-h', '#sb-a', '#sb-phase']) expect(n(id), `${id} is not rewritten`).toBe(0);
-    expect(n('#sb-min'), '#sb-min only when the minute changes').toBeLessThanOrEqual(4);
-    expect(n('#pitch[data-camera]'), '#pitch[data-camera] only when the camera changes').toBeLessThanOrEqual(4);
+    console.log(`      120 frames (${r.ticks} ticks): writes ${JSON.stringify(r.writes)}, redundant ${JSON.stringify(r.redundant)}`);
+    for (const k of ['#sb-h', '#sb-a', '#sb-min', '#sb-phase', '#pitch[data-camera]']) expect(r.redundant[k] || 0, `${k} is never rewritten with the value it already has`).toBe(0);
   },
   { timeoutMs: 120_000 },
 );
@@ -291,7 +304,7 @@ function loseContextHook() {
 }
 
 async function startLongMatch(t, opts) {
-  const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, init: loseContextHook, ...opts });
+  const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, init: loseContextHook, query: 'debug3d', ...opts });
   await goTab(page, SEL.homeScreen);
   await page.locator(SEL.playRanked).click();
   await page.locator(SEL.pitch).waitFor();
@@ -327,7 +340,30 @@ test(
           setTimeout(() => (ob.disconnect(), res(false)), 5000);
         }),
     );
-    expect(drawing, 'the pitch is drawn again').toBe(true);
+    expect(drawing, 'the renderer draws again').toBe(true);
+    // And the frame is a picture, not blank: sample the drawing buffer right after three's render() (the
+    // buffer is cleared once the frame is presented, so reading it any later is timing-dependent).
+    const green = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const gl3 = window.__derby3d.gl;
+          const render = gl3.render;
+          gl3.render = function (...a) {
+            render.apply(this, a);
+            gl3.render = render;
+            const gl = gl3.getContext();
+            const w = 48;
+            const h = 24;
+            const px = new Uint8Array(w * h * 4);
+            // Lower middle of the frame (GL rows count from the bottom): pitch, whatever the camera does.
+            gl.readPixels(Math.floor(gl.drawingBufferWidth / 2 - w / 2), Math.floor(gl.drawingBufferHeight * 0.3), w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+            let n = 0;
+            for (let i = 0; i < px.length; i += 4) if (px[i + 1] > px[i] + 10 && px[i + 1] > px[i + 2] + 10) n++;
+            res(n / (w * h));
+          };
+        }),
+    );
+    expect(green, 'the restored frame shows the pitch (share of green pixels in a sample)').toBeGreaterThan(0.5);
   },
   { timeoutMs: 120_000 },
 );
@@ -380,4 +416,79 @@ test(
     expect(w1, `the drawing buffer is smaller (${w0} → ${w1} px)`).toBeLessThan(w0);
   },
   { timeoutMs: 120_000 },
+);
+
+test(
+  'Perf: a lost WebGL context in a linked (lockstep) match shows the note while play goes on, then carries on in 2D, in sync',
+  async (t) => {
+    const host = await openApp(t, { prefs: { halfSeconds: 60, controls: 'mouse' }, renderer: '3d', init: loseContextHook });
+    // The guest draws in 2D: two software-rendered 3D tabs starve each other (see lockstep.e2e.cjs).
+    const guest = await host.context().newPage();
+    guest.setDefaultTimeout(20_000);
+    await guest.goto(`${APP_URL.split('?')[0]}?renderer=2d`);
+    await guest.locator('#guard-guest').click();
+    await guest.waitForSelector(`${SEL.app} *`);
+    await skipOnboarding(guest);
+    await goTab(host, SEL.homeScreen);
+    await host.locator(SEL.playLink).click();
+    await host.locator(SEL.linkHost).click();
+    const code = (await host.locator(SEL.linkCode).innerText()).trim();
+    await goTab(guest, SEL.homeScreen);
+    await guest.locator(SEL.playLink).click();
+    await guest.locator(SEL.linkCodeInput).fill(code);
+    await guest.locator(SEL.linkJoin).click();
+    await host.locator(SEL.netMatch).waitFor();
+    await guest.locator(SEL.netMatch).waitFor();
+    if ((await host.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await host.evaluate(() => !!window.__lose))) return;
+    const tickOf = (p) => p.evaluate((sel) => Number(document.querySelector(sel)?.dataset.tick || 0), SEL.netMatch);
+    await host.waitForFunction((sel) => Number(document.querySelector(sel)?.dataset.tick || 0) > 30, SEL.netMatch, { timeout: 30_000 });
+    await host.evaluate(() => window.__lose.loseContext());
+    await host.locator('.gfx-note').waitFor({ state: 'visible', timeout: 3000 });
+    const t0 = await tickOf(host);
+    await host.waitForTimeout(1200);
+    expect(await tickOf(host), 'the match goes on under the note (there is no pause online)').toBeGreaterThan(t0);
+    await host.waitForFunction(() => document.querySelector('#pitch').dataset.renderer === '2d', null, { timeout: 8000 });
+    expect(await host.locator(SEL.pitch).getAttribute('data-fallback'), 'marked as a fallback').toBe('context-lost');
+    expect(await host.locator('.gfx-note').isVisible(), 'the note is gone').toBe(false);
+    const t1 = await tickOf(host);
+    await host.waitForFunction(([sel, t]) => Number(document.querySelector(sel)?.dataset.tick || 0) > t + 60, [SEL.netMatch, t1], { timeout: 20_000 });
+    const after = await host.evaluate((sel) => ({ ...document.querySelector(sel).dataset }), SEL.netMatch);
+    expect(after.desync || 'none', 'still in sync with the other tab').toBe('none');
+    expect(after.stopped || 'running', 'and running').toBe('running');
+  },
+  { timeoutMs: 150_000 },
+);
+
+test(
+  'Perf: a lost WebGL context in the replay viewer pauses playback under the note, then the replay goes on in 2D',
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 2 }, renderer: '3d', init: loseContextHook });
+    if ((await playOne(page)) !== '3d') return;
+    await goTab(page, SEL.clubScreen);
+    // The hook keeps the context of the canvas with id "pitch"; the viewer's canvas is #rv-canvas.
+    await page.evaluate(() => {
+      const gc = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+        const c = gc.call(this, type, ...rest);
+        if (c && type === 'webgl2' && this.id === 'rv-canvas') window.__loseRv = c.getExtension('WEBGL_lose_context');
+        return c;
+      };
+    });
+    await page.locator('.rp-row [data-replay="watch"]').first().click();
+    await page.locator('[data-rp="close"]').waitFor();
+    if ((await page.locator('#rv-canvas').getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__loseRv))) return;
+    await page.evaluate(() => window.__loseRv.loseContext());
+    await page.locator('.rp-stage .gfx-note').waitFor({ state: 'visible', timeout: 3000 });
+    const scrub = () => page.evaluate(() => Number(document.querySelector('#rv-scrub').value));
+    const s0 = await scrub();
+    await page.waitForTimeout(1000);
+    expect(await scrub(), 'playback is held while the pitch cannot be drawn').toBe(s0);
+    await page.waitForFunction(() => document.querySelector('#rv-canvas').dataset.renderer === '2d', null, { timeout: 8000 });
+    expect(await page.locator('.rp-stage .gfx-note').isVisible(), 'the note is gone').toBe(false);
+    await page.locator('[data-rp="play"]').click().catch(() => {});
+    await page.waitForFunction((v) => Number(document.querySelector('#rv-scrub').value) !== v, s0, { timeout: 10_000 });
+    await page.locator('[data-rp="close"]').click();
+    await page.locator('[data-rp="close"]').waitFor({ state: 'detached' });
+  },
+  { timeoutMs: 150_000 },
 );
