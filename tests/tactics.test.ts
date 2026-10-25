@@ -8,7 +8,7 @@ import { autoLineup, clubFormation, clubMentality, cpuTeam, generateLadder, gene
 import { ensureElevenASide, newGame, setFormation, setMentality, clubTeam } from '../src/meta/game.ts';
 import { decodeReplay, encodeReplay, REPLAY_VERSION, ReplayRecorder, ReplaySeeker, type Replay } from '../src/meta/replay.ts';
 import { createMatch, step } from '../src/sim/match.ts';
-import { averageMetrics, measureMatch, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
+import { averageMetrics, measureMatch, mentalityLag, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
 import { FORMATION_IDS, FORMATIONS, MENTALITY_IDS, SIM_VERSION, TEAM_SIZE, type FormationId, type Mentality } from '../src/sim/constants.ts';
 import { TACTICS } from '../src/sim/ai.ts';
 import { makeRng } from '../src/sim/rng.ts';
@@ -373,4 +373,20 @@ describe('off the ball: a back five forms when the ball is in our third', () => 
     // 7.9 m on these seeds with the recovery run.
     expect(r.gap).toBeLessThan(9.5);
   });
+});
+
+describe('a mentality change shows within seconds', () => {
+  // Sixteen seeds, each played with and without a switch at 60 s (src/meta/tacticsProbe.ts). Five
+  // seconds after it, Park the bus has pulled the side 10 m deeper and High press pushed it 7 m
+  // higher on these seeds; 64 seeds (scripts/tactics-probe.ts --lag) give 8 and 7 m.
+  const squad = generateSquad(makeRng(5000), 60);
+  const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
+  const setup = { home: toTeamSetup(id('A'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced'), away: toTeamSetup(id('B'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced'), halfSeconds: 180 };
+  const seeds = Array.from({ length: 16 }, (_, i) => 7200 + i);
+  test('Park the bus drops the side 4 m or more within five seconds', () => {
+    expect(mentalityLag(setup, seeds, 'park').shift[4]).toBeLessThan(-4);
+  }, 30_000);
+  test('High press lifts the side 4 m or more within five seconds', () => {
+    expect(mentalityLag(setup, seeds, 'press').shift[4]).toBeGreaterThan(4);
+  }, 30_000);
 });

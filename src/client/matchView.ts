@@ -25,7 +25,7 @@ import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
 import { quickTacticsMarkup } from './tactics.ts';
-import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
+import { MENTALITY_IDS, MENTALITY_LABEL, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
@@ -139,7 +139,7 @@ const TOUCH_HINT = hint(
 );
 const MOUSE_HINT = hint(
   `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
-  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch. <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -156,7 +156,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, Esc to pause.'}"></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, Esc to pause.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -285,6 +285,21 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
     announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
   });
+  // Quick tactics from the keyboard while playing: 1 Park the bus ... 5 High press, as in the pause menu.
+  // By key position (Digit1-5, Numpad1-5), so the top row works on AZERTY too.
+  const onTacticKey = (e: KeyboardEvent) => {
+    const n = /^(?:Digit|Numpad)([1-5])$/.exec(e.code)?.[1];
+    if (!n || me === null || paused || replay || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    const m = MENTALITY_IDS[Number(n) - 1];
+    pendingTactic = Number(n);
+    const radio = root.querySelector<HTMLInputElement>(`#quick-tactics input[value="${m}"]`);
+    if (radio) radio.checked = true;
+    hud.tag(MENTALITY_LABEL[m], 1600, 'Mentality');
+    announce(`Mentality: ${MENTALITY_LABEL[m]}.`);
+  };
+  document.addEventListener('keydown', onTacticKey);
   const spotter = new HighlightSpotter(s);
   const buffer = new ReplayBuffer(s);
   let pending: Highlight | null = null;
@@ -569,6 +584,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     document.removeEventListener('visibilitychange', onVis);
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onTacticKey);
     window.removeEventListener('keydown', onReplayKey, true);
     if (guardingBack) {
       window.removeEventListener('popstate', onPop);
