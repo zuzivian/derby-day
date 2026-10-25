@@ -24,10 +24,17 @@ test('a short ranked match reaches the result modal, updates Elo, and closing re
   expect(after.club.played, 'played count').toBe(before.club.played + 1);
   expect(await headerElo(page), 'header Elo reflects the change').toBe(rec.eloAfter);
 
-  // The dialog title takes focus from code: it must not draw a focus ring (owner feedback 2026-10-24).
-  const title = await page.evaluate(() => ({ id: document.activeElement?.id, outline: getComputedStyle(document.activeElement).outlineStyle }));
-  expect(title.id, 'focus starts on the result title').toBe('result-title');
-  expect(title.outline, 'no focus ring on the programmatically focused title').toBe('none');
+  // Focus starts on the result's scrolling region (labelled by the title), taken from code: it must not draw a
+  // focus ring (owner feedback 2026-10-24), and Page Down scrolls it straight away.
+  const focus = await page.evaluate(() => {
+    const el = document.activeElement;
+    const cs = getComputedStyle(el);
+    return { region: el.classList.contains('rs-scroll'), label: el.getAttribute('aria-labelledby'), outline: cs.outlineStyle, shadow: cs.boxShadow };
+  });
+  expect(focus.region, 'focus starts on the result region').toBe(true);
+  expect(focus.label, 'the region is labelled by the title').toBe('result-title');
+  expect(focus.outline, 'no outline on the programmatically focused region').toBe('none');
+  expect(focus.shadow, 'no ring drawn as a shadow either').toBe('none');
   // The primary button stays in view without scrolling the dialog.
   const btn = await page.locator(SEL.modalClose).boundingBox();
   expect(btn && btn.y + btn.height <= 800, 'Back to the club is on screen').toBe(true);

@@ -1,5 +1,6 @@
 import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
 import { warmupTeam } from '../meta/warmup.ts';
+import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
@@ -114,16 +115,19 @@ function render() {
   const hadLevelUp = !!root.querySelector('#levelup-title');
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
+  beforeRender(root);
   root.innerHTML = shell(app, screens[app.screen](app));
   const levelUp = !app.result && levelUpOpen(app.save);
   syncMark(!app.result && !levelUp && !reviewOpen(app.save));
-  if (app.result && !hadResult) root.querySelector<HTMLElement>('#result-title')?.focus();
+  // The scrolling part of the result takes focus (it is labelled by the title), so the arrow and Page keys scroll it at once.
+  if (app.result && !hadResult) root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
   else if (levelUp && !hadLevelUp) {
     levelOrigin = key;
     root.querySelector<HTMLElement>('#levelup-title')?.focus();
     announce(levelUpAnnouncement(app.save));
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
+  afterRender(root);
 }
 
 /**
@@ -531,6 +535,7 @@ root.addEventListener('click', (e) => {
     }
     case 'trainee':
       app.trainee = id;
+      queueReveal('.panel.trainee');
       break;
     case 'train': {
       const r = train(s, id, el.dataset.attr as AttrKey);
