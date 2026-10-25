@@ -358,14 +358,15 @@ test(
     await page.locator(SEL.playRanked).click();
     await page.locator(SEL.pitch).waitFor();
     if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
-    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
-    const w0 = await page.evaluate(() => document.querySelector('#pitch').width);
-    // Record each level as it changes: one notch at a time, never back up.
-    await page.evaluate(() => {
+    // Record each level as it changes: one notch at a time, never back up. Watch from the start: the
+    // kick-off is a kick (Law 8) and can wait five seconds for the CPU, long enough for a first step.
+    const w0 = await page.evaluate(() => {
       const c = document.querySelector('#pitch');
       window.__levels = [];
       new MutationObserver(() => window.__levels.push(Number(c.dataset.governor))).observe(c, { attributes: true, attributeFilter: ['data-governor'] });
+      return c.width;
     });
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
     const stepped = await page.waitForFunction(() => Number(document.querySelector('#pitch').dataset.governor || 0) >= 1, null, { timeout: 30_000 }).then(() => true, () => false);
     if (!stepped) {
       // A fast enough machine (a real GPU) never needs to step down.
