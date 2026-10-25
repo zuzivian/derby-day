@@ -13,7 +13,7 @@ import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
-import { freeKickSpot, InputController } from './input.ts';
+import { setPieceSpot, InputController } from './input.ts';
 import { kickGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import type { RenderExtras } from './render.ts';
@@ -208,7 +208,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
     c.paused = () => paused;
-    c.setPiece = () => freeKickSpot(s, 0);
+    c.setPiece = () => setPieceSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
     return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }

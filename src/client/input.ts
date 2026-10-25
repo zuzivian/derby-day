@@ -160,7 +160,7 @@ export interface Armed {
   kind: 'loft' | 'shot' | null;
   /** The power the kick would go with if released now: loft hold 0..1, or shot power SHOT_MIN..1. */
   power: number;
-  /** A shot by the taker over a free kick: it goes to `at` (where the button went down), bent by `curl` (curlFrom). */
+  /** A shot or a lofted ball by the taker over a free kick or a corner: it goes to `at` (where the button went down), bent by `curl` (curlFrom). */
   at?: Vec;
   curl?: number;
 }
@@ -185,10 +185,10 @@ export function curlFrom(ball: Vec, at: Vec, cursor: Vec): number {
   return Math.max(-1, Math.min(1, (across - Math.sign(across) * CURL_DEAD_M) / (CURL_DRAG_M - CURL_DEAD_M)));
 }
 
-/** The ball's spot while `team`'s steered man is over a free kick he takes (InputController.setPiece), else null. */
-export function freeKickSpot(s: MatchState, team: 0 | 1): Vec | null {
+/** The ball's spot while `team`'s steered man is over a free kick or a corner he takes (InputController.setPiece), else null. */
+export function setPieceSpot(s: MatchState, team: 0 | 1): Vec | null {
   const r = s.restart;
-  return r && r.kind === 'freekick' && r.team === team && r.stage !== 'whistle' && s.controlled[team] === r.taker ? r.spot : null;
+  return r && (r.kind === 'freekick' || r.kind === 'corner') && r.team === team && r.stage !== 'whistle' && s.controlled[team] === r.taker ? r.spot : null;
 }
 
 /** Tap on a touch screen: at most this long and this many CSS pixels of travel. */
@@ -407,7 +407,9 @@ export class InputController {
       this.aim = this.releaseAim();
     } else {
       this.loft = r.loft;
-      this.aim = this.cursor;
+      const bend = this.setPieceBend();
+      this.aim = bend ? bend.at : this.cursor;
+      this.curl = bend ? bend.curl : 0;
     }
   }
 
@@ -422,8 +424,8 @@ export class InputController {
   }
 
   /**
-   * Over a free kick with the mouse, a shot goes where the button went down and a drag across its line while held
-   * bends it (curlFrom). Anywhere else a shot goes where the button comes up, as it always has.
+   * Over a free kick or a corner with the mouse, a shot or a lofted ball goes where the button went down and a drag
+   * across its line while held bends it (curlFrom). Anywhere else it goes where the button comes up, as it always has.
    */
   private setPieceBend(): { at: Vec; curl: number } | null {
     const ball = this.setPiece();
@@ -432,7 +434,7 @@ export class InputController {
     return { at, curl: curlFrom(ball, at, this.cursor) };
   }
 
-  /** The ball's spot while the human's man is over a free kick (set by the match view), else null. */
+  /** The ball's spot while the human's man is over a free kick or a corner (set by the match view), else null. */
   setPiece: () => Vec | null = () => null;
 
   /** On-screen buttons for touch screens. */
@@ -464,7 +466,11 @@ export class InputController {
       return bend ? { kind: 'shot', power: shotPower(now - this.shotStart), at: bend.at, curl: bend.curl } : { kind: 'shot', power: shotPower(now - this.shotStart) };
     }
     if (this.loftKeyStart !== null) return { kind: 'loft', power: loftPower(now - this.loftKeyStart) };
-    if (this.leftStart !== null && now - this.leftStart >= this.clickMs()) return { kind: 'loft', power: loftPower(now - this.leftStart, this.clickMs()) };
+    if (this.leftStart !== null && now - this.leftStart >= this.clickMs()) {
+      const power = loftPower(now - this.leftStart, this.clickMs());
+      const bend = this.setPieceBend();
+      return bend ? { kind: 'loft', power, at: bend.at, curl: bend.curl } : { kind: 'loft', power };
+    }
     return { kind: null, power: 0 };
   }
 
@@ -536,7 +542,7 @@ export class InputController {
     if (this.pass) input.pass = true;
     if (this.loft !== null) input.loft = this.loft;
     if (this.shoot !== null) input.shoot = this.shoot;
-    if (this.shoot !== null && this.curl) input.curl = Math.round(this.curl * 100) / 100;
+    if ((this.shoot !== null || this.loft !== null) && this.curl) input.curl = Math.round(this.curl * 100) / 100;
     if (this.tackle) input.tackle = true;
     if (this.select && pointer) input.select = true;
     if (this.keys.has('shift')) input.sprint = true;
