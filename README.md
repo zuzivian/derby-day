@@ -80,7 +80,44 @@ Every match is the same length: 2 × 3 minutes (`HALF_SECONDS` in `src/sim/const
 
 You play your own cup ties and league fixtures live. The other matches in the round are played by the real headless sim at 60 s a half (about 130 ms each), so results follow the squads. Competition matches pay money, training and player development, but **do not change ladder Elo** or the ladder record. Forfeiting one counts as 0–3.
 
-CPU difficulty is `TeamSetup.aiSkill` (0..1). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
+CPU difficulty is `TeamSetup.aiSkill` (0..1, and down to −0.3 for a rookie side). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
+
+### Fair matches
+
+One person steers one player among 22, so two things decide whether a match is fair: what the other ten do around them, and how sharp the CPU opposite is.
+
+- **Teammates cover for you.** When your man isn't going in on the carrier (too far, or running elsewhere), the next-best teammate presses or chases the loose ball for you, instead of nobody. If you stop steering (no pointer on the pitch and no keys for 0.75 s), or right after the game switches you to a new man and before you move the pointer, your man holds his place in the shape, marks, and jockeys a carrier who comes at him from 2 m goal-side. He never tackles for you. When you take your man out of his zone, a free teammate picks up the attackers in it. Defending, the automatic switch gives you the man who can press from goal-side, not one chasing back behind the ball. A pointer resting on the pitch is always a command ("run there and stay"), never treated as idle. Code: `humanEngaging`, `humanAuto` and the plan in `src/sim/ai.ts`; `jockey` and `updateControl` in `src/sim/human.ts`.
+- **Difficulty that fits you.** Every club carries a hidden skill estimate, separate from Elo (`src/meta/skill.ts`). It learns from every match against the CPU, fast at first, then steadier. For ranked and cup or league matches it sets the opposing CPU's `aiSkill` within a band: from 0.75 below the club's natural skill (no lower than a rookie side) to 0.25 above it. The aim is a 55% chance of a win for you. The ladder club's squad, shape and Elo are never touched, so Elo stays the honest ladder. Practice levels stay fixed as labelled. The **win chance** on Home is the same model's chance against the opponent as he will really play you (`winChance`). Its constants are fitted to the fairness harness (`bun run fairness --calibrate`).
+
+`bun run fairness` measures all of this. Scripted humans, from one who never touches the mouse to a sharp one, each start a new club and play it the way the game does: first match, warm-ups, then ranked against `pickOpponent`'s choice with the CPU's skill from the estimate. Each then plays three friendlies against the top of the ladder. 12 careers of 12 matches per bot:
+
+| Player | First 3 ranked: W-D-L, goal diff | All ranked: W-D-L | Won | Shown | CPU skill faced | vs top 3 clubs: won (shown) |
+|---|---|---|---|---|---|---|
+| Never touches the mouse | 0-11-25, −1.36 | 1-29-49 | 1% | 14% | −0.29 | 0% (0%) |
+| Pointer on the ball, no clicks | 0-7-29, −1.97 | 0-10-65 | 0% | 10% | −0.29 | 0% (0%) |
+| Chaser: runs at the ball, shoots early | 14-17-5, +0.61 | 49-36-15 | 49% | 44% | −0.22 | 22% (9%) |
+| Competent: passes to open teammates, shoots in range | 16-11-9, +0.39 | 55-28-23 | 52% | 48% | −0.17 | 14% (13%) |
+| Strong: the CPU's pass choice, patient tackles | 25-3-8, +0.89 | 70-21-21 | 63% | 53% | 0.00 | 14% (23%) |
+| (The same club run by the CPU) | 27-7-2, +1.42 | 75-28-12 | 65% | 54% | 0.16 | 39% (37%) |
+
+Against a new club's first ranked opponent at its natural CPU skill, which every match used before the estimate existed, the same bots win 0-21%. The CPU running the same squad wins 46%. Over 24 seeds the teammates' cover changes that as follows (`bun run fairness 24 --tiers=first`, before → after):
+
+| Player | Goal diff | Shots against | Carrier pressed by nobody, and no CPU presser |
+|---|---|---|---|
+| Never touches the mouse | −3.00 → −2.29 | 16.0 → 11.7 | 55% → 0% |
+| Pointer on the ball | −3.50 → −3.67 | 16.1 → 14.6 | 61% → 33% |
+| Chaser | −0.38 → −0.21 | 8.0 → 7.3 | 54% → 34% |
+| Competent | −1.00 → −0.96 | 11.5 → 9.6 | 49% → 34% |
+| Strong | −0.75 → −1.04 | 10.5 → 9.2 | 45% → 29% |
+
+So the cover fixes the shape: someone always presses, and fewer shots come in. For players who do steer, the scores move within the noise (about ±0.3 goals on 24 matches). What makes their matches winnable is the difficulty band. `bun run fairness 12 --assert` fails CI if any of these break:
+
+- a passive human is routed (goal difference worse than −3 in the first ranked matches);
+- the competent bot is far from an even chance (outside 40-65% wins);
+- the strong bot doesn't win most of its ranked matches, or doesn't win clearly fewer against the top clubs;
+- the chance shown drifts from the chance measured, beyond sampling noise.
+
+The model reads the extremes a little conservatively: a player who never shoots is still shown about 10-14% (he draws 0–0 a third of the time and never wins). Strong players win about ten points more often than shown.
 
 Every finished match leaves a replay: the match options plus the per-tick input log (run-length and delta encoded, cursor to 1 cm, then compressed with a small adaptive range coder, `src/meta/pack.ts`), which the deterministic sim re-runs exactly. A full match is a code of about 45-70K characters. **Watch goals** on the result dialog plays each goal's last six seconds (½× slow-mo, previous/next goal, scrub bar; Space, arrows and Esc work). The last five replays are kept in this browser under **Recent replays** on the Club tab (fewer only if they are unusually long), and **Copy replay code** / **Paste replay code** share one as an `OVR1.…` string. Scrubbing a whole match is held at the part already prepared while the rest loads. Code is in `src/meta/replay.ts` (pure) and `src/client/replayView.ts`.
 
@@ -137,12 +174,13 @@ server/       The online relay: relay-core.ts (pure room/seat state machine with
 vendor/three/ three.js r186 (MIT), bundled into the build.
 scripts/      build.ts (bundle and inline into one HTML file), size-budget.ts (page size guard),
               perf-probe.cjs (first paint and time-to-interactive at 4x CPU), make-assets.cjs
-              (icons and share image), balance.ts (headless CPU matches),
+              (icons and share image), balance.ts (headless CPU matches), fairness.ts
+              (scripted humans against the CPU: careers, diagnosis, calibration),
               ai-probe.ts (equal squads, different CPU skill), net-probe.ts (lockstep stalls by
               input delay and simulated latency).
 tests/        bun test: determinism, plausible matches, Elo maths, transfers and training rules.
 tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, transfers, matches.
-.github/      CI: typecheck, unit tests, build, balance guard, e2e.
+.github/      CI: typecheck, unit tests, build, balance guard, fairness check, e2e.
 ```
 
 ## Checks
@@ -153,6 +191,9 @@ bun run size       # fails if dist/index.html is over its size budget (scripts/s
 bun run balance 50 # 50 CPU-vs-CPU eleven-a-side matches at full speed: goals, shots, fouls, cards, corners, offsides, upsets
 bun run balance 30 --assert  # same, but exits non-zero outside the sane bands (see scripts/balance.ts: goals 1.5-5, fouls 5-25, ...)
 bun run scripts/ai-probe.ts 40 0.85 0.25  # 40 matches, identical squads, CPU skill 0.85 vs 0.25: W/D/L
+bun run fairness 12 --assert  # scripted humans play new-club careers; fails when a fairness target is missed (see "Fair matches")
+bun run fairness 24 --tiers=first,top  # the diagnosis: fixed opponents, who presses, who stands still, possession lost
+bun run fairness 16 --calibrate  # refit the win-chance model in src/meta/skill.ts
 bun run e2e        # build, then drive the real page in headless Chromium (see below)
 ```
 
