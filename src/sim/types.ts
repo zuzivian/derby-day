@@ -111,6 +111,8 @@ export interface AiMemory {
   attacking: boolean;
   /** Whether the target is a support spot for the carrier (TeamPlan.support); optional for older memories. */
   supporting?: boolean;
+  /** The target is on the shoulder of the last defender: it follows the offside line while held. */
+  shoulder?: boolean;
   /** Carrier behaviour that persists across ticks. */
   mode: 'none' | 'takeon' | 'shield' | 'dive';
   modeTicks: number;
@@ -454,6 +456,8 @@ export interface AiTeamPlan {
   /** Attacking: the teammates offering the carrier a short pass, and for each the angle he offers it at (radians from straight ahead). */
   support?: number[];
   supportAng?: number[];
+  /** The striker kept on the last line (not a short supporter) while the ball is short of the final third, or -1. */
+  pin?: number;
 }
 
 

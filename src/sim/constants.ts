@@ -27,12 +27,14 @@
  *      added time; a side below seven abandons the match
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
  *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
- *  10  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
+ *      supporter) until the final third, and forwards on the shoulder follow the line
+ *  11  a human's teammates cover for him: a CPU presser when his man isn't going in, his
  *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
  *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
  *      CPU below skill 0 (AI_SKILL_MIN)
  */
-export const SIM_VERSION = 10;
+export const SIM_VERSION = 11;
 
 export const TICK_HZ = 60;
 
