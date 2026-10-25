@@ -11,8 +11,8 @@
 //  2. Options. When the human has the ball, how many teammates are on for a
 //     pass? Counted every sample while a carrier is on the ball. A teammate
 //     is open when he is 5 to 35 m away, no opponent is within 1.5 m (plus
-//     3% of the distance) of the straight lane, and none is within 2.5 m of
-//     him. The human here is a scripted bot (humanBot below) that runs at
+//     3% of the distance) of the straight lane from 1.5 m out, and none is
+//     within 2.5 m of him. The human here is a scripted bot (humanBot below) that runs at
 //     goal and passes to the most forward open teammate.
 //
 // All in metres in each side's own frame (x from its own goal line; y is world y, as
@@ -137,10 +137,13 @@ export function isOpen(s: MatchState, c: MatchPlayer, m: MatchPlayer): boolean {
   const d = Math.sqrt(dx * dx + dy * dy);
   if (d < 5 || d > 35) return false;
   const lane = 1.5 + 0.03 * d;
+  // The lane starts 1.5 m out: a man tight on the carrier doesn't shut every pass (it goes round him).
+  const ax = c.pos.x + (dx / d) * 1.5;
+  const ay = c.pos.y + (dy / d) * 1.5;
   for (const o of s.players) {
     if (o.team === c.team || o.sentOff) continue;
     if (Math.hypot(o.pos.x - m.pos.x, o.pos.y - m.pos.y) < 2.5) return false;
-    if (segDist(o.pos.x, o.pos.y, c.pos.x, c.pos.y, m.pos.x, m.pos.y) < lane) return false;
+    if (segDist(o.pos.x, o.pos.y, ax, ay, m.pos.x, m.pos.y) < lane) return false;
   }
   return true;
 }

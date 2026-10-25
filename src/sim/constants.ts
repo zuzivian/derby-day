@@ -25,8 +25,10 @@
  *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
+ *   8  off the ball: the front striker stays on the last defender's shoulder (not a short
+ *      supporter) until the final third, and forwards on the shoulder follow the line
  */
-export const SIM_VERSION = 7;
+export const SIM_VERSION = 8;
 
 export const TICK_HZ = 60;
 
