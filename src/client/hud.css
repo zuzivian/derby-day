@@ -194,9 +194,21 @@
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
   #pitch.pitch-3d { aspect-ratio: auto; height: calc(100dvh - 16px); }
-  .match .controls-hint, .match .controls-hint.clamp, .match .hint-more { display: none; }
+  .match .controls-hint, .match .controls-hint.clamp, .match .controls-hint.clamp:has(.hint-key), .match .hint-more { display: none; }
   .hud-tr { flex-direction: row; align-items: flex-start; }
   .hud-power { bottom: 84px; }
+}
+/* Touch screens held upright: Menu on its own row, then the camera chip between its zoom buttons
+   ([−] CAM [+]), so the corner takes two rows of the pitch instead of three. The mode label goes,
+   as it already does on phones. */
+@media (pointer: coarse) and (orientation: portrait) {
+  .hud-tr { display: grid; grid-template-columns: repeat(3, auto); justify-items: end; column-gap: 8px; }
+  .hud-tr .hud-menu { grid-area: 1 / 1 / 2 / -1; }
+  .hud-tr .hud-mode { display: none; }
+  .hud-tr .pitch-zoom { display: contents; }
+  .hud-tr .pitch-zoom [data-zoom="1"] { grid-area: 2 / 1; }
+  .hud-tr .pitch-cam { grid-area: 2 / 2; }
+  .hud-tr .pitch-zoom [data-zoom="-1"] { grid-area: 2 / 3; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }
@@ -204,6 +216,10 @@
 
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+/* A split hint (matchView.ts) shows its essentials whole, wrapping on a phone rather than ending in
+   an ellipsis; the detail waits behind "All controls". */
+.controls-hint.clamp:has(.hint-key) { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.controls-hint.clamp .hint-rest { display: none; }
 .hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .hint-more:hover { color: var(--ink); }
 @media (pointer: coarse) {

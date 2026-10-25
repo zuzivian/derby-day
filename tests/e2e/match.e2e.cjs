@@ -145,3 +145,48 @@ for (const renderer of ['2d', '3d']) {
     expect(got.legs, 'his energy').toBe(got.want.legs);
   });
 }
+
+// The controls line shows its essentials whole: no ellipsis, nothing cut off (it may wrap on a phone).
+for (const [w, h, touch] of [[1280, 800, false], [390, 844, true]]) {
+  test(`controls legend at ${w}x${h}: the essentials are all on screen, the detail waits for "All controls"`, async (t) => {
+    const page = await openApp(t, { width: w, height: h, hasTouch: touch, prefs: { halfSeconds: 20 }, renderer: '3d' });
+    await startRanked(page);
+    await page.waitForSelector('#controls-hint .hint-key');
+    const got = await page.evaluate(() => {
+      const p = document.querySelector('#controls-hint');
+      const key = p.querySelector('.hint-key').getBoundingClientRect();
+      const box = p.getBoundingClientRect();
+      const lines = Math.round(key.height / parseFloat(getComputedStyle(p).lineHeight));
+      return {
+        shown: p.getClientRects().length > 0,
+        clipped: p.scrollHeight > p.clientHeight + 1 || p.scrollWidth > p.clientWidth + 1 || key.bottom > box.bottom + 1,
+        clamp: getComputedStyle(p).webkitLineClamp,
+        rest: getComputedStyle(p.querySelector('.hint-rest')).display,
+        lines,
+        text: p.innerText,
+      };
+    });
+    expect(got.shown, 'the legend is shown').toBe(true);
+    expect(got.clipped, 'nothing cut off').toBe(false);
+    expect(got.clamp, 'no line clamp, so no ellipsis').toBe('none');
+    expect(got.rest, 'the detail is held back').toBe('none');
+    expect(got.lines <= (touch ? 2 : 1), `${got.lines} lines`).toBe(true);
+    expect(got.text, 'says how to shoot').toMatch(/shoot/i);
+  });
+}
+
+test('phone (390x844): Menu, then [−] camera [+] in one row: the corner takes two rows of the pitch', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true, prefs: { halfSeconds: 20 }, renderer: '3d' });
+  await startRanked(page);
+  await page.waitForSelector('.hud-tr .pitch-cam');
+  const r = await page.evaluate(() => {
+    const box = (s) => document.querySelector(s).getBoundingClientRect();
+    const [menu, cam, out, inn] = [box('.hud-tr .hud-menu'), box('.hud-tr .pitch-cam'), box('[data-zoom="1"]'), box('[data-zoom="-1"]')];
+    return { menu, cam, out, inn, tr: box('.hud-tr') };
+  });
+  expect(r.cam.top >= r.menu.bottom, 'the camera row is under Menu').toBe(true);
+  expect(Math.abs(r.out.top - r.cam.top) < 2 && Math.abs(r.inn.top - r.cam.top) < 2, 'zoom buttons share the camera row').toBe(true);
+  expect(r.out.right <= r.cam.left && r.cam.right <= r.inn.left, 'order: − camera +').toBe(true);
+  expect(r.tr.height <= 44 * 2 + 8 + 1, `corner is ${r.tr.height}px tall`).toBe(true);
+  for (const b of [r.menu, r.cam, r.out, r.inn]) expect(b.height >= 44 && b.width >= 44, 'touch target ≥ 44px').toBe(true);
+});
