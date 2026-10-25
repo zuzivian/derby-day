@@ -480,3 +480,53 @@ describe('3D: a click on a player\'s body picks him', () => {
     expect(pickBody(empty.origin, empty.direction, bodies)).toBe(-1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Minor: header aim is relative to the striker
+
+/** A cross from the wing at head height to our striker at (96,34), the pointer resting at `pointer`. Where does the header cross the line? */
+function headerAt(pointer: Vec, seed: number) {
+  const s = livePlay(seed);
+  const me = role(s, 0, 'FWD');
+  const gk = s.players.find((p) => p.team === 1 && p.role === 'GK')!;
+  isolate(s, me, gk);
+  s.controlled[0] = me.i;
+  s.switchTimer[0] = 1e9;
+  me.pos = { x: 96, y: 34 };
+  me.vel = { x: 0, y: 0 };
+  me.facing = { x: 0, y: -1 };
+  me.stun = 0;
+  gk.pos = { x: 104, y: 34 };
+  gk.vel = { x: 0, y: 0 };
+  gk.stun = 1000; // he watches: we measure where it is aimed, not the save
+  const t = 0.83;
+  Object.assign(s.ball, { owner: -1, pos: { x: 96, y: 24 }, vel: { x: 0, y: 10 / t }, z: 2.3, vz: (2.0 - 2.3 + 0.5 * 9.8 * t * t) / t, receiver: -1, lastTouch: role(s, 0, 'MID').i });
+  s.ball.noPickup.fill(0);
+  let headed = false;
+  for (let k = 0; k < 120; k++) {
+    step(s, { cursor: pointer });
+    if (!headed && s.ball.lastTouch === me.i) headed = true;
+    if (headed && s.ball.pos.x >= 105) break;
+  }
+  return { headed, y: s.ball.pos.y, moved: dist(me.pos, { x: 96, y: 34 }) };
+}
+
+describe('a human header at goal goes where the pointer says, relative to the striker', () => {
+  const seeds = Array.from({ length: 8 }, (_, i) => i + 1);
+  test('pointer 1 m to the top-post side picks the top half of the goal, 1 m the other side the bottom half; on him, the middle', () => {
+    // The hand rests: the pointer stays where it was put, 1 m to one side of him or on him.
+    const top = seeds.map((sd) => headerAt({ x: 96, y: 33 }, sd));
+    const bottom = seeds.map((sd) => headerAt({ x: 96, y: 35 }, sd));
+    const mid = seeds.map((sd) => headerAt({ x: 96, y: 34 }, sd));
+    for (const rs of [top, bottom, mid]) expect(rs.filter((r) => r.headed).length).toBeGreaterThanOrEqual(7);
+    const meanY = (rs: { headed: boolean; y: number }[]) => rs.filter((r) => r.headed).reduce((a, r) => a + r.y, 0) / rs.filter((r) => r.headed).length;
+    // Main: the pointer's absolute y (33 or 35 m) aimed it barely off centre: means 33.8 and 34.1.
+    expect(meanY(top)).toBeLessThan(32.4);
+    expect(meanY(bottom)).toBeGreaterThan(35.2);
+    expect(Math.abs(meanY(mid) - 34)).toBeLessThan(1.2);
+    expect(top.filter((r) => r.y < 34).length).toBeGreaterThanOrEqual(6);
+    expect(bottom.filter((r) => r.y > 34).length).toBeGreaterThanOrEqual(6);
+    // And he stays on the ball's line to head it: the pointer is under a metre from him.
+    expect(Math.max(...top.map((r) => r.moved), ...bottom.map((r) => r.moved))).toBeLessThan(1.5);
+  });
+});

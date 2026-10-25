@@ -727,6 +727,9 @@ function separate(s: MatchState): void {
   }
 }
 
+/** A human's header at goal: metres across the goal per metre the pointer is to the side of the striker. */
+const HEADER_AIM_GAIN = 5;
+
 function scoreGoal(s: MatchState, team: 0 | 1): void {
   const b = s.ball;
   const last = b.lastTouch >= 0 ? s.players[b.lastTouch] : null;
@@ -1379,7 +1382,9 @@ function header(s: MatchState): boolean {
     const goal = oppGoal(p.team);
     const gk = goalkeeper(s, p.team === 0 ? 1 : 0);
     const aim = s.humanAim?.[p.team];
-    const yAim = isHumanControlled(s, p) && aim ? clamp(aim.y, GOAL_TOP + 0.4, GOAL_BOTTOM - 0.4) : gk.pos.y > PITCH_H / 2 ? GOAL_TOP + 0.9 : GOAL_BOTTOM - 0.9;
+    // The human picks the corner by which side of the striker the pointer is (the same pointer
+    // steers him, so it can't be out on the post): about 0.65 m either side is the corner.
+    const yAim = isHumanControlled(s, p) && aim ? clamp(goal.y + (aim.y - p.pos.y) * HEADER_AIM_GAIN, GOAL_TOP + 0.4, GOAL_BOTTOM - 0.4) : gk.pos.y > PITCH_H / 2 ? GOAL_TOP + 0.9 : GOAL_BOTTOM - 0.9;
     const y = yAim;
     const dir = rotate(norm(sub({ x: goal.x, y }, b.pos)), gauss(s.rng) * (0.08 + 0.16 * (1 - p.attrs.shooting)));
     const sp = 10 + 6 * p.attrs.shooting;
