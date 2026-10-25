@@ -1697,9 +1697,10 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
   const home = shapeTarget(s, p, false, plan.focus, plan.line, plan.oppLine);
   // ...except for a defender 8 m or more upfield of his place (a wing-back after an attack,
   // mostly): the line retreats nearly as fast as he jogs, so he would never get back into it.
-  // He runs, and sprints if the ball is already behind him.
+  // He runs, at full throttle but without sprinting: sprinting back cost the human's side more
+  // than it gained (a scripted human conceded 0.17 more a match over 832 matches).
   const back = teamX(s, p.team, p.pos.x) - teamX(s, p.team, home.x);
-  if (p.role === 'DEF' && back > 8 * M) return { ...seek(p, home, 3, cap), sprint: sprintOk(s, p, back > 12 * M && bx < teamX(s, p.team, p.pos.x)) };
+  if (p.role === 'DEF' && back > 8 * M) return seek(p, home, 3, cap);
   return seek(p, home, 3, (dist(home, p.pos) > 10 ? k.recover : 0.9) * cap);
 }
 

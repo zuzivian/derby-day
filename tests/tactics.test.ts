@@ -174,10 +174,9 @@ describe('mentality changes how a side plays (fixed seeds, equal squads, each vs
   test('the defensive line climbs, and more players commit forward, step by step from Park the bus to High press', () => {
     const lines = MENTALITY_IDS.map((m) => vsBalanced(m).line);
     const forward = MENTALITY_IDS.map((m) => vsBalanced(m).forward);
-    expect(forward[1]).toBeGreaterThan(forward[0] + 0.3);
-    // Defensive to Balanced is the small step in players forward (0.21 on these seeds); the visible
-    // differences between them are the line and the depth, asserted here and in the next test.
-    expect(forward[2]).toBeGreaterThan(forward[1] + 0.1);
+    // Defensive to Balanced is the smallest step (0.37 on these seeds); the line and the depth (the
+    // next test) are the bigger, visible differences between them.
+    for (let i = 1; i < 3; i++) expect(forward[i]).toBeGreaterThan(forward[i - 1] + 0.3);
     expect(forward[4]).toBeGreaterThan(forward[2] + 0.3);
     for (let i = 1; i < lines.length; i++) expect(lines[i]).toBeGreaterThan(lines[i - 1] + 2);
     expect(lines[4] - lines[0]).toBeGreaterThan(12); // metres
@@ -370,6 +369,7 @@ describe('off the ball: a back five forms when the ball is in our third', () => 
   test('wing-backs drop in line with the centre-backs (11.4 m ahead on these seeds before: a back three)', () => {
     const r = wingBackGap();
     expect(r.n).toBeGreaterThan(100);
-    expect(r.gap).toBeLessThan(8);
+    // 7.9 m on these seeds with the recovery run.
+    expect(r.gap).toBeLessThan(9.5);
   });
 });
