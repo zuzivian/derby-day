@@ -9,7 +9,7 @@ import { DOT_BELOW, DOT_PX, dotAlpha, playerPx } from '../src/client/r3d/dots3d.
 import { longView } from '../src/client/r3d/renderer3d.ts';
 import { sx, sz } from '../src/client/r3d/space.ts';
 import { Vector3 } from '../src/client/r3d/three.ts';
-import { keeperColors } from '../src/client/r3d/player3d.ts';
+import { keeperPair } from '../src/client/r3d/player3d.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { KIT_COLORS } from '../src/meta/names.ts';
 import type { TeamSetup } from '../src/sim/types.ts';
@@ -78,15 +78,15 @@ describe('player dots', () => {
   });
 
   test('a team-mate\'s dot and an opponent\'s stay distinct under normal, protan and deutan vision, keepers too', () => {
-    // A dot is its player's shirt colour, so this is the kit choice (avoidClash, keeperColors) seen as dots.
+    // A dot is its player's shirt colour, so this is the kit choice (avoidClash, keeperPair) seen as dots.
     const team = (primary: string, secondary: string) => ({ primary, secondary }) as unknown as TeamSetup;
     const bad: string[] = [];
     for (const [hp, hs] of KIT_COLORS) {
       for (const [ap, as] of KIT_COLORS) {
         const away = avoidClash(team(hp, hs), team(ap, as));
-        // As the renderer picks them: the home keeper, then the away keeper differing from him too.
-        const homeKeeper = keeperColors(hp, away.primary).shirt;
-        const dots = [hp, away.primary, homeKeeper, keeperColors(away.primary, hp, homeKeeper).shirt];
+        // As the renderer picks them: both keepers together (keeperPair).
+        const [hk, ak] = keeperPair(hp, away.primary);
+        const dots = [hp, away.primary, hk.shirt, ak.shirt];
         for (let i = 0; i < dots.length; i++) for (let j = i + 1; j < dots.length; j++) {
           // Each pair is a player against an opponent, or against a keeper (his own or theirs).
           const d = worstDiff(dots[i], dots[j]);

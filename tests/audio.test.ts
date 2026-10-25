@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { crowdLevel, detectSfx, initialSnapshot, snapshot, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
-import { GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
-import type { MatchState } from '../src/sim/types.ts';
+import type { MatchEvent, MatchState } from '../src/sim/types.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -147,6 +147,58 @@ describe('detectSfx', () => {
   });
 });
 
+describe('detectSfx: referee, crowd and keeper', () => {
+  const ev = (e: Record<string, unknown>) => e as unknown as MatchEvent;
+
+  test('a shot going out just wide of the post draws an "ooh"; one well wide, or a slow ball, does not', () => {
+    for (const [y, speed, want] of [
+      [GOAL_TOP - 2, 22, true],
+      [GOAL_BOTTOM + 3, 18, true],
+      [(GOAL_TOP + GOAL_BOTTOM) / 2, 20, true], // over the bar
+      [GOAL_TOP - 9, 22, false],
+      [GOAL_TOP - 2, 6, false],
+    ] as const) {
+      const s = liveMatch();
+      s.ball.pos = { x: PITCH_W - 1, y };
+      s.ball.vel = { x: speed, y: 0 };
+      const before = snapshot(s);
+      s.phase = 'restart';
+      s.events.push(ev({ kind: 'restart', tick: s.tick, restart: 'goalkick', reason: 'out' }));
+      expect(types(detectSfx(before, s)).includes('ooh'), `y ${y}, ${speed} m/s`).toBe(want);
+    }
+  });
+
+  test('a keeper catching a hard shot is a catch and an "ooh"; gathering a slow ball is just a catch', () => {
+    for (const [speed, want] of [
+      [24, ['catch', 'ooh']],
+      [9, ['catch']],
+    ] as const) {
+      const s = liveMatch();
+      const gk = s.players.find((p) => p.role === 'GK')!;
+      s.ball.pos = { ...gk.pos };
+      s.ball.vel = { x: speed, y: 0 };
+      const before = snapshot(s);
+      s.ball.owner = gk.i;
+      s.ball.inHands = true;
+      s.ball.vel = { x: 0, y: 0 };
+      expect(types(detectSfx(before, s))).toEqual([...want]);
+    }
+  });
+
+  test('a ball at head height turned by a nearby player is a header; with nobody near it is not', () => {
+    for (const near of [true, false]) {
+      const s = liveMatch();
+      s.ball.pos = { x: 60, y: 30 };
+      s.ball.z = 1.8;
+      s.ball.vel = { x: 12, y: 0 };
+      if (near) s.players[3].pos = { x: 60.5, y: 30 };
+      const before = snapshot(s);
+      s.ball.vel = { x: -9, y: 3 };
+      expect(types(detectSfx(before, s)).includes('header')).toBe(near);
+    }
+  });
+});
+
 describe('detectSfx over a real match', () => {
   test('emits plausible, bounded events when stepping a CPU match', () => {
     const s = createMatch({ seed: 11, ...teams(3), halfSeconds: 40, humanTeam: -1 });
@@ -169,6 +221,9 @@ describe('detectSfx over a real match', () => {
     const called = s.events.filter((e) => e.kind === 'restart' && e.reason !== 'out' && e.restart !== 'kickoff').length;
     expect(counts.foulWhistle ?? 0).toBe(called);
     expect(counts.knock ?? 0).toBeLessThan(counts.kick * 2);
+    // The crowd's "ooh" and the keeper's catch are occasional, not every kick.
+    expect(counts.ooh ?? 0).toBeLessThan(counts.kick / 4);
+    expect(counts.catch ?? 0).toBeLessThan(counts.kick / 2);
   });
 });
 

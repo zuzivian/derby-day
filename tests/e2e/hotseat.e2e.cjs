@@ -31,15 +31,36 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   await page.waitForSelector(SEL.pitch);
   expect(await page.locator('.scoreboard').innerText(), 'the picked club is the away side').toContain(pickedName);
 
-  // Player 1 kicks off and his teammate holds the ball near the centre spot. Player 2 runs down on the arrows,
+  // Player 1 kicks off; then he has the ball near the centre spot. Player 2 runs down on the arrows,
   // then player 1 runs up on W, each while the other is idle; then both at once, sideways.
   // Wait for play to start (the HUD clock moves) rather than a fixed time: a software-rendered 3D
   // view can take a couple of seconds to get its first frames up.
   // The kick-off is a kick (Law 8): player 1 plays it with Space, then his teammate has the ball.
   await page.waitForFunction(() => window.__derbyMatch?.phase === 'restart' && window.__derbyMatch.restart?.kind === 'kickoff', null, { timeout: 15_000 });
+  // The halves are 6 s so the match reaches full time quickly. Under load the wall clock between steps runs far ahead of the
+  // sim's, and half-time could land in the middle of the steps below (CI saw the second-half kick-off, with control handed
+  // to its taker, mid-hold). Hold the match clock still from here until the steps are done.
+  await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const c0 = s.clock;
+    window.__freezeClock = true;
+    const hold = () => {
+      if (!window.__freezeClock) return;
+      s.clock = Math.min(s.clock, c0);
+      requestAnimationFrame(hold);
+    };
+    hold();
+  });
+  // Both players see who kicks off and with which key.
+  await page.waitForSelector('.hud-prompt:not([hidden])', { timeout: 15_000 });
+  expect(await page.locator('.hud-prompt').innerText(), 'the kick-off prompt names player 1 and his key').toMatch(/Player 1 kicks off: press Space/);
+  const pressedAt = await page.evaluate(() => window.__derbyMatch.tick);
   await page.keyboard.press('Space');
-  await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner >= 0 && Math.hypot(window.__derbyMatch.ball.vel.x, window.__derbyMatch.ball.vel.y) < 0.5, null, { timeout: 15_000, polling: 'raf' });
-  await page.waitForTimeout(250);
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play', null, { timeout: 15_000, polling: 'raf' });
+  // Player 1's Space took it, not the CPU after its five seconds.
+  const taken = await page.evaluate(() => window.__derbyMatch.events.find((e) => e.kind === 'restartTaken' && e.restart === 'kickoff'));
+  expect(taken.team, 'player 1 kicked off').toBe(0);
+  expect(taken.tick - pressedAt, 'on his Space, not after the CPU fallback').toBeLessThan(120);
   // Hold keys until each listed man has covered `dist` metres the way his key says, or for at most
   // two seconds of SIM time once they start moving, then let go; the assertions below check the
   // distances. Fixed holds were either wall time (a software-rendered 3D frame gives the sim at most
@@ -69,6 +90,19 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   // ball, and player 2's man running away from it gets switched off after about 40 ticks, which would
   // make the next step measure a different player. Switching has its own tests (controls.e2e.cjs).
   await page.evaluate(() => { window.__derbyMatch.switchTimer[0] = window.__derbyMatch.switchTimer[1] = 1e9; });
+  // Whoever won the kick-off pass, put the ball at player 1's feet and freeze everyone the CPU runs: this test is about
+  // the two keyboards steering, and a CPU man pressing player 1 or nudging past him would move him (CI saw 1.3 m), and
+  // the kick-off pass is sometimes won by player 2's side.
+  await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const me = s.players[s.controlled[0]];
+    const p2 = s.players[s.controlled[1]];
+    for (const p of s.players) if (p !== me && p !== p2) p.stun = 1e7;
+    Object.assign(me, { vel: { x: 0, y: 0 } });
+    Object.assign(p2, { pos: { x: me.pos.x + 4, y: me.pos.y - 8 }, vel: { x: 0, y: 0 } });
+    Object.assign(s.ball, { owner: me.i, pos: { x: me.pos.x + me.facing.x * 0.9, y: me.pos.y + me.facing.y * 0.9 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1, touch: 0 });
+  });
+  await page.waitForTimeout(100);
   const a1 = await pos(page, 'p1');
   const a2 = await pos(page, 'p2');
   await hold(['ArrowDown'], [{ team: 1, dir: { x: 0, y: 1 }, dist: 2 }]);
@@ -81,14 +115,13 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   const c1 = await pos(page, 'p1');
   expect(c1.i, 'player 1 still on the ball carrier').toBe(b1.i);
   expect(b1.y - c1.y, 'player 1 ran up on W').toBeGreaterThan(2);
-  // Both at once. Park player 2's man 12 m below player 1 and freeze everyone else, so the two
+  // Both at once. Park player 2's man 12 m below player 1 (everyone else is still frozen), so the two
   // paths can't cross: running straight at each other, player 2 can win the ball
   // off player 1 and pin him (CI saw 0.5 m), which says nothing about whether both keyboards steer.
   await page.evaluate(() => {
     const s = window.__derbyMatch;
     const me = s.players[s.controlled[0]];
     const p2 = s.players[s.controlled[1]];
-    for (const p of s.players) if (p !== me && p !== p2) p.stun = 1e7;
     Object.assign(p2, { pos: { x: me.pos.x + 2, y: me.pos.y + 12 }, vel: { x: 0, y: 0 } });
   });
   const c2 = await pos(page, 'p2');
@@ -99,8 +132,11 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   expect(d2.i, 'player 2 still on the same player').toBe(c2.i);
   expect(c2.x - d2.x, 'together: player 2 ran left on the arrow key').toBeGreaterThan(1);
 
-  // Two 6 s halves (long enough that half-time never lands inside the holds): let it run to full-time.
-  await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
+  // Two 6 s halves: let the clock go again, and run to full-time (the second-half kick-off is player 2's; nobody presses
+  // Enter, so the CPU takes it for him after five seconds).
+  await page.evaluate(() => { window.__freezeClock = false; });
+  await page.waitForFunction(() => /Player 2 kicks off: press Enter/.test(document.querySelector('.hud-prompt')?.textContent ?? ''), null, { timeout: 60_000, polling: 'raf' });
+  await page.locator(SEL.modal).waitFor({ timeout: 90_000 });
   const modal = await page.locator(SEL.modal).innerText();
   expect(modal, 'result dialog says Local 2P').toMatch(/Local 2P/i);
   expect(modal, 'and that nothing is recorded').toMatch(/no Elo/i);

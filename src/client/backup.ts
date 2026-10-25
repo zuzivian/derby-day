@@ -1,7 +1,7 @@
 // Export and import of a club: a JSON file, or a copyable code (the same JSON, gzipped, as text).
 // Pure functions (plus the standard CompressionStream); the dialog that uses them is settings.ts.
 
-import { isSave, type Save } from '../meta/game.ts';
+import { isSave, MAX_MONEY_OWED, MAX_XP_OWED, type Save } from '../meta/game.ts';
 import { levelForXp } from '../meta/levels.ts';
 import { ATTR_KEYS } from '../meta/player.ts';
 import { CREST_PATTERNS, STYLE_KEYS } from '../meta/names.ts';
@@ -153,7 +153,19 @@ export function deepCheck(s: Save): string | null {
   for (const l of s.ladder as unknown as Record<string, unknown>[]) {
     if (!isObj(l) || !goodIdentity(l) || !goodRecord(l) || !num(l.seed, -MAX_SEED, MAX_SEED) || !num(l.quality, 0, 100)) return 'ladder';
     if (l.era !== undefined && !num(l.era, 0, 1e4)) return 'ladder';
+    // The world (src/meta/world.ts): a division, an ambition and 18 squad slots of [key, age, talent].
+    if (l.division !== undefined && !num(l.division, 1, 10)) return 'ladder';
+    if (l.ambition !== undefined && !num(l.ambition, -20, 20)) return 'ladder';
+    if (l.slots !== undefined && (!Array.isArray(l.slots) || l.slots.length > 40 || !l.slots.every((x) => Array.isArray(x) && x.length === 3 && num(x[0], 0, MAX_SEED) && num(x[1], 10, 70) && num(x[2], -40, 40)))) return 'ladder';
   }
+  if (s.division !== undefined && !num(s.division, 1, 10)) return 'division';
+  // What a club owes for forfeits, and the last voided match: out-of-range values would halve XP or block voids for good.
+  if (s.xpOwed !== undefined && !num(s.xpOwed, 0, MAX_XP_OWED)) return 'forfeit debt';
+  if (s.moneyOwed !== undefined && !num(s.moneyOwed, 0, MAX_MONEY_OWED)) return 'forfeit debt';
+  if (s.voidAt !== undefined && !num(s.voidAt, -1, (num(s.historyBase, 0, 1e9) ? s.historyBase : 0) + (Array.isArray(s.history) ? s.history.length : 0))) return 'voided match';
+  const p = s.pending as unknown;
+  if (p !== undefined && p !== null && (!isObj(p) || !['ranked', 'cup', 'league', 'friendly'].includes(p.kind as string) || typeof p.opponent !== 'string' || typeof p.label !== 'string')) return 'unfinished match';
+  if (s.seasons !== undefined && (!Array.isArray(s.seasons) || s.seasons.length > 1000 || !s.seasons.every((x) => isObj(x) && num(x.year, 0, 1e6) && Array.isArray(x.notes)))) return 'club history';
   if (!Array.isArray(s.eloHistory) || s.eloHistory.length > 20_000 || !s.eloHistory.every((n) => num(n, 0, 10_000))) return 'elo history';
   if (!Array.isArray(s.history) || s.history.length > 20_000) return 'match history';
   for (const m of s.history as unknown as Record<string, unknown>[]) {

@@ -86,10 +86,10 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   <section class="training" aria-labelledby="tr-title">
     <div class="training-head">
       <div>
-        <p class="eyebrow">Training ground</p>
+        <p class="eyebrow">Practice skills</p>
         <${h} id="tr-title" class="training-title" tabindex="-1">Learn the controls</${h}>
       </div>
-      <button class="btn small ghost" id="tr-skip" type="button">Skip tutorial</button>
+      <button class="btn small ghost" id="tr-skip" type="button">Leave</button>
     </div>
     <div class="coach" id="coach">
       <div class="coach-top">
@@ -108,7 +108,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
           <h2 id="tr-paused-title">Paused</h2>
           <div class="pause-actions">
             <button class="btn primary" id="tr-resume" type="button">Resume</button>
-            <button class="btn" id="tr-skip-2" type="button">Skip tutorial</button>
+            <button class="btn" id="tr-skip-2" type="button">Leave</button>
           </div>
           <p class="hint">Esc or P pauses and resumes.</p>
         </div>
@@ -326,7 +326,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
 
   showDrill();
   canvas.setAttribute('aria-label', `Training pitch. You control ${s.players[HUMAN].name}, number ${s.players[HUMAN].number}, marked by a yellow arrow.`);
-  announce(`Training ground. Drill 1 of ${DRILLS.length}. ${COPY.move.title}. ${COPY.move.text[mode]}`);
+  announce(`Practice skills. Drill 1 of ${DRILLS.length}. ${COPY.move.title}. ${COPY.move.text[mode]}`);
   canvas.focus({ preventScroll: true });
   raf = requestAnimationFrame(frame);
 

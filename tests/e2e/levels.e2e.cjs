@@ -3,7 +3,7 @@
 // and the new tab appears.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, readSave, startRanked, tabScreens, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
+const { reload, SEL, openApp, goTab, readSave, startRanked, tabScreens, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const SHORT = { halfSeconds: 3, controls: 'mouse', onboarded: true };
 
@@ -52,7 +52,7 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe('Level 4 · 60 / 400 XP');
   expect(await tabScreens(page), 'tabs at level 4').toEqual(['home', 'squad', 'training', 'club']);
   await goTab(page, SEL.clubScreen);
-  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice Hard at level 5 — 340 XP to go');
+  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice: Hard at level 5 — 340 XP to go');
   await page.locator(`${SEL.levelPanel} summary`).click();
   const text = await page.locator(SEL.levelPanel).innerText();
   expect(text, 'unlocked row').toMatch(/Training[\s\S]*Unlocked/);
@@ -121,7 +121,7 @@ test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc 
   expect(save.unlocksSeen, 'dismissal saved').toContain('ladder');
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe(headerText(save.xp));
   // Reloading doesn't bring it back.
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.app + ' *');
   expect(await page.locator(SEL.levelUp).count(), 'no dialog after reload').toBe(0);
   const w2 = await pageWidths(page);
@@ -136,7 +136,7 @@ test('levels: a training session can level up; the dialog button goes straight t
   await page.locator(SEL.levelUp).waitFor();
   const text = await page.locator(SEL.levelUp).innerText();
   expect(text, 'the Cup').toContain('The Cup');
-  expect(text, 'Practice Hard').toContain('Practice Hard');
+  expect(text, 'Practice: Hard').toContain('Practice: Hard');
   expect((await readSave(page)).xp, 'session XP').toBe(totalXpForLevel(5) + 2);
   await page.locator(SEL.levelUpGo).click();
   await page.locator(SEL.levelUp).waitFor({ state: 'detached' });
@@ -145,8 +145,8 @@ test('levels: a training session can level up; the dialog button goes straight t
   expect(await page.locator('[data-action="comp-start-season"]').count(), 'the league is still locked').toBe(0);
   await goTab(page, SEL.homeScreen);
   expect(await page.locator(`${SEL.playPractice}[data-level="hard"]`).count(), 'Practice Hard now shown').toBe(1);
-  expect(await page.locator(SEL.lockedCard).count(), 'the Cup card is open, the League still locked').toBe(1);
-  expect(await page.locator(`${SEL.modeCardFor('league')}.locked`).count(), 'League locked').toBe(1);
+  expect(await page.locator(SEL.lockedCard).count(), 'the Cup card is open, the League not teased yet').toBe(0);
+  expect(await page.locator(SEL.modeCardFor('league')).count(), 'no League card yet').toBe(0);
 });
 
 test('levels: a forfeited match earns no XP', async (t) => {

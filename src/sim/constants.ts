@@ -25,8 +25,15 @@
  *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
+ *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
+ *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
+ *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
+ *      supporter) until the final third, and forwards on the shoulder follow the line
+ *  11  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
+ *  12  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
+ *  13  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
  */
-export const SIM_VERSION = 7;
+export const SIM_VERSION = 13;
 
 export const TICK_HZ = 60;
 

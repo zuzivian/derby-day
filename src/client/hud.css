@@ -57,6 +57,27 @@
   position: absolute; right: 10px; bottom: 12px; width: clamp(90px, 15%, 170px); height: 13px; border: 2px solid #000; border-radius: 2px;
   background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); opacity: .45; transition: opacity .15s;
 }
+.hud-power-label {
+  position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 11px/1 var(--font-display, 'Arial Narrow', sans-serif);
+  letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000;
+}
+/* Your man: shirt number, name and his legs (energy), above the power bar. */
+.hud-me {
+  position: absolute; right: 10px; bottom: 44px; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto 5px;
+  align-items: center; gap: 3px 7px; width: clamp(130px, 18%, 210px); padding: 5px 9px 6px 5px; border-radius: 4px;
+  background: rgba(8, 12, 11, .66); color: #fff; pointer-events: none;
+}
+.hud-me[hidden] { display: none; }
+.hud-me-no {
+  grid-row: 1 / 3; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  font: 900 14px/1 var(--font-display, 'Arial Narrow', sans-serif); box-shadow: 0 0 0 2px #ff8a1c;
+}
+.hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display, 'Arial Narrow', sans-serif); color: #ffb35c; }
+.hud-me-legs { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .18); overflow: hidden; }
+.hud-me-legs i { display: block; height: 100%; width: 100%; background: #5fd08e; transition: width .4s; }
+.hud-me-legs.low i { background: #f0b35a; }
+.hud-me.winded .hud-me-legs i { background: #ff6b52; }
+.hud.replaying .hud-me { visibility: hidden; }
 .hud-power.on { opacity: 1; }
 .hud-power.idle { opacity: .7; }
 .hud-power.amber i { background: linear-gradient(#ffd06b, #f59e0b); }
@@ -72,6 +93,8 @@
 .pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 13px/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
 .pause-opt[hidden] { display: none; }
 .pause-opt input { width: 16px; height: 16px; accent-color: var(--accent, #ff8a1c); }
+.pause-volume input { width: 140px; height: 20px; }
+.pause-volume output { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Instant replays (matchView.ts): the REPLAY word top centre, Power Soccer style, and a skip hint. */
 .hud-replay {
@@ -88,6 +111,15 @@
 }
 .hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
+/* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
+.hud-prompt {
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: 4px; padding: 4px 10px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
+}
+.hud-prompt b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 15px; letter-spacing: .04em; }
+.hud-prompt small { font-weight: 600; font-size: 11px; opacity: .8; margin-left: 4px; }
+.hud-prompt[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
 .pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
@@ -114,10 +146,16 @@
   .pitch-cam { font-size: 10px; padding: 3px 6px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
+  .hud-me { right: 6px; bottom: 34px; width: 128px; padding: 3px 7px 4px 4px; gap: 2px 6px; grid-template-rows: auto 4px; }
+  .hud-me-no { width: 20px; height: 20px; font-size: 11px; }
+  .hud-me-name { font-size: 12px; }
+  .hud-power-label { font-size: 9px; }
   .hud-hold { right: 6px; bottom: 24px; font-size: 11px; padding: 2px 6px; }
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt b { font-size: 13px; }
   .hud-tag b { font-size: 13px; }
   .hud-replay small { font-size: 10px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
@@ -132,7 +170,12 @@
    above, so it wins the cascade. */
 @media (pointer: coarse) {
   .hud-power { bottom: 86px; right: 10px; }
+  .hud-me { bottom: 114px; right: 10px; }
   .hud-radar { left: 60px; transform: none; }
+}
+/* Landscape phones: no room above the buttons without covering play; the card sits at the bottom, beside the radar. */
+@media (pointer: coarse) and (max-height: 520px) {
+  .hud-me { right: auto; left: 168px; bottom: 8px; }
 }
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
@@ -164,9 +207,21 @@
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
   #pitch.pitch-3d { aspect-ratio: auto; height: calc(100dvh - 16px); }
-  .match .controls-hint, .match .controls-hint.clamp, .match .hint-more { display: none; }
+  .match .controls-hint, .match .controls-hint.clamp, .match .controls-hint.clamp:has(.hint-key), .match .hint-more { display: none; }
   .hud-tr { flex-direction: row; align-items: flex-start; }
   .hud-power { bottom: 84px; }
+}
+/* Touch screens held upright: Menu on its own row, then the camera chip between its zoom buttons
+   ([−] CAM [+]), so the corner takes two rows of the pitch instead of three. The mode label goes,
+   as it already does on phones. */
+@media (pointer: coarse) and (orientation: portrait) {
+  .hud-tr { display: grid; grid-template-columns: repeat(3, auto); justify-items: end; column-gap: 8px; }
+  .hud-tr .hud-menu { grid-area: 1 / 1 / 2 / -1; }
+  .hud-tr .hud-mode { display: none; }
+  .hud-tr .pitch-zoom { display: contents; }
+  .hud-tr .pitch-zoom [data-zoom="1"] { grid-area: 2 / 1; }
+  .hud-tr .pitch-cam { grid-area: 2 / 2; }
+  .hud-tr .pitch-zoom [data-zoom="-1"] { grid-area: 2 / 3; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }
@@ -174,6 +229,10 @@
 
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+/* A split hint (matchView.ts) shows its essentials whole, wrapping on a phone rather than ending in
+   an ellipsis; the detail waits behind "All controls". */
+.controls-hint.clamp:has(.hint-key) { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
+.controls-hint.clamp .hint-rest { display: none; }
 .hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .hint-more:hover { color: var(--ink); }
 @media (pointer: coarse) {
