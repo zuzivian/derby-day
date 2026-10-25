@@ -1,0 +1,231 @@
+{
+ "checks_run": "Worktree /tmp/rt/firstsession/repo at derby/main 2cfa17c (main had moved past 12e8e1d, so #19 is included). `bun run build` passed. All scripts and screenshots are in /tmp/rt/firstsession/out. Headless Chromium with SwiftShader, fresh contexts, Google Fonts blocked (so the font-dependent wrapping and the serif \"vs\" are fallback artefacts and are not reported).\n\n1. s1_first.cjs (1280x800). The welcome is visible 0.2-0.5 s after navigation. One click on Kick off mounts the pitch about 13 ms later, and play goes live at sim tick 68-71 (1.13-1.18 s of sim time; 3.4 s of wall time under SwiftShader). Our player (index 9) has the ball on the centre spot. Answer to \"seconds and clicks to the first kick\": 1 click and about 1.5 s to a live ball at your feet. The first real kick is the player's own.\n2. s2_journey.cjs (1280x800, real mouse play through a feedback controller on s.humanAim). Match 1 had 90 s of real play: 10 click passes. Tips came in the order run@68, restart@504, pass@1534, tackle@1865. I then fast-forwarded with __derbyMatch.clock = halfTicks*half-2 at each half. Then the celebration (0-0, +110 XP, level 2), the naming step, and Home at level 2 (tabs home and squad, 0 tab marks, prefs.marks [\"home\",\"squad\"]). Matches 2 and 3: 30 s of play each, then the same fast-forward. Results were 0-0 (+100 XP) and 0-0 (+100 XP, level up 2 to 3, the level-up dialog, then the \"New: Club\" mark). Match 2 showed the shoot tip at tick 154.\n3. s4_mobile.cjs (390x844, isMobile, touch through CDP Input.dispatchTouchEvent, Pass and Shoot pads tapped). 70 s of real play: 11 pad passes. Tips run@166, restart@369, tackle@819, pass@1787, all in touch wording. Then the same fast-forward, celebration, skip, Home L2 (no mark), matches 2 and 3 fast-forwarded, level up to 3, Club mark.\n4. s5_levels.cjs (desktop and phone). XP was injected (590, then 990) after a real first match, then a ranked match was fast-forwarded. The L4 dialog offers Training and Practice Normal (\"Go to Training\"), and the Training mark appears. The L5 dialog offers the Cup and Practice Hard, and the Competitions mark appears. Both work at both sizes. On the phone at L5 the tab strip scrolls (scrollWidth 498 vs 356).\n5. s6_tipoverlap.cjs and s7_gotit_miss.cjs: tip rectangles against the HUD buttons, plus a real tap 5 px below \"Got it\".\n6. s3_mobile_welcome.cjs: welcome in light and dark themes, phone and desktop.\n7. s8_edges.cjs: back and forward during the first match; \"I've played before\" leading to L1 Home; tab hidden during a tip (the match paused, the tip was hidden and its clock froze at age 216 ms).\n8. s9_drills.cjs: Practice skills at L3. s10_name_lost.cjs: type a name, then press \"Go to the club\".\n9. Bun sims with the real CoachTracker, timing constants and the first-match opponent:\n   - coachsim.ts and passtip.ts over 40 seeds: the first tip is 'run' while the human holds the ball in 40/40. The pass tip is shown during the kick-off possession in 20/40 (passive) and 23/40 (dribbling). The first pass tip comes at a median of 7.8 s, p90 22-25 s.\n   - shootpos.ts over 30 seeds: the shoot tip is offered 52.4-52.5 m from goal in 30/30.\n   - firstxp.ts: the first match earns +110 XP whatever the score.\n   - pace.ts: a match is 6.2-6.4 real minutes.\n10. Console: only blocked-font and file:// resource errors, no page errors.\n\nFast-forward was used only to end halves (logged as \"FF to half/full time\") and in s5/s9/s10 to set up a level.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Welcome screen: both club names are invisible in light mode (white text on a near-white panel)",
+   "area": "onboarding / welcome",
+   "evidence": "Computed in the browser on the first screen: .ob-versus .side-name has color rgb(243, 246, 241) on background rgb(242, 245, 243), a contrast of about 1.0:1. Both names are affected (\"Port Ashcliff Albion\", \"Port Lunbridge Rovers\"; log j_desktop.log line 2).\n\nCause:\n- styles.css:741 `.ob-welcome { color: #f3f6f1 }`\n- styles.css:784 `.ob-versus { background: var(--surface-2) }`, which is #f2f5f3 in light mode (styles.css:38)\n- styles.css:339 `.side-name` sets no colour, so it inherits the felt card's white\n\nScreenshots /tmp/rt/firstsession/out/d01_welcome.png (1280x800) and m01_welcome_light.png (390x844) show the crests and kit dots with blank space where the names should be. In dark mode the names show: d01_welcome_dark.png, where surface-2 is #1b2723. This is the very first screen, and the only place it tells a new player their own club's name.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s3_mobile_welcome.cjs (or s2_journey.cjs: the 'welcome names' log line). Open dist/index.html in a fresh light-mode profile.",
+   "suggested_fix": "In src/client/styles.css give the welcome's versus panel colours that work on the felt in both themes. One option: `.ob-welcome .ob-versus { background: rgba(0,0,0,.22); border-color: rgba(255,255,255,.18); }`. The other: `.ob-welcome .ob-versus { color: var(--ink); }` to keep the light panel. Add an e2e assertion in tests/e2e/onboarding.e2e.cjs that the .side-name contrast against its panel is at least 4.5:1 in the light scheme.",
+   "files": [
+    "src/client/styles.css",
+    "src/client/onboarding.ts",
+    "tests/e2e/onboarding.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Naming step: a name typed into the box is silently thrown away when the player presses the big \"Go to the club\" button",
+   "area": "onboarding / name your club",
+   "evidence": "onboarding.ts:183-185: `case 'skip': case 'done': return finish();`. The draft in #ob-name is only applied by the small grey \"Use this name\" submit button (onboarding.ts:189-211).\n\nMeasured (s10_name_lost.cjs) after typing \"Harbour Lights\" and pressing GO TO THE CLUB:\n- 1280: {\"before\":\"Sporting Ravvik\",\"savedAfter\":\"Sporting Ravvik\",\"header\":\"Sporting Ravvik\",\"toast\":0}\n- 390: {\"before\":\"Real Dunborough\",\"savedAfter\":\"Real Dunborough\"}\n\nScreenshot name_typed_390.png shows the typed name in the focused input and the red GO TO THE CLUB as the obvious final action. No error and no toast appear. The rename form only exists on the Club tab, which opens at level 3, so a level-2 player cannot fix the name for the next 2 to 4 matches.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s10_name_lost.cjs. By hand: finish the first match, press Name your club, type a name, press Go to the club, and the header shows the old name.",
+   "suggested_fix": "In src/client/onboarding.ts, make 'done' apply a pending draft. If nameDraft.trim() is non-empty and differs from save.club.name, run validateClubName. If it is valid, renameClub and persist, then finish. If it is invalid, show nameError and stay. Or make \"Go to the club\" the form's submit button. Keep 'skip' as a discard if wanted. Add a unit or e2e test: type a name, press done, and the save has the name.",
+   "files": [
+    "src/client/onboarding.ts",
+    "tests/e2e/onboarding.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "On phones the coach tip covers the camera and zoom buttons, and a near-miss on its tiny \"Got it\" switches the first match to the end camera",
+   "area": "coach tips / phone layout",
+   "evidence": "At 390x844 and 360x740 (s6_tipoverlap.cjs), coach.css:20 makes the tip full width at top:64px, giving the tip rect l22 t80 r368 b177. It covers three HUD buttons:\n- .pitch-cam \"CAM: SIDE\": 285,74 to 368,118\n- \"Zoom out\": 272,126 to 316,170\n- \"Zoom in\": 324,126 to 368,170\n\nThe card is pointer-events:none, and \"Got it\" (.coach-x, coach.css:14, padding 3px 8px) measures only 49x22 px. It sits on top of CAM: SIDE. elementFromPoint 4 px left, above and below \"Got it\" returns pitch-cam every time.\n\nReal tap (s7_gotit_miss.cjs, touchscreen.tap 5 px below Got it) gave {\"camBefore\":\"CAM: SIDE\",\"camAfter\":\"CAMERA: END\",\"tipStillShown\":1}. Screenshot gotit_miss_390.png shows the first match flipped to the behind-the-goal camera with the tip still up. Screenshots mj03_tip_run.png and mj03_tip_pass.png show the CAM/\u2212/+ buttons ghosting through the card. Five tips each stay up 5-11 s in the first match. Desktop is clear (the tip is centred, no overlap).",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s6_tipoverlap.cjs && node s7_gotit_miss.cjs (with NODE_PATH set)",
+   "suggested_fix": "Three changes:\n- In src/client/coach.css @media (max-width: 640px), keep the tip clear of the .hud-tr column: for example `right: 100px`, or put it below the zoom row (top: ~180px), or put it at the bottom above the Pass and Shoot pads.\n- Make .coach-x a proper touch target (min-width and min-height 44px).\n- Optionally let a tap anywhere on the card dismiss it on coarse pointers.\n\nAdd an e2e check in tests/e2e/onboarding.e2e.cjs at 390x844 that the tip rect does not intersect any visible .pitch-wrap button and that .coach-x is at least 44x44.",
+   "files": [
+    "src/client/coach.css",
+    "src/client/coach.ts",
+    "tests/e2e/onboarding.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "First match: the player holds the ball at kick-off but is told how to run; \"click to pass\" waits at least 7.8 s and is often skipped until 25-30 s in",
+   "area": "coach tips / timing",
+   "evidence": "coach.ts:104 offers 'run' at tick 45, during the kick-off, while our player is on the ball at the centre spot. 'pass' (coach.ts:108) is queued behind it and cannot show before run's minTipMs (coach.ts:184), which is 7 s for the mouse text. If the ball is lost first, take() drops 'pass' as stale.\n\nThe e2e test encodes this order (tests/e2e/onboarding.e2e.cjs:104, \"'pass' is queued behind 'run'\").\n\nSim with the real CoachTracker, timing constants and first-match opponent, 40 seeds (passtip.ts):\n- The first tip is 'run' with the human on the ball in 40/40.\n- The pass tip is shown during the kick-off possession in only 20/40 (passive) and 23/40 (dribbling).\n- The first pass tip comes at a median of 7.8 s, p90 21.9-24.6 s.\n\nReal browser sessions:\n- Desktop (j_desktop.log): the run tip showed at tick 68 with owner 9 = me, and the pass tip only at tick 1534 (25.6 s).\n- Phone (j_mobile.log): run at tick 166 with owner 9 = me, pass at tick 1787 (29.8 s).\n\nIn coachsim.ts the CPU took the ball from a passive newbie 2.8-17 s after kick-off while the Run card was still up. The owner wants the payoff fast and the brief says \"first time with the ball (click to pass)\".",
+   "repro": "cd /tmp/rt/firstsession/out && /root/.bun/bin/bun passtip.ts; /root/.bun/bin/bun coachsim.ts dribble 8; NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (TIP lines)",
+   "suggested_fix": "In src/client/coach.ts CoachTracker.observe, either let 'pass' pre-empt 'run' when the human owns the ball (offer 'pass' first, and 'run' once he is without it), or make the kick-off tip a combined one: \"You have the ball. Move the mouse to run with it; left click to pass to a teammate\". Then update the ordering test in tests/e2e/onboarding.e2e.cjs and tests/coach.test.ts.",
+   "files": [
+    "src/client/coach.ts",
+    "tests/coach.test.ts",
+    "tests/e2e/onboarding.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "The \"Shoot!\" tip fires at the kick-off, 52 m from goal, not near goal",
+   "area": "coach tips / timing",
+   "evidence": "coach.ts:109-111 offers 'shoot' as soon as the human has the ball in the attacking half (`x > PITCH_W / 2`). The kick-off taker reaches that by stepping off the centre spot. The README and brief promise \"near goal (right click to shoot)\", and the sim only counts a shot within 35 m.\n\nshootpos.ts, 30 seeds: the distance to goal when 'shoot' is offered is min 52.4, median 52.5, max 52.5 m, and 30/30 are beyond 35 m.\n\nIn the browser (j_desktop.log): \"TIP shoot @tick 154 phase play owner 9\" in match 2, 2.6 s after kick-off. Screenshot j12_tip_shoot.png shows our player at the centre circle with \"Shoot! Right click to shoot at the pointer. Hold the button for more power\". A newbie who follows it hits a 50 m shot.",
+   "repro": "cd /tmp/rt/firstsession/out && /root/.bun/bin/bun shootpos.ts; NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (match 2 TIP shoot line, j12_tip_shoot.png)",
+   "suggested_fix": "In src/client/coach.ts, offer 'shoot' only when the human's player has the ball within about 28-30 m of the opponent's goal centre (for example dist(pos, oppGoal) < 30, or inside the penalty area plus a margin), and still in open play. Keep relevant() true only while he is still in range. Add a unit test in tests/coach.test.ts: no shoot tip at kick-off; a shoot tip at 25 m.",
+   "files": [
+    "src/client/coach.ts",
+    "tests/coach.test.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Level 2's reveal (Squad, the only reveal most players see in their first 15 minutes) gets no spotlight or coach mark",
+   "area": "level-gated reveal / tab marks",
+   "evidence": "firstrun.ts:29-32 marks the level-2 unlocks seen and sets `prefs.marks = openTabs(save)` after the first-match XP. Squad is already open by then, so its mark counts as seen.\n\nMeasured:\n- After the first match, prefs is {\"marks\":[\"home\",\"squad\"]}, and Home shows tabs [home, squad] with `.tab-mark` count 0 (j_desktop.log, j_mobile.log).\n- firstxp.ts gives marks [\"home\",\"squad\"] for any score.\n\nScreenshots j08_home_l2.png and mj07_home_l2.png show a new SQUAD tab and four new Home cards with no spotlight, card or level-up dialog. The only mention is one text line on the celebration (\"Now open: Squad, Local 2P, Link two tabs and Practice (Easy)\", j05_celebrate.png).\n\nREADME line 95 says \"Each newly revealed tab gets a spotlight and a small card once\", and the brief asks for every newly revealed tab. Marks do work for Club (L3), Training (L4) and Competitions (L5) (j13_home.png, lv_d_L4_home.png, lv_m_L5_home.png).\n\nLevel 3 needs 300 XP. After the first match's 110, a second match pays 50-190 (\u2265190 only with a 5-0 win). At 6.2-6.4 min a match, the first 15 minutes (about 2 matches) almost always end at level 2, so a new player never sees the spotlight mechanism.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (lines 'home L2 tabs ... mark? 0' and 'prefs ... marks'); /root/.bun/bin/bun firstrun check: /root/.bun/bin/bun firstxp.ts",
+   "suggested_fix": "In src/client/firstrun.ts, start the marks from the tabs open before the first match's XP: compute `openTabs(save)` before applyResult and award, or just ['home']. Then the Squad mark shows on Home right after the celebration. The celebration already replaces the level-up dialog, so nothing is said twice. Optionally add a 'Show me' that lights the new Home cards. Update tests/onboarding.test.ts and tests/coach.test.ts, and add an e2e test: after the celebration, Home has a .tab-mark for squad.",
+   "files": [
+    "src/client/firstrun.ts",
+    "src/client/coach.ts",
+    "tests/coach.test.ts",
+    "tests/e2e/onboarding.e2e.cjs"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Result dialog rewards name features that are still locked (\"banked for Training\" at L1-3, \"banked for Transfers\" at L3-5)",
+   "area": "result dialog copy vs unlocks",
+   "evidence": "ui.ts:458-459 shows 'banked for Training' or 'banked for Transfers' when the feature is locked, but never says what it is or when it opens.\n- Screenshots j12_result.png and j13_result.png at level 2 show \"Training session, banked for Training +1\". No Training tab exists, and none appears for two more levels.\n- lv_d_L4_result.png at level 3 to 4 shows \"Prize money banked for Transfers +\u019250k\". Transfers opens at L6, and money is not shown in the strip until then.\n- The founding news line on the Club tab (drills_club_tab.png) also talks about \u01921.20m \"to build a squad\" long before Transfers.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (result2/result3 lines); node s5_levels.cjs (lv_d_L4_result.png)",
+   "suggested_fix": "In src/client/ui.ts, make the sub-line say when it opens, for example `Training opens at level ${unlockLevel(save,'training')}` and the same for Transfers, or hide the chip until the feature is unlocked while still banking the reward. Word the founding news line in src/meta/game.ts newGame without money, or add the money once Transfers opens.",
+   "files": [
+    "src/client/ui.ts",
+    "src/meta/game.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "First-match reward ignores the result: +110 XP for a 3-0 win or a 0-5 loss, less than the same win a match later, and the celebration has no level-up moment",
+   "area": "celebration / XP",
+   "evidence": "firstrun.ts:27 records the first match as practice 'easy' (30 XP flat) plus the 'first-match' milestone (80).\n\nfirstxp.ts:\n- 3-0 first match: +110 (practice (Easy) 30, first match 80). The same 3-0 in a later warm-up: +170 (win 120, 3 goals 30, clean sheet 20).\n- 0-0: 110 vs 100.\n- 0-5: 110 vs 50.\n\nThe celebration shows \"+110 XP the match 30 \u00b7 first match 80\" under a \"What a start!\" headline. Its XP bar shows the new level's 10/200 (5%) with no fill or badge animation (j05_celebrate.png, mj05_celebrate.png). The later result dialog has the animated level-up card instead (lv_d_L4_result.png, \"LEVEL UP 3 \u2192 4\").",
+   "repro": "cd /tmp/rt/firstsession/out && /root/.bun/bin/bun firstxp.ts",
+   "suggested_fix": "In src/client/firstrun.ts, record the first match with the warm-up's result-based XP: applyResult(..., competition 'First match' or the warm-up label) plus the 80 milestone, so a win and goals pay more. In src/client/onboarding.ts, render the XP with xpCardHtml from src/client/levels.ts so the bar runs to the end and the badge turns 1 \u2192 2.",
+   "files": [
+    "src/client/firstrun.ts",
+    "src/client/onboarding.ts",
+    "src/client/levels.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Level 2 Home jumps from one card to five, including four padlocks and the dev-flavoured \"Two tabs\" mode",
+   "area": "level-gated reveal / Home",
+   "evidence": "At level 1, Home is the hero and Kick off only (edge_skip_home_l1.png: matches the owner's ask).\n\nOne level later, Home gains four cards at once (j08_home_l2.png, mj07_home_l2.png):\n- vs Player, with One screen and Two tabs\n- Practice, with Easy plus locked Normal 4 and Hard 5\n- a locked Cup (level 5) and a locked League (level 8)\n\nThe Cup and League teasers appear only because practice unlocked (home.ts:202-228: cupCard and leagueCard return lockedCard when isUnlocked(s,'practice')). On a phone this pushes the page past the fold. The owner asked to \"reveal more of the menus over time\" and called the earlier dashboard \"too cluttered\". Link two tabs (playing yourself in two tabs of one browser) is unlikely to mean anything to a new player at level 2.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (j08_home_l2.png, 'home cards' line in s5_levels.cjs)",
+   "suggested_fix": "Three changes in src/client/home.ts:\n- Show at most one locked teaser, for the next level's feature (nextUnlocks in src/meta/levels.ts), instead of both Cup and League from level 2.\n- Hide the locked practice chips until the level before they open.\n- Consider putting Two tabs behind the vs Player card (or moving 'link' later in UNLOCKS), so level 2 adds Squad, Practice Easy and One screen.",
+   "files": [
+    "src/client/home.ts",
+    "src/meta/levels.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Level-3 level-up sends the player to the Club tab rather than to the headline unlock (Ranked), and its copy is stale",
+   "area": "level-up dialog",
+   "evidence": "levels.ts:135 picks the first fresh unlock that has a `go`. 'ranked' has none (meta/levels.ts:99), so the primary button is \"GO TO CLUB\" (j13_levelup.png, mj13_levelup.png) even though the big news is ranked matches, which is the play payoff. The Ranked row also reads \"Play ladder clubs near your Elo, live. Until then, Kick off is a warm-up friendly.\" That is a sentence about before the unlock, shown at the moment of unlocking. On Home, the Club tab mark then covers the hero's 'Ranked' tag and crest (j13_home.png, mj13_home.png).",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (levelup3 line, j13_levelup.png)",
+   "suggested_fix": "In src/meta/levels.ts give 'ranked' `go: { screen: 'home', label: 'Play ranked', focusId: 'kick-off' }`, and reword its text, for example \"Kick off now plays ladder clubs near your Elo, live.\" Keep the Club tab's own mark for introducing Club. Update tests/levels.test.ts and the ROADMAP table copy.",
+   "files": [
+    "src/meta/levels.ts",
+    "src/client/levels.ts",
+    "docs/ROADMAP.md",
+    "tests/levels.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Unlock names in the celebration and level-up don't match the labels on screen",
+   "area": "copy consistency",
+   "evidence": "The celebration says \"Now open: Squad, Local 2P, Link two tabs and Practice (Easy)\" (onboarding.ts:127, from the UNLOCKS names at meta/levels.ts:88-90). Home labels the same things \"vs Player \u00b7 One screen / Two tabs\" and \"Practice \u00b7 Easy\" (j08_home_l2.png), so \"Local 2P\" and \"Link two tabs\" appear nowhere on screen.\n\nThe word Practice and Training also each mean two things:\n- Practice is the friendlies card on Home, and \"Practice skills\" is the drills button in Club news.\n- The drills open under the title \"TRAINING GROUND \u00b7 LEARN THE CONTROLS\" with \"Skip tutorial\" (s9_drills.cjs output), while \"Training\" is a different tab at level 4.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s2_journey.cjs (celebrate line); node s9_drills.cjs",
+   "suggested_fix": "In src/meta/levels.ts, name the unlocks by their on-screen labels: \"vs Player: one screen\", \"vs Player: two tabs\", \"Practice match (Easy)\". In src/client/tutorial.ts, title the drills screen \"Practice skills\" (and \"Leave\" instead of \"Skip tutorial\"), so Training only means the attribute tab.",
+   "files": [
+    "src/meta/levels.ts",
+    "src/client/onboarding.ts",
+    "src/client/tutorial.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "The first match never says which player is you or which way you are attacking",
+   "area": "first match comprehension",
+   "evidence": "None of the five TIPS (coach.ts:31-67) mentions the orange triangle and name over your player or the yellow ring, and none says you attack toward the right-hand goal (team 0 always attacks +x, field.ts:6). The HUD has no direction cue (grep 'attacking' in hud.ts and matchView.ts finds nothing).\n\nScreenshot d02_match_start.png shows the KICK-OFF banner, the orange marker and the radar, but nothing that says \"you\" or a direction. The drills do say \"Your player, under the yellow arrow\", but the drills are now optional and arrive at level 3.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s1_first.cjs (d02_match_start.png, d03_after_kick.png)",
+   "suggested_fix": "In src/client/coach.ts, start the first tip with \"You're the player with the yellow ring, attacking the goal on the right \u2192\" (mouse, keys and touch variants). Or show a one-time attack arrow in src/client/hud.ts during the first kick-off when coach tips are on.",
+   "files": [
+    "src/client/coach.ts",
+    "src/client/hud.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Browser or Android Back during the first match leaves the game without a prompt, and Forward reloads to the welcome",
+   "area": "first-run robustness",
+   "evidence": "There are no popstate or beforeunload handlers in src/client (grep for pushState|popstate|beforeunload finds nothing).\n\ns8_edges.cjs: during the live first match, page.goBack() went to about:blank, and goForward() gave {\"welcome\":true,\"pitch\":false}. The match in progress was lost and the welcome restarted it from 0:00. On Android, the system Back gesture is a common reflex.",
+   "repro": "cd /tmp/rt/firstsession/out && NODE_PATH=/opt/node22/lib/node_modules node s8_edges.cjs",
+   "suggested_fix": "In src/client/matchView.ts, on mount call history.pushState({ derbyMatch: true }, ''). On popstate during a match, open the pause menu instead of leaving, and push the state again. On unmount, remove the extra entry with history.back() if it is still on top. Optionally add a beforeunload prompt while a match is live.",
+   "files": [
+    "src/client/matchView.ts",
+    "src/client/main.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Docs and comments still say vs Player is open from level 1, but it opens at level 2",
+   "area": "docs",
+   "evidence": "These say level 1, or give stale levels:\n- README.md:99: \"open from club level 1\"\n- docs/ROADMAP.md:99: \"(open from club level 1)\"\n- docs/ROADMAP.md:173: \"moved ... to level 1\"\n- src/meta/levels.ts:15-17: \"Both ways to play another human ... are open from level 1\"\n- src/client/home.ts:7-9 lists Practice at 4, vs Player at 5 and Cup at 7\n\nThe UNLOCKS table puts local2p and link at level 2 (meta/levels.ts:88-89), and L1 Home has no vs Player card (edge_skip_home_l1.png).",
+   "repro": "grep -n 'open from club level 1' /tmp/rt/firstsession/repo/README.md /tmp/rt/firstsession/repo/docs/ROADMAP.md; sed -n 7,9p /tmp/rt/firstsession/repo/src/client/home.ts",
+   "suggested_fix": "Change README.md, docs/ROADMAP.md (lines 99 and 173), the src/meta/levels.ts header and the src/client/home.ts header to the current table: vs Player at level 2, Practice Normal at 4, Cup and Practice Hard at 5, League at 8.",
+   "files": [
+    "README.md",
+    "docs/ROADMAP.md",
+    "src/meta/levels.ts",
+    "src/client/home.ts"
+   ]
+  }
+ ],
+ "good": [
+  "One click from a fresh profile to a live first match. The welcome is visible about 0.3 s after load, Kick off has focus, and the ball is live at the player's feet about 1.2 s of sim time after the click. There are no forms or quiz first.",
+  "Level 1 Home after setup is exactly the owner's ask: one hero, one big Kick off, nothing else (edge_skip_home_l1.png).",
+  "Tips use touch wording on phones and mouse wording on desktop. Each shows once and is announced. They hide and freeze their clock while paused or when the tab is hidden, and desktop placement leaves the play clear.",
+  "Leaving or reloading the first match brings back the welcome with the same opponent. A reload on the celebration lands on Home, and nothing is recorded twice.",
+  "The level-up dialogs and tab marks for Club (L3), Training (L4) and Competitions (L5) work at 1280x800 and 390x844. The mark scrolls its tab into view on phones, and the Next unlock teaser is always there.",
+  "The result dialog's XP card animates the level-up (badge flip and LEVEL UP 3\u21924 tag), and the celebration's headline copy is warm for every result.",
+  "Kick off stays a gentle warm-up friendly until ranked opens at level 3, and the Elo gauge stays hidden for the first ranked matches."
+ ],
+ "verdicts": [
+  {
+   "title": "Welcome screen: both club names are invisible in light mode (white text on a near-white panel)",
+   "real": true,
+   "severity": "major",
+   "notes": "I reproduced this on derby/main 96f9618, which is two merges past 12e8e1d (#19 and #17); nothing relevant changed. Script: /tmp/rt/firstsession-verify/out/v1_welcome.cjs, a fresh context per theme and size. In light mode, at both 1280x800 and 390x844, both `.ob-versus .side-name` are rgb(243,246,241) on an `.ob-versus` background of rgb(242,245,243). Computed contrast is 1.01:1. In dark mode it is 14.15:1 on rgb(27,39,35).\n\nScreenshots:\n- v1_welcome_light_1280.png and v1_welcome_light_390.png show the two crests, a red 'vs' and the kit dots, with an empty gap where the names should be.\n- v1_welcome_dark_1280.png shows 'Elyhythe United' vs 'Lomcliff Harriers' clearly.\n\nLight is the default scheme, so most first visitors see a broken-looking first screen, and this is the only place it tells them their club's name. The e2e test reads innerText, so it can never catch this.\n\nRoot cause, with line numbers on current main (the report's 741/784 are 12e8e1d's):\n- src/client/styles.css:787 `.ob-welcome { color: #f3f6f1; ...felt background }`\n- styles.css:830 `.ob-versus { background: var(--surface-2) }`, which is #f2f5f3 in light mode (styles.css:38)\n- styles.css:339 `.side-name` sets no colour, so it inherits the welcome card's white.\n\nFix in src/client/styles.css: `.ob-welcome .ob-versus { color: var(--ink); }`. That keeps the theme panel, and ink is correct on surface-2 in both themes. A dark translucent panel would also fix the names, but the accent 'vs' would then be red on dark green. Add an e2e check in tests/e2e/onboarding.e2e.cjs at colorScheme 'light' that `.side-name` reaches at least 4.5:1 against `.ob-versus`."
+  },
+  {
+   "title": "Naming step: a name typed into the box is silently thrown away when the player presses the big \"Go to the club\" button",
+   "real": true,
+   "severity": "major",
+   "notes": "I reproduced this with /tmp/rt/firstsession-verify/out/v2_name.cjs: a fresh visit with halfSeconds 3, the first match played to the end, then Name your club. I typed 'Harbour Lights' into #ob-name and pressed the red GO TO THE CLUB (a click at 1280, a real tap at 390 with hasTouch).\n- 1280: {before:'Vestford Athletic', after:'Vestford Athletic', headerHasTyped:false, toasts:0}\n- 390: {before:'Port Lomton Borough', after:'Port Lomton Borough', headerHasTyped:false}\n\nScreenshots v2_name_typed_390.png and v2_name_typed_1280.png show the typed name in the focused input. The big red GO TO THE CLUB is the obvious last step; the grey 'Use this name' button is small and secondary.\n\nRoot cause:\n- src/client/onboarding.ts:199-201: `case 'skip': case 'done': return finish();` ignores nameDraft.\n- The draft is applied only by the form's submit handler (onboarding.ts:205-224), so only 'Use this name' or Enter saves it.\n- The only other rename form is on the Club tab (src/client/ui.ts:212), which opens at level 3 (src/meta/levels.ts:100). After the first match the club is at 110 XP, level 2. Reaching level 3 (300 XP) usually takes two more matches.\n\nFix in src/client/onboarding.ts, case 'done':\n- If nameDraft.trim() is set and differs from save.club.name, run validateClubName.\n- If it is invalid, set nameError, render and focus #ob-name.\n- If it is valid, renameClub, o.persist() and announce, then finish().\n- 'skip' can stay a discard. Alternatively, make Go to the club the form's submit button.\n\nTest: in tests/e2e/onboarding.e2e.cjs, fill #ob-name and click [data-ob=done] with no rename click; save.club.name must equal the typed name. An invalid draft must keep the step open with the error."
+  },
+  {
+   "title": "On phones the coach tip covers the camera and zoom buttons, and a near-miss on its tiny \"Got it\" switches the first match to the end camera",
+   "real": true,
+   "severity": "major",
+   "notes": "I reproduced this with /tmp/rt/firstsession-verify/out/v3_tip.cjs (hasTouch, isMobile, first match, 'run' tip up).\n- 390x844: tip rect [22,80,368,177]. It overlaps pitch-cam [285,74,368,118], Zoom out [272,126,316,170] and Zoom in [324,126,368,170].\n- 360x740: the same three buttons are overlapped.\n- 'Got it' measures 49x22. elementFromPoint 4 px left, 4 px above and 4-5 px below it returns pitch-cam.\n- A real touchscreen.tap 5 px below Got it gave {camBefore:'CAM: SIDE', camAfter:'CAMERA: END', camMode:'end', tipStill:1}.\n- 1280x800: no overlap; the tip is centred and the zoom buttons are hidden on fine pointers.\n\nScreenshots:\n- v3_tip_390.png: the CAM chip and the \u2212/+ buttons ghost through the dark card next to 'Got it'.\n- v3_tip_miss_390.png: the match flipped to the behind-the-goal camera with the tip still up.\n\nRoot cause:\n- src/client/coach.css:20 (@media max-width 640px) makes the card full width (left/right 6px, top 64px), right across the .hud-tr column. That column is defined at hud.css:23 and :106, with 44 px Menu, Cam and zoom buttons from hud.css:150-156.\n- coach.css:3-4 sets z-index 5 with pointer-events:none, so taps on the card's text go to the buttons underneath.\n- .coach-x (coach.css:14-17, padding 3px 8px) is far below the 44 px touch size the rest of the HUD now uses.\n\nFix:\n- In coach.css @media (max-width:640px), keep the card clear of .hud-tr: for example `right: 64px` (the column is about 56 px wide at 390), or move it to the bottom above the Pass/Shoot pads.\n- Under @media (pointer:coarse), give .coach-x a min-width and min-height of 44px.\n- Optionally, in src/client/coach.ts, let a tap on the card dismiss it on coarse pointers.\n- Add an e2e check at 390x844 with hasTouch that the tip box does not intersect any visible .pitch-wrap button and that .coach-x is at least 44x44."
+  },
+  {
+   "title": "First match: the player holds the ball at kick-off but is told how to run; \"click to pass\" waits at least 7.8 s and is often skipped until 25-30 s in",
+   "real": true,
+   "severity": "minor",
+   "notes": "The timing reproduces. /tmp/rt/firstsession-verify/out/v4_coachsim.ts replays mountCoach's display logic over the real CoachTracker, minTipMs and tipText, with the real first-match setup: newGame, warmupTeam(save, true), clubTeam(0.6), avoidClash, and the human kicking off. 40 seeds each.\n- The first tip is 'run' at tick 45 (still the kick-off phase) with the human on the ball in 40/40.\n- Mouse, passive: the pass tip shows during the kick-off possession in 18/40. Pass shown at min 7.8 s, median 12.8 s, p90 29.9 s.\n- Mouse, dribbling: 26/40; min and median 7.8 s, p90 29.2 s.\n- Touch: min 5.8 s (the run text is 20 words, so 5 s); p90 29.9 s passive and 15.4 s dribbling.\n- The first loss of the ball comes at median 10.4 s passive.\n\nRoot cause:\n- src/client/coach.ts:103-108: 'run' gates every other tip, and 'pass' is queued behind it.\n- coach.ts:184 minTipMs gives the 28-word mouse run text 7 s.\n- coach.ts:143-149 take() drops a stale 'pass' when the ball has gone, so it waits for the next possession.\n\nDowngraded to minor:\n- The order is deliberate and test-encoded: tests/coach.test.ts:36 and tests/e2e/onboarding.e2e.cjs:104-123.\n- The run tip is useful with the ball too, since dribbling is running.\n- From tick 0 the desktop controls line under the pitch already reads 'With the ball: left click pass to the pointer' (visible in v5_shoot_tip_1280.png).\n- Phones have a labelled Pass button.\n- The pass prompt still arrives within 30 s for 90% of new players.\n\nSuggested fix, in src/client/coach.ts CoachTracker.observe: when the human owns the ball at the first tip, offer 'pass' first and 'run' once he is without it. Or reword the kick-off tip as one card: 'You have the ball: move the pointer to run with it, left click to pass'. Then update tests/coach.test.ts and the ordering test in tests/e2e/onboarding.e2e.cjs."
+  },
+  {
+   "title": "The \"Shoot!\" tip fires at the kick-off, 52 m from goal, not near goal",
+   "real": true,
+   "severity": "major",
+   "notes": "I reproduced this with v4_coachsim.ts, 30 seeds.\n\nFirst match, dribbling human:\n- 'shoot' is offered at tick 67-68 in 30/30, at 52.4-52.5 m from the goal centre.\n- Because it queues behind run and pass, the tip is shown wherever he next has the ball: 11.6 to 53.2 m, with 9/24 beyond the sim's 35 m shot range.\n- A passive human rarely gets it in match 1 (3/30).\n\nSecond match (run and pass already seen, SEEN=run,pass): 'shoot' is shown at tick 67-68 at 52.4-52.5 m in 30/30.\n\nBrowser (/tmp/rt/firstsession-verify/out/v5_shoot.cjs, level-2 warm-up, coachSeen [run, pass], pointer right of the player) returned {tip:'shoot', tick:80, phase:'play', owner:9=me, pos:(53.2,31.9), distToGoal:51.9}. Screenshot v5_shoot_tip_1280.png shows our player inside the centre circle under 'Shoot! Right click to shoot at the pointer. Hold the button for more power...'.\n\nThe README (line 87) and the brief promise 'near goal'. Each tip shows once, ever, so the near-goal lesson is used up on halfway.\n\nRoot cause, two places:\n- src/client/coach.ts:110-111 offers 'shoot' on any possession past halfway (`x > PITCH_W/2`), which the kick-off taker reaches by stepping off the spot.\n- relevant() at coach.ts:133-134 checks only `owner === me`, so a queued shoot tip can even show in his own half.\n\nFix in src/client/coach.ts: offer 'shoot' only in phase 'play' when the human's man has the ball within about 28-30 m of the attacked goal's centre, for example `Math.hypot(goalX - x, PITCH_H/2 - y) < 30` with goalX = attackDir(human) > 0 ? PITCH_W : 0. Use the same test in relevant('shoot'), so a queued one is dropped once he leaves the range.\n\nTests in tests/coach.test.ts:\n- no shoot tip at the kick-off or at 45 m\n- one at 25 m\n- a queued shoot tip is dropped when he dribbles back out of range.\n\nThe existing tests that place the man at x=95 (10 m) still pass."
+  },
+  {
+   "title": "Level 2's reveal (Squad, the only reveal most players see in their first 15 minutes) gets no spotlight or coach mark",
+   "real": false,
+   "severity": "not-a-bug",
+   "notes": "The behaviour reproduces exactly but is deliberate.\n\nWhat I saw (v2_name.cjs): after the first match, prefs.marks is ['home','squad'], Home shows tabs [home, squad] and `.tab-mark` count is 0 at both 1280 and 390. Screenshots v2_home_after_1280.png and v2_home_after_390.png show a plain new SQUAD tab beside HOME. First-match XP is flat (practice Easy 30 + first-match milestone 80 = 110), so level 3 (300 XP) needs a 5-0 warm-up win in match 2 and usually comes in match 3; the pacing claim holds.\n\nWhy it is intended:\n- src/client/firstrun.ts:1-6 says 'the unlocks it opens are marked seen (the celebration names them) ... and the tab marks start from the tabs now open', and firstrun.ts:29 does `prefs.marks = openTabs(save)`.\n- tests/coach.test.ts:255-261: 'what level 2 opens is named for the celebration and marked seen, so no dialog or mark repeats it', expecting marks ['home','squad'] and no pending mark.\n- tests/e2e/onboarding.e2e.cjs:244-246: 'Said once on the celebration: no level-up dialog and no tab mark repeat it'.\n- The celebration names it: 'Level 2! Now open: Squad, Local 2P, Link two tabs and Practice (Easy)'.\n- Marks work for every later tab.\n\nThe impact is small: Squad is one of only two tabs. The README's general sentence (line 95: 'after the level-up dialog') reads as if every tab gets a mark, and the first match has no level-up dialog.\n\nIf the owner wants the spotlight anyway, it is a one-line change. In src/client/firstrun.ts, keep the marks from before the XP: compute openTabs(save) before applyResult and award, or keep the ['home'] that startFirstMatch already sets (src/client/main.ts:198). Then flip tests/coach.test.ts:260-261 and tests/e2e/onboarding.e2e.cjs:245. Otherwise, reword README line 95 to say the first level's tab is named on the celebration instead."
+  }
+ ]
+}

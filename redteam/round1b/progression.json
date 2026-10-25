@@ -1,0 +1,204 @@
+{
+ "checks_run": "Setup: fetched derby main and assets/feedback, made a worktree at /tmp/rt/progression/repo on 12e8e1d, ran bun run build (1131 KB). I read README, ROADMAP, both briefs, the fairness brief (for scope), every file in src/meta, and the client result, competition, review, levels, store and replay code.\n\nBun scripts (all in /tmp/rt/progression/out), calling the meta functions the UI calls:\n- career.ts: a long career through completeFirstMatch, applyResult, recordCupMatch, recordSeasonMatch, maybeRollover, train, buyPlayer, sellPlayer and signProspect. Two result modes: \"model\" (45% wins, 25% draws, 30% losses, about 1.6 goals) and \"sim\" (the real 2x180 s sim, with the player's XI run by the CPU at skill 0.6). Runs:\n  - 300 matches: model seed 1, sim seeds 1, 3 (no transfers) and 4.\n  - 4,200 matches: model seed 5 with FASTQ=1.\n  - Cup-only against ranked-only: model and sim, seed 9.\n- exploits.ts: forfeiting a whole league, a calendar skip through cup forfeits, a train-and-sell loop, buy-and-sell straight back, flat rewards, and dropping Elo on purpose by forfeiting.\n- ageing.ts: 8 seeds x 40 seasons with no buying.\n- quicksim.ts: 80 CPU-vs-CPU matches at 60 s halves and at 180 s halves.\n\nHeadless Chromium (SwiftShader), all at 1280x800, plus 390x844 for two screenshots:\n- ui-career.cjs: a fresh visit, the first match, then 12 Kick-off matches with scores set through window.__derbyMatch. After each match I compared the header badge, XP text, progress bar aria values, Elo, money and sessions with localStorage: 0 mismatches and 0 page errors. Level-up dialogs at 3, 4, 5 and 6 named the right unlocks.\n- ui-dodge.cjs: reloading Home 6 times, then reloading mid-match while losing 0-3, compared with a pause-menu forfeit.\n- ui-calendar.cjs: 10 cup forfeits at level 10.\n- ui-league.cjs: a whole league of 7 forfeits.\n- ui-panel.cjs: the Club level panel at levels 51, 81 and a full level 99.\n\nI looked at every screenshot I cite. Answers to the brief's questions are in the findings and in \"good\". No git writes, nothing pushed, no processes killed.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Reloading or closing the tab mid-match dodges a ranked, cup or league result, and every reload re-rolls the next ranked opponent",
+   "area": "Elo ladder / match result integrity",
+   "evidence": "Level-10 save, ranked match, score set to 0-3 at 00:28 (dodge-1-losing.png). After page.reload():\n- Before: history 0, Elo 1000, played 0, lost 0.\n- After: history 0, Elo 1000, played 0, lost 0. The header reads 'Elo 1000' and the hero says 'First match awaits' (dodge-2-after-reload.png).\n- The same 0-3 forfeited through Esc > Forfeit is recorded properly: history 1, Elo 973 (-27).\n\nNothing is written between kick-off (src/client/main.ts:307, which only draws a seed from s.rng) and onEnd (main.ts:421 persist(); finishMatch for competitions). Cup ties and penalty shootouts can be re-rolled the same way.\n\nThe opponent re-roll: six Home reloads showed Kaldhaven Albion 1076, Elyhythe United 926, Elyhythe United 926, Caelfjord Rovers 1023, Elyhythe United 926, Caelfjord Rovers 1023. boot() calls pickOpponent(save) (main.ts:48), which uses save.rng (game.ts:266), and the boot write (main.ts:71) keeps the advanced rng. So a player can reload until the weakest of the 3 nearest clubs comes up.\n\nROADMAP.md:50 lists 'closing a tab mid-match is a free abort' as a known gap, but nothing mitigates it.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/progression/out/ui-dodge.cjs",
+   "suggested_fix": "- In playLive (src/client/main.ts), and so also for competitions through ctx.playLive, write a save.live marker ({kind, opponentId, label, eloBefore}) and persist() before mountMatch. Clear it in onEnd.\n- In boot() (main.ts), if save.live is present, record that match exactly like the pause-menu forfeit: applyResult(..., forfeited=true) for ranked, recordCupMatch or recordSeasonMatch with forfeited=true and 0-3. Show a toast such as 'Your last match was abandoned and counts as 0-3'.\n- Store the next ranked opponent id on the save (set in endMatch, main.ts:420) and call pickOpponent only when it is missing.\n- Add an e2e test: reload mid-ranked match, then history +1 and Elo lower.",
+   "files": [
+    "src/client/main.ts",
+    "src/client/competitions.ts",
+    "src/meta/game.ts",
+    "docs/ROADMAP.md"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Forfeits move the season calendar, so free season rollovers (academy intake and youth growth) are on demand",
+   "area": "seasons / youth lifecycle / economy exploit",
+   "evidence": "applyResult counts every ranked or competition match as a week, forfeits included (src/meta/game.ts:327: counted = (ranked || !!competition) && calendarOn). A cup forfeit costs no Elo and no money.\n\nIn the real UI at level 10, 10 cycles of Start the cup > Play > Esc > Forfeit > Back > Simulate the rest > Done took 46 s headless:\n- The header went S1 \u00b7 W0 to S2 \u00b7 W0.\n- The Season 1 review (cal-review-10.png) shows 0W 0D 10L and 0-30, yet '12 improved, 2 declined'. Four players gained +5.\n- 3 academy prospects joined, one a 5-star FWD with POT 83-91.\n- Elo stayed 1000 and the budget stayed \u01921.20m.\n\nIn bun, 100 cup forfeits with no match played gave:\n- 10 rollovers and 25 prospects, 3 of them with potential 80 or more.\n- XI average 54.5 to 69.9.\n- Two academy players rated 88 (MID 24 at 88/94, GK 23 at 88/93).\n- Elo and budget unchanged.",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/progression/out/ui-calendar.cjs 10 ; /root/.bun/bin/bun /tmp/rt/progression/out/exploits.ts calendar-skip",
+   "suggested_fix": "- Count only played matches toward the calendar: in applyResult (src/meta/game.ts:327) use counted = (ranked || !!competition) && calendarOn && !forfeited.\n- Also limit competitions per calendar year (see the cup finding).\n- Add a unit test in tests/progression.test.ts: 10 forfeited cup ties leave save.week at 0 and trigger no rollover.",
+   "files": [
+    "src/meta/game.ts",
+    "src/meta/progression.ts",
+    "tests/progression.test.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Cups can be restarted without limit and never risk Elo, yet pay about 1.6-2x the XP and 1.25-1.6x the money of ranked",
+   "area": "cups / economy balance",
+   "evidence": "comp-start-cup (src/client/competitions.ts:305) has no cooldown: after 'Done: clear the bracket' the panel offers 'Start the cup' again. Entrants are always the 7 clubs nearest your Elo (src/meta/competitions.ts:115), and cup matches never move Elo.\n\nSame model results, 300 matches (career.ts 300 model 9, FASTQ=1):\n- Cup only: 191 XP per match (excluding training) and \u0192105.5k per match. Level 35 at match 300.\n- Ranked only: 116 XP and \u019284.1k per match. Level 28.\n\nCPU-proxy team (sim mode, seed 9):\n- Cup only: 302 XP and \u0192178k per match. 79 cups won in 295 cup matches. Level 43.\n- Ranked only: 151 XP and \u0192114k per match. Level 31.\n\nThe cup-only club's Elo stayed about 1058, so it kept drawing the same weak field. cupEditions reached 31 in one 300-match sim career.",
+   "repro": "cd /tmp/rt/progression/out && FASTQ=1 /root/.bun/bin/bun career.ts 300 model 9 cuponly; FASTQ=1 /root/.bun/bin/bun career.ts 300 model 9 rankedonly (add 'sim' for the strong-team numbers); compare the cupXp/cupN, rankedXp/rankedN and income lines",
+   "suggested_fix": "- Allow one cup and one league per calendar year: store cupYear and seasonYear on the save, have startCup and startSeason in src/meta/competitions.ts refuse until save.year moves, and show 'Next cup in N weeks' in src/client/competitions.ts.\n- Or scale CUP_PRIZES and XP.cup down so a cup match pays about what a ranked match pays.\n- Consider choosing cup entrants by squad strength rather than your Elo, which cups never move.",
+   "files": [
+    "src/meta/competitions.ts",
+    "src/client/competitions.ts",
+    "src/meta/levels.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "The CPU world never grows: within about 150 matches your XI is 15-25 points above every CPU club, the ladder runs out of opposition, and money piles up",
+   "area": "Elo ladder / squad quality / long-game challenge / money",
+   "evidence": "Why it happens:\n- A ladder club's squad quality comes only from qualityForElo(elo), clamped 42 to 85 (src/meta/club.ts:128).\n- Elo is zero-sum with you.\n- driftLadder mean-reverts the spread every season (src/meta/progression.ts:329), so the top of the ladder settles at about Elo 1150-1300, which is quality 62-70.\n- Your XI rises regardless, from training, academy prospects, match development and the market.\n\nMeasured in sim careers:\n- Seed 3, no transfers: XI 62 to 80.2 while ranked opponents averaged quality 55-63. Top-3 ladder quality fell from 73/71/70 to 59/59/58 and the ladder maximum from 1365 to 1087. The last 175 ranked matches went 56W 27D 1L, with \u019227.9m unspent.\n- Seed 1: Elo 1502 against a ladder maximum of 1158, 350 points above the best club.\n- The 4,200-match model career: top-3 quality fell from 66 to 52-55 while the XI stayed 78-84.\n\nMoney: transfers are the only sink (no wages; ROADMAP Phase 4). With active buying the budget hovers \u01920.1-1.5m. Without buying, or in cup-only play, \u019227.9m-54m sits unspent.",
+   "repro": "cd /tmp/rt/progression/out && /root/.bun/bin/bun career.ts 300 sim 3 notransfers (rows show XIavg, oppQ, top3Q, ladder range, W/D/L per 25 matches); FASTQ=1 /root/.bun/bin/bun career.ts 4200 model 5",
+   "suggested_fix": "- Give CPU clubs a world level that rises with era or year in driftLadder (src/meta/progression.ts:325). For example, quality = qualityForElo(elo) plus a lift that follows the player's XI average or the season number.\n- Bring new, stronger clubs in at the top of the ladder each season.\n- Tie this to real divisions (see the promotion finding).\n- Add a money sink in src/meta/game.ts (wages or a stadium).\n- This is about CPU squad ratings, separate from the aiSkill band the fairness stream is building.",
+   "files": [
+    "src/meta/club.ts",
+    "src/meta/progression.ts",
+    "src/meta/game.ts",
+    "src/meta/competitions.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "League promotion and relegation are text only, and two unrelated 'Season N' counters share the news feed",
+   "area": "league / seasons / reason to keep playing",
+   "evidence": "The game promises promotion in several places:\n- seasonVerdict says 'Champions. Promoted as title winners.' and 'Runners-up. Promoted.' (src/meta/competitions.ts:484-488).\n- The League panel says 'Finish top two to go up' (src/client/competitions.ts:205).\n- The table has a 'Promotion / Relegation scrap' key and zone colours (competitions.ts:257, visible in league-forfeit.png).\n\nNothing uses the finish. The next league is again the 7 clubs nearest your Elo (pickEntrants, competitions.ts:115). A grep for promot, relegat or division finds only these strings.\n\nIn the sim career the club won League 10 ('Promoted as title winners') and then played the same field. Its news feed reads, in order:\n- 'Season 10 over: finished 1st. Champions. Promoted\u2026'\n- 'Season 11 kicks off\u2026'\n- 'Season 25 review: 7W 1D 2L'\n\nThe first two are league editions and the last is the calendar year (progression.ts:422). The header shows S26 while the league is League 11.",
+   "repro": "/root/.bun/bin/bun -e \"const s=JSON.parse(await Bun.file('/tmp/rt/progression/out/career-sim-1-normal.json').text()); console.log(s.news.filter(n=>/Season/.test(n)).join('\\n'), s.year, s.seasonEditions)\"; screenshot /tmp/rt/progression/out/league-forfeit.png",
+   "suggested_fix": "- Implement divisions: a save.division field. Promotion moves the next league's entrants to a stronger Elo or quality band with bigger SEASON_PRIZES; relegation does the reverse (startSeason and pickEntrants in src/meta/competitions.ts).\n- Or remove the promotion wording and the zone key.\n- Name league editions 'League N' in news (competitions.ts:408 and 537), so 'Season N' only ever means the calendar year.",
+   "files": [
+    "src/meta/competitions.ts",
+    "src/client/competitions.ts",
+    "src/meta/progression.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Past level 22 the 1-99 curve is a content desert, and with flat XP per match the last levels take about 7.5 hours each",
+   "area": "club levels / unlock pacing",
+   "evidence": "Long career (career.ts 4200 model 5, about 149 XP per match including training). Hours assume 7 min a match, 6 played plus 1 in menus:\n\n| Level | Reached at match | Hours |\n|---|---|---|\n| 5 | 8 | 0.9 |\n| 10 | 36 | 4.2 |\n| 20 | 142 | 16.6 |\n| 50 | 851 | 99 |\n| 99 | 3,247 | 379 |\n\nEvery feature is open by level 10 (about 4 h). After that UNLOCKS (src/meta/levels.ts:111-125) has 15 perks spread over 89 levels. The biggest gaps:\n- 50 to 65: 587 matches, about 68 h.\n- 65 to 75: 457 matches, about 53 h, ending in a badge colour.\n- 80 to 99: 1,094 matches, about 128 h.\n\nFrom 50 to 99 (about 280 h) there are four unlocks, and three of them are cosmetic or convenience: replay shelf of 10, platinum badge, legend badge.\n\nLevel 98 to 99 alone took 64 matches (about 7.5 h). At level 81 the Club panel reads 'Next unlock Legend badge at level 99 \u2014 160,600 XP to go' (panel-l81-390.png); at level 51 it reads 'Replay shelf of 10 at level 65 \u2014 79,266 XP to go' (panel-l51-1280.png).\n\nThe XP needed per level grows as the owner asked (100 x L), but the XP earned per match does not: matchXp is flat (levels.ts:296).",
+   "repro": "cd /tmp/rt/progression/out && FASTQ=1 /root/.bun/bin/bun career.ts 4200 model 5 (see the 'levels reached' and 'unlocks at' lines); NODE_PATH=/opt/node22/lib/node_modules node ui-panel.cjs",
+   "suggested_fix": "- Keep the owner's 100 x L curve.\n- Fill UNLOCKS in src/meta/levels.ts so no gap past level 22 is longer than about 5 levels. Prefer things that change play or identity: more formations or mentalities, stadium and training-ground upgrades, extra sessions per match, higher cup tiers, celebrations, kits and crests.\n- Make the XP earned per match grow: scale matchXp by opponent Elo or expected score, or add a small per-level multiplier, so late levels take about 3-4 h.\n- Update the roadmap table to match.",
+   "files": [
+    "src/meta/levels.ts",
+    "docs/ROADMAP.md",
+    "tests/levels.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Forfeiting a whole league season still pays last-place prize money",
+   "area": "league / economy exploit",
+   "evidence": "recordSeasonMatch pays SEASON_PRIZES[pos - 1] with no forfeit check (src/meta/competitions.ts:527), while the XP just below is guarded (line 536).\n\nIn the real UI, 7 forfeits took 24 s:\n- The panel says 'Finished 8th \u2026 You earned \u019230k' (league-forfeit.png).\n- The result dialog shows 'Prize money +\u019230k' and 'No XP for a forfeit'.\n- Budget went 1,200,000 to 1,230,000.\n\nThat is about \u019275k a minute, against about \u019211k a minute for playing ranked. README.md:95, ROADMAP.md:41 and the Club level panel all say forfeits pay nothing.\n\nA league title already won is also still added to the cabinet when the last matchday is forfeited (competitions.ts:532-535).",
+   "repro": "NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/progression/out/ui-league.cjs ; /root/.bun/bin/bun /tmp/rt/progression/out/exploits.ts league-forfeit",
+   "suggested_fix": "- In recordSeasonMatch, use const money = forfeited ? 0 : SEASON_PRIZES[pos - 1] ?? 0.\n- Skip the trophy when the last matchday was forfeited, or pay nothing for a season with any forfeited matchday.\n- Add a test in tests/competitions.test.ts.",
+   "files": [
+    "src/meta/competitions.ts",
+    "tests/competitions.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "The transfer market only refreshes after ranked matches",
+   "area": "transfers",
+   "evidence": "refreshMarket is called only from newGame (src/meta/game.ts:129) and the ranked branch of applyResult (game.ts:315). buyPlayer removes a signing without replacing it.\n\nA player who sticks to cups, the league or practice therefore sees the same list of 10 shrink. The level-20 'Deeper market' perk also only applies on a refresh.\n\nOver 300 matches:\n- Cup-only careers: 4-8 signings, with \u019228.9m-54m unspent.\n- Ranked-only careers: 66-70 signings.",
+   "repro": "cd /tmp/rt/progression/out && FASTQ=1 /root/.bun/bin/bun career.ts 300 model 9 cuponly (stats.bought, final \u0192) vs rankedonly",
+   "suggested_fix": "Refresh or top up the market after every recorded match, or once per calendar week, in applyResult (src/meta/game.ts), not only in the ranked branch.",
+   "files": [
+    "src/meta/game.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Ranked rewards ignore opponent strength, and Elo can be lowered cheaply on purpose",
+   "area": "economy / Elo farming",
+   "evidence": "Ranked money (src/meta/game.ts:310) and XP (src/meta/levels.ts:302) depend only on the score:\n- 3-0 against the weakest ladder club (Elo 821, quality 47): +\u0192135k and +170 XP, Elo +20.\n- 3-0 against the strongest (Elo 1292, quality 73): +\u0192135k and +170 XP, Elo +61.\n\nNine ranked forfeits (Esc > Forfeit, about 1 minute) took Elo from 1000 to 736. The next opponents dropped from quality 56 to 47-54 (exploits.ts elo-tank). Reloading Home then picks among them (see the reload finding).",
+   "repro": "/root/.bun/bin/bun /tmp/rt/progression/out/exploits.ts flat-rewards ; /root/.bun/bin/bun /tmp/rt/progression/out/exploits.ts elo-tank",
+   "suggested_fix": "Scale ranked money and XP by the opponent, for example multiply by (0.5 + (1 - expectedScore)) in applyResult and matchXp, so beating a weak club pays less than beating a strong one. Show the stake on the hero next to the Elo stakes.",
+   "files": [
+    "src/meta/game.ts",
+    "src/meta/levels.ts",
+    "src/client/home.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "CPU cup and league fixtures are simulated at 60 s halves, so they score about 1 goal and draw 0-0 40% of the time",
+   "area": "league / cups",
+   "evidence": "QUICK_HALF_SECONDS = 60 (src/meta/competitions.ts:30). From quicksim.ts over 80 CPU matches:\n\n| Halves | Goals per match | Draws | Points per club per match |\n|---|---|---|---|\n| 60 s | 0.95 | 40%, every one 0-0 | 1.30 |\n| 180 s | 2.46 | 18% | 1.41 |\n\nThe player's own matches are full length, so goal-difference tie-breaks and the points race lean toward the player. 40% of CPU cup ties go to the seeded penalty roll.\n\nLeague 1 in league-forfeit.png: the CPU fixtures produced 23 goals in 21 matches, including five 0-0s.",
+   "repro": "/root/.bun/bin/bun /tmp/rt/progression/out/quicksim.ts 80",
+   "suggested_fix": "- Simulate CPU fixtures at full HALF_SECONDS (about 0.4 s each; run them in an idle callback or a worker).\n- Or map the quick result onto a full-length score distribution.\n- Add a balance assertion that CPU league fixtures average about 2.4 goals.",
+   "files": [
+    "src/meta/competitions.ts",
+    "src/client/competitions.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Docs: the ROADMAP pacing hours assume 5 minutes for a 6-minute match, and README says practice records nothing",
+   "area": "documentation",
+   "evidence": "- ROADMAP.md:192 assumes 'about 5 minutes each', but a match is 2 x 180 s of real time (HALF_SECONDS = 180) before menus and instant replays. Its table (ROADMAP.md:202-203: level 50 at about 70 h, level 99 at about 280 h) is roughly 30% under the measured 99 h and 379 h at 7 minutes a match. The match counts agree: measured 851 and 3,247 against 842 and 3,331.\n- README.md:77 says Practice records 'Nothing \u2026 but a training session'. In fact practice pays 30-60 XP (levels.ts:264), develops players, and is written to history and the news feed.",
+   "repro": "Compare docs/ROADMAP.md:192-203 with the 'levels reached' line of FASTQ=1 bun /tmp/rt/progression/out/career.ts 4200 model 5",
+   "suggested_fix": "Update the Pacing table in docs/ROADMAP.md with the measured match counts and 7-minute hours, and correct README.md:77.",
+   "files": [
+    "docs/ROADMAP.md",
+    "README.md"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Match history in the save grows without limit",
+   "area": "save growth",
+   "evidence": "save.history costs about 171 bytes per match and is 95% of the save:\n\n| Matches | Save size |\n|---|---|\n| 300 | 70 KB |\n| 1,000 | 190 KB |\n| 3,250 (level 99) | 575 KB |\n| 4,200 | 755 KB |\n\nwriteNow (src/client/store.ts) keeps a second copy in derbyday.save.v1.bak, and replays add up to 300k characters (600k with the level-65 shelf).\n\nAt 300 matches the total is about 0.45 MB, roughly 9% of a 5 MB quota. At level 99 it is about 1.75 MB. JSON.stringify of the 4,200-match save takes 4.3 ms on every persist.",
+   "repro": "/root/.bun/bin/bun -e on /tmp/rt/progression/out/career-model-5-normal.json (breakdown printed: history 718,997 of 755,276 chars)",
+   "suggested_fix": "Cap save.history (for example the last 300 matches) and keep per-year aggregates for the season review. Cap eloHistory to what the sparkline needs. Both are written in applyResult (src/meta/game.ts); retroXp only needs full history for saves from before levels existed.",
+   "files": [
+    "src/meta/game.ts",
+    "src/meta/progression.ts"
+   ]
+  }
+ ],
+ "good": [
+  "The browser UI matched the save after every one of 13 real matches: level badge, XP text, progress bar aria values, Elo, money and sessions, with 0 mismatches and 0 page errors. Level-up dialogs at 3, 4, 5 and 6 named the right unlocks, and level 99 full reads 'Level 99 \u00b7 Max level'.",
+  "The XP needed per level matches the owner's ask (100 x L; 9,900 for level 99). The early curve is quick: level 2 after the first match (+110 XP), level 5 within about 8 matches (under 1 h), every feature open by level 10 (about 4 h).",
+  "Pause-menu forfeits are recorded as 0-3 and cost Elo (-27 measured), with no XP, money or sessions (prize money aside, see finding). A forfeited practice match records nothing.",
+  "Buying a player and selling him straight back always loses \u019215k-115k. Training sessions are finite. Practice cannot farm: 30-60 XP, 1 session, no money.",
+  "Ageing and retirement work: across 8 seeds x 40 seasons with no buying, the oldest player ever was 38 (keeper 38), retirement is certain at 39, and there were no 40-year-olds.",
+  "Money can never run out or go negative: even a ranked loss pays \u019220k, and spending is limited to the budget.",
+  "Save size after 300 matches is about 70 KB plus its backup, well under the 5 MB quota."
+ ],
+ "verdicts": [
+  {
+   "title": "Reloading or closing the tab mid-match dodges a ranked, cup or league result, and every reload re-rolls the next ranked opponent",
+   "real": true,
+   "severity": "minor",
+   "notes": "Tested on derby/main 2cfa17c (one commit past 12e8e1d; that commit's main.ts change is only the avoidClash move, so line numbers are about 12 lower than the reviewer's).\n\nWhat I ran: NODE_PATH=/opt/node22/lib/node_modules node /tmp/rt/progression-verify/out/dodge.cjs. It sets up a level-10 save, kicks off a ranked match and sets the score to 0-3 through window.__derbyMatch.\n- Before: hist 0, Elo 1000, played 0. The mid-match save is the same, so nothing is written at kick-off.\n- After page.reload(): hist 0, Elo 1000, played 0, lost 0. The hero says 'FIRST MATCH AWAITS' and the opponent changed from Caelmere Olympic 1009 to Port Alderport SC 1002 (/tmp/rt/progression-verify/out/dodge-2-after-reload.png; live 0-3 shown in dodge-1-live-0-3.png).\n- Closing the page mid-match (at 0-4) and opening a new one: also hist 0, Elo 1000.\n- Esc > Forfeit at 0-3 for comparison: hist 1, Elo 967, lost 1, week 1.\n- Cups too: ui-comp.cjs reloads at 0-3 in a cup QF. The cup stays at round 0 with the same 'PLAY CUP QUARTER-FINAL' tie, and history is 0.\n- Opponent re-roll: 8 reloads on Home showed Selport 919, Fenstow 916 x4, Selport 919 x2, Kelvhamn 919. The save's rng changes on each boot ({s:-147121116} became {s:1684444697}).\n\nRoot cause:\n- playLive (src/client/main.ts:282-330) only draws a seed from s.rng at :296 and persists nothing until onEnd, then endMatch/persist (:388-412). competitions.ts finishMatch (:375-403) is the same.\n- boot() calls pickOpponent(save) at main.ts:49, which uses save.rng (src/meta/game.ts:260-267). The boot write at main.ts:72 keeps the advanced rng.\n\nWhy minor, not major:\n- docs/ROADMAP.md:50 lists 'closing a tab mid-match is a free abort' as a known gap of local saves.\n- Elo here is only against local CPU clubs, with no shared leaderboard, so it only lets a player cheat themselves.\n- Club > Back up or restore already lets a player undo any result.\n- The 3 nearest opponents were within 3 Elo of each other in my run.\n- Still worth a cheap fix, because it makes the 'Forfeit (counts as 0-3)' button pointless and makes cups unlosable for anyone who reloads.\n\nRefined fix:\n- In playLive, write save.live = {kind, opponentId, label, seed} and persist() before mountMatch. Clear it in onEnd.\n- On boot, if save.live is set, prefer offering 'Resume match': the sim is deterministic and replays are seed plus input log (src/meta/replay.ts), so checkpoint the input log every few seconds. Only record a forfeit if the player declines: applyResult(..., forfeited=true), or recordCupMatch/recordSeasonMatch with 0-3. Recording 0-3 unconditionally would punish phone users whose background tab gets discarded.\n- Store save.nextOppId when endMatch runs (main.ts:409) and only call pickOpponent at boot (main.ts:49) when it is missing.\n- Add an e2e test: reload a live ranked match, then expect history +1 or a resume prompt."
+  },
+  {
+   "title": "Forfeits move the season calendar, so free season rollovers (academy intake and youth growth) are on demand",
+   "real": true,
+   "severity": "minor",
+   "notes": "Reproduced in bun with my own script: /root/.bun/bin/bun /tmp/rt/progression-verify/out/calendar.ts <seed> 100. It runs 100 cycles of startCup, recordCupMatch(0,3, forfeited=true), simulateRestOfCup, closeCup and maybeRollover from a level-10 newGame.\n\nResults for seeds 1, 2 and 3, in about 230 ms each:\n- 10 rollovers, 26 prospects and 1-3 prospects with potential 80 or more.\n- Best XI 55.7 -> 67.5, 55.5 -> 69.5 and 56.5 -> 66.5.\n- Top player DEF 23 at 80/91 (seed 2).\n- Elo 1000, budget \u01921.20m, XP and training points all unchanged.\n- The last review reads 0W 0D 10L, 0-30, with 8-14 players improved.\n- I did not see the reviewer's two 88-rated players, but the size of the effect is the same.\n\nIn the UI (ui-comp.cjs), 4 cycles of Start the cup > Play > Esc > Forfeit > close > Simulate the rest > Done took 22.8 s headless, about 6 s per week. The header went S1 \u00b7 W0 to S1 \u00b7 W4, with Elo 1000 and \u01921.20m unchanged.\n\nRoot cause: src/meta/game.ts:327 is `const counted = (ranked || !!competition) && calendarOn;`, which counts forfeits. Cup forfeits cost no Elo (src/meta/competitions.ts:302 calls applyResult with ranked=false).\n\nWhy minor:\n- It is a deliberate, repeated self-exploit in a single-player local save.\n- It trades away the prime players through ageing and earns no money or XP.\n- A legit player gets the same rollovers and more from playing.\n- It does contradict ROADMAP.md:41 'Forfeits pay nothing, so they can't be farmed': the farmed resource is calendar time.\n\nFix:\n- In applyResult use `counted = (ranked || !!competition) && calendarOn && !forfeited`. A forfeited match then has no `week`, so seasonRecord skips it.\n- Or cap competitions per calendar year (next finding).\n- Add a test in tests/progression.test.ts: 10 forfeited cup ties leave save.week at 0 and maybeRollover returns null."
+  },
+  {
+   "title": "Cups can be restarted without limit and never risk Elo, yet pay about 1.6-2x the XP and 1.25-1.6x the money of ranked",
+   "real": true,
+   "severity": "minor",
+   "notes": "Restart: confirmed in the UI (ui-comp.cjs). After 'Done: clear the bracket' the panel offers 'Start the cup' again straight away, and 4 cups ran back to back. src/client/competitions.ts:305-313 and startCup (src/meta/competitions.ts:232) have no cooldown. Cup matches call applyResult with ranked=false (competitions.ts:302), so Elo never moves. Entrants come from pickEntrants by your Elo (competitions.ts:115-121).\n\nMy own career model: /root/.bun/bin/bun /tmp/rt/progression-verify/out/career.ts 300 <seed> <ranked|cup|mixed> <model|sim> 1.\n\nWith a fixed 45/25/30 result distribution:\n\n| Mode | XP per match | Money per match | Level at 300 |\n|---|---|---|---|\n| Ranked, seeds 9 / 4 | 106 / 113 | \u019274.7k / 82.7k | 28 / 29 |\n| Cup, seeds 9 / 4 | 171 / 187 | \u019296.9k / 105.3k | 34 / 36 |\n\nThat is 1.6-1.7x the XP and 1.27-1.3x the money. The analytic expectation (QF \u019240k, then +90k, +160k and +320k, plus the 100/200/500 finish XP) gives about 1.7x XP and 1.34x money.\n\nIn sim mode (strength-only proxy), mixed seed 2: cup 239 XP and \u0192145.7k per match against ranked 124 XP and \u019284.7k. That is 1.9x and 1.7x, with 75 editions and 32 trophies.\n\nWhy minor:\n- Competitions paying finish bonuses is documented design (ROADMAP XP table and the 'Mixed' pacing column).\n- 'Never risks Elo' is not a real cost in a CPU ladder.\n- Choosing cup entrants by your Elo is matchmaking, which the queued fairness stream owns.\n- What remains is an economy tuning issue: cup grinding is the dominant strategy.\n\nExtra I found while measuring: refreshMarket runs only in the ranked branch (src/meta/game.ts:315), so a cup-only or league-only player's transfer market never refreshes. In cup-only model runs \u019228.9m-31.3m piled up with nothing new to buy.\n\nFix:\n- Store save.cupYear. startCup refuses while save.cupYear === save.year once the calendar is on, and competitions.ts shows 'Next cup next season'.\n- Or scale CUP_PRIZES (competitions.ts:34) and XP.cup (src/meta/levels.ts:266) so a cup match averages what a ranked match pays.\n- Move refreshMarket to run after every counted match."
+  },
+  {
+   "title": "The CPU world never grows: within about 150 matches your XI is 15-25 points above every CPU club, the ladder runs out of opposition, and money piles up",
+   "real": true,
+   "severity": "major",
+   "notes": "Reproduced with my own career sim, /tmp/rt/progression-verify/out/career.ts. Results are in /tmp/rt/progression-verify/out/career-sim.txt. Your club plays through the real sim (simulate, 60 s halves) with aiSkill set from squad strength, the same rule as CPU clubs, so results depend only on squad strength. It also auto-trains and optionally buys.\n\n- Seed 3, no transfers, 300 ranked matches:\n  - XI 59.8 -> 80.4 at match 225, while top-3 ladder quality went 73/68/65 -> 58/58/57.\n  - Ladder max Elo fell 1350 -> 1059 while your Elo was 1469, 410 above the best club.\n  - The last 100 matches went 80W 20D 0L.\n  - Budget \u019229.3m unspent.\n- Seed 1 with transfers: XI 77.1 against top-3 67/67/63, unbeaten from match 50 onwards (1 loss in 250).\n- Seed 1 with no transfers: \u019225.1m unspent.\n- Mixed seed 2: XI 80.6 against top-3 67/65/64.\n\nThe gap is 10-22 points rather than a flat 15-25, but the effect is as claimed.\n\nRoot cause:\n- CPU squad quality comes only from qualityForElo(elo) (src/meta/club.ts:128).\n- Ranked Elo flows from CPU clubs to you.\n- driftLadder (src/meta/progression.ts:325-336) mean-reverts 10% per season (line 329), which compresses the top of the ladder.\n- Your XI keeps rising: training, academy, match development, and a market based on your own XI + 2 (game.ts refreshMarket).\n\nScope note: this overlaps 'CPU difficulty and matchmaking fairness' (the queued fairness stream), so coordinate with it. The money pile-up is the known ROADMAP Phase 4 item (ROADMAP.md:218, wages and a stadium). The squad-rating scaling over a career is not covered by an aiSkill band, so it is still a real long-game problem. After about 100 matches (about 12 h) the strength-proxy ladder stops producing losses.\n\nFix:\n- In driftLadder, add a world lift: quality = qualityForElo(elo) + lift(save.year), or anchor it to the player's XI (for example a ladder spread of about \u00b112 around your XI average).\n- Re-centre the CPU Elo mean each rollover, or bring a new strong club in above your Elo, so pickOpponent's 3 nearest clubs are not all below you.\n- Tie this to divisions later. Add the money sink from Phase 4."
+  },
+  {
+   "title": "League promotion and relegation are text only, and two unrelated 'Season N' counters share the news feed",
+   "real": true,
+   "severity": "minor",
+   "notes": "Copy and zones:\n- 'Finish top two to go up' is at src/client/competitions.ts:205.\n- The 'Promotion / Relegation scrap' key and the zone-up/zone-down rows are at competitions.ts:242 and :257. Screenshots: /tmp/rt/progression-verify/out/league-1-after-md1-1280.png shows green bars on rows 1-2, red on 7-8 and the key under the table; league-1-after-md1-390.png shows the same on a phone.\n- seasonVerdict says 'Promoted as title winners' / 'Runners-up. Promoted.' and also 'Promotion play-off places next time', and there are no play-offs either (src/meta/competitions.ts:483-489).\n- `grep -rni 'promot|relegat|division' src/` finds only these strings.\n\nWhat happens: /root/.bun/bin/bun /tmp/rt/progression-verify/out/league.ts plays 12 leagues and wins them all. Every verdict is 'Champions. Promoted as title winners.' Six of the 12 next leagues had exactly the same 7 entrants, because pickEntrants (competitions.ts:115) uses Elo, which leagues never move.\n\nThe news feed tail reads, in order:\n- 'Season 7 review: 10W\u2026'\n- 'Season 11 kicks off\u2026'\n- 'Season 11 over: finished 1st\u2026'\n- 'Season 12 kicks off\u2026'\n- 'Season 8 review\u2026'\n\nThe header shows S9 \u00b7 W4. League editions come from competitions.ts:408 and :537; the calendar year comes from progression.ts:422 and the S/Season header in ui.ts:124 and :201.\n\nWhy minor: nothing breaks or is lost. It is misleading copy for a feature (divisions) that ROADMAP.md:217 schedules for Phase 4.\n\nFix:\n- Now: remove the promotion and relegation wording and the zone key (competitions.ts:205, :242, :257, :484-488). Use plain prize-place copy such as 'Champions. \u0192450k.'\n- Rename the league news to 'League N kicks off/over' (competitions.ts:408 and :537), so 'Season N' only means the calendar year.\n- Later: save.division, with startSeason/pickEntrants choosing an Elo or quality band and SEASON_PRIZES scaled by division."
+  },
+  {
+   "title": "Past level 22 the 1-99 curve is a content desert, and with flat XP per match the last levels take about 7.5 hours each",
+   "real": false,
+   "severity": "not-a-bug",
+   "notes": "The numbers are right, but this is the documented, intended design.\n\nMy own check: /root/.bun/bin/bun /tmp/rt/progression-verify/out/levels.ts uses UNLOCKS and totalXpForLevel from src/meta/levels.ts. At 125-150 XP per match:\n- 50->65: 85,500 XP, 570-684 matches.\n- 65->75: 69,500 XP, 463-556 matches.\n- 80->99: 169,100 XP, 1,127-1,353 matches.\n- 98->99: 9,800 XP, 65-78 matches, about 7.5-9 h at 7 min a match.\n\nThe Club panel at level 81 reads 'Legend badge at level 99 \u2014 161,100 XP to go' (/tmp/rt/progression-verify/out/panel-l81-390.png). At level 51 it reads 'Replay shelf of 10 at level 65 \u2014 80,500 XP to go'. matchXp is flat (levels.ts:296).\n\nWhy it is intended:\n- docs/ROADMAP.md:173: 'The schedule is the owner's \u2026 the perks past level 12 are deliberately small, cosmetic or convenience'.\n- ROADMAP.md:205: 'Everything that is a feature is open in about four hours. The tail to 99 is long by design; if testers stall in the 20s, the lever is the per-match numbers, not the curve.'\n- The ROADMAP pacing table already predicts these numbers (level 50 at about 842-1,001 matches, 99 at about 3,331-3,967, about 280 h), and the reviewer's 851 and 3,247 matches reproduce it.\n\nNothing here breaks or contradicts the owner's asks. It is design feedback to raise with the owner (more mid- and late-game perks, or XP per match that scales with opponent Elo), not a defect."
+  }
+ ]
+}

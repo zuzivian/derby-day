@@ -1,0 +1,155 @@
+{
+ "checks_run": "Worktree /tmp/rt/rules/repo at derby/main 12e8e1d. Read README, ROADMAP, the physics and onboarding briefs, src/sim/rules.ts, match.ts, field.ts, human.ts, types.ts, constants.ts, src/meta/shootout.ts, the cup shootout wiring and tests/rules.test.ts. `bun test tests/rules.test.ts tests/shootout.test.ts`: 51 pass, 0 fail. `bun run build` ok.\n\nAll scripts are in /tmp/rt/rules/out (run `cd /tmp/rt/rules/out && /root/.bun/bin/bun <file>`); shared helpers are in lib.ts. Results:\n- offside1.ts: onside at the pass and beyond the line at reception = no offence. Offside at the pass and back onside at reception = offside. Level = onside. 4 cm beyond = onside (5 cm tolerance). 30 cm beyond = offside.\n- secondlast.ts: a keeper who has come out counts as the second-last opponent.\n- gkoff.ts: no offside from a goal kick; offside is given from a free kick.\n- parryoff.ts: 58 parried shots with a teammate offside at the shot: 28 offsides given, 0 missed.\n- flickon.ts and missedoff2.ts: offside is missed after a teammate's header or deflection (finding).\n- audit.ts, 30 CPU matches: 0 free kicks or corners taken with an opponent inside 9.15 m (192 + 61), 0 throw-ins inside 2 m, 0 goal kicks with an opponent in the box, 0 kick-off position violations, 0 throw-ins more than 1.5 m from where the ball went out, 0 offsides from exempt restarts, 0 keepers holding the ball outside their box.\n- audit2.ts, 60 matches: 121 catches, 0 with the ball outside the box; restart retouches by CPU takers: 1 throw-in and 1 free kick, plus every kick-off.\n- pen.ts: 40 in-match penalties, 0 position violations.\n- lines.ts: ball centre 0.10 m over the line = in play, 0.12 m = out or goal.\n- barfreq.ts and lob.ts: there is no crossbar collision, but in 100 CPU matches and 300 human lobs no ball ever crossed at bar height, so not reported.\n- hold.ts: CPU keepers hold the ball at most 1.0 s.\n- shoot.ts, 3000 shootouts: 0 kicks out of ABAB order; the 3-0 early finish comes after 6 kicks; 60 shootouts reused a taker.\n- Other scenes behind the findings: kickoff.ts, kickoff2.ts, doubletouch2.ts, gkshort.ts, gkshort2.ts, gkloop.ts (a keeper re-catching his own roll-out: 1 of 19, so not exploitable), ends.ts, headerback.ts, headerog.ts, lateshot.ts, blocker.ts, adv.ts, whistle.ts, below7.ts, grief.ts.\n- shape.ts (not reported, CPU tactics are out of scope): after a centre-back is sent off the shape is not rebuilt. The widest gap in the back line goes from 17.7 m to 26.2 m, and the nearest outfielder to the penalty spot from 9.6 m to 12.4 m.\n- Browser, 3D SwiftShader, scripts browser1/2b/3/4.cjs; screenshots in /tmp/rt/rules/out/shots: kickoff-dribble-1280-0/1.png, ends-1st-1280.png, ends-2nd-1280.png, ends-2nd-390.png, goalkick-repickup-1280.png, goalkick-repickup-1280-b.png, advantage-tag-1280.png, advantage-callback-1280-250.png, advantage-callback-1280-1200.png. I looked at each one.",
+ "findings": [
+  {
+   "severity": "major",
+   "title": "Restart takers can play the ball again before anyone else: the kick-off is never kicked and the keeper picks up his own goal kick",
+   "area": "Laws 8, 13-16 (second touch), restarts",
+   "evidence": "Kick-off: at match.ts:248 resetKickoff gives the ball to the taker (b.owner = taker). When the kick-off pause ends, step() at match.ts:1510-1516 just sets phase 'play' and the taker keeps the ball at his feet. No kick is required, and nothing stops him dribbling.\n- kickoff.ts: in 119 CPU kick-offs the taker kept the ball 1.02 s on average and carried it 5.34 m (max 7.5 m) before his first kick.\n- A human holding the pointer upfield dribbled from kick-off without ever kicking. Seed 3: 51.7 m in 7.43 s, ending in a goal walked into the net. Seed 8: 51.6 m to x=104.\n- Screenshot kickoff-dribble-1280-1.png: at 00:12 the taker (yellow ring, name shown) is 17 m into the opponents' half, still on the ball, and the event list has no kick.\n\nKeeper: keeperHands (match.ts:838) lets a keeper handle a ball he kicked himself (k === p.i). After takeRestart the taker is blocked for only 24 ticks (match.ts:515).\n- gkshort2.ts: a human goal kick tapped 4-8 m into space, with live CPU players, was picked up again in the keeper's hands in 60 of 60 seeds, and a 6-second hold started again.\n- Screenshots goalkick-repickup-1280.png and -b.png: the keeper is back holding the ball in his six-yard box after his own goal kick, with the HUD showing 'KEEPER \u00b7 6' and then 5.\n- The same happens for a keeper's free kick in his own area (gkshort.ts, 5 of 6).\n\nNo indirect free kick is ever given for a second touch. With everyone else frozen, the taker took the ball back himself with no IFK: a 4 m free-kick tap 2.28 s later, a 3.6 m throw-in 3.37 s later, a 4.5 m corner 2.45 s later (doubletouch2.ts).",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun kickoff.ts && /root/.bun/bin/bun kickoff2.ts && /root/.bun/bin/bun gkshort2.ts && /root/.bun/bin/bun doubletouch2.ts\nBrowser: NODE_PATH=/opt/node22/lib/node_modules node browser1.cjs (kick-off) and node browser2b.cjs (goal kick); screenshots in /tmp/rt/rules/out/shots.",
+   "suggested_fix": "1. Kick-off (src/sim/match.ts):\n   - When the kick-off pause ends, do not hand the taker live possession. Keep the restart at stage 'ready' and run it through stepRestart/takeRestart like the other restarts.\n   - ai.ts restartAction already has a 'kickoff' case (a pass), and humans would pass or shoot as at any restart.\n   - Apply RESTART_HUMAN_WAIT as usual.\n2. Second touch:\n   - Add MatchState/Ball field restartTaker, set in takeRestart and cleared in touched() when another player touches the ball.\n   - In contacts(), control(), keeperTouch() and header(), if p.i === restartTaker, either skip him (extend noPickup until another touch) or award an IFK to the opponents at p.pos through a new rules.ts secondTouch().\n   - In keeperHands, return false while the ball is the keeper's own restart (or his own release from the hands) and nobody else has touched it.\n3. Bump SIM_VERSION in src/sim/constants.ts.",
+   "files": [
+    "src/sim/match.ts",
+    "src/sim/rules.ts",
+    "src/sim/ai.ts",
+    "src/sim/types.ts",
+    "src/sim/constants.ts"
+   ]
+  },
+  {
+   "severity": "major",
+   "title": "Teams never change ends at half-time (Law 8)",
+   "area": "Law 8, half-time",
+   "evidence": "field.ts:6 fixes attackDir(team): team 0 always attacks x=105. At half-time, match.ts:1529 only calls resetKickoff(s, 1, 'half').\n- ends.ts: home keeper at x=2.1 at the first-half kick-off and again at the second-half kick-off (away keeper at x=102.9 both times). The other side does correctly kick off the second half (kickoffTeam 1).\n- Screenshots ends-1st-1280.png (00:00) and ends-2nd-1280.png (45:00): home is on the left and away on the right in both halves, with the same radar. ends-2nd-390.png (45:00) shows the same on a phone.\n- Every player in every match attacks the same way in both halves, which the owner's 'proper FIFA rules' ask does not allow.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun ends.ts\nBrowser: NODE_PATH=/opt/node22/lib/node_modules node browser3.cjs, plus W=390 H=844 for the phone shot; screenshots in /tmp/rt/rules/out/shots/ends-*.png.",
+   "suggested_fix": "The sim's pitch is symmetric (no wind, sun or slope), so the visible effect can come from the view without touching sim determinism:\n- In the second half, rotate the sim-to-scene mapping 180 degrees about the pitch centre (src/client/r3d/space.ts sx/sz/wx/wy, plus player facing in renderer3d/player3d).\n- Pointer raycasting goes through wx/wy, so input keeps working.\n- Mirror the radar in src/client/hud.ts drawRadar and the 2D view in src/client/render.ts the same way.\n- Keep the end-to-end Cam (camera3d.ts) behind the human's goal.\n\nAlternative: a half-aware attackDir/teamX/fromTeam/oppGoal/ownGoal in src/sim/field.ts with a SIM_VERSION bump. Add a test that the home keeper is at x of about 103 after half-time.",
+   "files": [
+    "src/client/r3d/space.ts",
+    "src/client/r3d/renderer3d.ts",
+    "src/client/r3d/camera3d.ts",
+    "src/client/hud.ts",
+    "src/client/render.ts",
+    "src/sim/field.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Offside is not judged again when a teammate heads, deflects or pokes the ball on",
+   "area": "Law 11",
+   "evidence": "Only kick() calls noteBallPlayed (match.ts:287 area). header() (match.ts:1277-1279), bounceOff/touched (match.ts:909-911) and a won tackle just clear or keep the old watch. An onside teammate's header therefore clears it (rules.ts offsideOnTouch sets s.offside = null).\n- flickon.ts: 157 headers at goal by attacker A, with teammate B in an offside position at the moment of the header. B then played the ball 114 times: offside given 0 times.\n- missedoff2.ts, 300 CPU matches: 287 offsides given and 39 missed (26 deflections, 12 headers, 1 tackle), about 1 in 8 offside situations. The side scored within 10 s of a missed offside 7 times.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun flickon.ts && /root/.bun/bin/bun missedoff2.ts 300",
+   "suggested_fix": "In src/sim/match.ts:\n- In header(), after the offsideOnTouch check and touched(), call noteBallPlayed(s, p).\n- Do the same in bounceOff when the toucher is from the same side as the current watch or in possession, and on a won tackle.\n- Keep the existing watch only for an opponent's non-deliberate deflection or save.\n- Add a rules.test.ts case: a header in the box falls to a teammate who was offside at the header, and offside is given.",
+   "files": [
+    "src/sim/match.ts",
+    "src/sim/rules.ts",
+    "tests/rules.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A defender's header back to his keeper is treated as a back-pass: the keeper may not use his hands",
+   "area": "Law 12 (goalkeeper handling)",
+   "evidence": "header() sets b.kickedBy = p.i (match.ts:1279). keeperHands (match.ts:838) bars a teammate's kickedBy, and keeperDives also skips the keeper. Law 12 bars only a deliberate kick or a throw-in from a teammate.\n- headerback.ts, 40 balls headed toward the defender's own keeper at 8-11 m/s:\n  - with kickedBy set (as header() does): 21 own goals, 6 caught, 13 only played with the feet;\n  - the same balls with kickedBy -1: 10 own goals, 30 caught.\n- headerog.ts, 200 CPU matches: 51 defensive headers toward the own goal line; 16 passed within 1 m of a keeper who was not allowed to catch; 1 own goal.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun headerback.ts && /root/.bun/bin/bun headerog.ts 200",
+   "suggested_fix": "In src/sim/match.ts header(), do not set b.kickedBy, or use a separate b.headedBy if the headed shot still needs it for stats. keeperHands should then only refuse feet kicks and throw-ins from a teammate. Add a test that a keeper catches a teammate's header.",
+   "files": [
+    "src/sim/match.ts",
+    "tests/rules.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A late challenge after a shot cancels the goal-bound shot and gives a red card for DOGSO",
+   "area": "Law 12 (advantage, DOGSO)",
+   "evidence": "In the late-challenge path, keptBall is true only when the ball has a teammate receiver (match.ts:377). For a shot b.receiver is -1, so judgeFoul (rules.ts:373-382) never plays advantage, stops play and checks DOGSO on a player who has already shot.\n- lateshot.ts, 200 seeds: a CPU striker shoots from 22 m inside the post with the keeper frozen, and the human's centre-back slides in 0.8 m away just after the shot.\n  - 152: play on and the goal stands.\n  - 48: whistled, the shot is wiped out and a free kick given, with 44 red cards and 4 yellows, all for 'dogso'.\n- It is rare in play: blocker.ts, 20 matches of a human sliding at every carrier in his own third, produced 1 such late foul.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun lateshot.ts && /root/.bun/bin/bun blocker.ts 20",
+   "suggested_fix": "Late challenge after the ball has gone:\n- If the victim's last kick was a shot or the ball is still live and heading for goal, treat it as advantage: defer the whistle until the ball is dead or possession changes, and let the goal stand.\n- Do not apply DOGSO: pass an afterRelease flag into rules.ts judgeFoul and use only the reckless/careless cards.\n- Add a test for a late tackle on a scorer.",
+   "files": [
+    "src/sim/match.ts",
+    "src/sim/rules.ts",
+    "tests/rules.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Advantage brought back with no on-screen call or whistle, even after the fouled side has had its shot",
+   "area": "Law 12 advantage, referee presentation",
+   "evidence": "tickAdvantage (rules.ts:416-424) calls play back whenever the opponents gain possession within 2 s, even if the attack has already produced a shot. The restart event has no HUD word: hud.ts refereeWord returns null for 'restart', and matchView.ts:102 refereeCall only feeds the screen-reader live region. There is no whistle sound for fouls or restarts (audio.ts detectSfx whistles only at kick-off, half-time and full-time).\n- adv.ts, 150 CPU matches: 140 advantages called back and 317 stood. 13 of the 140 were brought back after the fouled side had already taken a shot.\n- Browser (browser4.cjs): advantage-tag-1280.png shows 'ADVANTAGE Pellvik City'. advantage-callback-1280-250.png and -1200.png then show play frozen and players walking back to the foul spot with no banner or tag; only the hidden live region reads 'Free kick to Pellvik City'.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun adv.ts 150\nBrowser: NODE_PATH=/opt/node22/lib/node_modules node browser4.cjs; screenshots /tmp/rt/rules/out/shots/advantage-*.png.",
+   "suggested_fix": "- In rules.ts tickAdvantage, end the advantage (s.advantage = null) once the fouled side has shot, entered the box or completed a pass, so it is only brought back when it really came to nothing.\n- Give the brought-back free kick reason 'advantage', or emit an 'advantageBack' event.\n- Show it in hud.ts refereeWord as 'Free kick' with 'advantage brought back' under it.\n- Add a whistle in audio.ts detectSfx when the phase goes to 'restart' for a foul or offside.",
+   "files": [
+    "src/sim/rules.ts",
+    "src/sim/types.ts",
+    "src/client/hud.ts",
+    "src/client/matchView.ts",
+    "src/client/audio.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "Cup shootout ignores who was on the pitch at full time",
+   "area": "Law 10 (kicks from the penalty mark)",
+   "evidence": "The live cup shootout builds both sides from the club lineup (src/client/competitions.ts:359 penaltySide(s.club.name, s.squad, s.lineup)), not from the finished MatchState. As a result:\n- a player sent off in the drawn tie takes a kick;\n- a sent-off keeper still keeps goal (xi[0]);\n- the larger side is not cut down to match the other's numbers.\n\nIn src/meta/shootout.ts, takers are only the 10 outfielders, and nextTurn (line 235) cycles takers[round % 10]. The keeper never kicks, and the best shooter kicks a second time before the keeper has kicked once. shoot.ts: 60 of 3000 equal shootouts reached an 11th kick that reused a taker.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun shoot.ts\nCode: src/client/competitions.ts:355-362 and src/meta/shootout.ts:83-91, 235.",
+   "suggested_fix": "- Pass the finished MatchState to penaltySide (or a new penaltySideFromMatch): drop p.sentOff players, use the player in role 'GK' at the end as keeper, and trim the larger side to the smaller side's count.\n- In src/meta/shootout.ts, list every eligible player including the keeper (keeper last), so nobody kicks twice before all have kicked.\n- Do the same for meta/competitions.ts penaltySquad if the CPU ties should follow it.",
+   "files": [
+    "src/client/competitions.ts",
+    "src/meta/shootout.ts",
+    "src/meta/competitions.ts",
+    "tests/shootout.test.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "No added time: the whistle cuts off a shot in flight",
+   "area": "Law 7 (duration), end of each half",
+   "evidence": "runClock (match.ts:1478-1500) ends the half on the exact tick time is up unless a penalty is pending, even with a shot travelling at the goal.\n- whistle.ts, 150 CPU matches: 264 halves ended in open play. In 2 (0.8%) a goal would have followed within 1.5 s if play had continued (balls moving at 28-29 m/s, 10-22 m from goal).\n- That is about one lost goal every 60 matches.",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun whistle.ts 150",
+   "suggested_fix": "In src/sim/match.ts runClock, once time is up, hold the whistle while the ball is loose and moving fast toward either goal (a shot or through ball in flight) until it is dead, held, or possession changes, capped at about 3 s. Optionally show '+1' on the HUD clock in src/client/hud.ts.",
+   "files": [
+    "src/sim/match.ts",
+    "src/client/hud.ts"
+   ]
+  },
+  {
+   "severity": "minor",
+   "title": "A side with fewer than seven players plays on, and with none left the sim throws",
+   "area": "Law 3 (minimum number of players)",
+   "evidence": "Nothing checks a team's head count after sendOff (rules.ts:465).\n- below7.ts: 5 home players sent off leaves 6, and the match carries on (phase 'play' after 3650 ticks).\n- With all 11 sent off, a restart throws 'TypeError: reduce of empty array with no initial value' from chooseTaker (rules.ts:169).\n- It is hard to reach: grief.ts, 6 matches of a human sliding in on every carrier, produced at most 3 reds (8 players left).",
+   "repro": "cd /tmp/rt/rules/out && /root/.bun/bin/bun below7.ts && /root/.bun/bin/bun grief.ts",
+   "suggested_fix": "- In rules.ts sendOff, when a team falls below 7, end the match (phase 'fulltime' with an 'abandoned' event) and record it like a forfeit, 0-3 against that side, in the client result handling.\n- Guard chooseTaker against an empty pool.",
+   "files": [
+    "src/sim/rules.ts",
+    "src/sim/types.ts",
+    "src/client/main.ts"
+   ]
+  }
+ ],
+ "good": [
+  "Offside is judged at the moment of the pass, against the second-last opponent (the keeper counts). Level is onside within 5 cm, and nobody is ever offside in his own half.",
+  "A defender's deliberate play wipes an offside judgement but a keeper's save does not: 28 offsides given after parries, none missed.",
+  "Nobody is given offside straight from a throw-in, goal kick or corner; free kicks are not exempt.",
+  "Over 30 CPU matches no free kick or corner was taken with an opponent inside 9.15 m, no throw-in inside 2 m, no goal kick with an opponent in the box, and no kick-off with a player out of position. Throw-ins are taken where the ball went out.",
+  "At 40 penalties nobody was out of position: the keeper stays on his line and everyone else is outside the area and the arc, behind the mark.",
+  "Whether the ball is out follows the whole ball over the whole line exactly. Corner or goal kick is decided by the last touch, and what may score directly from each restart (including into your own goal) follows Laws 13-17.",
+  "A foul in the offender's area is a penalty and elsewhere a direct free kick. DOGSO and SPA cards handle the penalty-area exceptions, and advantage is shown at the next stoppage.",
+  "A second yellow means a red: the player is taken off the pitch and his side plays with ten. A sent-off keeper is replaced in goal by an outfielder.",
+  "The back-pass rule covers kicks and throw-ins. In 121 catches no keeper handled the ball outside his area, and CPU keepers never held it longer than 1 s.",
+  "The shootout keeps strict ABAB order, finishes early once a side cannot catch up, and plays sudden death correctly (3000 shootouts checked)."
+ ],
+ "verdicts": [
+  {
+   "title": "Restart takers can play the ball again before anyone else: the kick-off is never kicked and the keeper picks up his own goal kick",
+   "real": true,
+   "severity": "major",
+   "notes": "Checked on derby/main 2cfa17c. That is newer than 12e8e1d, but the cited lines are unchanged. Worktree: /tmp/rt/rules-verify/repo. Scripts: /tmp/rt/rules-verify/out.\n\nWHAT I RAN AND SAW\n\nKick-off (ko.ts):\n- 144 CPU kick-offs over 40 seeds. The taker kept the ball 1.18 s on average and carried it 6.90 m (max 8.59 m) before his first pass. None were kicked on the first live tick.\n- Human taker, pointer held at (104,34), no clicks, 8 seeds. He dribbled 11.8 to 51.2 m without ever kicking. Seeds 2 and 3 carried it 51.2 m and 47.4 m, to x=103.5 and x=99.7.\n\nKick-off in the browser (browser.cjs MODE=dribble, 3D, 1280x800):\n- At 1.73 s the taker still owned the ball at x=63.9. The event list was only [restart:kickoff, restartTaken:kickoff].\n- Screenshot shots/kickoff-dribble-1280-k0.png (00:08): the taker (yellow ring, orange triangle, name) is about 11 m into the opponents' half with the ball at his feet. The pass wedge runs from him and no kick has been taken.\n\nKeeper (gk.ts, 60 seeds):\n- Human goal kick tapped 4, 6 or 8 m: the keeper holds it in his hands again in 60/60 each, 0.67, 0.98 and 1.22 s later.\n- Tapped 12 m: 0/60, because an opponent at the edge of the area gets there first.\n- Released from the hands after a catch, tapped 3, 5 or 8 m: picked up again 60/60.\n- keeperTouch sets handTicks=0 (match.ts:1101), so the 6 s countdown starts again.\n- Refuting part of the impact (waste.ts): I tried this as a time-wasting loop in live play. Opponents won the ball after 1-2 taps in 18 of 20 seeds, so it is a Law 12 error, not a way to lock the match.\n\nSecond touch (dt.ts, dt2.ts):\n- No indirect free kick is given in any case.\n- Everyone else frozen: the taker took back his own free kick, throw-in and corner 20/20 each.\n- Live: a short corner to himself 20/20 (2.71 s), and a 3 m free kick at (70,60) 20/20 (2.23 s). In crowded spots an opponent got there first.\n\nROOT CAUSE\n- match.ts:248 resetKickoff sets b.owner = taker.\n- match.ts:1513-1521: when KICKOFF_PAUSE ends, phase goes straight to 'play' and a 'restartTaken' event is pushed, but nothing is kicked. stepRestart and takeRestart never run for a kick-off.\n- So ai.ts:1346 restartAction case 'kickoff' (a pass) is dead code, which shows the pass was intended.\n- match.ts:515 sets b.noPickup[p.i] = 24, a 0.4 s timer, although its comment says 'no second touch before someone else plays it'.\n- There is no second-touch offence anywhere in rules.ts (grep finds none).\n- match.ts:835-839 keeperHands only refuses a teammate's deliberate kick (k !== p.i). A keeper may therefore handle his own goal kick, his own free kick or his own release.\n\nSEVERITY\nMajor. It breaks Law 8 at every kick-off, for both sides, on the restart players see most. It also breaks Laws 12, 13 and 16 at goal kicks, free kicks, corners and throw-ins. The keeper and second-touch parts happen less often, and are not exploits.\n\nFIX\n1. Kick-off, src/sim/match.ts:1513-1521:\n   - When the pause ends, set s.phase='restart' with the restart at stage 'ready' (r.ticks=0, r.wait as beginReady computes it). stepRestart/takeRestart then play it.\n   - The CPU uses restartAction's kickoff pass; a human passes or shoots, with the RESTART_HUMAN_WAIT fallback.\n   - Push 'restartTaken' only from takeRestart.\n   - Check takerSpot, enforceRestartPositions and restartBallZ for kind 'kickoff' (rules.ts already has kickoff cases at :186 and :232).\n   - Check the coach.ts restart tip (kick-off excluded) and the camera3d long-view triggers.\n2. Second touch:\n   - Add Ball.restartBy to src/sim/types.ts. Set it in takeRestart and in kick() when a keeper releases the ball from his hands.\n   - Clear it in touched() and control() when anyone else touches the ball.\n   - In control() and keeperTouch(), if p.i === b.restartBy, call a new rules.ts secondTouch() that awards an indirect free kick to the opponents. As a softer game rule you could instead just refuse him control, but keep the body bounce in contacts() so the ball does not pass through him.\n   - keeperHands returns false while b.restartBy === p.i.\n3. Bump SIM_VERSION (constants.ts:18).\n4. Add tests in tests/rules.test.ts: a kick-off is a kick, a keeper can't handle his own goal kick or release, and a taker touching it again gives an IFK.",
+   "title_unused": ""
+  },
+  {
+   "title": "Teams never change ends at half-time (Law 8)",
+   "real": true,
+   "severity": "minor",
+   "notes": "WHAT I RAN AND SAW\n- ends.ts: home GK at x=2.1 and away GK at x=102.9 at the first-half kick-off. At the second-half kick-off they are at the same x. kickoffTeam correctly switches to 1.\n- Browser, browser.cjs (3D): I set s.clock to halfTicks-20 to reach half-time.\n  - shots/ends-1st-1280.png (00:00) and shots/ends-2nd-1280.png (45:00, KICK-OFF banner): home is on the left and away on the right in both halves, with the radar the same.\n  - shots/ends-2nd-390.png (390x844 touch, 45:00): the radar still has home dots on the left and away triangles on the right.\n\nROOT CAUSE\n- field.ts:6 attackDir(team) is fixed, and teamX, fromTeam, oppGoal and ownGoal are fixed the same way.\n- match.ts:1529 only calls resetKickoff(s, 1, 'half').\n- The client never mirrors the view by half. s.half is read only for the scoreboard label (matchView.ts:408, versus.ts:802).\n\nWHY MINOR, NOT MAJOR\n- It is a real Law 8 gap, but it changes nothing in play, fairness or stats. The sim is symmetric under a 180-degree rotation: no wind, sun or slope, and even the referee's diagonal (rules.ts:524) maps onto itself.\n- The owner's 14 verbatim asks say nothing about rules or ends. The 'proper FIFA rules' quote does not appear in the feedback briefs.\n- Always attacking left to right is a common arcade simplification that keeps the mouse side view consistent.\n- So it is Laws fidelity and polish, not something that hurts players.\n\nFIX\nPreferred, view only, so determinism is untouched:\n- In the second half, rotate the sim-to-scene mapping 180 degrees about the centre spot: src/client/r3d/space.ts sx/sz/wx/wy, plus player facing in renderer3d and player3d.\n- Pointer raycasts go back through wx/wy, so input keeps working.\n- The end-to-end Cam in camera3d.ts stays behind the human's goal.\n- Mirror the radar in src/client/hud.ts drawRadar and the 2D view in src/client/render.ts the same way.\n- Show a 'Teams change ends' line at half-time.\n\nAlternative: make attackDir, teamX, fromTeam, oppGoal and ownGoal in src/sim/field.ts aware of s.half, bump SIM_VERSION, and add a test that the home keeper is at x of about 103 after half-time."
+  }
+ ]
+}
