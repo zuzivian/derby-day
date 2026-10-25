@@ -108,7 +108,7 @@ export class CoachTracker {
       this.offer('pass');
       // The first time with the ball in the attacking half is the time to say how to shoot.
       const x = s.players[me].pos.x;
-      if (attackDir(human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
+      if (attackDir(s, human) > 0 ? x > PITCH_W / 2 : x < PITCH_W / 2) this.offer('shoot');
     }
     // Lost it: the human's team had the ball and the other side has it now.
     if (ready && live && this.prevOwnerTeam === human && ownerTeam === 1 - human) this.offer('tackle');

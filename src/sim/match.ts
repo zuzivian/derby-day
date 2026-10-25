@@ -52,7 +52,7 @@ import {
   TEAM_SIZE,
   TICK_HZ,
 } from './constants.ts';
-import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
+import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
 import { chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
 import {
@@ -147,7 +147,7 @@ export function createMatch(o: MatchOptions): MatchState {
         attrs: ps.attrs,
         pos: { x: 0, y: 0 },
         vel: { x: 0, y: 0 },
-        facing: { x: attackDir(team as 0 | 1), y: 0 },
+        facing: { x: attackDir({ half: 1 }, team as 0 | 1), y: 0 },
         energy: 1,
         sprinting: false,
         winded: false,
@@ -227,22 +227,22 @@ function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): vo
     let ny = slot.y;
     if (p.role === 'GK') nx = 0.02;
     if (p.i === taker) {
-      nx = teamX(team, takerSpot(r).x);
+      nx = teamX(s, team, takerSpot(s, r).x);
       ny = 0.5;
     } else if (partner && p.i === partner.i) {
       nx = 0.5 - 1.5 / PITCH_W;
       ny = 0.5 + 3 / PITCH_H;
     }
-    p.pos = fromTeam(p.team, nx, ny);
+    p.pos = fromTeam(s, p.team, nx, ny);
     if (p.team !== team) {
       // Outside the centre circle.
       const c = { x: PITCH_W / 2, y: PITCH_H / 2 };
       const d = sub(p.pos, c);
       const l = len(d);
-      if (l < CENTRE_R + 0.5) p.pos = add(c, scale(l > 1e-6 ? scale(d, 1 / l) : { x: -attackDir(p.team), y: 0 }, CENTRE_R + 0.5));
+      if (l < CENTRE_R + 0.5) p.pos = add(c, scale(l > 1e-6 ? scale(d, 1 / l) : { x: -attackDir(s, p.team), y: 0 }, CENTRE_R + 0.5));
     }
     p.vel = { x: 0, y: 0 };
-    p.facing = { x: attackDir(p.team), y: 0 };
+    p.facing = { x: attackDir(s, p.team), y: 0 };
     p.stun = 0;
     p.tackleCd = 0;
     p.kickCd = 0;
@@ -398,7 +398,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     const fromBehind = dot(norm(sub(owner.pos, p.pos)), owner.facing) > 0.5;
     let pWin = clamp(0.35 + 0.7 * p.attrs.defending - 0.5 * owner.attrs.dribbling - (slide ? 0.08 : 0), 0.1, 0.88);
     if (fromBehind) pWin *= 0.8;
-    if (owner.role === 'GK' && inOwnBox(owner.team, owner.pos)) pWin *= 0.25;
+    if (owner.role === 'GK' && inOwnBox(s, owner.team, owner.pos)) pWin *= 0.25;
     const won = next(s.rng) < pWin;
     const fast = slide ? 1 : clamp((before - 6.5) / 2.5, 0, 1);
     let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
@@ -440,7 +440,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
  */
 function countShot(s: MatchState, team: 0 | 1, aimed = false): boolean {
   const b = s.ball;
-  const gx = oppGoal(team).x;
+  const gx = oppGoal(s, team).x;
   const gap = gx - b.pos.x;
   if (Math.abs(gap) > 35 || Math.abs(b.vel.x) < 1e-6 || Math.sign(gap) !== Math.sign(b.vel.x)) return false;
   const t = gap / b.vel.x;
@@ -465,7 +465,7 @@ function countShot(s: MatchState, team: 0 | 1, aimed = false): boolean {
  * behind for a corner. Returns true if it was blocked.
  */
 function blockCross(s: MatchState, p: MatchPlayer): boolean {
-  if (s.restart || teamX(p.team, p.pos.x) < 0.68 || Math.abs(p.pos.y - PITCH_H / 2) < GOAL_W) return false;
+  if (s.restart || teamX(s, p.team, p.pos.x) < 0.68 || Math.abs(p.pos.y - PITCH_H / 2) < GOAL_W) return false;
   const b = s.ball;
   const dir = norm(b.vel);
   for (const o of s.players) {
@@ -475,7 +475,7 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
     if (d > 2.2 || dot(to, dir) < d * 0.5) continue;
     if (next(s.rng) > 0.3 + 0.25 * o.attrs.defending) return false;
     const side = p.pos.y < PITCH_H / 2 ? -1 : 1;
-    b.vel = { x: attackDir(p.team) * range(s.rng, 3, 9), y: side * range(s.rng, 1, 6) };
+    b.vel = { x: attackDir(s, p.team) * range(s.rng, 3, 9), y: side * range(s.rng, 1, 6) };
     b.vz = range(s.rng, 1, 4);
     b.z = 0.8;
     b.lastTouch = o.i;
@@ -537,7 +537,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   pushEvent(s, { kind: 'restartTaken', ...eventBase(s, r.team, p.i), restart: r.kind, spot: { ...r.spot } });
   if (r.kind === 'penalty') {
     const gk = goalkeeper(s, r.team === 0 ? 1 : 0);
-    const tLine = Math.abs((ownGoal(gk.team).x - b.pos.x) / (b.vel.x || 1e-6));
+    const tLine = Math.abs((ownGoal(s, gk.team).x - b.pos.x) / (b.vel.x || 1e-6));
     const side = penaltyDive(s, gk, b.pos.y + b.vel.y * tLine);
     // He commits as it is struck: a dive to that side (or he stays up in the middle).
     if (side !== 0) gk.dive = { dir: { x: 0, y: side }, speed: diveSpeed(gk), ticks: DIVE_TICKS + DIVE_HOLD, travel: DIVE_TICKS, z: 0.9 };
@@ -644,8 +644,8 @@ function separate(s: MatchState): void {
   if (holder < 0) return;
   const gk = ps[holder];
   // He stays in front of his line, and opponents give him room to release it.
-  const g = ownGoal(gk.team);
-  const out = attackDir(gk.team);
+  const g = ownGoal(s, gk.team);
+  const out = attackDir(s, gk.team);
   if ((gk.pos.x - g.x) * out < 0.5) gk.pos = { x: g.x + out * 0.5, y: gk.pos.y };
   for (const o of ps) {
     if (o.team === gk.team || o.sentOff) continue;
@@ -737,7 +737,8 @@ function checkLines(s: MatchState): boolean {
   const b = s.ball;
   const p = b.pos;
   if (p.x < -BALL_R || p.x > PITCH_W + BALL_R) {
-    if (inGoalMouth(p.y) && b.z < GOAL_BAR_H - BALL_R) scoreGoal(s, p.x < 0 ? 1 : 0);
+    // The goal at x < 0 is attacked by whichever side defends the other end this half.
+    if (inGoalMouth(p.y) && b.z < GOAL_BAR_H - BALL_R) scoreGoal(s, teamAtEnd(s, p.x < 0 ? 1 : 0));
     else ballOut(s, { ...p });
     return true;
   }
@@ -755,7 +756,7 @@ function updateBall(s: MatchState, live: boolean): void {
   if (b.owner >= 0) {
     const o = s.players[b.owner];
     // A keeper holding the ball always faces upfield, so it can't drift over the line.
-    if (o.role === 'GK' && inOwnBox(o.team, o.pos)) o.facing = { x: attackDir(o.team), y: 0 };
+    if (o.role === 'GK' && inOwnBox(s, o.team, o.pos)) o.facing = { x: attackDir(s, o.team), y: 0 };
     const spot = add(o.pos, scale(o.facing, PLAYER_R + BALL_R + 0.23));
     b.vz = 0;
     if (b.touch > 0) {
@@ -854,7 +855,7 @@ export { KEEPER_HOLD_TICKS };
 
 /** Law 12 (handling): a keeper may not pick up a ball a teammate deliberately kicked or threw to him. */
 function keeperHands(s: MatchState, p: MatchPlayer): boolean {
-  if (p.role !== 'GK' || !inOwnBox(p.team, p.pos) || handsBarred(s, p)) return false;
+  if (p.role !== 'GK' || !inOwnBox(s, p.team, p.pos) || handsBarred(s, p)) return false;
   const k = s.ball.kickedBy;
   return !(k >= 0 && k !== p.i && s.players[k].team === p.team);
 }
@@ -1107,7 +1108,7 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
   }
   // It comes off his leg or chest, which he gets in the way of.
   const owner = b.lastTouch >= 0 ? s.players[b.lastTouch] : null;
-  const blockNearGoal = !!owner && owner.team !== p.team && b.vel.x * attackDir(p.team) < -7 && teamX(p.team, p.pos.x) < 0.35;
+  const blockNearGoal = !!owner && owner.team !== p.team && b.vel.x * attackDir(s, p.team) < -7 && teamX(s, p.team, p.pos.x) < 0.35;
   bounceOff(s, p, p.pos, awayFrom(s, p.pos), chest ? 0.3 : 0.45, blockNearGoal ? 0.6 : 0.3);
   b.noPickup[p.i] = 12;
   offsidePlayed(s, p, false);
@@ -1155,8 +1156,8 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
   const struck = b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team ? b.lastTouch : -1;
   touched(s, p);
   b.parriedFrom = struck;
-  const out = attackDir(p.team);
-  const g = ownGoal(p.team);
+  const out = attackDir(s, p.team);
+  const g = ownGoal(s, p.team);
   const tLine = Math.abs(b.vel.x) > 1e-6 ? (g.x - b.pos.x) / b.vel.x : -1;
   const yLine = tLine > 0 ? b.pos.y + b.vel.y * tLine : b.pos.y;
   const nearPost = Math.abs(yLine - PITCH_H / 2) > GOAL_W / 2 - 1.9;
@@ -1239,9 +1240,9 @@ function keeperDives(s: MatchState): void {
   for (const team of [0, 1] as const) {
     const gk = goalkeeper(s, team);
     if (!gk || gk.sentOff || gk.stun > 0 || gk.dive || !keeperHands(s, gk) || b.noPickup[gk.i] > 0) continue;
-    const out = attackDir(team);
+    const out = attackDir(s, team);
     if (b.vel.x * out > -3) continue;
-    const g = ownGoal(team);
+    const g = ownGoal(s, team);
     const tLine = (g.x - b.pos.x) / b.vel.x;
     if (tLine <= 0 || tLine > 1.4) continue;
     const yLine = b.pos.y + b.vel.y * tLine;
@@ -1296,7 +1297,7 @@ function header(s: MatchState): boolean {
   for (const p of s.players) {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
     if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
-    const attacking = p.team === lastTeam && inOwnBox(p.team === 0 ? 1 : 0, p.pos);
+    const attacking = p.team === lastTeam && inOwnBox(s, p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
     if (d < HEAD_REACH && d < bestD) {
@@ -1328,7 +1329,7 @@ function header(s: MatchState): boolean {
   b.noPickup[p.i] = 16;
   b.redirectedAt = s.tick;
   if (atGoal) {
-    const goal = oppGoal(p.team);
+    const goal = oppGoal(s, p.team);
     const gk = goalkeeper(s, p.team === 0 ? 1 : 0);
     const aim = s.humanAim?.[p.team];
     const yAim = isHumanControlled(s, p) && aim ? clamp(aim.y, GOAL_TOP + 0.4, GOAL_BOTTOM - 0.4) : gk.pos.y > PITCH_H / 2 ? GOAL_TOP + 0.9 : GOAL_BOTTOM - 0.9;
@@ -1342,13 +1343,13 @@ function header(s: MatchState): boolean {
     countShot(s, p.team);
   } else {
     // Head it away: upfield and wide of the goal. Under pressure near goal a glancing header can go behind.
-    const nearGoal = inOwnBox(p.team, p.pos);
+    const nearGoal = inOwnBox(s, p.team, p.pos);
     if (nearGoal && next(s.rng) < 0.42 - 0.2 * p.attrs.defending) {
       const side = b.pos.y < PITCH_H / 2 ? -1 : 1;
-      b.vel = { x: -attackDir(p.team) * range(s.rng, 7, 12), y: side * range(s.rng, 4, 9) };
+      b.vel = { x: -attackDir(s, p.team) * range(s.rng, 7, 12), y: side * range(s.rng, 4, 9) };
       b.vz = 2 + 2 * next(s.rng);
     } else {
-      const away = norm(add({ x: attackDir(p.team) * 1.2, y: 0 }, scale(norm(sub(b.pos, ownGoal(p.team))), 0.8)));
+      const away = norm(add({ x: attackDir(s, p.team) * 1.2, y: 0 }, scale(norm(sub(b.pos, ownGoal(s, p.team))), 0.8)));
       b.vel = scale(rotate(away, range(s.rng, -0.5, 0.5)), 11 + 4 * p.attrs.defending);
       b.vz = 4 + 2 * next(s.rng);
     }
@@ -1395,7 +1396,7 @@ function humanOrTimeout(s: MatchState, p: MatchPlayer, input: HumanInput): Inten
   return humanIntent(s, p, input);
 }
 
-function setupLength(r: Restart): number {
+function setupLength(s: MatchState, r: Restart): number {
   switch (r.kind) {
     case 'throwin':
       return RESTART_SETUP_MIN;
@@ -1406,7 +1407,7 @@ function setupLength(r: Restart): number {
     case 'penalty':
       return 95;
     case 'freekick':
-      return dist(r.spot, oppGoal(r.team)) < 32 ? 85 : 45;
+      return dist(r.spot, oppGoal(s, r.team)) < 32 ? 85 : 45;
     default:
       return RESTART_SETUP_MIN;
   }
@@ -1447,9 +1448,9 @@ function beginReady(s: MatchState, r: Restart): void {
   r.stage = 'ready';
   r.ticks = 0;
   const t = s.players[r.taker];
-  t.pos = takerSpot(r);
+  t.pos = takerSpot(s, r);
   t.vel = { x: 0, y: 0 };
-  const face = norm(r.kind === 'throwin' ? { x: 0, y: r.spot.y < PITCH_H / 2 ? 1 : -1 } : sub(oppGoal(r.team), r.spot));
+  const face = norm(r.kind === 'throwin' ? { x: 0, y: r.spot.y < PITCH_H / 2 ? 1 : -1 } : sub(oppGoal(s, r.team), r.spot));
   if (len(face) > 0) t.facing = face;
   r.wait = restartWait(s, r);
   enforceRestartPositions(s);
@@ -1484,7 +1485,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   updateControl(s, 1, inputs[1]);
   fixControlled(s);
   const taker = s.players[r.taker];
-  const spot = takerSpot(r);
+  const spot = takerSpot(s, r);
   let kickAction: Action | null = null;
   for (const p of s.players) {
     if (p.sentOff) continue;
@@ -1519,7 +1520,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
 
   if (r.stage === 'setup') {
     const there = dist(taker.pos, spot) < 0.6;
-    if ((there && r.ticks >= setupLength(r)) || r.ticks >= RESTART_SETUP_MAX) beginReady(s, r);
+    if ((there && r.ticks >= setupLength(s, r)) || r.ticks >= RESTART_SETUP_MAX) beginReady(s, r);
     return;
   }
   if (kickAction) {

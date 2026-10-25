@@ -44,11 +44,14 @@ describe('server/verify', () => {
 
   test('a tampered input log is caught even when the claims are left alone', () => {
     const r = decodeReplay(code);
-    // Nudge the pointer for a stretch in the first half: a different match, same claimed result and hash.
-    const k = Math.floor(r.runs.length / 4);
-    for (let i = k; i < k + 40; i++) {
-      const inp = r.runs[i].input;
-      r.runs[i] = { n: r.runs[i].n, input: { ...inp, cursor: { x: 50, y: 5 }, moved: true, pass: true } };
+    // Nudge the pointer for a stretch in each quarter: a different match, same claimed result and hash.
+    // (Several stretches, so one that falls where input is ignored, a kick-off line-up or the break, still leaves others.)
+    for (const q of [1, 2, 3]) {
+      const k = Math.floor((r.runs.length * q) / 4);
+      for (let i = k; i < k + 40; i++) {
+        const inp = r.runs[i].input;
+        r.runs[i] = { n: r.runs[i].n, input: { ...inp, cursor: { x: 50, y: 5 }, moved: true, pass: true } };
+      }
     }
     const v = verifyReplay(decodeReplay(encodeReplay(r)));
     expect(v.ok).toBe(false);

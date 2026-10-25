@@ -137,10 +137,10 @@ const QUEUE_TICKS = 90;
 export const passIncoming = (s: MatchState, p: MatchPlayer): boolean => s.ball.owner < 0 && s.ball.receiver === p.i;
 
 /** Keeper with the ball in his hands: he may move about his own area with it, not out of it. */
-function keepInBox(p: MatchPlayer, move: Vec, throttle: number): { move: Vec; throttle: number } {
-  const g = ownGoal(p.team);
+function keepInBox(s: MatchState, p: MatchPlayer, move: Vec, throttle: number): { move: Vec; throttle: number } {
+  const g = ownGoal(s, p.team);
   const ahead = add(p.pos, scale(move, 0.6));
-  const depth = (ahead.x - g.x) * attackDir(p.team);
+  const depth = (ahead.x - g.x) * attackDir(s, p.team);
   const inside = depth > 0.3 && depth < BOX_DEPTH - 1 && Math.abs(ahead.y - PITCH_H / 2) < BOX_W / 2 - 1;
   return inside ? { move, throttle: Math.min(throttle, 0.5) } : { move, throttle: 0 };
 }
@@ -213,7 +213,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       throttle = 0;
       sprint = false;
     }
-    if (s.ball.inHands && p.role === 'GK') ({ move, throttle } = keepInBox(p, move, throttle));
+    if (s.ball.inHands && p.role === 'GK') ({ move, throttle } = keepInBox(s, p, move, throttle));
     const q = s.queued?.[team];
     if (q && q.player === p.i && !s.ball.inHands) {
       s.queued![team] = null;
@@ -228,7 +228,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
         const target = aim ?? add(s.ball.pos, scale(norm(sub(heading, p.pos)), 60));
         return { move, throttle, sprint, action: { kind: 'punt', target, power: clamp(input.shoot, 0, 1) } };
       }
-      const goal = oppGoal(p.team);
+      const goal = oppGoal(s, p.team);
       const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
       return { move, throttle, sprint, action: { kind: 'shoot', target, power: clamp(input.shoot, 0, 1) } };
     }

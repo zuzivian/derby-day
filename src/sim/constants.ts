@@ -14,8 +14,13 @@
  *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
  *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
  *   4  Law 12: opponents standing close can't touch the keeper's release
+ *   5  the Laws, done properly: teams change ends at half-time; the kick-off is a kick; no second
+ *      touch by a restart taker, nor keeper handling of his own goal kick or release; offside
+ *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
+ *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
+ *      added time; a side below seven abandons the match
  */
-export const SIM_VERSION = 4;
+export const SIM_VERSION = 5;
 
 export const TICK_HZ = 60;
 export const DT = 1 / TICK_HZ;

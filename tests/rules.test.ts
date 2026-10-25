@@ -85,7 +85,7 @@ describe('restarts: out of play over each line', () => {
       roll(s, { x: lineX - dir * 10, y: MID + GOAL_W }, { x: dir * 20, y: 0 }, player(s, attacking, 'ST').i);
       expect(s.restart!.kind).toBe('goalkick');
       expect(s.restart!.team).toBe(defending);
-      expect(inOwnBox(defending, s.restart!.spot)).toBe(true);
+      expect(inOwnBox(s, defending, s.restart!.spot)).toBe(true);
       expect(Math.abs(s.restart!.spot.x - lineX)).toBeLessThan(5.5);
       // A defender's touch over his own line: corner to the attackers, from the corner arc on that side.
       const c = live();
@@ -129,13 +129,13 @@ describe('restarts: out of play over each line', () => {
         if (p.sentOff || p.i === r.taker) continue;
         const opp = p.team !== team;
         if (kind === 'corner' || kind === 'freekick') if (opp) expect(dist(p.pos, r.spot)).toBeGreaterThanOrEqual(RETREAT - 1e-6);
-        if (kind === 'goalkick' && opp) expect(inOwnBox(team, p.pos)).toBe(false);
+        if (kind === 'goalkick' && opp) expect(inOwnBox(s, team, p.pos)).toBe(false);
         if (kind === 'throwin' && opp) expect(dist(p.pos, r.spot)).toBeGreaterThanOrEqual(2 - 1e-6);
         if (kind === 'penalty') {
           const keeper = p.role === 'GK' && opp;
           if (keeper) expect(Math.abs(p.pos.x - PITCH_W)).toBeLessThan(0.5);
           else {
-            expect(inOwnBox(1, p.pos)).toBe(false);
+            expect(inOwnBox(s, 1, p.pos)).toBe(false);
             expect(dist(p.pos, r.spot)).toBeGreaterThanOrEqual(RETREAT - 1e-6);
           }
         }
