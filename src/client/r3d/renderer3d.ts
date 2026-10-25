@@ -156,6 +156,13 @@ export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; 
   };
 }
 
+/** A penalty being taken (set up, or the taker over the ball): the spot and the goal line it is aimed at. */
+export function penaltyView(s: MatchState): { spot: Vec; goalX: number } | null {
+  const r = s.restart;
+  if (!r || r.kind !== 'penalty' || r.stage === 'whistle') return null;
+  return { spot: { x: r.spot.x, y: r.spot.y }, goalX: oppGoal(s, r.team).x };
+}
+
 /** The long view shows this far past halfway, metres. */
 export const LONG_PAST = 20;
 
@@ -517,6 +524,8 @@ export class Renderer3D implements MatchRenderer {
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
+  penaltyOn = false;
+  private penHold: { spot: Vec; goalX: number; until: number } | null = null;
 
   resize(): void {
     const r = this.canvas.getBoundingClientRect();
@@ -893,7 +902,12 @@ export class Renderer3D implements MatchRenderer {
     if (lv) this.longHold = { ...lv, until: clock + 0.9 };
     else if (this.longHold && !this.replayShot && !jumped && clock < this.longHold.until && s.phase === 'play') lv = this.longHold;
     else this.longHold = null;
-    if (!!lv !== this.longViewOn) this.reframeUntil = t0 + 1200;
+    // A penalty: the view from behind the spot (camera3d.ts), held a moment after the kick too.
+    let pen = this.replayShot ? null : penaltyView(s);
+    if (pen) this.penHold = { ...pen, until: clock + 0.9 };
+    else if (this.penHold && !this.replayShot && !jumped && clock < this.penHold.until && s.phase === 'play') pen = this.penHold;
+    else this.penHold = null;
+    if (!!lv !== this.longViewOn || !!pen !== this.penaltyOn) this.reframeUntil = t0 + 1200;
     // A re-framing (a zoom easing in, the long view coming or going) re-takes a still pointer's point
     // once, when it has settled, rather than every frame while it moves (which let a runner drift).
     if (this.reframeUntil && t0 >= this.reframeUntil) {
@@ -901,7 +915,8 @@ export class Renderer3D implements MatchRenderer {
       this.cutCount++;
     }
     this.longViewOn = !!lv;
-    const camName = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
+    this.penaltyOn = !!pen;
+    const camName = this.replayShot ? `replay-${this.replayShot.kind}` : pen ? 'penalty' : lv ? lv.kind : this.cam.mode;
     if (this.canvas.dataset.camera !== camName) this.canvas.dataset.camera = camName;
     const rs = this.replayShot;
     // One focus object, refilled each frame; only the rarer parts (celebration, long view, replay) allocate.
@@ -919,6 +934,7 @@ export class Renderer3D implements MatchRenderer {
     f.humanDir = attackDir(s, this.me) as 1 | -1;
     f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind !== 'long' } : null;
     f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
+    f.penalty = pen ? { x: sx(pen.spot.x), z: sz(pen.spot.y), goalX: sx(pen.goalX) } : null;
     this.cam.update(
       dt,
       f,
