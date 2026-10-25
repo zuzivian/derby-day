@@ -61,6 +61,26 @@ jobs:
           path: dist/index.html
           if-no-files-found: error
 
+  fairness:
+    name: Fair matches for every kind of player
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Get the code.
+      - uses: actions/checkout@v4
+
+      # Bun runs the headless fairness harness.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      # Scripted humans (passive to strong) play new-club careers through the real sim, with the
+      # CPU's skill from the hidden estimate. --assert fails the job when a target is missed: a
+      # passive human routed, a competent one far from an even chance, a strong one not winning
+      # most, or the win chance shown drifting from the one measured (scripts/fairness.ts).
+      - name: Fairness check
+        run: bun run fairness 12 --assert
+
   e2e:
     name: Browser end-to-end tests
     runs-on: ubuntu-latest

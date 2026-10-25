@@ -13,6 +13,7 @@
 
 import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
+import { winChance } from '../meta/skill.ts';
 import type { Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
@@ -95,7 +96,7 @@ function miniSpark(values: number[]): string {
     <polyline points="${line}"/><circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="2.6"/></svg>`;
 }
 
-/** Half-ring gauge for the win chance (Elo expected score), 0 to 100. */
+/** Half-ring gauge for the win chance (skill.ts winChance), 0 to 100. */
 function gauge(pct: number): string {
   // A 180° arc; pathLength 100 makes the dash length the percentage.
   return `<div class="gauge" role="img" aria-label="Win chance ${pct}%">
@@ -119,11 +120,13 @@ function hero(app: App): string {
   const ranked = rankedOpen(s);
   const opp = ranked ? app.nextOpp : warmupIdentity(s);
   const gaugeOn = ranked && showGauge(s);
-  const p = ranked ? expectedScore(c.elo, app.nextOpp.elo) : 0.5;
+  // The gauge is the chance you really have (skill.ts winChance); the Elo at stake is the ladder's own sum.
+  const p = ranked ? winChance(s, app.nextOpp) : 0.5;
   const pct = Math.round(p * 100);
+  const e = ranked ? expectedScore(c.elo, app.nextOpp.elo) : 0.5;
   const k = kFactor(c.played);
-  const gain = Math.round(k * (1 - p));
-  const cost = Math.round(k * p);
+  const gain = Math.round(k * (1 - e));
+  const cost = Math.round(k * e);
   const tag = ranked ? 'Ranked' : 'Warm-up friendly';
   const kind = ranked ? 'Ranked match' : 'Warm-up friendly, no Elo';
   return `

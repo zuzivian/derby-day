@@ -2,7 +2,8 @@
 // "play next match", which launches the normal live match via playLive().
 // The rules live in src/meta/competitions.ts; this file only renders and wires.
 
-import { autoLineup, cpuTeam, ladderSquad, type LadderClub } from '../meta/club.ts';
+import { autoLineup, ladderSquad, type LadderClub } from '../meta/club.ts';
+import { opponentSetup } from '../meta/skill.ts';
 import {
   canStart,
   clubById,
@@ -33,7 +34,7 @@ import {
   type Season,
   type Tie,
 } from '../meta/competitions.ts';
-import { formatMoney, signed, type Save } from '../meta/game.ts';
+import { clubTeam, formatMoney, signed, type Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, unlockOf } from '../meta/levels.ts';
 import { maybeRollover } from '../meta/progression.ts';
 import { penaltySide } from '../meta/shootout.ts';
@@ -346,7 +347,8 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   }
   const label = kind === 'cup' ? `Cup ${CUP_ROUNDS[s.cup!.round].toLowerCase()}` : `League matchday ${s.season!.matchday + 1}`;
   const squad = ladderSquad(opp);
-  const away = cpuTeam(opp, squad);
+  // Its own squad; the CPU's sharpness from your skill estimate, as in ranked (skill.ts).
+  const away = opponentSetup(s, opp, clubTeam(s, 0.6));
   const oppCrest = opp.crest;
   return ctx.playLive(away, opp.crest, label, (m, forfeited, shown) => {
     let [gf, ga] = m.score;

@@ -9,6 +9,9 @@ import { bestPassOption } from '../sim/ai.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { attackDir, oppGoal, ownGoal, teamX } from '../sim/field.ts';
 import { createMatch, possessionShare, step, type MatchOptions } from '../sim/match.ts';
+import { applyResult, clubTeam, newGame, pickOpponent } from './game.ts';
+import { HOME_SKILL, learnSkill, opponentSetup, outlook, skillOf, winChance } from './skill.ts';
+import { rankedOpen, warmupTeam } from './warmup.ts';
 import { makeRng, next, type Rng } from '../sim/rng.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../sim/types.ts';
 import { add, clamp, dist, len, norm, scale, sub, type Vec } from '../sim/vec.ts';
@@ -332,3 +335,57 @@ export function playFairness(o: Omit<MatchOptions, 'humanTeam' | 'humans'>, bot:
 
 /** Seeded per-run rng for picking opponents, separate from any save's. */
 export const harnessRng = (seed: number): Rng => makeRng(seed);
+
+// ---------------------------------------------------------------------------
+// A career: a new club played match after match the way the game plays it
+
+/** One match of a career, as the harness records it. */
+export interface CareerMatch {
+  ranked: boolean;
+  gf: number;
+  ga: number;
+  /** The win chance the game showed before kick-off (skill.ts winChance); for warm-ups, the model's chance. */
+  shown: number;
+  /** The CPU's aiSkill in this match. */
+  aiSkill: number;
+  /** The skill estimate after the match. */
+  est: number;
+  /** The opponent club's Elo and our own before kick-off (ranked only). */
+  oppElo: number;
+  elo: number;
+}
+
+/**
+ * A new club (newGame(seed)) played for `matches` matches by `bot`, exactly as the client does it:
+ * the first match and warm-ups until ranked opens, then ranked against pickOpponent's choice, its
+ * CPU skill from the estimate (opponentSetup). The estimate learns after every match (learnSkill)
+ * and applyResult moves Elo, XP and the ladder.
+ */
+export function playCareer(bot: BotId | null, seed: number, matches: number, topMatches = 0): { career: CareerMatch[]; top: CareerMatch[] } {
+  const save = newGame(seed);
+  const out: CareerMatch[] = [];
+  for (let k = 0; k < matches; k++) {
+    const home = clubTeam(save, HOME_SKILL);
+    const ranked = rankedOpen(save);
+    const opp = ranked ? pickOpponent(save) : null;
+    const away = opp ? opponentSetup(save, opp, home) : warmupTeam(save, save.history.length === 0).away;
+    const shown = opp ? winChance(save, opp) : outlook(skillOf(save).est, home, away).win;
+    const elo = save.club.elo;
+    const r = playFairness({ seed: (seed * 131 + k * 7919) | 0, home, away }, bot);
+    const est = learnSkill(save, home, away, r.gf, r.ga).est;
+    if (opp) applyResult(save, opp, { name: away.name, short: away.short }, r.gf, r.ga, true, []);
+    else applyResult(save, null, { name: away.name, short: away.short }, r.gf, r.ga, false, [], 'Warm-up friendly', false, 'easy');
+    out.push({ ranked, gf: r.gf, ga: r.ga, shown, aiSkill: away.aiSkill, est, oppElo: opp?.elo ?? 0, elo });
+  }
+  // Then, with the estimate it has earned, a few friendlies against the top of the ladder (nothing recorded).
+  const top: CareerMatch[] = [];
+  const best = [...save.ladder].sort((a, b) => b.elo - a.elo);
+  for (let k = 0; k < topMatches; k++) {
+    const opp = best[k % 3];
+    const home = clubTeam(save, HOME_SKILL);
+    const away = opponentSetup(save, opp, home);
+    const r = playFairness({ seed: (seed * 977 + k * 104729) | 0, home, away }, bot);
+    top.push({ ranked: true, gf: r.gf, ga: r.ga, shown: winChance(save, opp), aiSkill: away.aiSkill, est: skillOf(save).est, oppElo: opp.elo, elo: save.club.elo });
+  }
+  return { career: out, top };
+}

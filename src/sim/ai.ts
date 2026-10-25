@@ -24,7 +24,7 @@
 //   restartAction()  what a CPU taker does with a throw-in, goal kick, corner,
 //                    free kick or penalty.
 //
-// Difficulty (TeamSetup.aiSkill, 0..1) scales:
+// Difficulty (TeamSetup.aiSkill, 0..1, and down to AI_SKILL_MIN for a rookie side) scales:
 //   reaction  how stale the plan is (rebuilt every 1 tick at skill 1, every
 //             5 at skill 0) and how far behind the ball the team "sees" it;
 //   decisions how often players re-decide and how much noise is added to
@@ -268,7 +268,9 @@ function seek(p: MatchPlayer, target: Vec, arrive = 2.5, cap = 1): Intent {
   return { move: norm(d), throttle: Math.min(cap, l / arrive) };
 }
 
-const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, 0, 1);
+/** The lowest CPU skill: below 0 is a rookie side, for the players who need one (src/meta/skill.ts sets it). */
+export const AI_SKILL_MIN = -0.3;
+const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, AI_SKILL_MIN, 1);
 
 /** Seconds of staleness in where a team "sees" the ball: 0.15 s at skill 0, 0.03 s at skill 1. */
 const reactionLag = (skill: number): number => 0.03 + 0.12 * (1 - skill);

@@ -1,4 +1,5 @@
-import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { autoLineup, generateSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { ensureSkill, learnSkill, opponentSetup } from '../meta/skill.ts';
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
@@ -43,6 +44,7 @@ function freshSeed(): number {
 function boot(save: Save): App {
   ensureProgressionFields(save);
   ensureElevenASide(save); // six-a-side saves get a squad of 18 and an eleven-man lineup
+  ensureSkill(save); // saves from before the hidden skill estimate get one from their ranked record
   ensureLevelFields(save); // older saves get retro XP and keep what they already use
   return {
     save,
@@ -326,6 +328,8 @@ function playLive(
     onEnd: (m, forfeited) => {
       unmount();
       takeover = false;
+      // Every match against the CPU teaches the hidden skill estimate (a forfeit is a 0–3 defeat).
+      learnSkill(s, home, away, forfeited ? 0 : m.score[0], forfeited ? Math.max(3, m.score[1]) : m.score[1]);
       telemetry.track({ name: 'match_end', kind: label, score: [m.score[0], m.score[1]], forfeit: forfeited });
       onDone(m, forfeited, away);
     },
@@ -351,8 +355,8 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
   let away: TeamSetup;
   let crest = opp?.crest ?? 'plain';
   if (opp) {
-    const squad = ladderSquad(opp);
-    away = cpuTeam(opp, squad);
+    // The ladder club's own squad and shape; how sharply its CPU plays comes from your skill estimate (skill.ts).
+    away = opponentSetup(app.save, opp, clubTeam(app.save, 0.6));
   } else {
     const lvl = practiceLevel!;
     const squad = generateSquad(makeRng(lvl.quality * 7919), lvl.quality);

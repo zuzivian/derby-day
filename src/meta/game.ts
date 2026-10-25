@@ -21,6 +21,7 @@ import {
 import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
 import type { SeasonReview } from './progression.ts';
+import type { SkillEstimate } from './skill.ts';
 import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, UNLOCKS_VERSION, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
@@ -98,6 +99,8 @@ export interface Save {
   formation?: FormationId;
   /** How the CPU players of your side defend, press and attack (MENTALITY_IDS in sim/constants.ts). Default Balanced. */
   mentality?: Mentality;
+  /** Hidden estimate of how well this person plays, which sets the CPU's skill (skill.ts). Separate from Elo. A new club has none until its first match (skillOf: a newcomer). */
+  skill?: SkillEstimate;
 }
 
 export function newGame(seed: number): Save {
@@ -433,7 +436,12 @@ export function isSave(x: unknown): x is Save {
     // Club calendar fields (also optional).
     numOrUndef(s.week) && numOrUndef(s.year) && objOrNull(s.review) && (s.offers === undefined || Array.isArray(s.offers)) &&
     // Club level fields (also optional).
-    numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones))
+    numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones)) &&
+    // The skill estimate is optional too; a broken one is replaced by ensureSkill, not a reason to refuse the save.
+    (s.skill === undefined || typeof s.skill === 'object')
     // Tactics (formation, mentality) are never a reason to refuse a save: ensureElevenASide repairs them.
   );
 }
+
+/** The one win-probability function (rewards and the gauge): the chance against the opponent as he will really play you. */
+export { winChance } from './skill.ts';
