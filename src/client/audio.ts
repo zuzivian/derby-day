@@ -31,7 +31,10 @@ export type SfxEvent =
   | { type: 'knock'; kind: 'board' | 'post'; power: number }
   | { type: 'tackle'; won: boolean }
   | { type: 'goal'; team: 0 | 1 }
-  | { type: 'whistle'; kind: 'kickoff' | 'halftime' | 'fulltime' };
+  | { type: 'whistle'; kind: WhistleKind };
+
+/** 'foul': one short blast when the referee stops play for a foul, an offside, an advantage brought back or a second touch. */
+export type WhistleKind = 'kickoff' | 'halftime' | 'fulltime' | 'foul';
 
 /** A tackle sets tackleCd to 36 (win/neutral) or 50 (lost) on the tick it starts. */
 const LUNGE_CD = 36;
@@ -52,6 +55,15 @@ export function snapshot(s: MatchState): Snapshot {
     vx: s.ball.vel.x,
     vy: s.ball.vel.y,
   };
+}
+
+/** Play has just stopped: was it the referee's whistle (not the ball going out of play)? */
+function stoppedForFoul(s: MatchState): boolean {
+  for (let i = s.events.length - 1; i >= 0; i--) {
+    const e = s.events[i];
+    if (e.kind === 'restart') return e.reason !== 'out' && e.restart !== 'kickoff';
+  }
+  return false;
 }
 
 /** A snapshot to start from so the opening kick-off whistles. */
@@ -80,6 +92,7 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
     if (next.phase === 'kickoff') out.push({ type: 'whistle', kind: 'kickoff' });
     else if (next.phase === 'halftime') out.push({ type: 'whistle', kind: 'halftime' });
     else if (next.phase === 'fulltime') out.push({ type: 'whistle', kind: 'fulltime' });
+    else if (next.phase === 'restart' && prev.phase === 'play' && stoppedForFoul(next)) out.push({ type: 'whistle', kind: 'foul' });
   }
   if (prev.phase !== 'play' && prev.phase !== 'init') return out;
 
@@ -483,10 +496,16 @@ export class SoundEngine {
     this.roar(1);
   }
 
-  private whistle(ctx: Ctx, out: AudioNode, kind: 'kickoff' | 'halftime' | 'fulltime'): void {
+  private whistle(ctx: Ctx, out: AudioNode, kind: WhistleKind): void {
     const t = ctx.currentTime + 0.01;
     const blasts: [number, number][] =
-      kind === 'kickoff' ? [[0, 0.26]] : kind === 'halftime' ? [[0, 0.42], [0.58, 0.42]] : [[0, 0.32], [0.46, 0.32], [0.92, 0.7]];
+      kind === 'foul'
+        ? [[0, 0.18]]
+        : kind === 'kickoff'
+          ? [[0, 0.26]]
+          : kind === 'halftime'
+            ? [[0, 0.42], [0.58, 0.42]]
+            : [[0, 0.32], [0.46, 0.32], [0.92, 0.7]];
     for (const [off, dur] of blasts) this.blast(ctx, out, t + off, dur);
   }
 

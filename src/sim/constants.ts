@@ -20,8 +20,15 @@
  *   6  controls feel: no hold on a steered man's pickup, tackles by the carrier's distance and slides
  *      judged as they travel, lofts with a receiver and a softer bounce, rising human shots,
  *      header aim relative to the striker, restart clicks kept, double clicks ignored
+ *   7  the Laws, done properly: teams change ends at half-time; the kick-off is a kick; no second
+ *      touch by a restart taker, nor keeper handling of his own goal kick or release; offside
+ *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
+ *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
+ *      added time; a side below seven abandons the match
+ *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
+ *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
  */
-export const SIM_VERSION = 6;
+export const SIM_VERSION = 9;
 
 export const TICK_HZ = 60;
 

@@ -428,7 +428,7 @@ describe('saves from before the gradual unlock table', () => {
     expect(unlockLevel(s, 'ladder')).toBe(4);
     expect(unlockLevel(s, 'replays')).toBe(3);
     expect(isUnlocked(s, 'ladder')).toBe(true);
-    expect(nextUnlockText(s)).toBe('The Cup and Practice Hard at level 5 — 400 XP to go');
+    expect(nextUnlockText(s)).toBe('The Cup and Practice: Hard at level 5 — 400 XP to go');
     // A new game is never legacy: it uses the table as written.
     const fresh = newGame(54);
     expect(fresh.legacyUnlocks).toBeUndefined();
