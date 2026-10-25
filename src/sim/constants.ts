@@ -29,8 +29,10 @@
  *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
  *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
  *      supporter) until the final third, and forwards on the shoulder follow the line
+ *  11  a back five forms: defenders leave a man 10 m upfield of their place to the midfield,
+ *      and one caught 8 m or more upfield runs back instead of jogging
  */
-export const SIM_VERSION = 10;
+export const SIM_VERSION = 11;
 
 export const TICK_HZ = 60;
 

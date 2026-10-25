@@ -654,6 +654,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       for (let j = 0; j < free.length; j++) {
         const d = free[j];
         if (mark[d.i] >= 0) continue;
+        // A defender leaves a man 10 m or more upfield of his place in the line to the midfield:
+        // a wing-back who took him would follow him up there and the back five would be three.
+        if (d.role === 'DEF' && teamX(s, team, a.pos.x) - teamX(s, team, zone[j].x) > 10 * M) continue;
         const cost = dist(zone[j], a.pos) * 0.55 + dist(d.pos, a.pos) * 0.45;
         if (cost < bestCost) {
           bestCost = cost;
@@ -1692,6 +1695,11 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
   // Getting back into shape is a jog, not a sprint: that is where counter-attacks find room.
   // A deep or pressing side gets back quicker.
   const home = shapeTarget(s, p, false, plan.focus, plan.line, plan.oppLine);
+  // ...except for a defender 8 m or more upfield of his place (a wing-back after an attack,
+  // mostly): the line retreats nearly as fast as he jogs, so he would never get back into it.
+  // He runs, and sprints if the ball is already behind him.
+  const back = teamX(s, p.team, p.pos.x) - teamX(s, p.team, home.x);
+  if (p.role === 'DEF' && back > 8 * M) return { ...seek(p, home, 3, cap), sprint: sprintOk(s, p, back > 12 * M && bx < teamX(s, p.team, p.pos.x)) };
   return seek(p, home, 3, (dist(home, p.pos) > 10 ? k.recover : 0.9) * cap);
 }
 
