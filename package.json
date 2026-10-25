@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit -p .",
     "check": "bun run typecheck && bun test && bun run build && bun run size",
     "balance": "bun run scripts/balance.ts",
+    "fairness": "bun run scripts/fairness.ts",
     "career": "bun run scripts/career.ts",
     "e2e": "bun run build && node tests/e2e/run.cjs",
     "size": "bun run scripts/size-budget.ts"

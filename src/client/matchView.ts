@@ -12,9 +12,10 @@ import { announce, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
+import { tickDue } from './ticks.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
-import { InputController } from './input.ts';
+import { freeKickSpot, InputController } from './input.ts';
 import { kickGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import type { RenderExtras } from './render.ts';
@@ -24,7 +25,7 @@ import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
 import { quickTacticsMarkup } from './tactics.ts';
-import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
+import { MENTALITY_IDS, MENTALITY_LABEL, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
@@ -97,6 +98,8 @@ export interface MatchInputSource {
   extras(): RenderExtras;
   /** Drop queued kicks and charges (pause, resume, replays): nothing pressed then fires afterwards. */
   reset?(): void;
+  /** A one-shot action (pass, shot, tackle, switch…) is waiting for the next tick. */
+  waiting?(): boolean;
   dispose(): void;
 }
 
@@ -118,7 +121,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
       if (e.reason === 'advantage') return `Advantage brought back: ${e.restart === 'penalty' ? 'penalty' : 'free kick'} to ${team}`;
       if (e.reason === 'second-touch') return `Second touch: indirect free kick to ${team}`;
       if (e.restart === 'penalty') return `Penalty to ${team}`;
-      if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
+      if (e.restart === 'freekick' && e.reason === 'foul') return `${e.direct ? 'Free kick' : 'Indirect free kick'} to ${team}`;
       if (e.restart === 'corner') return `Corner to ${team}`;
       return null;
     default:
@@ -136,7 +139,7 @@ const TOUCH_HINT = hint(
 );
 const MOUSE_HINT = hint(
   `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
-  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch. <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -153,7 +156,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, Esc to pause.'}"></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, Esc to pause.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -209,8 +212,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
     c.paused = () => paused;
+    c.setPiece = () => freeKickSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -281,6 +285,21 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
     announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
   });
+  // Quick tactics from the keyboard while playing: 1 Park the bus ... 5 High press, as in the pause menu.
+  // By key position (Digit1-5, Numpad1-5), so the top row works on AZERTY too.
+  const onTacticKey = (e: KeyboardEvent) => {
+    const n = /^(?:Digit|Numpad)([1-5])$/.exec(e.code)?.[1];
+    if (!n || me === null || paused || replay || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+    const m = MENTALITY_IDS[Number(n) - 1];
+    pendingTactic = Number(n);
+    const radio = root.querySelector<HTMLInputElement>(`#quick-tactics input[value="${m}"]`);
+    if (radio) radio.checked = true;
+    hud.tag(MENTALITY_LABEL[m], 1600, 'Mentality');
+    announce(`Mentality: ${MENTALITY_LABEL[m]}.`);
+  };
+  document.addEventListener('keydown', onTacticKey);
   const spotter = new HighlightSpotter(s);
   const buffer = new ReplayBuffer(s);
   let pending: Highlight | null = null;
@@ -448,13 +467,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
-      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: replay.acc });
       hud.update(replay.state, 0, null);
     } else {
       if (!paused && !gfx.lost) {
         acc += elapsed;
         let steps = 0;
-        while (acc >= DT && steps < 12) {
+        // A waiting click or key takes its tick now, not a frame or two later on a fast screen (ticks.ts).
+        while (steps < 12 && tickDue(acc, steps, input.waiting?.() ?? false)) {
           let raw = input.take();
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
@@ -479,10 +499,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         }
       }
       if (replay) {
-        renderer.draw((replay as { state: MatchState }).state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+        renderer.draw((replay as { state: MatchState; acc: number }).state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: (replay as { acc: number }).acc });
         hud.update((replay as { state: MatchState }).state, 0, null);
       } else {
         const extras = input.extras();
+        // Time since the last tick, so positions are drawn between ticks (RenderExtras.since). Held
+        // (paused, graphics lost) or capped at 12 ticks a frame, the picture stays on the tick.
+        extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
         hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));
@@ -561,6 +584,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     document.removeEventListener('visibilitychange', onVis);
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onTacticKey);
     window.removeEventListener('keydown', onReplayKey, true);
     if (guardingBack) {
       window.removeEventListener('popstate', onPop);

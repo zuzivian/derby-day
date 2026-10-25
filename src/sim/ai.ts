@@ -24,7 +24,7 @@
 //   restartAction()  what a CPU taker does with a throw-in, goal kick, corner,
 //                    free kick or penalty.
 //
-// Difficulty (TeamSetup.aiSkill, 0..1) scales:
+// Difficulty (TeamSetup.aiSkill, 0..1, and down to AI_SKILL_MIN for a rookie side) scales:
 //   reaction  how stale the plan is (rebuilt every 1 tick at skill 1, every
 //             5 at skill 0) and how far behind the ball the team "sees" it;
 //   decisions how often players re-decide and how much noise is added to
@@ -73,7 +73,7 @@ import {
 import { chipPlan, rollTravel } from './kicks.ts';
 import { chance, gauss, next, range } from './rng.ts';
 import type { Action, AiInterception, AiMemory, AiTeamPlan, Intent, MatchPlayer, MatchState, Restart } from './types.ts';
-import { add, clamp, dot, rotate, scale, sub, type Vec } from './vec.ts';
+import { add, clamp, dot, rotate, scale, segDist, sub, type Vec } from './vec.ts';
 import { barredSecondTouch } from './rules.ts';
 
 // Local sqrt-based helpers: Math.hypot is several times slower, and sqrt is
@@ -272,7 +272,9 @@ function seek(p: MatchPlayer, target: Vec, arrive = 2.5, cap = 1): Intent {
   return { move: norm(d), throttle: Math.min(cap, l / arrive) };
 }
 
-const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, 0, 1);
+/** The lowest CPU skill: below 0 is a rookie side, for the players who need one (src/meta/skill.ts sets it). */
+export const AI_SKILL_MIN = -0.3;
+const skillOf = (s: MatchState, team: 0 | 1): number => clamp(s.teams[team].aiSkill, AI_SKILL_MIN, 1);
 
 /** Seconds of staleness in where a team "sees" the ball: 0.15 s at skill 0, 0.03 s at skill 1. */
 const reactionLag = (skill: number): number => 0.03 + 0.12 * (1 - skill);
@@ -458,6 +460,37 @@ function supportSlots(s: MatchState, team: 0 | 1, c: Vec, n: number): number[] {
   return [[0.9 * inSign], [-a, a], [-a, a, (Math.PI - 0.75) * inSign]][Math.min(n, 3) - 1];
 }
 
+/**
+ * Is the human's man going for this point (the carrier, or where a loose ball can be met)? Close
+ * to it, or running at it. If not, a CPU teammate presses or chases for him: the side
+ * covers for a human who is somewhere else, instead of nobody going.
+ */
+export function humanEngaging(s: MatchState, h: MatchPlayer, at: Vec): boolean {
+  // A pass on its way to him: he goes to meet it whoever steers him (human.ts meetBall).
+  if (s.ball.owner < 0 && s.ball.receiver === h.i) return true;
+  if (humanAuto(s, h.team)) return false;
+  const to = sub(at, h.pos);
+  const d = len(to);
+  if (d < HUMAN_ENGAGE_R) return true;
+  return d < 14 && dot(h.vel, scale(to, 1 / d)) > 2.5;
+}
+/** Within this many metres the human's man counts as going in, whatever he is doing. */
+export const HUMAN_ENGAGE_R = 3;
+
+/** The human's man this far from his place in the shape has left a zone for the others to fill. */
+export const WANDER_R = 12;
+
+/** Ticks without any input after which a human's player is positioned by the CPU (0.75 s). */
+export const IDLE_TICKS = 45;
+
+/**
+ * Is the human's player on this side being positioned by the CPU just now: held after an
+ * automatic switch until the pointer moves (MatchState.ctlHold), or the human idle for
+ * IDLE_TICKS? He then holds his position and marks like a teammate, but never presses or
+ * chases (a CPU teammate does that for him) and takes no action of his own.
+ */
+export const humanAuto = (s: MatchState, team: 0 | 1): boolean => !!s.ctlHold?.[team] || (s.idleTicks?.[team] ?? 0) >= IDLE_TICKS;
+
 function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const skill = skillOf(s, team);
   const k = tacticOf(s, team);
@@ -465,6 +498,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
   const human = s.humans[team] ? s.controlled[team] : -1;
+  // The human's man has a place in the shape and a man to mark like anyone else while the CPU
+  // positions him (humanAuto); while the human steers him he is left out of every job.
+  const steered = human >= 0 && !humanAuto(s, team) ? human : -1;
   const icpt: (AiInterception | null)[] = s.players.map(() => null);
   const mark: number[] = s.players.map(() => -1);
   const mates = s.players.filter((m) => m.team === team && m.role !== 'GK' && m.stun === 0 && !m.sentOff);
@@ -484,6 +520,13 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       let best: MatchPlayer | null = null;
       for (const m of mates) if (!best || dist(m.pos, press) < dist(best.pos, press)) best = m;
       chaser = best && best.i !== human ? best.i : -1;
+      // The human's man is the natural presser but isn't going in: the next man presses for him.
+      if (best && best.i === human && !humanEngaging(s, best, owner.pos)) {
+        let cover: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && (!cover || dist(m.pos, press) < dist(cover.pos, press))) cover = m;
+        chaser = cover ? cover.i : -1;
+        best = cover;
+      }
       pressured = !!best && dist(best.pos, owner.pos) < 5;
     }
   } else {
@@ -512,7 +555,16 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       attacking = bestUs < bestThem - (lastOurs ? 0.1 : 0.45);
       chaser = quickest?.i ?? -1;
     }
-    if (chaser === human) chaser = -1;
+    if (human >= 0 && chaser === human) {
+      // Loose ball: the human's man is quickest to it. If he isn't heading for it, the next quickest goes.
+      const h = s.players[human];
+      if (humanEngaging(s, h, icpt[human]!.pt)) chaser = -1;
+      else {
+        let next: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && !keepsOut(s, m) && icpt[m.i] && (!next || icpt[m.i]!.t < icpt[next.i]!.t)) next = m;
+        chaser = next ? next.i : -1;
+      }
+    }
     const fi = chaser >= 0 ? icpt[chaser]! : quickest ? icpt[quickest.i]! : null;
     focus = fi ? fi.pt : seen;
   }
@@ -616,7 +668,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
       }
       for (const m of mates) {
-        if (m.i === center.i || m.i === human || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
+        if (m.i === center.i || m.i === steered || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
         const dx = m.pos.x - cpos.x;
         const dy = m.pos.y - cpos.y;
         const d2 = dx * dx + dy * dy;
@@ -658,7 +710,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     const attackers = s.players
       .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(s, team, o.pos.x) < 0.42 + 0.2 * skill)
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
-    const free = mates.filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i));
+    const free = mates.filter((m) => m.i !== chaser && m.i !== steered && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
     // A low block marks zonally (only who comes into its zone); a pressing side follows its man further.
     const radius = (13 + 7 * skill) * k.markR;
@@ -678,6 +730,31 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
       }
       if (best) mark[best.i] = a.i;
+    }
+    // The human has taken his man out of his zone: whoever is free picks up the attackers in it.
+    if (steered >= 0) {
+      const h = s.players[steered];
+      const home = shapeTarget(s, h, false, focus, line, oppLine);
+      if (dist(h.pos, home) > WANDER_R) {
+        const marked = new Set(mark.filter((x) => x >= 0));
+        for (const a of attackers) {
+          if (marked.has(a.i) || dist(a.pos, home) > WANDER_R) continue;
+          let best: MatchPlayer | null = null;
+          let bestD = radius * 1.6;
+          for (const d of free) {
+            if (mark[d.i] >= 0) continue;
+            const dd = dist(d.pos, a.pos);
+            if (dd < bestD) {
+              bestD = dd;
+              best = d;
+            }
+          }
+          if (best) {
+            mark[best.i] = a.i;
+            marked.add(a.i);
+          }
+        }
+      }
     }
     // An unassigned midfielder screens in front of the back line.
     let deepest = Infinity;
@@ -1425,6 +1502,9 @@ function laneShut(s: MatchState, team: 0 | 1, from: Vec, to: Vec): boolean {
 /** A supporter tries his angle and a little either side of it, short and a bit longer. */
 const SUPPORT_TURN = [-0.4, 0, 0.4];
 const SUPPORT_REACH = [0.75, 1, 1.25];
+// Scratch for supportSpot (it never re-enters): opponents as x, y pairs, and teammates' spots.
+const SUPPORT_OPP: number[] = [];
+const SUPPORT_MATES: Vec[] = [];
 
 function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, j: number): Vec {
   const team = p.team;
@@ -1436,13 +1516,17 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
   const base = plan.supportAng![j];
   const noise = 0.1 + 0.6 * (1 - skill);
-  let best = c;
+  let bestX = 0;
+  let bestY = 0;
+  let found = false;
   let bestScore = -Infinity;
   // Opponents a moment from now: a lane someone is stepping into is already shut.
-  const opp: Vec[] = [];
+  const opp = SUPPORT_OPP;
+  opp.length = 0;
   // Where teammates are, or are heading: spots too close to them are crowded. Only players near
   // enough to the carrier to touch a lane or crowd a spot this short count.
-  const mates: Vec[] = [];
+  const mates = SUPPORT_MATES;
+  mates.length = 0;
   const near = k.supportR * SUPPORT_REACH[SUPPORT_REACH.length - 1] + 9;
   const near2 = near * near;
   for (const o of s.players) {
@@ -1450,7 +1534,7 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
     if (o.team !== team) {
       const x = o.pos.x + o.vel.x * 0.35;
       const y = o.pos.y + o.vel.y * 0.35;
-      if ((x - c.x) ** 2 + (y - c.y) ** 2 < near2) opp.push({ x, y });
+      if ((x - c.x) ** 2 + (y - c.y) ** 2 < near2) opp.push(x, y);
     } else if (o.i !== p.i && o.role !== 'GK' && o.i !== carrier?.i) {
       const spot = o.ai?.target && o.ai.attacking ? o.ai.target : o.pos;
       if ((spot.x - c.x) ** 2 + (spot.y - c.y) ** 2 < near2) mates.push(spot);
@@ -1471,12 +1555,13 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
       if (toTeamX(x) > onsideX) x = fromTeamX(onsideX);
       // Never a square ball across our own six-yard box.
       if (sixYard && toTeamX(x) < 0.1) x = fromTeamX(0.1);
-      const cand = { x, y };
       let lane = 5;
       let space2 = 64;
-      for (const o of opp) {
-        lane = Math.min(lane, distToSegment(o, c, cand));
-        space2 = Math.min(space2, (o.x - x) ** 2 + (o.y - y) ** 2);
+      for (let n = 0; n < opp.length; n += 2) {
+        const ox = opp[n];
+        const oy = opp[n + 1];
+        lane = Math.min(lane, segDist(ox, oy, c.x, c.y, x, y));
+        space2 = Math.min(space2, (ox - x) ** 2 + (oy - y) ** 2);
       }
       let score = Math.min(lane, 4) * 1.1 + Math.sqrt(space2) * 0.35 - (lane < 1.6 ? 3 : 0);
       for (const spot of mates) {
@@ -1488,11 +1573,13 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
       score += (toTeamX(x) - cx) * PITCH_W * 0.035 - Math.sqrt((p.pos.x - x) ** 2 + (p.pos.y - y) ** 2) * 0.05 + gauss(s.rng) * noise;
       if (score > bestScore) {
         bestScore = score;
-        best = cand;
+        bestX = x;
+        bestY = y;
+        found = true;
       }
     }
   }
-  return best;
+  return found ? { x: bestX, y: bestY } : c;
 }
 
 function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec {
@@ -1737,18 +1824,22 @@ function aerialRank(p: MatchPlayer): number {
 }
 
 /** Targets for a set piece into the box: who goes where, and who marks whom. Players already given a target (a wall) keep it. */
-function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: number): void {
+function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: number, line = 0): void {
   const att = r.team;
   const def: 0 | 1 = att === 0 ? 1 : 0;
   const near = r.spot.y < MID_Y ? -1 : 1;
-  const zones: Vec[] = [
-    fromOpp(s, att, 6.5, MID_Y + near * 3),
-    fromOpp(s, att, 8, MID_Y - near * 3),
-    fromOpp(s, att, 11, MID_Y + near * 0.5),
-    fromOpp(s, att, 9.5, MID_Y - near * 0.5),
-    fromOpp(s, att, 12, MID_Y - near * 6),
-    fromOpp(s, att, 9, MID_Y + near * 6),
-  ];
+  // `line` > 0: a free kick with a shot on. The attackers stand on the defence's line that far from goal
+  // (onside, ready to follow it in), not in the six-yard box, and their markers just goal-side of them.
+  const zones: Vec[] = line
+    ? [fromOpp(s, att, line, MID_Y + near * 7), fromOpp(s, att, line, MID_Y - near * 7), fromOpp(s, att, line, MID_Y - near * 11), fromOpp(s, att, line, MID_Y + near * 11)]
+    : [
+        fromOpp(s, att, 6.5, MID_Y + near * 3),
+        fromOpp(s, att, 8, MID_Y - near * 3),
+        fromOpp(s, att, 11, MID_Y + near * 0.5),
+        fromOpp(s, att, 9.5, MID_Y - near * 0.5),
+        fromOpp(s, att, 12, MID_Y - near * 6),
+        fromOpp(s, att, 9, MID_Y + near * 6),
+      ];
   const ours = s.players.filter((p) => p.team === att && !p.sentOff && p.i !== r.taker && p.role !== 'GK' && !t[p.i]).sort((a, b) => aerialRank(b) - aerialRank(a));
   const inBox: number[] = [];
   ours.forEach((p, k) => {
@@ -1788,21 +1879,65 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
   }
 }
 
-/** A defensive wall 9.15 m from the ball, covering the near side of the goal. */
+/** A wall stands this far from the ball: the 9.15 m the referee asks for, and a heel's width more. */
+export const WALL_AT = RETREAT + 0.15;
+/** Space between the middles of two men in a wall (shoulder to shoulder; match.ts separate() lets them stand this close). */
+export const WALL_GAP = 0.6;
+
+/** How many men a side puts in a wall `dGoal` metres from its goal (0 for no wall). */
+export const wallSize = (dGoal: number): number => (dGoal < 20 ? 4 : dGoal < 25 ? 3 : dGoal < 32 ? 2 : 0);
+
+/**
+ * A defensive wall 9.15 m from the ball, covering the near side of the goal. Its men are picked once,
+ * from those nearest its place when the restart is set up, and kept (MatchState.wall), so the wall
+ * does not reshuffle while it forms and match.ts knows whom to hold still and lift when it is struck.
+ */
 function wall(s: MatchState, r: Restart, t: (Vec | null)[], n: number): number[] {
   const def: 0 | 1 = r.team === 0 ? 1 : 0;
   const goal = ownGoal(s, def);
   const nearPost = { x: goal.x, y: MID_Y + Math.sign(r.spot.y - MID_Y || 1) * (GOAL_W / 2 - 1) };
   const aim = norm(sub(add(scale(goal, 0.4), scale(nearPost, 0.6)), r.spot));
-  const centre = add(r.spot, scale(aim, RETREAT + 0.4));
+  const centre = add(r.spot, scale(aim, WALL_AT));
   const perp = { x: -aim.y, y: aim.x };
-  const cands = s.players.filter((p) => p.team === def && !p.sentOff && p.role !== 'GK' && p.sub !== 'CB').sort((a, b) => dist(a.pos, centre) - dist(b.pos, centre));
-  const picked = cands.slice(0, n).map((p) => p.i);
-  picked.forEach((i, k) => (t[i] = add(centre, scale(perp, (k - (n - 1) / 2) * 0.75))));
-  // Keeper: on the far side of the wall, a couple of metres off his line.
+  let w = s.wall;
+  if (!w || w.team !== def || w.spot.x !== r.spot.x || w.spot.y !== r.spot.y || w.players.some((i) => s.players[i].sentOff)) {
+    // The nearest to its place, a man behind the ball counting the way round the 9.15 m he must keep.
+    const cost = (p: MatchPlayer) => dist(p.pos, centre) + Math.max(0, -dot(sub(p.pos, r.spot), aim)) * 1.5;
+    const cands = s.players.filter((p) => p.team === def && !p.sentOff && p.role !== 'GK' && p.sub !== 'CB').sort((a, b) => cost(a) - cost(b));
+    // Marks along the wall in the order the men stand across it, so nobody has to cross another to get to his.
+    const men = cands.slice(0, n).sort((a, b) => dot(sub(a.pos, centre), perp) - dot(sub(b.pos, centre), perp));
+    w = { team: def, spot: { ...r.spot }, players: men.map((p) => p.i), struck: -1 };
+    // Picked once the ball is on the spot and everyone has been sent back (set-up), not while it still rolls.
+    if (r.stage !== 'whistle') s.wall = w;
+  }
+  const picked = w.players;
+  picked.forEach((i, k) => (t[i] = add(centre, scale(perp, (k - (picked.length - 1) / 2) * WALL_GAP))));
+  // Keeper: a little to the far side of the wall's end, a step and a half off his line.
   const gk = goalkeeper(s, def);
-  t[gk.i] = { x: goal.x + attackDir(s, def) * 1, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 1.2 };
+  t[gk.i] = { x: goal.x + attackDir(s, def) * 1.2, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 0.9 };
   return picked;
+}
+
+/**
+ * At a free kick with a shot on, the kicking side keeps out of its own shooting lane: anyone whose place is
+ * inside the triangle from the ball to the posts (a metre and a half wider each side) moves out sideways.
+ */
+function clearLane(s: MatchState, r: Restart, t: (Vec | null)[]): void {
+  const goal = oppGoal(s, r.team);
+  const posts = [{ x: goal.x, y: MID_Y - GOAL_W / 2 - 1.5 }, { x: goal.x, y: MID_Y + GOAL_W / 2 + 1.5 }];
+  const toGoal = dist(r.spot, goal);
+  for (const p of s.players) {
+    const at = t[p.i];
+    if (p.team !== r.team || p.sentOff || p.i === r.taker || p.role === 'GK' || !at) continue;
+    const along = dot(sub(at, r.spot), norm(sub(goal, r.spot)));
+    if (along < 0.2 || along > toGoal) continue;
+    // The lane's edges where he stands, by straight lines from the ball to each widened post.
+    const f = along / toGoal;
+    const ya = r.spot.y + (posts[0].y - r.spot.y) * f;
+    const yb = r.spot.y + (posts[1].y - r.spot.y) * f;
+    if (at.y <= ya || at.y >= yb) continue;
+    t[p.i] = { x: at.x, y: at.y - ya < yb - at.y ? ya - 0.5 : yb + 0.5 };
+  }
 }
 
 function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
@@ -1810,7 +1945,7 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
   const att = r.team;
   const def: 0 | 1 = att === 0 ? 1 : 0;
   const ax = teamX(s, att, r.spot.x);
-  const shape = (team: 0 | 1, attacking: boolean) => {
+  const shape = (team: 0 | 1, attacking: boolean): void => {
     const plan = teamPlan(s, team);
     for (const p of s.players) {
       if (p.team !== team || p.sentOff || t[p.i]) continue;
@@ -1828,9 +1963,14 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
     case 'freekick': {
       const dGoal = dist(r.spot, oppGoal(s, att));
       const wideFinal = ax > 0.7 && Math.abs(r.spot.y - MID_Y) > BOX_W / 2 - 3;
-      if (r.direct && dGoal < 30 && !wideFinal) {
-        wall(s, r, t, dGoal < 20 ? 4 : dGoal < 25 ? 3 : 2);
-        boxSetPiece(s, r, t, 3);
+      // A wall wherever a shot is on: a direct kick, or an indirect one a single touch from a shot (not inside the area, where
+      // they stand on the line instead).
+      if (wallSize(dGoal) > 0 && !wideFinal && !inOwnBox(s, def, r.spot)) {
+        wall(s, r, t, wallSize(dGoal));
+        // The defence holds a line six metres in front of the ball, between 11 and 17 m out.
+        boxSetPiece(s, r, t, 3, clamp(Math.abs(r.spot.x - oppGoal(s, att).x) - 6, 11, 17));
+        shape(att, true);
+        clearLane(s, r, t);
       } else if (ax > 0.62) boxSetPiece(s, r, t, ax > 0.7 ? 4 : 3);
       break;
     }
@@ -1899,6 +2039,8 @@ export function restartIntent(s: MatchState, p: MatchPlayer): Intent {
   const target = cache.targets[p.i];
   if (!target) return IDLE;
   const d = dist(p.pos, target);
+  // A man in the wall walks right onto his mark and then stands there, shoulder to shoulder, until it is struck.
+  if (s.wall?.players.includes(p.i) && r.stage !== 'whistle') return d < (r.stage === 'ready' ? 0.3 : 0.12) ? IDLE : { ...seek(p, target, 0.6, 1), sprint: d > 3 };
   const it = seek(p, target, 2, r.stage === 'whistle' ? 0.65 : 1);
   return { ...it, sprint: d > 18 && r.stage !== 'whistle' && sprintOk(s, p, true) };
 }
@@ -1985,14 +2127,16 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
       }
       const angleOk = Math.abs(r.spot.y - MID_Y) < 14 + (30 - dGoal) * 0.3;
       if (r.direct && dGoal < 29 && dGoal > 15 && angleOk && chance(s.rng, 0.35 + 0.5 * p.attrs.shooting)) {
-        // Over the wall and dipping under the bar.
-        const yAim = MID_Y + (r.spot.y < MID_Y ? 1 : -1) * (GOAL_W / 2 - 0.8) * (chance(s.rng, 0.6) ? 1 : -1);
-        const speed = (13 + 17 * 0.82) * (0.8 + 0.3 * p.attrs.shooting);
-        const tWall = RETREAT / (speed * 0.98);
-        const tGoal = dGoal / (speed * 0.95);
-        // Rising as it passes the wall (a jumping wall only heads a ball on its way down), dipping to about 1.7 m at the line.
-        const vz = clamp((1.7 + 0.5 * GRAVITY * tGoal * tGoal) / tGoal, (1.4 + 0.5 * GRAVITY * tWall * tWall) / tWall, 20);
-        return { kind: 'shoot', target: { x: goal.x, y: yAim }, power: 0.82, lift: vz };
+        // Over the wall (match.ts strikeFreeKick plans it), into a corner: the near one over the wall, or the far one
+        // bent in from outside the post, away from the keeper. Struck nearly as softly as dips in, the better taker the surer.
+        const nearSide = r.spot.y < MID_Y ? -1 : 1;
+        const far = chance(s.rng, 0.6);
+        const yAim = MID_Y + (far ? -nearSide : nearSide) * (GOAL_W / 2 - 0.6 - 0.4 * (1 - p.attrs.shooting));
+        // Bent toward the middle of the goal: the curl's normal (kicks.ts setPieceStrike) is the line's left-hand side.
+        const line = norm(sub({ x: goal.x, y: yAim }, r.spot));
+        const inward = Math.sign(line.x * (MID_Y - yAim)) || 1;
+        const curl = inward * (far ? range(s.rng, 0.5, 1) : range(s.rng, 0, 0.4));
+        return { kind: 'shoot', target: { x: goal.x, y: yAim }, power: 0.55 + range(s.rng, 0, 0.15) * (1.2 - p.attrs.shooting), curl };
       }
       if (ax > 0.66) {
         const c = bestCross(s, p, noise);

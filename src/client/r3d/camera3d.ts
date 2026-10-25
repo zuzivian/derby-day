@@ -29,8 +29,9 @@ export interface CameraFocus {
   /** The human's attack direction, for the end camera. */
   humanDir: 1 | -1;
   /**
-   * Elevated long view (goal kicks, own-half free kicks, the keeper's ball): these scene points must
-   * all be in shot, the ball among them (fitLong).
+   * Elevated long view (goal kicks, own-half free kicks, the keeper's ball, corners, and free kicks
+   * in the attacking half): these scene points must all be in shot, the ball among them (fitLong).
+   * `corner`: frame every point on upright screens too, not just a band round the ball.
    */
   long?: { points: { x: number; z: number }[]; corner?: boolean } | null;
   /** An instant-replay shot: 'low' from the side near pitch level, 'goal' from behind the goal at scene x = goalX. */
