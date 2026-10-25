@@ -153,7 +153,7 @@ tests/e2e/    Browser tests (Playwright, no framework): boot, tabs, layout, tran
 bun run check      # typecheck + tests + build + page size budget
 bun run size       # fails if dist/index.html is over its size budget (scripts/size-budget.ts)
 bun run balance 50 # 50 CPU-vs-CPU eleven-a-side matches at full speed: goals, shots, fouls, cards, corners, offsides, upsets
-bun run balance 30 --assert  # same, but exits non-zero outside the sane bands (see scripts/balance.ts: goals 1.5-5, fouls 5-25, ...)
+bun run balance 60 --assert  # same (60 matches: smaller samples pass or fail on the seeds), but exits non-zero outside the sane bands (see scripts/balance.ts: goals 1.5-5, fouls 5-25, ...)
 bun run scripts/ai-probe.ts 40 0.85 0.25  # 40 matches, identical squads, CPU skill 0.85 vs 0.25: W/D/L
 bun run e2e        # build, then drive the real page in headless Chromium (see below)
 ```
