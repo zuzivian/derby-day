@@ -39,13 +39,13 @@ export const EST_MAX = 1.3;
  * STRENGTH_W * (their squad - ours, rating points); then win = L((x - DRAW_W) / SPREAD),
  * loss = L((-x - DRAW_W) / SPREAD), the rest a draw (an ordered logit).
  */
-export const MODEL = { spread: 0.2, drawW: 0.1, strengthW: 0.025 } as const;
+export const MODEL = { spread: 0.22, drawW: 0.1, strengthW: 0.03 } as const;
 
 /** How far the CPU's aiSkill may go below and above a club's natural skill (club.ts toTeamSetup). */
 export const BAND_DOWN = 0.75;
 export const BAND_UP = 0.25;
-/** The chance of a win the band aims at. Low-scoring matches are drawn about a third of the time, so this is a fair fight, a little in the player's favour. */
-export const TARGET_WIN = 0.55;
+/** The chance of a win the band aims at. About a quarter of matches are drawn, so this is a fair fight, a little in the player's favour. */
+export const TARGET_WIN = 0.6;
 
 const logistic = (x: number): number => 1 / (1 + Math.exp(-x));
 const clamp = (x: number, lo: number, hi: number): number => Math.max(lo, Math.min(hi, x));
