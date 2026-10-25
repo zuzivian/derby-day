@@ -319,7 +319,7 @@ export function transfersScreen(app: App): string {
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone"> sale</span></button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
         }</td></tr>`).join('')}</tbody>
       </table></div>
