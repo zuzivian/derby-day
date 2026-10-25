@@ -8,6 +8,7 @@ import { MatchCamera } from '../src/client/r3d/camera3d.ts';
 import { pickBody } from '../src/client/r3d/renderer3d.ts';
 import { sx, sz, wx, wy } from '../src/client/r3d/space.ts';
 import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
+import { TIPS } from '../src/client/coach.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
@@ -528,5 +529,17 @@ describe('a human header at goal goes where the pointer says, relative to the st
     expect(bottom.filter((r) => r.y > 34).length).toBeGreaterThanOrEqual(6);
     // And he stays on the ball's line to head it: the pointer is under a metre from him.
     expect(Math.max(...top.map((r) => r.moved), ...bottom.map((r) => r.moved))).toBeLessThan(1.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minor: the mouse coach tip mentions hold-to-loft
+
+describe('coach tips', () => {
+  test('the mouse pass tip tells you to hold for a lofted ball, as the touch tip does', () => {
+    // Main: only the touch tip mentioned holding.
+    expect(TIPS.pass.mouse).toMatch(/hold/i);
+    expect(TIPS.pass.mouse).toMatch(/loft/i);
+    expect(TIPS.pass.touch).toMatch(/loft/i);
   });
 });
