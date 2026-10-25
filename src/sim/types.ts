@@ -1,5 +1,6 @@
 import type { FormationId, Mentality, Role, SubRole } from './constants.ts';
 import type { Rng } from './rng.ts';
+import type { KickOutcome } from './penalty.ts';
 import type { Vec } from './vec.ts';
 
 /** Attributes as the sim sees them, 0..1. The club layer stores 1..99. */
@@ -164,6 +165,11 @@ export interface Ball {
    * along `dir`, the left-hand normal of the strike) bends it, `top` (m/s^2, downward) makes it dip. Gone at the first touch or bounce.
    */
   spin?: { side: number; top: number; dir: Vec; by: number } | null;
+  /**
+   * A penalty on its way (match.ts penaltyStrike): how the kick was decided (sim/penalty.ts resolveKick, the
+   * shootout's kick), by whom, and the keeper facing it. Until anyone touches it; at a restart, gone.
+   */
+  penalty?: { fate: KickOutcome; by: number; gk: number } | null;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */

@@ -13,7 +13,7 @@
 //   restart   dead ball: rules.ts Restart (whistle -> setup -> ready -> taken)
 //   goal, halftime, fulltime
 
-import { aiIntent, humanAuto, passSpeed, penaltyDive, restartAction, restartIntent } from './ai.ts';
+import { aiIntent, humanAuto, passSpeed, penaltyCommit, penaltyDive, restartAction, restartIntent } from './ai.ts';
 import {
   AIR_DRAG,
   BALL_R,
@@ -60,7 +60,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, deliveryPlan, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
+import { assistReceiver, chipPlan, deliveryPlan, humanShotHeight, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
 import {
   addedMinutes,
   awardRestart,
@@ -89,6 +89,7 @@ import {
   takerSpot,
   tickAdvantage,
 } from './rules.ts';
+import { cpuKeeperDive, cpuTakerAim, POST_W, resolveKick, type Aim } from './penalty.ts';
 import { gauss, makeRng, next, range } from './rng.ts';
 import type { Action, FoulSeverity, HumanInput, Intent, MatchPlayer, MatchState, Restart, TeamInputs, TeamSetup, TeamStats } from './types.ts';
 import { add, clamp, dist, distToSegment, dot, len, norm, rotate, scale, sub, type Vec } from './vec.ts';
@@ -198,6 +199,7 @@ export function createMatch(o: MatchOptions): MatchState {
       restartBy: -1,
       noHands: -1,
       spin: null,
+      penalty: null,
     },
     score: [0, 0],
     phase: 'kickoff',
@@ -740,7 +742,8 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   } else {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
     if (r.kind === 'corner') action = cornerKick(s, p, action);
-    if ((r.kind === 'corner' || r.kind === 'freekick' || r.kind === 'goalkick') && action.kind === 'loft') deliver(s, p, action);
+    if (r.kind === 'penalty' && action.kind === 'shoot') penaltyStrike(s, p, action);
+    else if ((r.kind === 'corner' || r.kind === 'freekick' || r.kind === 'goalkick') && action.kind === 'loft') deliver(s, p, action);
     else applyAction(s, p, { move: { x: 0, y: 0 }, throttle: 0, action });
     if (b.owner === p.i) {
       // Not a kick (a tackle input): ignore, stay ready.
@@ -765,7 +768,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     else s.wall = null;
   }
   pushEvent(s, { kind: 'restartTaken', ...eventBase(s, r.team, p.i), restart: r.kind, spot: { ...r.spot } });
-  if (r.kind === 'penalty') {
+  if (r.kind === 'penalty' && !b.penalty) {
     const gk = goalkeeper(s, r.team === 0 ? 1 : 0);
     const tLine = Math.abs((ownGoal(s, gk.team).x - b.pos.x) / (b.vel.x || 1e-6));
     const side = penaltyDive(s, gk, b.pos.y + b.vel.y * tLine);
@@ -1132,6 +1135,7 @@ function updateBall(s: MatchState, live: boolean): void {
   goalFrame(s, prev, prevZ);
   if (!live) return;
   if (checkLines(s)) return;
+  if (penaltySave(s, prev)) return;
   contacts(s, prev);
 }
 
@@ -1866,6 +1870,94 @@ function wallPlanted(s: MatchState): number[] {
   const t = s.aiRestart?.targets;
   if (!s.restart || s.restart.stage === 'whistle' || !t) return [];
   return w.players.filter((i) => !!t[i] && dist(s.players[i].pos, t[i]!) < WALL_FORMED);
+}
+
+/**
+ * A human's penalty in the goal's units (penalty.ts Aim): across, where the line from the ball through `target`
+ * crosses the goal line; up, as high as his shot of that power comes in there (kicks.ts humanShotLift).
+ */
+export function humanPenaltyAim(s: MatchState, team: 0 | 1, from: Vec, target: Vec, power: number): Aim {
+  const g = oppGoal(s, team);
+  const dir = attackDir(s, team);
+  const to = sub(target, from);
+  const yLine = Math.abs(to.x) > 1e-6 && Math.sign(to.x) === dir ? from.y + to.y * ((g.x - from.x) / to.x) : target.y;
+  return { x: clamp(-((yLine - PITCH_H / 2) * dir) / (GOAL_W / 2), -1.5, 1.5), y: humanShotHeight(power) / GOAL_BAR_H };
+}
+
+/**
+ * A penalty struck (Law 14): the shootout's kick (penalty.ts). The human's aim is where his line crosses the goal
+ * line, as high as a shot of that power comes in (kicks.ts humanShotLift); the CPU's is cpuTakerAim. The keeper
+ * goes as cpuKeeperDive says, and resolveKick decides it: the ball is struck to where that puts it, and the keeper
+ * gets to it (a save) or doesn't, so it is the same kick, at the same odds, as in a shootout.
+ */
+function penaltyStrike(s: MatchState, p: MatchPlayer, a: Extract<Action, { kind: 'shoot' }>): void {
+  const b = s.ball;
+  const team = p.team;
+  const gk = goalkeeper(s, team === 0 ? 1 : 0);
+  const g = oppGoal(s, team);
+  const dir = attackDir(s, team);
+  const half = GOAL_W / 2;
+  // Goal units across (penalty.ts): -1 the taker's left post. Facing +x his left is +y.
+  const toY = (x: number) => PITCH_H / 2 - x * half * dir;
+  let aim: Aim;
+  let power: number;
+  if (isHumanControlled(s, p)) {
+    aim = humanPenaltyAim(s, team, b.pos, a.target, a.power);
+    power = a.power;
+  } else ({ aim, power } = cpuTakerAim(s.rng, p.attrs.shooting));
+  const dive = cpuKeeperDive(s.rng, gk.attrs.goalkeeping, aim);
+  const res = resolveKick(s.rng, { aim, power, shooting: p.attrs.shooting, goalkeeping: gk.attrs.goalkeeping, dive });
+  // Struck to where it ends up on the goal line, at that height (drag slows it along the ground, not up and down),
+  // the frame allowed for: a goal or a save clear inside the woodwork, a miss clear outside it, the woodwork
+  // struck square (a post on its outside, so it comes back out).
+  const clear = BALL_R + POST_R + 0.03;
+  let ax = res.at.x;
+  let zLine = res.at.y * GOAL_BAR_H;
+  if (res.outcome === 'goal' || res.outcome === 'saved') {
+    ax = clamp(ax, -1 + clear / half, 1 - clear / half);
+    zLine = Math.min(zLine, GOAL_BAR_H - clear);
+  } else if (res.outcome === 'wide') ax = Math.sign(ax) * Math.max(Math.abs(ax), 1 + clear / half);
+  else if (res.outcome === 'over') zLine = Math.max(zLine, GOAL_BAR_H + clear);
+  else if (Math.abs(ax) > 1 - POST_W) {
+    ax = Math.sign(ax) * (1 + 0.04 / half);
+    zLine = Math.min(zLine, GOAL_BAR_H - clear);
+  } else zLine = GOAL_BAR_H + 0.04;
+  const line = { x: g.x, y: toY(ax) };
+  const speed = shotSpeed(Math.min(power, 1), p.attrs.shooting);
+  const d = dist(b.pos, line);
+  const t = -Math.log(1 - (d * AIR_DRAG) / speed) / AIR_DRAG;
+  kick(s, p, line, speed, 0, -1);
+  b.z = SHOT_Z0;
+  b.vz = (zLine - SHOT_Z0 + 0.5 * GRAVITY * t * t) / t;
+  b.passFrom = -1;
+  b.penalty = { fate: res.outcome, by: p.i, gk: gk.i };
+  countShot(s, team, true);
+  // He goes the way he went in the kick: to it for a save, else as far as he gets, past it untouched.
+  const side = res.dive === 0 ? 0 : -res.dive * dir;
+  penaltyCommit(s, gk, side);
+  const across = Math.abs(line.y - gk.pos.y);
+  if (side !== 0) {
+    const toward = Math.sign(line.y - gk.pos.y) === side;
+    const reachBy = res.outcome === 'saved' && toward ? across - 0.3 : toward ? Math.max(0, across - 1) : across;
+    const sp = res.outcome === 'saved' && toward ? reachBy / Math.max(DT, Math.min(t, DIVE_TICKS * DT)) : Math.min(diveSpeed(gk), reachBy / (DIVE_TICKS * DT));
+    gk.dive = { dir: { x: 0, y: side }, speed: Math.max(0.5, sp), ticks: DIVE_TICKS + DIVE_HOLD, travel: DIVE_TICKS, z: clamp(zLine, 0.3, 1.8) };
+  }
+  // Not a save: he never gets a hand or a body to it before the line.
+  if (res.outcome !== 'saved') b.noPickup[gk.i] = Math.max(b.noPickup[gk.i], Math.ceil(t / DT) + 2);
+}
+
+/** A penalty the kick says he saves: as it reaches him, it is his to hold or parry (keeperTouch). */
+function penaltySave(s: MatchState, prev: Vec): boolean {
+  const b = s.ball;
+  const pen = b.penalty;
+  if (!pen || pen.fate !== 'saved' || b.owner >= 0 || b.lastTouch !== pen.by) return false;
+  const gk = s.players[pen.gk];
+  if (Math.sign(prev.x - gk.pos.x) === Math.sign(b.pos.x - gk.pos.x) && Math.abs(b.pos.x - gk.pos.x) > 0.2) return false;
+  b.penalty = null;
+  // Where it crosses the line he is on, his hands are there.
+  gk.pos = { x: gk.pos.x, y: b.pos.y - Math.sign(b.pos.y - gk.pos.y) * Math.min(Math.abs(b.pos.y - gk.pos.y), 0.3) };
+  keeperTouch(s, gk, { ...b.pos }, gk.dive ? 0.6 : 0, 0.3);
+  return true;
 }
 
 /** An opponent this close (m) to where a throw was led to is standing on it: the throw goes to its man's feet. */

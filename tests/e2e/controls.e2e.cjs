@@ -608,3 +608,47 @@ test('a goal kick: left held on the centre circle puts it there', async (t) => {
   // Before, a held goal kick came down 10-20 m short of the centre circle.
   expect(Math.hypot(landed.x - 52.5, landed.y - 34), 'it came down where left went down').toBeLessThan(landed.touched ? 8 : 3);
 });
+
+test('a penalty in a match: right held by the post strikes it there, and it ends as the kick decided', async (t) => {
+  const page = await openMatch(t);
+  await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    Object.assign(s.ball, { owner: -1, receiver: -1, passFrom: -1, inHands: false, setPiece: null, kickedBy: -1, restartBy: -1, noHands: -1, penalty: null, pos: { x: 94, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+    s.offside = null;
+    s.advantage = null;
+    s.restart = { kind: 'penalty', team: 0, spot: { x: 94, y: 34 }, taker: -1, stage: 'whistle', ticks: 0, direct: true, reason: 'foul', wait: 0 };
+    s.phase = 'restart';
+  });
+  await page.waitForFunction(() => window.__derbyMatch.restart?.stage === 'ready' && window.__derbyMatch.controlled[0] === window.__derbyMatch.restart.taker, null, { timeout: 30_000 });
+  await page.evaluate(() => {
+    window.__holdRestart = setInterval(() => {
+      const r = window.__derbyMatch.restart;
+      if (r && r.stage === 'ready') r.ticks = 0;
+    }, 50);
+  });
+  // Right down just inside the far post, held a moment, released.
+  const at = await screen(page, { x: 105, y: 34 + 3 });
+  await page.mouse.move(at.x, at.y);
+  await frames(page);
+  await page.mouse.down({ button: 'right' });
+  await page.waitForTimeout(250);
+  await page.mouse.up({ button: 'right' });
+  await page.waitForFunction(() => !!window.__derbyMatch.ball.penalty, null, { timeout: 10_000 });
+  await page.evaluate(() => clearInterval(window.__holdRestart));
+  const fate = await page.evaluate(() => window.__derbyMatch.ball.penalty.fate);
+  const ended = await page.evaluate(() => new Promise((resolve) => {
+    const s = window.__derbyMatch;
+    const pen = s.ball.penalty;
+    const g0 = s.score[0];
+    const tick = () => {
+      if (s.score[0] > g0) resolve('goal');
+      else if (s.ball.lastTouch === pen.gk) resolve('saved');
+      else if (s.restart && s.restart.kind === 'goalkick') resolve('out');
+      else if (s.ball.lastTouch !== pen.by && s.ball.lastTouch >= 0) resolve('back in play');
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+  const ok = { goal: ['goal'], saved: ['saved'], wide: ['out'], over: ['out'], post: ['back in play', 'saved', 'out'] }[fate];
+  expect(ok.includes(ended), `decided ${fate}, ended ${ended}`).toBe(true);
+});

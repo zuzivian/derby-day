@@ -331,6 +331,12 @@ export const SHOT_Z0 = 0.05;
 /** The human's shot power runs from this (a quick click) to 1 (a full hold). */
 export const HUMAN_SHOT_MIN = 0.55;
 
+/** How high (m) a human's shot of this power comes in at the goal line: 0.3 m for a soft one, up to 2.0 m at full power. */
+export function humanShotHeight(power: number): number {
+  const k = clamp((power - HUMAN_SHOT_MIN) / (1 - HUMAN_SHOT_MIN), 0, 1);
+  return 0.3 + 1.7 * Math.pow(k, 1.2);
+}
+
 /**
  * The lift (initial vz, m/s) that puts a human shot at a height on the goal line that rises with
  * the power: a quick click stays low (about 0.3 m), a full hold rises to about 2 m. match.ts adds
@@ -338,8 +344,7 @@ export const HUMAN_SHOT_MIN = 0.55;
  * can go over.
  */
 export function humanShotLift(from: Vec, target: Vec, goalX: number, power: number, shooting: number): number {
-  const k = clamp((power - HUMAN_SHOT_MIN) / (1 - HUMAN_SHOT_MIN), 0, 1);
-  const h = 0.3 + 1.7 * Math.pow(k, 1.2);
+  const h = humanShotHeight(power);
   // Planned to where the shot's line crosses the goal line (the pointer is often short of it while
   // dribbling), or to the pointer if the shot doesn't head for the line.
   const dx = target.x - from.x;

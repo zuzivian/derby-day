@@ -50,8 +50,10 @@
  *  20  throw-ins and goal kicks: a long throw reaches 18 m (+14 m by passing) and is meant for the man nearest where
  *      it comes down; a throw led to where a marker stands goes to its man's feet instead; a lofted goal kick
  *      comes down where it was aimed (the set-piece delivery)
+ *  21  a penalty in a match is the shootout's kick (sim/penalty.ts resolveKick): the human's aim and power or the
+ *      CPU's choice against the keeper's dive decide it, and the ball and keeper play it out
  */
-export const SIM_VERSION = 20;
+export const SIM_VERSION = 21;
 
 export const TICK_HZ = 60;
 

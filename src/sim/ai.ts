@@ -1366,8 +1366,6 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
 
 /** A penalty has just been struck: the keeper commits to a side (seeded), the way keepers do. Called by match.ts. */
 export function penaltyDive(s: MatchState, gk: MatchPlayer, shotY: number): number {
-  const mem = memOf(s, gk);
-  const own = ownGoal(s, gk.team);
   const actual = shotY < MID_Y - 1 ? -1 : shotY > MID_Y + 1 ? 1 : 0;
   // A good keeper reads it a little more often than a coin toss.
   let side: number;
@@ -1376,11 +1374,18 @@ export function penaltyDive(s: MatchState, gk: MatchPlayer, shotY: number): numb
     const r = next(s.rng);
     side = r < 0.44 ? -1 : r < 0.88 ? 1 : 0;
   }
+  penaltyCommit(s, gk, side);
+  return side;
+}
+
+/** A keeper facing a penalty has gone to a side (-1 or 1 along the pitch's y, 0 stays up): he keeps going that way. */
+export function penaltyCommit(s: MatchState, gk: MatchPlayer, side: number): void {
+  const mem = memOf(s, gk);
+  const own = ownGoal(s, gk.team);
   mem.mode = 'dive';
   mem.modeTicks = 40;
   mem.modeTarget = { x: own.x + attackDir(s, gk.team) * 0.4, y: MID_Y + side * (GOAL_W / 2 - 0.4) };
   mem.lastTick = s.tick;
-  return side;
 }
 
 function gkIntent(s: MatchState, p: MatchPlayer): Intent {
@@ -2158,12 +2163,9 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
       const target = c ? c.target : fromOpp(s, team, 7, MID_Y + near * 1);
       return loft(s, target);
     }
-    case 'penalty': {
-      const r2 = next(s.rng);
-      const side = r2 < 0.43 ? -1 : r2 < 0.86 ? 1 : 0;
-      const y = MID_Y + side * (GOAL_W / 2 - 0.5 - 0.4 * (1 - p.attrs.shooting));
-      return { kind: 'shoot', target: { x: goal.x, y }, power: 0.72 + 0.12 * p.attrs.shooting, lift: range(s.rng, 0, 2.2) };
-    }
+    case 'penalty':
+      // Where and how hard is the shootout's choice (penalty.ts cpuTakerAim), made as it is struck (match.ts penaltyStrike).
+      return { kind: 'shoot', target: { ...goal }, power: 0.75 };
     case 'freekick': {
       const dGoal = dist(r.spot, goal);
       if (inOwnBox(s, team, r.spot) || ax < 0.3) {
