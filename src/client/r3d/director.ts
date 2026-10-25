@@ -192,10 +192,12 @@ export function keeperSet(s: MatchState, p: MatchPlayer): number {
 }
 
 /**
- * Defenders in a wall: within 11 m of a free kick against them, roughly on the line from the ball
- * to their goal. They stand shoulder to shoulder with their hands in front.
+ * Defenders in a wall: the sim's own wall (MatchState.wall, kept while it jumps to the shot), or failing that
+ * (a state from before it had one) within 11 m of a free kick against them, roughly on the line from the
+ * ball to their goal. They stand shoulder to shoulder with their hands in front.
  */
 export function inWall(s: MatchState, p: MatchPlayer): boolean {
+  if (s.wall) return s.wall.players.includes(p.i) && !p.sentOff;
   const r = s.restart;
   if (!r || r.kind !== 'freekick' || p.team === r.team || p.role === 'GK' || p.sentOff) return false;
   const gx = ownGoal(s, p.team).x;

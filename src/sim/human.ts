@@ -282,7 +282,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
       // The harder he hits it, the higher it rises (a click stays low).
       const power = clamp(input.shoot, 0, 1);
-      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting) } };
+      const curl = input.curl ? clamp(input.curl, -1, 1) : 0;
+      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting), ...(curl ? { curl } : {}) } };
     }
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.

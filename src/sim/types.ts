@@ -73,6 +73,8 @@ export interface MatchPlayer {
   dive?: KeeperDive | null;
   /** A slide tackle in progress (match.ts): he travels along `dir` and wins or fouls when his feet reach the ball or the man. */
   slide?: SlideTackle | null;
+  /** Height of his feet off the floor (m): a man in a free-kick wall jumping as it is struck (match.ts wallJumps). Absent or 0 on the ground. */
+  air?: number;
 }
 
 /** A sliding tackle under way: judged each tick of the lunge, not once at the click. */
@@ -157,6 +159,11 @@ export interface Ball {
   restartBy?: number;
   /** Law 12: a keeper who released the ball from his hands, or took a goal kick, may not handle it again until someone else touches it. */
   noHands?: number;
+  /**
+   * Spin on a struck set piece (kicks.ts setPieceStrike), as accelerations fixed when it is struck: `side` (m/s^2,
+   * along `dir`, the left-hand normal of the strike) bends it, `top` (m/s^2, downward) makes it dip. Gone at the first touch or bounce.
+   */
+  spin?: { side: number; top: number; dir: Vec; by: number } | null;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
@@ -381,6 +388,11 @@ export interface MatchState {
   /** CPU set-piece positions for the restart in progress, owned by ai.ts (refreshed every 15 ticks). */
   aiRestart?: { key: number; kind: RestartKind; team: 0 | 1; targets: (Vec | null)[] };
   /**
+   * The defensive wall at the free kick in progress (picked by ai.ts, kept for the whole kick): who is in it, and the
+   * tick the kick was struck (-1 until then). Its men hold their places and jump as it is struck (match.ts wallJumps).
+   */
+  wall?: { team: 0 | 1; spot: Vec; players: number[]; struck: number } | null;
+  /**
    * Team in possession for the stats: the last team to control the ball, kept while it is in
    * flight between teammates, -1 before anyone has it. Only live-ball ticks are counted.
    */
@@ -515,6 +527,11 @@ export interface HumanInput {
    * recorded in replays like any input, so they play back the same.
    */
   tactic?: number;
+  /**
+   * Pointer scheme, on a shot by a set-piece taker: bend, -1..1, from how far the pointer was dragged sideways while
+   * the button was held (src/client/input.ts). Positive bends it to the kicker's left. The shot goes to `aim`, the press.
+   */
+  curl?: number;
 }
 
 /** Input for both teams in one tick: index 0 is the home side, 1 the away side. */
@@ -535,7 +552,7 @@ export type Action =
    */
   | { kind: 'pass'; target: Vec; receiver: number; through?: boolean; speed?: number }
   /** `lift`: optional initial vertical speed in m/s (a dipping free kick over the wall). Added for the CPU; humans leave it out. */
-  | { kind: 'shoot'; target: Vec; power: number; lift?: number }
+  | { kind: 'shoot'; target: Vec; power: number; lift?: number; curl?: number }
   /** CPU chip: lofted, lands near `target` or as far as `power` allows. `chipPlan()` previews it. */
   | { kind: 'chip'; target: Vec; power: number }
   /**

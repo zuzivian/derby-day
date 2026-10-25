@@ -4,7 +4,8 @@
 
 import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
-import { humanPass, loftPlan, pointerPass } from '../../sim/kicks.ts';
+import { humanPass, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
+import { freeKickPlan } from '../../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
 import { GAUGE_COLORS, kickGauge } from '../power.ts';
 import type { RenderExtras } from '../render.ts';
@@ -412,6 +413,19 @@ export class AimLayer {
         ty = plan.landing.y;
         showRet = false;
         wedgeAlpha = 0.75;
+      } else if (armed?.kind === 'shot' && armed.at) {
+        // Over a free kick: the strike's real flight as dots (over the wall and dipping, bent by the drag),
+        // and the ring where it crosses the goal line. The wedge points the way it sets off.
+        const plan = freeKickPlan(s, ctrl, armed.at, armed.power, armed.curl ?? 0);
+        const pts = strikePath(plan.from, plan, this.chipDots.count - 1);
+        this.dotPath(pts);
+        const end = pts[pts.length - 1];
+        this.chipRing.visible = true;
+        this.chipRing.position.set(sx(end.x), 0.045, sz(end.y));
+        tx = plan.from.x + plan.dir.x * 6;
+        ty = plan.from.y + plan.dir.y * 6;
+        showRet = false;
+        wedgeAlpha = 0.85;
       } else if (armed?.kind === 'shot') {
         // Shot: a firmer wedge toward the pointer, filling with power, green to amber to red.
         wedgeAlpha = 0.85;
@@ -521,6 +535,17 @@ export class AimLayer {
       c.sprite.visible = f.time < c.until && !!head && !s.players[i]?.sentOff;
       if (head) c.sprite.position.set(head.x, head.y + 0.85, head.z);
     }
+  }
+
+  /** Dots along a path in the air (world metres, z up). */
+  private dotPath(pts: { x: number; y: number; z: number }[]): void {
+    const n = Math.min(this.chipDots.count, pts.length);
+    for (let i = 0; i < n; i++) {
+      this.m4.makeTranslation(sx(pts[i].x), Math.max(0.1, pts[i].z + 0.12), sz(pts[i].y));
+      this.chipDots.setMatrixAt(i, this.m4);
+    }
+    this.chipDots.instanceMatrix.needsUpdate = true;
+    this.chipDots.visible = true;
   }
 
   private chipArc(from: { x: number; y: number }, landing: { x: number; y: number }, speed: number, vz0: number): void {
