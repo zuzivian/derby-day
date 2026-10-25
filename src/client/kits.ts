@@ -131,8 +131,8 @@ export type Quality = 'low' | 'high';
 
 /** The grass as the 3D view draws it: the dark and the light mowing stripe, per quality level. */
 export const GRASS: Record<Quality, [string, string]> = {
-  low: ['#2b972c', '#47ab3b'],
-  high: ['#2e982d', '#48ab3b'],
+  low: ['#84a147', '#92ae57'],
+  high: ['#85a148', '#92af57'],
 };
 
 /** Below this CIEDE2000 difference from a grass stripe, under any vision, a shirt needs the dark rim. */
