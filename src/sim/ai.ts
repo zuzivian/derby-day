@@ -440,6 +440,35 @@ function supportSlots(team: 0 | 1, c: Vec, n: number): number[] {
   return [[0.9 * inSign], [-a, a], [-a, a, (Math.PI - 0.75) * inSign]][Math.min(n, 3) - 1];
 }
 
+/**
+ * Is the human's man going for this point (the carrier, or where a loose ball can be met)? Close
+ * to it, or running at it. If not, a CPU teammate presses or chases for him: the side
+ * covers for a human who is somewhere else, instead of nobody going.
+ */
+export function humanEngaging(s: MatchState, h: MatchPlayer, at: Vec): boolean {
+  if (humanAuto(s, h.team)) return false;
+  const to = sub(at, h.pos);
+  const d = len(to);
+  if (d < HUMAN_ENGAGE_R) return true;
+  return d < 14 && dot(h.vel, scale(to, 1 / d)) > 2.5;
+}
+/** Within this many metres the human's man counts as going in, whatever he is doing. */
+export const HUMAN_ENGAGE_R = 3;
+
+/** The human's man this far from his place in the shape has left a zone for the others to fill. */
+export const WANDER_R = 12;
+
+/** Ticks without any input after which a human's player is positioned by the CPU (0.75 s). */
+export const IDLE_TICKS = 45;
+
+/**
+ * Is the human's player on this side being positioned by the CPU just now: held after an
+ * automatic switch until the pointer moves (MatchState.ctlHold), or the human idle for
+ * IDLE_TICKS? He then holds his position and marks like a teammate, but never presses or
+ * chases (a CPU teammate does that for him) and takes no action of his own.
+ */
+export const humanAuto = (s: MatchState, team: 0 | 1): boolean => !!s.ctlHold?.[team] || (s.idleTicks?.[team] ?? 0) >= IDLE_TICKS;
+
 function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const skill = skillOf(s, team);
   const k = tacticOf(s, team);
@@ -447,6 +476,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
   const human = s.humans[team] ? s.controlled[team] : -1;
+  // The human's man has a place in the shape and a man to mark like anyone else while the CPU
+  // positions him (humanAuto); while the human steers him he is left out of every job.
+  const steered = human >= 0 && !humanAuto(s, team) ? human : -1;
   const icpt: (AiInterception | null)[] = s.players.map(() => null);
   const mark: number[] = s.players.map(() => -1);
   const mates = s.players.filter((m) => m.team === team && m.role !== 'GK' && m.stun === 0 && !m.sentOff);
@@ -466,6 +498,13 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       let best: MatchPlayer | null = null;
       for (const m of mates) if (!best || dist(m.pos, press) < dist(best.pos, press)) best = m;
       chaser = best && best.i !== human ? best.i : -1;
+      // The human's man is the natural presser but isn't going in: the next man presses for him.
+      if (best && best.i === human && !humanEngaging(s, best, owner.pos)) {
+        let cover: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && (!cover || dist(m.pos, press) < dist(cover.pos, press))) cover = m;
+        chaser = cover ? cover.i : -1;
+        best = cover;
+      }
       pressured = !!best && dist(best.pos, owner.pos) < 5;
     }
   } else {
@@ -493,7 +532,16 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       attacking = bestUs < bestThem - (lastOurs ? 0.1 : 0.45);
       chaser = quickest?.i ?? -1;
     }
-    if (chaser === human) chaser = -1;
+    if (human >= 0 && chaser === human) {
+      // Loose ball: the human's man is quickest to it. If he isn't heading for it, the next quickest goes.
+      const h = s.players[human];
+      if (humanEngaging(s, h, icpt[human]!.pt)) chaser = -1;
+      else {
+        let next: MatchPlayer | null = null;
+        for (const m of mates) if (m.i !== human && !keepsOut(s, m) && icpt[m.i] && (!next || icpt[m.i]!.t < icpt[next.i]!.t)) next = m;
+        chaser = next ? next.i : -1;
+      }
+    }
     const fi = chaser >= 0 ? icpt[chaser]! : quickest ? icpt[quickest.i]! : null;
     focus = fi ? fi.pt : seen;
   }
@@ -580,7 +628,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       const near: MatchPlayer[] = [];
       const nearD: number[] = [];
       for (const m of mates) {
-        if (m.i === center.i || m.i === human || (m.sub === 'CB' && cx > line + 0.3)) continue;
+        if (m.i === center.i || m.i === steered || (m.sub === 'CB' && cx > line + 0.3)) continue;
         const dx = m.pos.x - cpos.x;
         const dy = m.pos.y - cpos.y;
         const d2 = dx * dx + dy * dy;
@@ -622,7 +670,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     const attackers = s.players
       .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(team, o.pos.x) < 0.42 + 0.2 * skill)
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
-    const free = mates.filter((m) => m.i !== chaser && m.i !== human && !pressers.includes(m.i));
+    const free = mates.filter((m) => m.i !== chaser && m.i !== steered && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
     // A low block marks zonally (only who comes into its zone); a pressing side follows its man further.
     const radius = (13 + 7 * skill) * k.markR;
@@ -639,6 +687,31 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         }
       }
       if (best) mark[best.i] = a.i;
+    }
+    // The human has taken his man out of his zone: whoever is free picks up the attackers in it.
+    if (steered >= 0) {
+      const h = s.players[steered];
+      const home = shapeTarget(s, h, false, focus, line, oppLine);
+      if (dist(h.pos, home) > WANDER_R) {
+        const marked = new Set(mark.filter((x) => x >= 0));
+        for (const a of attackers) {
+          if (marked.has(a.i) || dist(a.pos, home) > WANDER_R) continue;
+          let best: MatchPlayer | null = null;
+          let bestD = radius * 1.6;
+          for (const d of free) {
+            if (mark[d.i] >= 0) continue;
+            const dd = dist(d.pos, a.pos);
+            if (dd < bestD) {
+              bestD = dd;
+              best = d;
+            }
+          }
+          if (best) {
+            mark[best.i] = a.i;
+            marked.add(a.i);
+          }
+        }
+      }
     }
     // An unassigned midfielder screens in front of the back line.
     let deepest = Infinity;

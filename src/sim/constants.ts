@@ -17,8 +17,11 @@
  *   5  nine formations and five mentalities that change how the CPU defends,
  *      presses and supports the ball (src/sim/ai.ts TACTICS); CPU shot selection and
  *      long-shot error; mentality changes from the pause menu (HumanInput.tactic)
+ *   6  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
+ *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts)
  */
-export const SIM_VERSION = 5;
+export const SIM_VERSION = 6;
 
 export const TICK_HZ = 60;
 
