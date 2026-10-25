@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup } from '../src/meta/club.ts';
 import { eloDelta, expectedScore, goalDiffMultiplier } from '../src/meta/elo.ts';
-import { applyResult, askingPrice, buyPlayer, ensureElevenASide, ladderTable, MAX_SQUAD, MIN_SQUAD, newGame, salePrice, sellPlayer, setFormation, setLineupSlot, train } from '../src/meta/game.ts';
+import { applyResult, askingPrice, buyPlayer, ensureElevenASide, ladderTable, MAX_SQUAD, MIN_SQUAD, newGame, salePrice, sellPlayer, setFormation, setLineupSlot, train, forfeitCost, rankedScale } from '../src/meta/game.ts';
 import { clubName } from '../src/meta/names.ts';
 import { overall } from '../src/meta/player.ts';
 import { makeRng } from '../src/sim/rng.ts';
@@ -34,7 +34,7 @@ describe('club loop', () => {
     expect(new Set(s.lineup).size).toBe(11);
     expect(s.squad.length).toBe(18);
     expect(s.market.length).toBe(10);
-    expect(s.ladder.length).toBe(15);
+    expect(s.ladder.length).toBe(31); // four divisions of eight, with you (src/meta/world.ts)
   });
 
   test('buying and selling move money and players', () => {
@@ -125,17 +125,22 @@ describe('club loop', () => {
 });
 
 describe('forfeits', () => {
-  test('a ranked forfeit costs Elo but pays no money, sessions or development', () => {
+  test('a ranked forfeit costs Elo, a fine and owed XP, and pays no sessions or development', () => {
     const s = newGame(41);
     const opp = s.ladder[0];
     const budget = s.budget;
     const sessions = s.trainingPoints;
     const attrs = JSON.stringify(s.squad.map((p) => p.attrs));
+    const cost = forfeitCost(s, rankedScale(s, opp));
+    expect(cost.fine).toBeGreaterThan(0);
     const r = applyResult(s, opp, opp, 0, 3, true, [], undefined, true);
     expect(r.eloDelta).toBeLessThan(0);
-    expect(s.budget).toBe(budget);
+    expect(s.budget).toBe(budget - cost.fine);
+    expect(r.money).toBe(-cost.fine);
+    expect([r.fine, r.owed]).toEqual([cost.fine, cost.owed]);
+    expect(s.xpOwed).toBe(cost.owed);
+    expect(s.xp).toBe(0);
     expect(s.trainingPoints).toBe(sessions);
-    expect(r.money).toBe(0);
     expect(JSON.stringify(s.squad.map((p) => p.attrs))).toBe(attrs);
   });
 });
