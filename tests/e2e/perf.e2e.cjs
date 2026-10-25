@@ -503,3 +503,57 @@ test(
   },
   { timeoutMs: 150_000 },
 );
+
+for (const renderer of ['2d', '3d']) test(
+  `Perf: a pass click shows on the very next frame after the release (${renderer}): no frames of input lag between the pointer, the sim and the picture`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 900 }, renderer, e2eHook: true });
+    // Watch every animation frame: from the pointerup (a pass is taken on release) to the first frame whose draw shows the ball off the passer's foot.
+    await page.evaluate(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      window.__lat = { pending: null, frames: [] };
+      window.addEventListener('pointerup', () => {
+        const s = window.__derbyMatch;
+        if (s) window.__lat.pending = { t: performance.now(), owner: s.ball.owner, n: 0 };
+      }, true);
+      window.requestAnimationFrame = (cb) => raf((ts) => {
+        cb(ts);
+        const L = window.__lat;
+        const p = L.pending;
+        const s = window.__derbyMatch;
+        if (!p || !s) return;
+        p.n++;
+        if (performance.now() - p.t > 1500) L.pending = null; // no kick (the ball was lost first): not counted
+        else if (s.ball.owner !== p.owner && s.ball.lastTouch === p.owner) {
+          L.frames.push(p.n);
+          L.pending = null;
+        }
+      });
+    });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const box = await page.locator(SEL.pitch).boundingBox();
+    for (let i = 0; i < 10; i++) {
+      await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && !document.querySelector('#pitch').dataset.replay, null, { timeout: 30_000 });
+      // The ball at the human's feet, then a quick click (under the loft threshold) to pass.
+      await page.evaluate(() => {
+        const s = window.__derbyMatch;
+        const me = s.players[s.controlled[0]];
+        Object.assign(s.ball, { owner: me.i, pos: { x: me.pos.x, y: me.pos.y }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+      });
+      await page.waitForTimeout(250);
+      await page.mouse.move(box.x + box.width * (0.35 + 0.04 * i), box.y + box.height * 0.45);
+      await page.mouse.down();
+      await page.waitForTimeout(40);
+      await page.mouse.up();
+      await page.waitForFunction(() => !window.__lat.pending, null, { timeout: 10_000 });
+    }
+    const frames = await page.evaluate(() => window.__lat.frames);
+    console.log(`      frames from release to the kick on screen: ${frames.join(', ')}`);
+    expect(frames.length, 'most clicks passed (a foul or a tackle can stop play first)').toBeGreaterThanOrEqual(5);
+    expect(Math.max(...frames), 'every pass is drawn on the first frame after the release').toBe(1);
+  },
+  { timeoutMs: 150_000 },
+);
