@@ -121,7 +121,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
 
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 /** The controls line on phones and tablets: no mouse or keys to talk about. */
-const TOUCH_HINT = `<b>Touch:</b> drag on the pitch and your player runs toward your finger, faster the further it is. <b>Pass</b> passes (hold to loft) · <b>Shoot</b> shoots, or tackles without the ball · tap a player to pick him.`;
+const TOUCH_HINT = `<b>Drag</b> to run · <b>Pass</b> (hold to loft) · <b>Shoot</b> (hold for power; tackles without the ball) · <b>tap</b> a player to pick him. Your player runs toward your finger, faster the further it is.`;
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -156,7 +156,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot (hold for power) · without the ball <b>right click</b> tackles, <b>left click</b> picks a man · <b>Keys</b> WASD, Space, F, C, Shift, E. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Without the ball:</b> a far right click slides. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
