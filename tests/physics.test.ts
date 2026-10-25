@@ -884,6 +884,58 @@ describe('determinism with the new physics and inputs', () => {
   });
 });
 
+describe('the woodwork', () => {
+  /** A ball fired from `from` at `speed` toward (PITCH_W, yAim) at height z, nobody on the pitch. Where does it go? */
+  function atGoal(from: Vec, yAim: number, speed: number, z: number, vz = 0) {
+    const s = livePlay(3, -1);
+    isolate(s);
+    const d = Math.hypot(PITCH_W - from.x, yAim - from.y);
+    const v0 = { x: ((PITCH_W - from.x) / d) * speed, y: ((yAim - from.y) / d) * speed };
+    fire(s, from, v0, z, vz);
+    const goals = s.score[0] + s.score[1];
+    let turned = 0;
+    // The biggest one-tick change of velocity near the goal line, gravity aside: a knock off the woodwork.
+    let jolt = 0;
+    for (let t = 0; t < 120 && s.phase === 'play'; t++) {
+      const was = { ...s.ball.vel, z: s.ball.vz };
+      step(s);
+      const v = s.ball.vel;
+      const c = (v.x * v0.x + v.y * v0.y) / (Math.hypot(v.x, v.y) * speed || 1);
+      turned = Math.max(turned, Math.acos(Math.max(-1, Math.min(1, c))));
+      if (Math.abs(s.ball.pos.x - PITCH_W) < 1.5)
+        jolt = Math.max(jolt, Math.hypot(v.x - was.x, v.y - was.y, s.ball.vz - was.z + 9.8 / 60));
+    }
+    return { goal: s.score[0] + s.score[1] > goals, turned, jolt };
+  }
+
+  test('a shot whose path clips a post comes off it at any pace: it never passes through the post', () => {
+    // Before: only where the ball ended each tick was tested against the post, so a 26 m/s shot
+    // (0.43 m a tick, more than the post and ball together) went straight through 46-100% of the time.
+    for (const speed of [14, 20, 26, 30])
+      for (const [post, side] of [[GOAL_TOP, -1], [GOAL_BOTTOM, 1]] as const)
+        for (const off of [-0.12, -0.06, 0, 0.06, 0.12]) {
+          // From 6 m out and low, so it reaches the post before it has bounced and slowed.
+          const r = atGoal({ x: PITCH_W - 6, y: PITCH_H / 2 + side * 4 }, post + off, speed, 0.2);
+          expect(r.turned).toBeGreaterThan(0.1);
+        }
+  });
+
+  test('a shot at the height of the bar comes off it: over it, down off it, or back out, never through it', () => {
+    // Before: the bar had no body at all; a ball at the line under 2.33 m was a goal and over it was over.
+    for (const speed of [18, 24, 30]) {
+      for (const zLine of [2.36, 2.44, 2.52]) {
+        // Fired from 3 m out, rising so that it reaches the line at zLine (gravity only matters a little here).
+        const t = 3 / speed;
+        const z0 = 1.5;
+        const vz = (zLine - z0 + 0.5 * 9.8 * t * t) / t;
+        const r = atGoal({ x: PITCH_W - 3, y: PITCH_H / 2 + 1 }, PITCH_H / 2 + 1, speed, z0, vz);
+        // It came off the bar: a sharp knock at the line (back out, or up or down off it).
+        expect(r.jolt).toBeGreaterThan(3);
+      }
+    }
+  });
+});
+
 describe('a corner played to a team-mate', () => {
   /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker. Who has it 4 s later? */
   function cornerTo(at: Vec, by: 'flag' | 'taker', seed: number) {
