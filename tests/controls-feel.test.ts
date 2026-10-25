@@ -5,6 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { DOUBLE_CLICK_MS, InputController } from '../src/client/input.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { createMatch, step } from '../src/sim/match.ts';
+import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
 
@@ -338,4 +339,41 @@ describe('a double click is not two actions', () => {
     expect(DOUBLE_CLICK_MS).toBeGreaterThanOrEqual(250);
     input.dispose();
   });
+});
+
+// ---------------------------------------------------------------------------
+// Minor: a click while a restart is being set up
+
+describe('a click while our restart is being set up', () => {
+  for (const [kind, at] of [
+    ['throwin', { x: 40, y: 0 }],
+    ['goalkick', { x: 5.5, y: 30 }],
+    ['corner', { x: 105, y: 0 }],
+  ] as const) {
+    test(`${kind}: is kept and played as soon as it is ready, not swallowed`, () => {
+      const s = livePlay(6);
+      awardRestart(s, kind, 0, { ...at }, 'out');
+      let t = 0;
+      while (s.restart && s.restart.stage === 'whistle' && t++ < 600) step(s, { cursor: { x: 50, y: 34 } });
+      expect(s.restart?.stage).toBe('setup');
+      const taker = s.players[s.restart!.taker];
+      const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, taker.pos) - dist(b.pos, taker.pos))[0];
+      // Ten ticks into the set-up the player clicks on a team-mate, then waits.
+      for (let k = 0; k < 10 && s.restart?.stage === 'setup'; k++) step(s, { cursor: mate.pos });
+      expect(s.restart?.stage).toBe('setup');
+      const n = s.events.length;
+      step(s, { cursor: mate.pos, aim: { ...mate.pos }, pass: true, moved: true });
+      let readyAt = -1;
+      let takenAt = -1;
+      for (let k = 0; k < 400 && takenAt < 0; k++) {
+        if (readyAt < 0 && s.restart?.stage === 'ready') readyAt = k;
+        step(s, { cursor: mate.pos });
+        if (s.events.slice(n).some((e) => e.kind === 'restartTaken')) takenAt = k;
+      }
+      // Main: still waiting in 'ready' for a second click until the CPU took it 5 s later.
+      expect(readyAt).toBeGreaterThanOrEqual(0);
+      expect(takenAt).toBeGreaterThanOrEqual(readyAt);
+      expect(takenAt - readyAt).toBeLessThanOrEqual(2);
+    });
+  }
 });

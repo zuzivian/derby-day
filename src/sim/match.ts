@@ -1538,11 +1538,18 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
         const d = sub(spot, p.pos);
         const l = len(d);
         movePlayer(s, p, l < 0.2 ? IDLE_INTENT : { move: norm(d), throttle: Math.min(1, l / 1.5), sprint: l > 12 });
+        // A human's click while he walks to the ball is kept and played the moment it is ready.
+        if (humanCtl) {
+          const it = humanIntent(s, p, inputs[p.team]);
+          if (isKick(it.action)) r.queued = it.action;
+        }
       } else {
         // Over the ball (or holding it): stays put until it is played.
         if (humanCtl && r.ticks < RESTART_HUMAN_WAIT) {
           const it = humanIntent(s, p, inputs[p.team]);
           if (isKick(it.action)) kickAction = it.action;
+          else if (r.queued) kickAction = r.queued;
+          r.queued = null;
           if (it.throttle > 0.15) p.facing = norm(add(scale(p.facing, 0.8), scale(it.move, 0.2)));
         } else if (r.ticks >= r.wait) kickAction = restartAction(s, p);
         p.pos = { ...spot };

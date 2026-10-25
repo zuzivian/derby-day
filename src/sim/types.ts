@@ -172,6 +172,8 @@ export interface Restart {
   reason: 'out' | 'foul' | 'offside' | 'goal' | 'half' | 'start';
   /** CPU taker: ticks to wait in 'ready' before playing it. */
   wait: number;
+  /** A human taker's kick clicked during 'setup': played as soon as it is 'ready'. */
+  queued?: Action | null;
 }
 
 export interface Referee {
