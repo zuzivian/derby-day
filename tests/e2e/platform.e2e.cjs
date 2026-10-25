@@ -12,10 +12,11 @@ const DIST = path.resolve(__dirname, '..', '..', 'dist');
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
 
 /** A second tab in the same browser context (same origin, shared localStorage). Page errors go to `problems`. */
-async function secondTab(page, problems) {
+async function secondTab(page, problems, init) {
   const p = await page.context().newPage();
   p.setDefaultTimeout(20_000);
   await p.route(FONT_HOST, (r) => r.abort());
+  if (init) await p.addInitScript(init);
   p.on('pageerror', (e) => problems.push(`second tab pageerror: ${e.message}`));
   await p.goto(APP_URL);
   return p;
@@ -80,13 +81,25 @@ async function ownerClub(t, prefsExtra = {}) {
   return page;
 }
 
+/** Records every write to the club's storage keys (and any clear()) made by the page, in window.__saveWrites. */
+const RECORD_SAVE_WRITES = () => {
+  window.__saveWrites = [];
+  for (const m of ['setItem', 'removeItem', 'clear']) {
+    const real = Storage.prototype[m];
+    Storage.prototype[m] = function (k, ...rest) {
+      if (m === 'clear' || /^derbyday\.(save|prefs|replays)/.test(String(k))) window.__saveWrites.push(`${m}:${k ?? ''}`);
+      return real.call(this, k, ...rest);
+    };
+  }
+};
+
 const toastText = (page) => page.locator(SEL.toast).first().innerText();
 
 test('a second tab shows the "open in another tab" screen and never touches the save', async (t) => {
   const problems = [];
   const a = await ownerClub(t);
   const before = await readSave(a);
-  const b = await secondTab(a, problems);
+  const b = await secondTab(a, problems, RECORD_SAVE_WRITES);
   await b.waitForSelector('#guard-title');
   expect(await b.locator('#guard-title').innerText(), 'title').toMatch(/open in another tab/i);
   expect(await b.locator('#guard-here').innerText(), 'button').toMatch(/play here instead/i);
@@ -94,7 +107,11 @@ test('a second tab shows the "open in another tab" screen and never touches the 
   // The owner is untouched and the save is byte-identical.
   expect(await a.locator(SEL.tab).count(), 'owner still has its tabs').toBeGreaterThanOrEqual(5);
   expect(await a.locator('#guard').count(), 'owner shows no guard').toBe(0);
-  expect(JSON.stringify(await readSave(b)), 'save unchanged').toBe(JSON.stringify(before));
+  // "Never touches the save" is checked where it happens, as writes, not by reading storage back from another page (a
+  // second page's view of storage can lag in a test browser). Then the owner's own view must still be unchanged.
+  await b.waitForTimeout(1000);
+  expect(await b.evaluate(() => window.__saveWrites), 'the parked tab wrote nothing to the save, prefs or replays').toEqual([]);
+  expect(JSON.stringify(await readSave(a)), 'the owner still sees the same save').toBe(JSON.stringify(before));
   expect(problems, 'second tab errors').toEqual([]);
 });
 
@@ -134,8 +151,9 @@ test('a match in progress is never taken away: the other tab waits, and the resu
   await b.waitForFunction(() => /in progress/i.test(document.getElementById('guard-note')?.textContent || ''), null, { timeout: 15_000 });
   expect(await a.locator(SEL.pitch).count(), 'owner keeps its match').toBe(1);
   expect(await a.locator('#guard').count(), 'owner not parked mid-match').toBe(0);
-  // The match runs to full time; the result is recorded, then the club moves.
-  await a.waitForSelector(SEL.modal, { timeout: 60_000 });
+  // The match runs to full time; the result is recorded, then the club moves. Nobody touches the
+  // mouse, so each kick-off waits five seconds for the CPU to take it for us (Law 8: it is a kick).
+  await a.waitForSelector(SEL.modal, { timeout: 120_000 });
   await b.waitForSelector(SEL.tab, { timeout: 30_000 });
   const played = (await readSave(b)).club.played;
   expect(played, 'the finished match is in the save the new tab loaded').toBe(before + 1);
@@ -209,7 +227,23 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect(await a.locator('#settings-dialog').count(), 'Esc closes').toBe(0);
 
   // A different club in another browser: a bad file is refused with a reason, a good one previews, then replaces.
-  const c = await openApp(t, { level: 3 });
+  // The restore ends in a page load, and Chromium now and then drops the write that the unloading page made (see helpers.cjs),
+  // so what the app wrote is read back from sessionStorage, where this script copies it, instead of from the storage that the
+  // next page may have started without.
+  const c = await openApp(t, {
+    level: 3,
+    init: () => {
+      const set = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (this === localStorage && /^derbyday\.save\.v1(\.pre-import)?$/.test(k)) {
+          const log = JSON.parse(sessionStorage.getItem('__wrote:' + k) || '[]');
+          try { log.push(JSON.parse(v).club.name); } catch { log.push('?'); }
+          sessionStorage.setItem('__wrote:' + k, JSON.stringify(log));
+        }
+        return set.call(this, k, v);
+      };
+    },
+  });
   const nameC = (await readSave(c)).club.name;
   expect(nameC, 'different clubs').notToBe(nameA);
   await goTab(c, SEL.clubScreen);
@@ -226,8 +260,10 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect((await readSave(c)).club.name, 'nothing replaced before confirming').toBe(nameC);
   await Promise.all([c.waitForNavigation(), c.locator('#bk-confirm').click()]);
   await c.waitForSelector(SEL.tab);
-  expect((await readSave(c)).club.name, 'club restored from the file').toBe(nameA);
-  expect(JSON.parse(await c.evaluate((k) => localStorage.getItem(k + '.pre-import'), SAVE_KEY)).club.name, 'old club kept as a safety copy').toBe(nameC);
+  // Every club the app wrote under each key, in order (the page that loads after the restore may write more, so it is "wrote", not "last").
+  const wrote = (k) => c.evaluate((key) => JSON.parse(sessionStorage.getItem('__wrote:' + key) || '[]'), k);
+  expect(await wrote(SAVE_KEY), 'club restored from the file').toContain(nameA);
+  expect(await wrote(SAVE_KEY + '.pre-import'), 'old club kept as a safety copy').toEqual([nameC]);
 
   // The code works the same way.
   const d = await openApp(t, { level: 5 });
@@ -532,6 +568,54 @@ test('the test-only flag lifts the tab guard for a page, and without it the guar
   expect(await skip.locator('#guard-title').count(), '__e2eSkipTabGuard: no guard').toBe(0);
   expect(await skip.locator(SEL.tab).count(), '__e2eSkipTabGuard: the game runs').toBeGreaterThan(0);
   expect(await owner.locator('#guard-title').count(), 'and the owner was not parked').toBe(0);
+});
+
+/** Wraps navigator.locks.request in a page before it boots, to inject the races a real browser only hits under load. */
+const LOCK_FAULT = {
+  // The first (ifAvailable) request is told "held", as if the page being replaced by this reload were still letting go.
+  busyOnce: () => {
+    const real = navigator.locks.request.bind(navigator.locks);
+    let n = 0;
+    navigator.locks.request = (name, opts, cb) => (n++ === 0 && opts && opts.ifAvailable ? Promise.resolve(cb(null)) : real(name, opts, cb));
+  },
+  // The lock manager never answers any request, and if it ever did, that late grant must not be kept.
+  deaf: () => {
+    window.__lateGrants = 0;
+    navigator.locks.request = (name, opts, cb) =>
+      new Promise((resolve) => {
+        window.__lateRelease = () => resolve(cb({ name }));
+      });
+  },
+};
+
+test('a page that finds the lock held at first (the page it replaces still letting go) claims it when it comes free, and is not parked', async (t) => {
+  const page = await t.newPage();
+  await page.addInitScript(LOCK_FAULT.busyOnce);
+  await page.goto(APP_URL);
+  await page.waitForSelector(SEL.app + ' > *', { timeout: 8000 });
+  expect(await page.locator('#guard-title').count(), 'not parked behind a lock nobody holds').toBe(0);
+});
+
+test('a lock manager that never answers cannot stop the game opening: the lease takes over within a few seconds', async (t) => {
+  const page = await t.newPage();
+  await page.addInitScript(LOCK_FAULT.deaf);
+  const t0 = Date.now();
+  await page.goto(APP_URL);
+  await page.waitForSelector(SEL.app + ' > *', { timeout: 10_000 });
+  expect(Date.now() - t0, 'boots within the lock-answer bound plus load time').toBeLessThan(8000);
+  expect(await page.locator('#guard-title').count(), 'the only tab, so it owns the club').toBe(0);
+});
+
+test('the owner tab dying in the middle of a hand-over does not strand the asking tab', async (t) => {
+  const problems = [];
+  const a = await ownerClub(t);
+  const b = await secondTab(a, problems);
+  await b.waitForSelector('#guard-here');
+  await b.locator('#guard-here').click();
+  await a.close(); // gone before (or while) it answers
+  await b.waitForSelector(SEL.tab, { timeout: 15_000 }); // takes the club once its lock is released; reloads into the game
+  expect(await b.locator('#guard-title').count(), 'b now plays').toBe(0);
+  expect(problems, 'errors').toEqual([]);
 });
 
 test('two tabs opened at the same instant: exactly one gets the club, and it stays that way', async (t) => {

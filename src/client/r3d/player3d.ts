@@ -9,6 +9,7 @@
 //
 // Local space: +z is forward, +y up, +x the player's left. Feet at y = 0.
 
+import { grassDiff, worstDiff } from '../kits.ts';
 import type { MatchPlayer } from '../../sim/types.ts';
 import { angleDelta, clamp01, damp, smooth, sx, sz } from './space.ts';
 import { merge, type Part } from './geo.ts';
@@ -56,7 +57,9 @@ export type AnimEvent =
   | { kind: 'celebrate'; t0: number; style: number }
   | { kind: 'cheer'; t0: number }
   | { kind: 'dejected'; t0: number }
-  | { kind: 'card'; t0: number; color: 'yellow' | 'red' };
+  | { kind: 'card'; t0: number; color: 'yellow' | 'red' }
+  /** The referee's signal: both arms out in front (advantage), or one arm out for a free kick. */
+  | { kind: 'signal'; t0: number; style: 'advantage' | 'point' };
 
 export interface PlayerContext {
   /** Animation clock in seconds. Follows sim time: it stops when the match or replay is paused. */
@@ -95,6 +98,8 @@ export interface PlayerLook {
   gloves: string | null;
   /** Long sleeves (keepers). */
   longSleeves: boolean;
+  /** A dark rim round the silhouette: the kit is too close to the grass to read without one. */
+  rim?: boolean;
   number: number | null;
   /** 0.94..1.06 overall scale. */
   height: number;
@@ -113,6 +118,11 @@ export interface Player3D {
   busy(): boolean;
   dispose(): void;
 }
+
+/** The rim: how dark at the silhouette, and from and to where across the surface (1 = edge-on). */
+const RIM_DARK = 0.9;
+const RIM_FROM = 0.3;
+const RIM_TO = 0.62;
 
 // ---------------------------------------------------------------------------
 // Shared resources: geometries and materials are cached and shared by every
@@ -142,12 +152,30 @@ export class PlayerKit {
     return m;
   }
 
-  /** The one material every player's skinned mesh shares: colours live in the vertices. */
-  skinnedMat(): Material {
-    let m = this.mats.get('skinned');
+  /**
+   * The material every player's skinned mesh shares: colours live in the vertices. With `rim`, the
+   * same but darkened toward the silhouette, for a kit too close to the grass (kits.ts
+   * grassClash): the dark edge separates the player from the pitch without changing the club's
+   * colours, and costs no extra draw call.
+   */
+  skinnedMat(rim = false): Material {
+    const key = rim ? 'skinned-rim' : 'skinned';
+    let m = this.mats.get(key);
     if (!m) {
-      m = new MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 } as Record<string, unknown>);
-      this.mats.set('skinned', m);
+      const sm = new MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 } as Record<string, unknown>);
+      if (rim) {
+        sm.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <opaque_fragment>',
+            `float rimEdge = 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) );
+outgoingLight *= 1.0 - ${RIM_DARK.toFixed(2)} * smoothstep( ${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, rimEdge );
+#include <opaque_fragment>`,
+          );
+        };
+        sm.customProgramCacheKey = () => 'player-rim';
+      }
+      m = sm;
+      this.mats.set(key, m);
     }
     return m;
   }
@@ -296,6 +324,7 @@ const DUR: Record<AnimEvent['kind'], number> = {
   cheer: 2.2,
   dejected: 2.4,
   card: 2.2,
+  signal: 1.6,
 };
 
 const ease = (t: number) => t * t * (3 - 2 * t);
@@ -426,7 +455,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   geo.deleteAttribute('aBone');
   geo.setAttribute('skinIndex', new BufferAttribute(si, 4));
   geo.setAttribute('skinWeight', new BufferAttribute(sw, 4));
-  const mesh = new SkinnedMesh(geo, kit.skinnedMat());
+  const mesh = new SkinnedMesh(geo, kit.skinnedMat(!!look.rim));
   mesh.castShadow = true;
   // A fixed sphere round the player, big enough for a full-length dive, so a player off-screen is
   // culled: no draw call, no skeleton update and no bone-texture upload that frame. (The sphere a
@@ -760,6 +789,18 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         P.set('spine', -0.08 * w).set('head', -0.15 * w);
         break;
       }
+      case 'signal': {
+        const w = smooth(0, 0.2, t) * (1 - smooth(a.dur - 0.3, a.dur, t));
+        if (a.ev.kind === 'signal' && a.ev.style === 'advantage') {
+          // Law 5: both arms swept out in front, a little apart.
+          P.set('shL', -1.65 * w, 0, 0.2 * w).set('shR', -1.65 * w, 0, -0.2 * w);
+          P.set('elL', -0.1 * w).set('elR', -0.1 * w);
+        } else {
+          // One arm out, a little above level, the way the free kick goes.
+          P.set('shR', -1.9 * w, 0, 0.05 * w).set('elR', -0.05 * w);
+        }
+        break;
+      }
     }
     if (a.mirror) P.mirror();
   }
@@ -884,23 +925,65 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 const SKINS = ['#f3d2b5', '#e8b98f', '#d9a479', '#c08657', '#a06a42', '#80522f', '#674026'];
 const HAIRS = ['#16110d', '#2b1c12', '#4a2f1b', '#73492a', '#a5733f', '#d7b56d', '#e8d9a8', '#3a3a3a', '#8a2d16'];
 
-/** A kit-colour pick that reads against both shirts: the keeper's kit. */
-export function keeperColors(own: string, other: string): { shirt: string; shorts: string; socks: string; trim: string } {
-  const options = [
+type KeeperKit = { shirt: string; shorts: string; socks: string; trim: string };
+
+/** The keeper kits to pick from. */
+const KEEPER_KITS: KeeperKit[] = [
     { shirt: '#f4dc1c', shorts: '#1b1b1b', socks: '#f4dc1c', trim: '#1b1b1b' },
     { shirt: '#24b35a', shorts: '#0f3d22', socks: '#24b35a', trim: '#f5f5f5' },
     { shirt: '#ff7a1a', shorts: '#2a2a2a', socks: '#ff7a1a', trim: '#1b1b1b' },
     { shirt: '#7c3fe0', shorts: '#2a1a4a', socks: '#7c3fe0', trim: '#f5f5f5' },
     { shirt: '#2e2e2e', shorts: '#2e2e2e', socks: '#2e2e2e', trim: '#f4dc1c' },
     { shirt: '#1fc7c7', shorts: '#0d3a3a', socks: '#1fc7c7', trim: '#111111' },
-  ];
-  let best = options[0];
+    // Teal, cream, navy, sky blue and bottle green: with these every ladder fixture has two keeper
+    // kits that read against both shirts and the grass and against each other (tests/dots.test.ts).
+    { shirt: '#2f8f8f', shorts: '#123838', socks: '#2f8f8f', trim: '#f5f5f5' },
+    { shirt: '#efefcf', shorts: '#2a2a2a', socks: '#efefcf', trim: '#111111' },
+    { shirt: '#0f0f4f', shorts: '#0a0a2a', socks: '#0f0f4f', trim: '#f5f5f5' },
+    { shirt: '#0f8fef', shorts: '#0a2a4a', socks: '#0f8fef', trim: '#f5f5f5' },
+    { shirt: '#0f2f0f', shorts: '#0a1a0a', socks: '#0f2f0f', trim: '#f4dc1c' },
+];
+
+/** How well a keeper's shirt reads against both sides' shirts and the grass, for every vision (kits.ts). */
+function keeperReads(shirt: string, own: string, other: string): number {
+  return Math.min(worstDiff(shirt, own), worstDiff(shirt, other), grassDiff(shirt, 'low'), grassDiff(shirt, 'high'));
+}
+
+/**
+ * The keeper's kit: of these, the one that reads best against both sides' shirts and the grass,
+ * for normal and red-green colour-blind vision alike (kits.ts worstDiff, grassDiff).
+ */
+export function keeperColors(own: string, other: string): KeeperKit {
+  let best = KEEPER_KITS[0];
   let bestD = -1;
-  for (const o of options) {
-    const d = Math.min(colorDist(o.shirt, own), colorDist(o.shirt, other));
+  for (const o of KEEPER_KITS) {
+    const d = keeperReads(o.shirt, own, other);
     if (d > bestD) {
       bestD = d;
       best = o;
+    }
+  }
+  return best;
+}
+
+/**
+ * Both keepers' kits, chosen together: the pair where the worst of these reads best, each keeper
+ * against both shirts and the grass, and the two keepers against each other. (Picking the home
+ * keeper first and the away keeper after can leave no away kit far enough from his.)
+ */
+export function keeperPair(home: string, away: string): [KeeperKit, KeeperKit] {
+  let best: [KeeperKit, KeeperKit] = [keeperColors(home, away), keeperColors(away, home)];
+  let bestD = -1;
+  for (const h of KEEPER_KITS) {
+    const rh = keeperReads(h.shirt, home, away);
+    if (rh <= bestD) continue;
+    for (const a of KEEPER_KITS) {
+      if (a === h) continue;
+      const d = Math.min(rh, keeperReads(a.shirt, away, home), worstDiff(h.shirt, a.shirt));
+      if (d > bestD) {
+        bestD = d;
+        best = [h, a];
+      }
     }
   }
   return best;
@@ -918,7 +1001,7 @@ export function colorDist(a: string, b: string): number {
 }
 
 /** Varied but stable looks per player id. */
-export function lookFor(id: string, kit: { shirt: string; shorts: string; socks: string; trim: string }, number: number | null, keeper: boolean, rand: (salt: number) => number): PlayerLook {
+export function lookFor(id: string, kit: { shirt: string; shorts: string; socks: string; trim: string; rim?: boolean }, number: number | null, keeper: boolean, rand: (salt: number) => number): PlayerLook {
   const skinI = Math.floor(rand(1) * SKINS.length);
   const dark = skinI >= 4;
   const hairPool = dark ? [0, 1, 7] : [0, 1, 2, 3, 4, 5, 6, 8];

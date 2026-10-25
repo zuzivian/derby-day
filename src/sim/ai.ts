@@ -39,6 +39,7 @@
 
 import {
   AIR_DRAG,
+  BOUNCE_KEEP,
   BOX_DEPTH,
   BOX_W,
   GOAL_BOTTOM,
@@ -73,6 +74,7 @@ import { chipPlan, rollTravel } from './kicks.ts';
 import { chance, gauss, next, range } from './rng.ts';
 import type { Action, AiInterception, AiMemory, AiTeamPlan, Intent, MatchPlayer, MatchState, Restart } from './types.ts';
 import { add, clamp, dot, rotate, scale, sub, type Vec } from './vec.ts';
+import { barredSecondTouch } from './rules.ts';
 
 // Local sqrt-based helpers: Math.hypot is several times slower, and sqrt is
 // correctly rounded under IEEE-754, so it is also the safer choice for
@@ -350,7 +352,7 @@ function trajectory(pos: Vec, vel: Vec, z0: number, vz0: number): Trajectory {
   const airborne = z0 > 0.01 || vz0 > 0.01;
   const tLand = airborne ? (vz0 + Math.sqrt(vz0 * vz0 + 2 * GRAVITY * Math.max(0, z0))) / GRAVITY : 0;
   const dLand = airborne ? (v0 * (1 - Math.exp(-AIR_DRAG * tLand))) / AIR_DRAG : 0;
-  const vLand = airborne ? v0 * Math.exp(-AIR_DRAG * tLand) * 0.82 : v0;
+  const vLand = airborne ? v0 * Math.exp(-AIR_DRAG * tLand) * BOUNCE_KEEP : v0;
   const pts: Vec[] = new Array(TRAJ_STEPS);
   const zs: number[] = new Array(TRAJ_STEPS);
   for (let k = 0; k < TRAJ_STEPS; k++) {
@@ -372,7 +374,7 @@ function interceptOn(s: MatchState, p: MatchPlayer, traj: Trajectory): AiInterce
   const { pts, z, v0 } = traj;
   if (p.sentOff) return { t: 1e9, pt: pts[0] };
   const sp = runSpeed(p) * (p.winded ? 1 : SPRINT_MULT * 0.97);
-  const keeper = p.role === 'GK' && inOwnBox(p.team, p.pos);
+  const keeper = p.role === 'GK' && inOwnBox(s, p.team, p.pos);
   const reach = keeper ? 1.2 + 0.5 * p.attrs.goalkeeping : 0.9;
   const maxZ = keeper ? KEEPER_REACH_Z : REACH_Z;
   const blocked = (s.ball.noPickup[p.i] + p.stun) / 60;
@@ -432,13 +434,13 @@ const PERMS: number[][][] = [[[]], [[0]], [[0, 1], [1, 0]], [[0, 1, 2], [0, 2, 1
  * inside: down the line, inside, and back inside. In the final third they
  * open out for lay-offs and cut-backs.
  */
-function supportSlots(team: 0 | 1, c: Vec, n: number): number[] {
-  const dir = attackDir(team);
+function supportSlots(s: MatchState, team: 0 | 1, c: Vec, n: number): number[] {
+  const dir = attackDir(s, team);
   // The rotation sign that turns "straight ahead" toward the middle of the pitch.
   const inSign = (MID_Y - c.y) * dir >= 0 ? 1 : -1;
   if (n <= 0) return [];
   if (Math.min(c.y, PITCH_H - c.y) < 11) return [[1 * inSign], [0.3 * inSign, 1.3 * inSign], [0.25 * inSign, 1.15 * inSign, 2.35 * inSign]][Math.min(n, 3) - 1];
-  const a = teamX(team, c.x) > 0.78 ? 1.15 : 0.8;
+  const a = teamX(s, team, c.x) > 0.78 ? 1.15 : 0.8;
   return [[0.9 * inSign], [-a, a], [-a, a, (Math.PI - 0.75) * inSign]][Math.min(n, 3) - 1];
 }
 
@@ -448,6 +450,8 @@ function supportSlots(team: 0 | 1, c: Vec, n: number): number[] {
  * covers for a human who is somewhere else, instead of nobody going.
  */
 export function humanEngaging(s: MatchState, h: MatchPlayer, at: Vec): boolean {
+  // A pass on its way to him: he goes to meet it whoever steers him (human.ts meetBall).
+  if (s.ball.owner < 0 && s.ball.receiver === h.i) return true;
   if (humanAuto(s, h.team)) return false;
   const to = sub(at, h.pos);
   const d = len(to);
@@ -495,7 +499,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     focus = clampToPitch(sub(owner.pos, scale(owner.vel, lag)), 0.5);
     attacking = owner.team === team;
     if (!attacking) {
-      const goal = ownGoal(team);
+      const goal = ownGoal(s, team);
       const press = add(focus, scale(norm(sub(goal, focus)), 0.8));
       let best: MatchPlayer | null = null;
       for (const m of mates) if (!best || dist(m.pos, press) < dist(best.pos, press)) best = m;
@@ -518,7 +522,8 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       const ic = interceptOn(s, m, traj);
       icpt[m.i] = ic;
       if (m.team === team) {
-        if (m.role !== 'GK' && m.stun === 0 && ic.t < bestUs && !keepsOut(s, m)) {
+        // A restart taker may not play it again until someone else has (Laws 8, 13-17): he leaves it.
+        if (m.role !== 'GK' && m.stun === 0 && ic.t < bestUs && !keepsOut(s, m) && !barredSecondTouch(s, m)) {
           bestUs = ic.t;
           quickest = m;
         }
@@ -557,7 +562,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   // a little deeper when nobody is pressing the carrier (so there is less
   // space in behind), and steps up as the ball goes back: that is the
   // offside trap. The mentality sets the gap and how high or deep it may go.
-  const bx = teamX(team, focus.x);
+  const bx = teamX(s, team, focus.x);
   let line: number;
   if (attacking) line = clamp(bx - k.attGap, k.attMin, k.attMax);
   else {
@@ -566,7 +571,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     line = Math.max(line, Math.min(k.boxHold, bx - 0.04));
     line = clamp(Math.min(line, bx - 0.03), Math.min(k.lineMin, Math.max(0.05, bx - 0.03)), k.lineMax);
   }
-  const oppLine = Math.max(secondLastOpponentX(s, team), teamX(team, b.pos.x), 0.5);
+  const oppLine = Math.max(secondLastOpponentX(s, team), teamX(s, team, b.pos.x), 0.5);
 
   // Pressing: whether the chaser goes in, and who presses with him.
   let engage = true;
@@ -602,8 +607,8 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     }
     // A block near its own box steps into the shooting lane: shots from the
     // edge of the area are what a deep side invites, so it puts bodies in front of them.
-    if (k.screen > 0 && dist(owner.pos, ownGoal(team)) < k.screenR) {
-      const goal = ownGoal(team);
+    if (k.screen > 0 && dist(owner.pos, ownGoal(s, team)) < k.screenR) {
+      const goal = ownGoal(s, team);
       const dOwner = dist(owner.pos, goal);
       const near = nearestK(mates, k.screen, (m) =>
         m.i === chaser || m.i === human || m.role === 'GK' || pressers.includes(m.i) || dist(m.pos, goal) >= dOwner + 3 || dist2(m.pos, owner.pos) >= 18 * 18
@@ -625,7 +630,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     const center = owner && owner.team === team ? owner : b.receiver >= 0 && s.players[b.receiver].team === team ? s.players[b.receiver] : null;
     if (center) {
       const cpos = owner ? owner.pos : focus;
-      const cx = teamX(team, cpos.x);
+      const cx = teamX(s, team, cpos.x);
       // The k.supporters nearest within 30 m, kept in order as they are found (this runs on every plan).
       const near: MatchPlayer[] = [];
       const nearD: number[] = [];
@@ -644,8 +649,8 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
           nearD.pop();
         }
       }
-      const angs = supportSlots(team, cpos, near.length);
-      const fwd = { x: attackDir(team), y: 0 };
+      const angs = supportSlots(s, team, cpos, near.length);
+      const fwd = { x: attackDir(s, team), y: 0 };
       const spots = angs.map((a) => add(cpos, scale(rotate(fwd, a), k.supportR)));
       let bestPerm = PERMS[near.length][0];
       let bestCost = Infinity;
@@ -668,9 +673,9 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   if (!attacking) {
     // Defending: mark the most dangerous attackers first, goal-side, each with
     // the defender whose zone is nearest. The carrier belongs to the chaser.
-    const goal = ownGoal(team);
+    const goal = ownGoal(s, team);
     const attackers = s.players
-      .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(team, o.pos.x) < 0.42 + 0.2 * skill)
+      .filter((o) => o.team !== team && o.role !== 'GK' && !o.sentOff && o.i !== b.owner && teamX(s, team, o.pos.x) < 0.42 + 0.2 * skill)
       .sort((x, y) => dist(x.pos, goal) - dist(y.pos, goal));
     const free = mates.filter((m) => m.i !== chaser && m.i !== steered && !pressers.includes(m.i));
     const zone = free.map((d) => shapeTarget(s, d, false, focus, line, oppLine));
@@ -719,7 +724,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     let deepest = Infinity;
     for (const d of free) {
       if (mark[d.i] >= 0 || d.role === 'DEF') continue;
-      const x = teamX(team, d.pos.x);
+      const x = teamX(s, team, d.pos.x);
       if (x < deepest) {
         deepest = x;
         cover = d.i;
@@ -740,7 +745,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
 function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: Vec, line: number, oppLine: number): Vec {
   const slot = slotOf(s, p);
   const k = tacticOf(s, p.team);
-  const bx = teamX(p.team, focus.x);
+  const bx = teamX(s, p.team, focus.x);
   const by = focus.y / PITCH_H;
   const side = slot.y < 0.5 ? -1 : 1;
   const ballSide = (by < 0.5 ? -1 : 1) === side;
@@ -757,7 +762,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
   let nx: number;
   switch (p.sub) {
     case 'GK':
-      return fromTeam(p.team, 0.03, 0.5);
+      return fromTeam(s, p.team, 0.03, 0.5);
     case 'CB':
       nx = L;
       ny = 0.5 + (slot.y - 0.5) * (attacking ? 1.5 : 0.85 * narrow) + (by - 0.5) * 0.25;
@@ -823,7 +828,7 @@ function shapeTarget(s: MatchState, p: MatchPlayer, attacking: boolean, focus: V
   }
   nx = clamp(nx + p.jitter.x * 0.4, 0.04, 0.95);
   ny = clamp(ny + p.jitter.y * 0.5, 0.04, 0.96);
-  return fromTeam(p.team, nx, ny);
+  return fromTeam(s, p.team, nx, ny);
 }
 
 // ---------------------------------------------------------------------------
@@ -875,14 +880,14 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
   // A runner already moving toward the spot gets there sooner than a standing start.
   const onTheRun = dT > 0.5 ? clamp(dot(m.vel, scale(toT, 1 / dT)) / runSpeed(m), 0, 1) : 0;
   const tRecv = Math.max(0, dT - 0.9) / runSpeed(m) + 0.1 - 0.3 * onTheRun;
-  const tTarget = teamX(team, target.x);
+  const tTarget = teamX(s, team, target.x);
   const ab = sub(target, from);
   const d2 = d * d;
   let laneM = Infinity;
   let arriveM = Infinity;
   for (const o of s.players) {
     if (o.team === team || o.stun > 20 || o.sentOff) continue;
-    const reach = o.role === 'GK' && inOwnBox(o.team, o.pos) ? 1.5 : 0.95;
+    const reach = o.role === 'GK' && inOwnBox(s, o.team, o.pos) ? 1.5 : 0.95;
     const oSp = runSpeed(o) * 0.95;
     const u = clamp(dot(sub(o.pos, from), ab) / d2, 0, 1);
     const proj = add(from, scale(ab, u));
@@ -891,13 +896,13 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
     const tO = Math.max(0, perp - reach) / oSp + 0.18;
     if (u > 0.04) laneM = Math.min(laneM, tO - tBall);
     // A defender has to turn and chase a ball played in behind him.
-    const turn = through && tTarget > teamX(team, o.pos.x) && o.role !== 'GK' ? 0.3 : 0;
+    const turn = through && tTarget > teamX(s, team, o.pos.x) && o.role !== 'GK' ? 0.3 : 0;
     const tOA = Math.max(0, dist(o.pos, target) - reach) / oSp + 0.18 + turn;
     arriveM = Math.min(arriveM, tOA - Math.max(tRecv, tBallEnd));
   }
   const tx = tTarget;
-  const gain = (tx - teamX(team, from.x)) * PITCH_W;
-  const dGoal = dist(target, oppGoal(team));
+  const gain = (tx - teamX(s, team, from.x)) * PITCH_W;
+  const dGoal = dist(target, oppGoal(s, team));
   const urge = urgency(s, team);
   // Risk: an attacking side weighs how far forward a pass goes more, and how safe it is less.
   const risk = tacticOf(s, team).risk;
@@ -907,7 +912,7 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
   if (tx > 0.82 && Math.abs(target.y - MID_Y) < BOX_W / 2) score += 0.8 + 1.2 * urge;
   if (m.role === 'GK') score -= laneM > 0.6 && arriveM > 0.5 ? 1.2 : 4;
   // Never stroke it across the face of your own goal unless it's clearly safe.
-  const own = ownGoal(team);
+  const own = ownGoal(s, team);
   if (distToSegment(own, from, target) < 14 && (laneM < 0.5 || arriveM < 0.3)) score -= 3.5;
   if (tx < 0.2 && Math.abs(target.y - MID_Y) < 14) score -= 1;
   // Off the pitch is a throw to them.
@@ -930,11 +935,11 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
  * arrives in stride. Shorter than kicks.throughTarget, which leads generously
  * for a human who can adjust the run.
  */
-function cpuThroughTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
+function cpuThroughTarget(s: MatchState, from: Vec, m: MatchPlayer, passing: number): Vec {
   const d = dist(from, m.pos);
   const tBall = d / (passSpeed(d, passing) * 1.05 * 0.8);
   const vr = len(m.vel);
-  const run = vr > 1.2 ? scale(m.vel, 1 / vr) : norm(add({ x: attackDir(m.team), y: 0 }, scale(norm(sub(oppGoal(m.team), m.pos)), 0.5)));
+  const run = vr > 1.2 ? scale(m.vel, 1 / vr) : norm(add({ x: attackDir(s, m.team), y: 0 }, scale(norm(sub(oppGoal(s, m.team), m.pos)), 0.5)));
   const lead = clamp(Math.max(vr, 3) * tBall + 1.5, 3, 9);
   return clampToPitch(add(m.pos, scale(run, lead)), 1.5);
 }
@@ -948,11 +953,11 @@ function cpuThroughTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
 function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: number): PassOption | null {
   const team = p.team;
   if (oppLine > 0.74 || !(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) return null;
-  const px = teamX(team, s.ball.pos.x);
-  const mx = teamX(team, m.pos.x);
+  const px = teamX(s, team, s.ball.pos.x);
+  const mx = teamX(s, team, m.pos.x);
   if (oppLine - px < 0.12 || mx < oppLine - 0.07 || inOffsidePosition(s, m, s.ball.pos.x)) return null;
   const tx = Math.min(0.9, oppLine + 0.11);
-  const target = clampToPitch(fromTeam(team, tx, (m.pos.y + (MID_Y - m.pos.y) * 0.3) / PITCH_H), 4);
+  const target = clampToPitch(fromTeam(s, team, tx, (m.pos.y + (MID_Y - m.pos.y) * 0.3) / PITCH_H), 4);
   const d = dist(s.ball.pos, target);
   if (d < 18 || d > 48) return null;
   // It comes down, and has to be brought under control.
@@ -961,8 +966,8 @@ function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: 
   let tDef = Infinity;
   for (const o of s.players) {
     if (o.team === team || o.sentOff || o.stun > 20) continue;
-    const keeper = o.role === 'GK' && inOwnBox(o.team, target);
-    const turn = !keeper && teamX(team, o.pos.x) < tx ? 0.35 : 0;
+    const keeper = o.role === 'GK' && inOwnBox(s, o.team, target);
+    const turn = !keeper && teamX(s, team, o.pos.x) < tx ? 0.35 : 0;
     tDef = Math.min(tDef, Math.max(0, dist(o.pos, target) - (keeper ? 1.6 : 0.9)) / (runSpeed(o) * SPRINT_MULT * 0.97) + 0.2 + turn);
   }
   const margin = tDef - Math.max(tRun, tBall);
@@ -972,7 +977,7 @@ function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: 
 
 export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOption | null {
   let best: PassOption | null = null;
-  const dir = attackDir(p.team);
+  const dir = attackDir(s, p.team);
   const oppLine = secondLastOpponentX(s, p.team);
   const consider = (m: MatchPlayer, target: Vec, through: boolean) => {
     const sc = evalPass(s, p, m, target, through);
@@ -980,21 +985,21 @@ export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOp
     const score = sc + (noise > 0 ? gauss(s.rng) * noise : 0);
     if (!best || score > best.score) best = { receiver: m, target, score, through };
   };
-  const px = teamX(p.team, p.pos.x);
+  const px = teamX(s, p.team, p.pos.x);
   for (const m of s.players) {
     if (m.team !== p.team || m.i === p.i || m.stun > 0 || m.sentOff) continue;
     consider(m, leadTarget(p.pos, m, p.attrs.passing), false);
     if (m.role === 'GK') continue;
     // Through ball into space ahead of a runner, or ahead of a forward who is level or beyond.
     const fwdSpeed = m.vel.x * dir;
-    const mx = teamX(p.team, m.pos.x);
+    const mx = teamX(s, p.team, m.pos.x);
     const behind = inBehindOption(s, p, m, oppLine);
     if (behind) {
       const score = behind.score + (noise > 0 ? gauss(s.rng) * noise : 0);
       if (!best || score > best.score) best = { ...behind, score };
     }
     if (px > 0.8 || !(fwdSpeed > 1.5 || mx > px + 0.06)) continue;
-    consider(m, cpuThroughTarget(s.ball.pos, m, p.attrs.passing), true);
+    consider(m, cpuThroughTarget(s, s.ball.pos, m, p.attrs.passing), true);
   }
   return best;
 }
@@ -1036,17 +1041,17 @@ const chipPowerFor = (d: number): number => clamp((d - 6) / 44 + 0.03, 0.05, 1);
  */
 function bestLongBall(s: MatchState, p: MatchPlayer, noise: number): PassOption | null {
   const team = p.team;
-  const px = teamX(team, s.ball.pos.x);
+  const px = teamX(s, team, s.ball.pos.x);
   let best: PassOption | null = null;
   for (const m of s.players) {
     if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK' || m.stun > 0) continue;
     if (!(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) continue;
-    const mx = teamX(team, m.pos.x);
+    const mx = teamX(s, team, m.pos.x);
     const d = dist(s.ball.pos, m.pos);
     if (mx < px + 0.19 || d > 48) continue;
     if (inOffsidePosition(s, m, s.ball.pos.x) && offsideAware(s, p)) continue;
     // Drop it a few metres in front of him, toward their goal.
-    const target = clampToPitch(add(m.pos, scale(norm(sub(oppGoal(team), m.pos)), 2.5)), 3);
+    const target = clampToPitch(add(m.pos, scale(norm(sub(oppGoal(s, team), m.pos)), 2.5)), 3);
     let room = 8;
     for (const o of s.players) if (o.team !== team && !o.sentOff) room = Math.min(room, dist(o.pos, target));
     const score = room * 0.5 + mx * 2 + gauss(s.rng) * noise;
@@ -1061,11 +1066,11 @@ function bestLongBall(s: MatchState, p: MatchPlayer, noise: number): PassOption 
  */
 function bestCross(s: MatchState, p: MatchPlayer, noise: number): PassOption | null {
   const team = p.team;
-  const goal = oppGoal(team);
+  const goal = oppGoal(s, team);
   let best: PassOption | null = null;
   for (const m of s.players) {
     if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK') continue;
-    const mx = teamX(team, m.pos.x);
+    const mx = teamX(s, team, m.pos.x);
     if (mx < 0.8 || Math.abs(m.pos.y - MID_Y) > BOX_W / 2 - 2) continue;
     if (inOffsidePosition(s, m, s.ball.pos.x) && offsideAware(s, p)) continue;
     let room = 6;
@@ -1091,7 +1096,7 @@ interface ShotOption {
 
 function evalShot(s: MatchState, p: MatchPlayer): ShotOption {
   const team = p.team;
-  const goal = oppGoal(team);
+  const goal = oppGoal(s, team);
   const gk = goalkeeper(s, team === 0 ? 1 : 0);
   const dGoal = dist(p.pos, goal);
   const dx = Math.abs(goal.x - p.pos.x);
@@ -1125,7 +1130,7 @@ function evalShot(s: MatchState, p: MatchPlayer): ShotOption {
 /** A chip over a keeper who has come off his line. Null when it isn't on. */
 function evalChip(s: MatchState, p: MatchPlayer): ShotOption | null {
   const team = p.team;
-  const goal = oppGoal(team);
+  const goal = oppGoal(s, team);
   const gk = goalkeeper(s, team === 0 ? 1 : 0);
   const dGoal = dist(p.pos, goal);
   if (dGoal < 8 || dGoal > 24) return null;
@@ -1133,7 +1138,7 @@ function evalChip(s: MatchState, p: MatchPlayer): ShotOption | null {
   if (off < 4) return null;
   // The keeper must be between shooter and goal, and the shot angle decent.
   if (distToSegment(gk.pos, p.pos, goal) > 2.5 || Math.abs(p.pos.y - MID_Y) > dGoal * 0.7) return null;
-  const dir = attackDir(team);
+  const dir = attackDir(s, team);
   const target = { x: goal.x + dir * 0.8, y: clamp(p.pos.y, GOAL_TOP + 1, GOAL_BOTTOM - 1) * 0.3 + MID_Y * 0.7 };
   const d = dist(p.pos, target);
   const power = chipPowerFor(d);
@@ -1163,18 +1168,18 @@ function passIntent(s: MatchState, p: MatchPlayer, opt: PassOption, skill: numbe
 function shootIntent(s: MatchState, p: MatchPlayer, shot: ShotOption, skill: number): Intent {
   const target = { x: shot.target.x, y: shot.target.y + gauss(s.rng) * (0.25 + 0.8 * (1 - skill)) };
   p.ai!.mode = 'none';
-  const move = norm(sub(oppGoal(p.team), p.pos));
+  const move = norm(sub(oppGoal(s, p.team), p.pos));
   if (shot.chip) return { move, throttle: 0.8, action: { kind: 'chip', target, power: shot.power } };
   return { move, throttle: 1, action: { kind: 'shoot', target, power: shot.power } };
 }
 
 /** A long, lofted clearance toward the emptier flank, well upfield. */
 function clearance(s: MatchState, p: MatchPlayer, far: number): Action {
-  const dir = attackDir(p.team);
+  const dir = attackDir(s, p.team);
   let topCrowd = 0;
   for (const o of s.players) if (o.team !== p.team && !o.sentOff && o.pos.y < MID_Y) topCrowd++;
   const y = topCrowd <= 4 ? range(s.rng, 6, 18) : range(s.rng, PITCH_H - 18, PITCH_H - 6);
-  const target = { x: clamp(ownGoal(p.team).x + dir * far, 8, PITCH_W - 8), y };
+  const target = { x: clamp(ownGoal(s, p.team).x + dir * far, 8, PITCH_W - 8), y };
   return { kind: 'chip', target, power: chipPowerFor(dist(s.ball.pos, target)) };
 }
 
@@ -1182,9 +1187,9 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
   const mem = memOf(s, p);
   const skill = skillOf(s, p.team);
   const k = tacticOf(s, p.team);
-  const goal = oppGoal(p.team);
-  const dir = attackDir(p.team);
-  const px = teamX(p.team, p.pos.x);
+  const goal = oppGoal(s, p.team);
+  const dir = attackDir(s, p.team);
+  const px = teamX(s, p.team, p.pos.x);
 
   let nearest: MatchPlayer | null = null;
   let pressure = Infinity;
@@ -1200,7 +1205,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
   // Sharper players notice a closing defender sooner.
   if (pressure < 2.2 && p.aiTimer > 2 + Math.round(6 * (1 - skill))) p.aiTimer = 2 + Math.round(6 * (1 - skill));
   // Don't run the ball out of play: decide now.
-  const nearLine = p.pos.y < 2.2 || p.pos.y > PITCH_H - 2.2 || teamX(p.team, p.pos.x) > 0.975;
+  const nearLine = p.pos.y < 2.2 || p.pos.y > PITCH_H - 2.2 || teamX(s, p.team, p.pos.x) > 0.975;
   if (nearLine && p.aiTimer > 3) p.aiTimer = 3;
 
   if (p.aiTimer <= 0) {
@@ -1276,7 +1281,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
     // Pinned in by our own corner flag: put it behind or into touch, and defend the set piece.
     if (px < 0.12 && Math.abs(p.pos.y - MID_Y) > GOAL_W && pressure < 2.5 && passScore < 0 && chance(s.rng, 0.5)) {
       const behind = chance(s.rng, 0.6);
-      const out = behind ? { x: ownGoal(p.team).x - dir * 4, y: p.pos.y < MID_Y ? p.pos.y - 3 : p.pos.y + 3 } : { x: p.pos.x + dir * 6, y: p.pos.y < MID_Y ? -4 : PITCH_H + 4 };
+      const out = behind ? { x: ownGoal(s, p.team).x - dir * 4, y: p.pos.y < MID_Y ? p.pos.y - 3 : p.pos.y + 3 } : { x: p.pos.x + dir * 6, y: p.pos.y < MID_Y ? -4 : PITCH_H + 4 };
       return { move: p.facing, throttle: 0.5, action: { kind: 'shoot', target: out, power: 0.5 } };
     }
     // In trouble deep in our half: clear it (a deep-lying side clears sooner, an attacking one plays out).
@@ -1314,7 +1319,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
   // Stay in play.
   if (p.pos.y < 3.5) desired.y += 0.9;
   if (p.pos.y > PITCH_H - 3.5) desired.y -= 0.9;
-  if (teamX(p.team, p.pos.x) > 0.96) desired.x = -dir * 0.3;
+  if (teamX(s, p.team, p.pos.x) > 0.96) desired.x = -dir * 0.3;
   return { move: norm(desired), throttle: 1, sprint: sprintOk(s, p, pressure > 4 && px > 0.4 && px < 0.85) };
 }
 
@@ -1324,7 +1329,7 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
 /** A penalty has just been struck: the keeper commits to a side (seeded), the way keepers do. Called by match.ts. */
 export function penaltyDive(s: MatchState, gk: MatchPlayer, shotY: number): number {
   const mem = memOf(s, gk);
-  const own = ownGoal(gk.team);
+  const own = ownGoal(s, gk.team);
   const actual = shotY < MID_Y - 1 ? -1 : shotY > MID_Y + 1 ? 1 : 0;
   // A good keeper reads it a little more often than a coin toss.
   let side: number;
@@ -1335,15 +1340,15 @@ export function penaltyDive(s: MatchState, gk: MatchPlayer, shotY: number): numb
   }
   mem.mode = 'dive';
   mem.modeTicks = 40;
-  mem.modeTarget = { x: own.x + attackDir(gk.team) * 0.4, y: MID_Y + side * (GOAL_W / 2 - 0.4) };
+  mem.modeTarget = { x: own.x + attackDir(s, gk.team) * 0.4, y: MID_Y + side * (GOAL_W / 2 - 0.4) };
   mem.lastTick = s.tick;
   return side;
 }
 
 function gkIntent(s: MatchState, p: MatchPlayer): Intent {
   const ball = s.ball;
-  const own = ownGoal(p.team);
-  const dir = attackDir(p.team);
+  const own = ownGoal(s, p.team);
+  const dir = attackDir(s, p.team);
   const skill = skillOf(s, p.team);
   const mem = memOf(s, p);
 
@@ -1355,7 +1360,7 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
 
   if (ball.owner === p.i) {
     p.holdTicks++;
-    const inBox = inOwnBox(p.team, p.pos);
+    const inBox = inOwnBox(s, p.team, p.pos);
     const hold = inBox ? Math.round(48 - 26 * skill) : 4;
     if (p.holdTicks > hold) {
       // Distribute: prefer the open full-back, then a midfielder.
@@ -1398,7 +1403,7 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
   // Weak keepers drift back toward the middle of the goal.
   const lazy = (1 - skill) * 0.35;
   target = add(scale(target, 1 - lazy), scale({ x: own.x + dir * 1.2, y: MID_Y }, lazy));
-  const nx = clamp(teamX(p.team, target.x) * PITCH_W, 0.7, BOX_DEPTH - 2);
+  const nx = clamp(teamX(s, p.team, target.x) * PITCH_W, 0.7, BOX_DEPTH - 2);
   const spot = { x: own.x + dir * nx, y: clamp(target.y, GOAL_TOP - 1.5, GOAL_BOTTOM + 1.5) };
 
   // Shot or loose ball heading at goal: shift from the angle spot toward its
@@ -1423,14 +1428,15 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
     }
   }
 
-  // Sweep or claim: a loose ball (through ball, cross) I reach first, in or near my box.
-  if (!owner) {
+  // Sweep or claim: a loose ball (through ball, cross) I reach first, in or near my box. Not his own
+  // goal kick or free kick, which someone else must touch first.
+  if (!owner && !barredSecondTouch(s, p)) {
     const mine = plan.icpt[p.i];
     const receiver = ball.receiver >= 0 ? s.players[ball.receiver] : null;
     const toTeammate = receiver && receiver.team === p.team && receiver.i !== p.i;
     // A high ball he can only claim near goal; a ball on the floor anywhere in his area.
     const reachX = s.ball.z > 0.5 || s.ball.vz > 0.5 ? 6 + 2 * skill : BOX_DEPTH - 3 + 4 * skill;
-    if (mine && !toTeammate && teamX(p.team, mine.pt.x) * PITCH_W < reachX && Math.abs(mine.pt.y - MID_Y) < BOX_W / 2 - 2) {
+    if (mine && !toTeammate && teamX(s, p.team, mine.pt.x) * PITCH_W < reachX && Math.abs(mine.pt.y - MID_Y) < BOX_W / 2 - 2) {
       const margin = 0.45 - 0.3 * skill;
       if (mine.t + margin < plan.bestThem && mine.t <= plan.bestUs + 0.2) return seek(p, mine.pt, 0.8);
     }
@@ -1466,7 +1472,7 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   const skill = skillOf(s, team);
   // Where the ball will be: the carrier a moment from now, or where the pass is going.
   const c = carrier ? clampToPitch(add(carrier.pos, scale(carrier.vel, 0.3)), 0.5) : plan.focus;
-  const cx = teamX(team, c.x);
+  const cx = teamX(s, team, c.x);
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
   const base = plan.supportAng![j];
   const noise = 0.1 + 0.6 * (1 - skill);
@@ -1491,9 +1497,9 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
     }
   }
   // Plain numbers in this loop: it runs for every candidate spot (no vectors made but the winner).
-  const fx = attackDir(team);
-  const toTeamX = (x: number) => (team === 0 ? x / PITCH_W : 1 - x / PITCH_W);
-  const fromTeamX = (nx: number) => (team === 0 ? nx * PITCH_W : (1 - nx) * PITCH_W);
+  const fx = attackDir(s, team);
+  const toTeamX = (x: number) => (fx > 0 ? x / PITCH_W : 1 - x / PITCH_W);
+  const fromTeamX = (nx: number) => (fx > 0 ? nx * PITCH_W : (1 - nx) * PITCH_W);
   const sixYard = cx < 0.3;
   for (const da of SUPPORT_TURN) {
     const dx = fx * Math.cos(base + da);
@@ -1551,9 +1557,9 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   mem.retarget = Math.round(14 + 22 * (1 - skill) + next(s.rng) * 10);
 
   const team = p.team;
-  const dir = attackDir(team);
+  const dir = attackDir(s, team);
   const focus = plan.focus;
-  const fx = teamX(team, focus.x);
+  const fx = teamX(s, team, focus.x);
   const anchor = shapeTarget(s, p, true, focus, plan.line, plan.oppLine);
   const fwd = { x: dir, y: 0 };
   const cands: Vec[] = [anchor, add(anchor, { x: dir * 5, y: 0 }), add(anchor, { x: 0, y: 6 }), add(anchor, { x: 0, y: -6 })];
@@ -1566,28 +1572,28 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
 
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
-  if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(team, p.pos.x) > onsideX - 0.06) {
+  if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(s, team, p.pos.x) > onsideX - 0.06) {
     let free = Infinity;
     for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
     if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
       mem.retarget = Math.round(40 + 20 * next(s.rng));
       const y = clamp(p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 6, PITCH_H - 6);
-      mem.target = fromTeam(team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
+      mem.target = fromTeam(s, team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
       return mem.target;
     }
   }
 
   if (sub_ === 'ST' || sub_ === 'W') {
     // On the shoulder of the last defender, ready to spin in behind.
-    cands.push(fromTeam(team, onsideX, anchor.y / PITCH_H));
-    cands.push(fromTeam(team, onsideX, clamp((focus.y + (anchor.y < focus.y ? -10 : 10)) / PITCH_H, 0.08, 0.92)));
+    cands.push(fromTeam(s, team, onsideX, anchor.y / PITCH_H));
+    cands.push(fromTeam(s, team, onsideX, clamp((focus.y + (anchor.y < focus.y ? -10 : 10)) / PITCH_H, 0.08, 0.92)));
   }
   // Ball wide in the final third: get into the box for the cross.
   if (fx > 0.7 && Math.abs(focus.y - MID_Y) > 12 && runner) {
     const near = focus.y < MID_Y ? -1 : 1;
-    cands.push(fromTeam(team, Math.min(0.95, onsideX), (MID_Y + near * 3) / PITCH_H));
-    cands.push(fromTeam(team, Math.min(0.93, onsideX), (MID_Y - near * 4) / PITCH_H));
-    cands.push(fromTeam(team, Math.min(0.89, onsideX), 0.5));
+    cands.push(fromTeam(s, team, Math.min(0.95, onsideX), (MID_Y + near * 3) / PITCH_H));
+    cands.push(fromTeam(s, team, Math.min(0.93, onsideX), (MID_Y - near * 4) / PITCH_H));
+    cands.push(fromTeam(s, team, Math.min(0.89, onsideX), 0.5));
   }
   // Short options either side of the carrier, and a safe ball behind.
   if (sub_ !== 'CB') {
@@ -1597,7 +1603,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     }
   }
 
-  const oppG = oppGoal(team);
+  const oppG = oppGoal(s, team);
   const roleW = (forward ? (sub_ === 'ST' ? 1.2 : sub_ === 'AM' ? 1.1 : 1) : sub_ === 'DM' ? 0.5 : sub_ === 'WB' ? 0.6 : 0.4) * (runner || !forward ? 1 : 0.5);
   const noise = 0.15 + 0.9 * (1 - skill);
   let best = anchor;
@@ -1605,8 +1611,8 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   for (const raw of cands) {
     let c = clampToPitch(raw, 1.5);
     // Not beyond the offside line before the ball is played.
-    const cxRaw = teamX(team, c.x);
-    if (cxRaw > onsideX) c = fromTeam(team, onsideX, c.y / PITCH_H);
+    const cxRaw = teamX(s, team, c.x);
+    if (cxRaw > onsideX) c = fromTeam(s, team, onsideX, c.y / PITCH_H);
     let space = 10;
     let lane = 5;
     for (const o of s.players) {
@@ -1614,7 +1620,7 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
       space = Math.min(space, dist(o.pos, c));
       lane = Math.min(lane, distToSegment(o.pos, focus, c));
     }
-    const cx = teamX(team, c.x);
+    const cx = teamX(s, team, c.x);
     let score = space * 0.3 + lane * 0.4 - (lane < 1.2 ? 2 : 0) + cx * PITCH_W * 0.05 * roleW;
     const dG = dist(c, oppG);
     if (forward && runner && dG < 20) score += (20 - dG) * 0.06;
@@ -1659,7 +1665,7 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
   const skill = skillOf(s, p.team);
   const k = tacticOf(s, p.team);
   const lag = reactionLag(skill);
-  const own = ownGoal(p.team);
+  const own = ownGoal(s, p.team);
   const cap = 0.82 + 0.18 * skill;
 
   if (owner && p.i === plan.chaser) {
@@ -1674,7 +1680,7 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     const tackle = tryTackle(s, p, owner, skill, k);
     if (tackle) return tackle;
     // A pressing side sprints at the ball wherever it is.
-    return { ...seek(p, cut, 1), sprint: sprintOk(s, p, d > 2.5 && (teamX(p.team, owner.pos.x) < 0.5 || k.extra >= 2)) };
+    return { ...seek(p, cut, 1), sprint: sprintOk(s, p, d > 2.5 && (teamX(s, p.team, owner.pos.x) < 0.5 || k.extra >= 2)) };
   }
 
   // Pressing with the chaser: cut a passing lane, or close the carrier down from the other side.
@@ -1699,7 +1705,7 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     return { ...seek(p, clampToPitch(spot, 0.8), 1, 1), sprint: sprintOk(s, p, dist(p.pos, spot) > 3) };
   }
 
-  const bx = teamX(p.team, plan.focus.x);
+  const bx = teamX(s, p.team, plan.focus.x);
   const holdLine = p.role === 'DEF' && bx > plan.line + 0.04;
   const target = plan.mark[p.i];
   if (target >= 0) {
@@ -1711,7 +1717,7 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     const tight = clamp(dGoal * 0.08, 1.8, 4) * (1.35 - 0.45 * skill);
     let spot = add(seen, scale(norm(add(scale(goalSide, 0.65), scale(toBall, 0.35))), tight));
     // A defender doesn't follow a runner past the line: that runner is offside.
-    if (holdLine && teamX(p.team, spot.x) < plan.line) spot = fromTeam(p.team, plan.line, spot.y / PITCH_H);
+    if (holdLine && teamX(s, p.team, spot.x) < plan.line) spot = fromTeam(s, p.team, plan.line, spot.y / PITCH_H);
     // Step in to intercept a pass aimed at my man.
     if (!owner && s.ball.receiver === target) {
       const ic = plan.icpt[p.i];
@@ -1725,8 +1731,8 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
     // Screen: between the ball and the middle of our goal, in front of the back line.
     const f = plan.focus;
     const spot = add(own, scale(sub(f, own), 0.55));
-    const nx = Math.max(teamX(p.team, spot.x), plan.line + 0.05);
-    return seek(p, fromTeam(p.team, nx, clamp(spot.y / PITCH_H, 0.2, 0.8)), 2, cap);
+    const nx = Math.max(teamX(s, p.team, spot.x), plan.line + 0.05);
+    return seek(p, fromTeam(s, p.team, nx, clamp(spot.y / PITCH_H, 0.2, 0.8)), 2, cap);
   }
   // Getting back into shape is a jog, not a sprint: that is where counter-attacks find room.
   // A deep or pressing side gets back quicker.
@@ -1737,7 +1743,7 @@ function defendIntent(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, owner: Ma
 // ---------------------------------------------------------------------------
 // Restarts: positions
 
-const fromOpp = (team: 0 | 1, metresFromGoalLine: number, y: number): Vec => ({ x: oppGoal(team).x - attackDir(team) * metresFromGoalLine, y });
+const fromOpp = (s: MatchState, team: 0 | 1, metresFromGoalLine: number, y: number): Vec => ({ x: oppGoal(s, team).x - attackDir(s, team) * metresFromGoalLine, y });
 
 /** Players ranked for attacking a ball in the box: centre-backs and strikers first. */
 function aerialRank(p: MatchPlayer): number {
@@ -1751,12 +1757,12 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
   const def: 0 | 1 = att === 0 ? 1 : 0;
   const near = r.spot.y < MID_Y ? -1 : 1;
   const zones: Vec[] = [
-    fromOpp(att, 6.5, MID_Y + near * 3),
-    fromOpp(att, 8, MID_Y - near * 3),
-    fromOpp(att, 11, MID_Y + near * 0.5),
-    fromOpp(att, 9.5, MID_Y - near * 0.5),
-    fromOpp(att, 12, MID_Y - near * 6),
-    fromOpp(att, 9, MID_Y + near * 6),
+    fromOpp(s, att, 6.5, MID_Y + near * 3),
+    fromOpp(s, att, 8, MID_Y - near * 3),
+    fromOpp(s, att, 11, MID_Y + near * 0.5),
+    fromOpp(s, att, 9.5, MID_Y - near * 0.5),
+    fromOpp(s, att, 12, MID_Y - near * 6),
+    fromOpp(s, att, 9, MID_Y + near * 6),
   ];
   const ours = s.players.filter((p) => p.team === att && !p.sentOff && p.i !== r.taker && p.role !== 'GK' && !t[p.i]).sort((a, b) => aerialRank(b) - aerialRank(a));
   const inBox: number[] = [];
@@ -1764,17 +1770,17 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
     if (k < attackers) {
       t[p.i] = zones[k % zones.length];
       inBox.push(p.i);
-    } else if (k < attackers + 2) t[p.i] = fromOpp(att, 20, MID_Y + (k % 2 ? 9 : -9)); // edge of the box, for the second ball
-    else t[p.i] = fromTeam(att, 0.55, k % 2 ? 0.35 : 0.65); // rest defence
+    } else if (k < attackers + 2) t[p.i] = fromOpp(s, att, 20, MID_Y + (k % 2 ? 9 : -9)); // edge of the box, for the second ball
+    else t[p.i] = fromTeam(s, att, 0.55, k % 2 ? 0.35 : 0.65); // rest defence
   });
   // Defending: keeper on his line, one on the near post, mark the men in the box, someone on the edge, the forwards stay up.
   const gk = goalkeeper(s, def);
-  if (!t[gk.i]) t[gk.i] = { x: ownGoal(def).x + attackDir(def) * 0.6, y: MID_Y + near * 0.8 };
+  if (!t[gk.i]) t[gk.i] = { x: ownGoal(s, def).x + attackDir(s, def) * 0.6, y: MID_Y + near * 0.8 };
   const theirs = s.players.filter((p) => p.team === def && !p.sentOff && p.i !== gk.i && !t[p.i]);
   const used = new Set<number>();
   const postMan = theirs.filter((p) => p.sub === 'FB' || p.sub === 'WB').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot))[0];
   if (postMan && r.kind === 'corner') {
-    t[postMan.i] = { x: ownGoal(def).x + attackDir(def) * 0.5, y: MID_Y + near * (GOAL_W / 2 - 0.3) };
+    t[postMan.i] = { x: ownGoal(s, def).x + attackDir(s, def) * 0.5, y: MID_Y + near * (GOAL_W / 2 - 0.3) };
     used.add(postMan.i);
   }
   for (const ai of inBox) {
@@ -1787,20 +1793,20 @@ function boxSetPiece(s: MatchState, r: Restart, t: (Vec | null)[], attackers: nu
     if (!best) break;
     used.add(best.i);
     // Goal-side and a touch toward the ball.
-    t[best.i] = add(a, scale(norm(add(sub(ownGoal(def), a), scale(sub(r.spot, a), 0.15))), 1.1));
+    t[best.i] = add(a, scale(norm(add(sub(ownGoal(s, def), a), scale(sub(r.spot, a), 0.15))), 1.1));
   }
   let k = 0;
   for (const d of theirs) {
     if (used.has(d.i)) continue;
-    if (d.sub === 'ST') t[d.i] = fromTeam(def, 0.42, k++ % 2 ? 0.4 : 0.6);
-    else t[d.i] = add(fromOpp(att, 14 + (k % 2) * 4, MID_Y + ((k++ % 3) - 1) * 8), { x: 0, y: 0 });
+    if (d.sub === 'ST') t[d.i] = fromTeam(s, def, 0.42, k++ % 2 ? 0.4 : 0.6);
+    else t[d.i] = add(fromOpp(s, att, 14 + (k % 2) * 4, MID_Y + ((k++ % 3) - 1) * 8), { x: 0, y: 0 });
   }
 }
 
 /** A defensive wall 9.15 m from the ball, covering the near side of the goal. */
 function wall(s: MatchState, r: Restart, t: (Vec | null)[], n: number): number[] {
   const def: 0 | 1 = r.team === 0 ? 1 : 0;
-  const goal = ownGoal(def);
+  const goal = ownGoal(s, def);
   const nearPost = { x: goal.x, y: MID_Y + Math.sign(r.spot.y - MID_Y || 1) * (GOAL_W / 2 - 1) };
   const aim = norm(sub(add(scale(goal, 0.4), scale(nearPost, 0.6)), r.spot));
   const centre = add(r.spot, scale(aim, RETREAT + 0.4));
@@ -1810,7 +1816,7 @@ function wall(s: MatchState, r: Restart, t: (Vec | null)[], n: number): number[]
   picked.forEach((i, k) => (t[i] = add(centre, scale(perp, (k - (n - 1) / 2) * 0.75))));
   // Keeper: on the far side of the wall, a couple of metres off his line.
   const gk = goalkeeper(s, def);
-  t[gk.i] = { x: goal.x + attackDir(def) * 1, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 1.2 };
+  t[gk.i] = { x: goal.x + attackDir(s, def) * 1, y: MID_Y - Math.sign(r.spot.y - MID_Y || 1) * 1.2 };
   return picked;
 }
 
@@ -1818,7 +1824,7 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
   const t: (Vec | null)[] = s.players.map(() => null);
   const att = r.team;
   const def: 0 | 1 = att === 0 ? 1 : 0;
-  const ax = teamX(att, r.spot.x);
+  const ax = teamX(s, att, r.spot.x);
   const shape = (team: 0 | 1, attacking: boolean) => {
     const plan = teamPlan(s, team);
     for (const p of s.players) {
@@ -1828,14 +1834,14 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
   };
   const gkHome = (team: 0 | 1) => {
     const gk = goalkeeper(s, team);
-    if (!t[gk.i]) t[gk.i] = add(ownGoal(team), { x: attackDir(team) * 1.5, y: 0 });
+    if (!t[gk.i]) t[gk.i] = add(ownGoal(s, team), { x: attackDir(s, team) * 1.5, y: 0 });
   };
   switch (r.kind) {
     case 'corner':
       boxSetPiece(s, r, t, 4 + (skillOf(s, att) > 0.6 ? 1 : 0));
       break;
     case 'freekick': {
-      const dGoal = dist(r.spot, oppGoal(att));
+      const dGoal = dist(r.spot, oppGoal(s, att));
       const wideFinal = ax > 0.7 && Math.abs(r.spot.y - MID_Y) > BOX_W / 2 - 3;
       if (r.direct && dGoal < 30 && !wideFinal) {
         wall(s, r, t, dGoal < 20 ? 4 : dGoal < 25 ? 3 : 2);
@@ -1849,11 +1855,11 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
       for (const p of s.players) {
         if (p.sentOff || p.i === r.taker) continue;
         if (p.team === def && p.role === 'GK') {
-          t[p.i] = { x: ownGoal(def).x, y: MID_Y };
+          t[p.i] = { x: ownGoal(s, def).x, y: MID_Y };
           continue;
         }
         const slotY = ((k++ % 8) - 3.5) * 4.2;
-        t[p.i] = fromOpp(att, BOX_DEPTH + 1.5 + (Math.abs(slotY) < 9 ? 2.5 : 0), MID_Y + slotY);
+        t[p.i] = fromOpp(s, att, BOX_DEPTH + 1.5 + (Math.abs(slotY) < 9 ? 2.5 : 0), MID_Y + slotY);
       }
       break;
     }
@@ -1861,7 +1867,7 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
       // Two teammates come short; the rest hold the shape around it.
       const inward = r.spot.y < MID_Y ? 1 : -1;
       const mates = s.players.filter((p) => p.team === att && !p.sentOff && p.i !== r.taker && p.role !== 'GK').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot));
-      const dir = attackDir(att);
+      const dir = attackDir(s, att);
       if (mates[0]) t[mates[0].i] = clampToPitch({ x: r.spot.x + dir * 7, y: r.spot.y + inward * 4 }, 1);
       if (mates[1]) t[mates[1].i] = clampToPitch({ x: r.spot.x - dir * 4, y: r.spot.y + inward * 9 }, 1);
       break;
@@ -1871,16 +1877,16 @@ function buildRestartTargets(s: MatchState, r: Restart): (Vec | null)[] {
       for (const p of s.players) {
         if (p.team !== att || p.sentOff || p.i === r.taker) continue;
         const sl = slotOf(s, p);
-        if (p.sub === 'CB') t[p.i] = fromTeam(att, 0.11, sl.y < 0.5 ? 0.26 : 0.74);
-        else if (p.sub === 'FB' || p.sub === 'WB') t[p.i] = fromTeam(att, 0.22, sl.y < 0.5 ? 0.05 : 0.95);
-        else if (p.sub === 'DM') t[p.i] = fromTeam(att, 0.25, 0.5);
+        if (p.sub === 'CB') t[p.i] = fromTeam(s, att, 0.11, sl.y < 0.5 ? 0.26 : 0.74);
+        else if (p.sub === 'FB' || p.sub === 'WB') t[p.i] = fromTeam(s, att, 0.22, sl.y < 0.5 ? 0.05 : 0.95);
+        else if (p.sub === 'DM') t[p.i] = fromTeam(s, att, 0.25, 0.5);
       }
       // Opponents push up, but outside the area.
       for (const p of s.players) {
         if (p.team !== def || p.sentOff || p.role === 'GK') continue;
         if (p.sub === 'ST' || p.sub === 'W') {
           const sl = slotOf(s, p);
-          t[p.i] = fromTeam(att, (BOX_DEPTH + 2) / PITCH_W, 0.5 + (sl.y - 0.5) * 0.7);
+          t[p.i] = fromTeam(s, att, (BOX_DEPTH + 2) / PITCH_W, 0.5 + (sl.y - 0.5) * 0.7);
         }
       }
       break;
@@ -1927,9 +1933,9 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
   const skill = skillOf(s, p.team);
   const noise = 0.2 + 0.4 * (1 - skill);
   const team = p.team;
-  const dir = attackDir(team);
-  const goal = oppGoal(team);
-  const ax = teamX(team, r.spot.x);
+  const dir = attackDir(s, team);
+  const goal = oppGoal(s, team);
+  const ax = teamX(s, team, r.spot.x);
   const passOpt = (maxD: number): PassOption | null => {
     let best: PassOption | null = null;
     for (const m of s.players) {
@@ -1967,7 +1973,7 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
       if (o && o.score > 0.3 && (o.receiver.role === 'DEF' || o.receiver.sub === 'DM') && chance(s.rng, 0.4 + 0.5 * skill)) return toPass(o);
       // Long: to a forward or the flank, around halfway.
       const fwds = s.players.filter((m) => m.team === team && !m.sentOff && (m.role === 'FWD' || m.sub === 'WM'));
-      const tgt = fwds.length ? fwds[Math.floor(next(s.rng) * fwds.length)].pos : fromTeam(team, 0.55, 0.5);
+      const tgt = fwds.length ? fwds[Math.floor(next(s.rng) * fwds.length)].pos : fromTeam(s, team, 0.55, 0.5);
       return loft(s, clampToPitch({ x: clamp(tgt.x, 20, PITCH_W - 20), y: tgt.y }, 4));
     }
     case 'corner': {
@@ -1976,7 +1982,7 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
       if (shortMate && skill > 0.55 && chance(s.rng, 0.12)) return { kind: 'pass', target: shortMate.pos, receiver: shortMate.i };
       const c = bestCross(s, p, noise);
       const near = r.spot.y < MID_Y ? -1 : 1;
-      const target = c ? c.target : fromOpp(team, 7, MID_Y + near * 1);
+      const target = c ? c.target : fromOpp(s, team, 7, MID_Y + near * 1);
       return loft(s, target);
     }
     case 'penalty': {
@@ -1987,7 +1993,7 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
     }
     case 'freekick': {
       const dGoal = dist(r.spot, goal);
-      if (inOwnBox(team, r.spot) || ax < 0.3) {
+      if (inOwnBox(s, team, r.spot) || ax < 0.3) {
         const o = passOpt(25);
         if (o && o.score > 0) return toPass(o);
         return clearance(s, p, range(s.rng, 45, 58));
@@ -2042,7 +2048,7 @@ export function aiIntent(s: MatchState, p: MatchPlayer): Intent {
     const skill = skillOf(s, p.team);
     const target = supportTarget(s, p, plan, carrier);
     const runCap = dist(target, p.pos) > 8 ? 1 : 0.9 + 0.1 * skill;
-    const run = dist(target, p.pos) > 8 && teamX(p.team, target.x) > teamX(p.team, p.pos.x) + 0.08;
+    const run = dist(target, p.pos) > 8 && teamX(s, p.team, target.x) > teamX(s, p.team, p.pos.x) + 0.08;
     return { ...seek(p, target, 2.5, runCap), sprint: sprintOk(s, p, run) };
   }
   return defendIntent(s, p, plan, owner && owner.team !== p.team ? owner : null);

@@ -1,8 +1,10 @@
 name: CI
 
-# Run on every push and on every pull request.
+# Run on every pull request, and on pushes to main. A push to a PR branch is covered by the pull_request run, so it
+# does not start a second full run of the same commit.
 on:
   push:
+    branches: [main]
   pull_request:
 
 # Cancel superseded runs of the same ref so a fast follow-up push does not queue behind an old one.
@@ -49,9 +51,16 @@ jobs:
         run: bun run size
 
       # Headless CPU-vs-CPU matches. --assert fails the job if goals/match leaves 1.5 to 6
-      # or passes/match drops below 80, which catches broken sim tuning.
+      # or passes/match drops below 80, which catches broken sim tuning. 60 matches: the mean is
+      # about 1.7-1.9 goals, so 20 (standard error about 0.33) failed or passed on the luck of the seeds.
       - name: Balance smoke test
-        run: bun run balance 20 --assert
+        run: bun run balance 60 --assert
+
+      # A deterministic headless career to level 99 (about 15 s). --assert fails the job if the
+      # pacing to levels 5-99, the world's strength at the top, cup and league rewards against
+      # ranked, promotions or the save size leave their bands (scripts/career.ts).
+      - name: Career simulator
+        run: bun run career --assert
 
       # Keep the playable single-file build so reviewers can download and open it.
       - name: Upload build
@@ -81,11 +90,17 @@ jobs:
       - name: Fairness check
         run: bun run fairness 12 --assert
 
+  # The suite is about 20 minutes on one runner (3D under SwiftShader, and the perf tests play several matches back to back),
+  # so it runs as three parallel jobs, each a third of the test files balanced by recorded time (tests/e2e/shard-weights.json,
+  # tests/e2e/lib/shard.cjs; tests/shard.test.ts proves every file runs in exactly one shard).
   e2e:
-    name: Browser end-to-end tests
+    name: Browser end-to-end tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-latest
-    # The suite takes about 20 minutes (3D under SwiftShader, and the perf tests play several matches back to back).
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       # Get the code.
       - uses: actions/checkout@v4
@@ -106,7 +121,23 @@ jobs:
 
       # The runner does require('playwright'); point Node at the global npm root so it resolves.
       # PLAYWRIGHT_CHROMIUM is unset here, so Playwright uses the browser installed above.
-      - name: Run e2e tests
+      - name: Run e2e tests (shard ${{ matrix.shard }} of 3)
+        env:
+          E2E_SHARD: ${{ matrix.shard }}/3
         run: |
           export NODE_PATH="$(npm root -g)"
           bun run e2e
+
+  # One check under the name the branch protection already knows: green only when every shard is green.
+  e2e-all:
+    name: Browser end-to-end tests
+    needs: e2e
+    # Not always(): a cancelled workflow (a newer push superseded it) skips this job instead of posting a red check.
+    # A shard that fails or is skipped still runs it, and it fails.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every shard passed
+        run: |
+          echo "e2e shards: ${{ needs.e2e.result }}"
+          test "${{ needs.e2e.result }}" = "success"

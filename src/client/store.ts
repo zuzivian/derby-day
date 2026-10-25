@@ -138,15 +138,16 @@ export function loadSave(): Save | null {
 
 /**
  * 'ok' written; 'quota' storage is full; 'blocked' storage is unavailable;
- * 'guest' this tab does not own the club (see tabguard.ts), nothing was written on purpose.
+ * 'guest' this tab does not own the club (see tabguard.ts), nothing was written on purpose;
+ * 'mismatch' the write went through but reading the key back did not give what was written.
  */
-export type WriteResult = 'ok' | 'quota' | 'blocked' | 'guest';
+export type WriteResult = 'ok' | 'quota' | 'blocked' | 'guest' | 'mismatch';
 
 let guest = false;
 export const isSaveGuest = (): boolean => guest;
 /** What the most recent save attempt did, for the crash panel's "your club is saved" line. */
 let lastResult: WriteResult | null = null;
-export const lastWriteFailed = (): boolean => lastResult === 'quota' || lastResult === 'blocked';
+export const lastWriteFailed = (): boolean => lastResult === 'quota' || lastResult === 'blocked' || lastResult === 'mismatch';
 /** A guest tab (Derby Day is open elsewhere) never writes the club: that would overwrite the owner's save. */
 export function setSaveGuest(v: boolean): void {
   guest = v;
@@ -224,13 +225,25 @@ export function writeSave(s: Save): boolean {
  */
 export function replaceSave(s: Save): WriteResult {
   if (guest) return 'guest'; // the owner tab's club is not this tab's to replace
+  let copied: string | null = null;
   try {
     const prev = localStorage.getItem(SAVE_KEY);
-    if (prev && parseSave(prev)) localStorage.setItem(PRE_IMPORT_KEY, prev);
+    if (prev && parseSave(prev)) {
+      localStorage.setItem(PRE_IMPORT_KEY, prev);
+      copied = prev;
+    }
   } catch {
     /* no room for the safety copy: the import itself still goes ahead */
   }
-  return (lastResult = writeNow(s));
+  lastResult = writeNow(s);
+  if (lastResult !== 'ok') return lastResult;
+  // The caller reloads the page next, so what the next page will read has to be what was meant: check every key it depends on.
+  try {
+    if (localStorage.getItem(SAVE_KEY) !== JSON.stringify(s) || (copied !== null && localStorage.getItem(PRE_IMPORT_KEY) !== copied)) lastResult = 'mismatch';
+  } catch {
+    lastResult = 'blocked';
+  }
+  return lastResult;
 }
 
 /** The club that "Undo last restore" and crash recovery would bring back: the pre-import copy, else the rolling backup. */

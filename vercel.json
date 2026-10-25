@@ -5,6 +5,17 @@
   "buildCommand": "bun run build",
   "outputDirectory": "dist",
   "cleanUrls": true,
+  "git": {
+    "deploymentEnabled": {
+      "feat/*": false,
+      "fix/*": false,
+      "view/*": false,
+      "docs/*": false,
+      "ci/*": false,
+      "assets/*": false,
+      "review/*": false
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

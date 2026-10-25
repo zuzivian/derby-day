@@ -309,6 +309,34 @@ describe('backup export and import', () => {
   });
 });
 
+describe('a restore that the browser did not keep', () => {
+  test('replaceSave reports a mismatch when the key reads back as something else, so the page does not reload into the old club', () => {
+    const old = newGame(1);
+    store.writeSaveResult(old);
+    const set = mem.setItem.bind(mem);
+    // A storage that accepts the write and then reads back the old value (the write was dropped).
+    mem.setItem = (k: string, v: string) => (k === KEY ? undefined : set(k, v));
+    try {
+      expect(store.replaceSave(newGame(2))).toBe('mismatch');
+      expect(store.lastWriteFailed()).toBe(true);
+    } finally {
+      mem.setItem = set;
+    }
+    expect(store.loadSave()!.club.name).toBe(old.club.name); // nothing was changed
+  });
+
+  test('a safety copy that does not read back is a mismatch too', () => {
+    store.writeSaveResult(newGame(1));
+    const set = mem.setItem.bind(mem);
+    mem.setItem = (k: string, v: string) => (k === `${KEY}.pre-import` ? undefined : set(k, v));
+    try {
+      expect(store.replaceSave(newGame(2))).toBe('mismatch');
+    } finally {
+      mem.setItem = set;
+    }
+  });
+});
+
 describe('damaged backups are refused before they can brick the club', () => {
   const good = () => JSON.parse(JSON.stringify(newGame(21)));
   const mutations: [string, (s: any) => void][] = [
@@ -337,6 +365,10 @@ describe('damaged backups are refused before they can brick the club', () => {
     ['hostile news line', (s) => s.news.push('<script>alert(1)</script>')],
     ['markup hidden deep in an optional field', (s) => (s.cup = { kind: 'cup', note: { a: ['"><b>'] } })],
     ['squad ids repeat', (s) => (s.squad[1].id = s.squad[0].id)],
+    ['a forfeit debt that would halve XP forever', (s) => (s.xpOwed = 1e15)],
+    ['a negative forfeit debt', (s) => (s.xpOwed = -500)],
+    ['a money debt out of range', (s) => (s.moneyOwed = 1e13)],
+    ['a voided-match marker from the future, blocking voids for good', (s) => (s.voidAt = 1e9)],
   ];
   for (const [name, mutate] of mutations) {
     test(name, async () => {

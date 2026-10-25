@@ -17,7 +17,7 @@
 import { AI_SKILL_MIN } from '../sim/ai.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import { cpuTeam, ladderSquad, type LadderClub } from './club.ts';
-import { clubTeam, type Save } from './game.ts';
+import type { Save } from './game.ts';
 
 export interface SkillEstimate {
   /** The estimate, on the aiSkill scale (may go a little past 0..1 for the very weak or very strong). */
@@ -102,15 +102,6 @@ export function bandedSkill(est: number, natural: number, gap: number): number {
 export function opponentSetup(save: Save, opp: LadderClub, home: TeamSetup): TeamSetup {
   const natural = cpuTeam(opp, ladderSquad(opp));
   return { ...natural, aiSkill: bandedSkill(skillOf(save).est, natural.aiSkill, setupStrength(natural) - setupStrength(home)) };
-}
-
-/**
- * The chance of beating this ladder club as it will line up against you (opponentSetup): what the
- * gauge shows and what rewards are scaled by. Elo's expected score stays the ladder's own sum.
- */
-export function winChance(save: Save, opp: LadderClub): number {
-  const home = clubTeam(save, HOME_SKILL);
-  return outlook(skillOf(save).est, home, opponentSetup(save, opp, home)).win;
 }
 
 /** Learning rate: fast for the first few matches so a newcomer's level is found quickly, then steadier. */

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { recordCupMatch, recordSeasonMatch, startCup, startSeason, type QuickSim } from '../src/meta/competitions.ts';
-import { applyResult, buyPlayer, isSave, newGame, train, type MatchRecord, type Save } from '../src/meta/game.ts';
+import { cupOpponent, recordCupMatch, recordSeasonMatch, startCup, startSeason, type QuickSim } from '../src/meta/competitions.ts';
+import { applyResult, buyPlayer, isSave, newGame, rankedScale, train, type MatchRecord, type Save } from '../src/meta/game.ts';
 import { setCrest, setKit } from '../src/meta/identity.ts';
 import {
   award,
@@ -41,6 +41,7 @@ const atLevel = (seed: number, level: number): Save => {
 
 /** A quick sim that needs no engine: the first club always wins 1-0. */
 const homeWins: QuickSim = () => ({ ga: 1, gb: 0 });
+const sum = (parts: { xp: number }[]) => parts.reduce((t, p) => t + p.xp, 0);
 
 const rec = (gf: number, ga: number, extra: Partial<MatchRecord> = {}): MatchRecord => ({
   opponent: 'A', opponentShort: 'A', goalsFor: gf, goalsAgainst: ga, ranked: true, eloBefore: 1000, eloAfter: 1000, scorers: [], ...extra,
@@ -214,16 +215,26 @@ describe('XP awards', () => {
   });
   test('applyResult adds match XP and the first ranked win once', () => {
     const s = newGame(11);
-    const a = applyResult(s, s.ladder[0], { name: 'A', short: 'A' }, 3, 1, true, []);
+    // An opponent from your own division at your Elo with an XI like yours pays the table as it stands (rankedScale 1).
+    const even = s.ladder.find((c) => c.division === 4)!;
+    even.elo = s.club.elo;
+    for (let q = 40; q < 90 && rankedScale(s, even).xp !== 1; q++) even.quality = q;
+    expect(rankedScale(s, even).xp).toBe(1);
+    const a = applyResult(s, even, { name: 'A', short: 'A' }, 3, 1, true, []);
     expect(a.xp.total).toBe(120 + 30 + 100);
     expect(xpSummary(a.xp)).toBe('+250 XP: win 120, 3 goals 30, first ranked win 100');
     expect(a.xp.levelBefore).toBe(1);
     expect(a.xp.levelAfter).toBe(2);
-    const b = applyResult(s, s.ladder[1], { name: 'B', short: 'B' }, 2, 0, true, []);
-    expect(b.xp.total).toBe(120 + 20 + 20);
+    // A top-division club pays its division's rate times the odds, shown on the first part.
+    const top = s.ladder.find((c) => c.division === 1)!;
+    const scale = rankedScale(s, top).xp;
+    expect(scale).toBeGreaterThan(1.75);
+    const b = applyResult(s, top, { name: 'B', short: 'B' }, 2, 0, true, []);
+    expect(b.xp.total).toBe(Math.round(120 * scale) + Math.round(20 * scale) + Math.round(20 * scale));
+    expect(b.xp.parts[0].label).toBe('win');
     const c = applyResult(s, null, { name: 'Veterans Select', short: 'VET' }, 0, 1, false, [], undefined, false, 'hard');
     expect(c.xp.total).toBe(60);
-    expect(s.xp).toBe(250 + 160 + 60);
+    expect(s.xp).toBe(250 + b.xp.total + 60);
   });
   test('training sessions and the first signing', () => {
     const s = newGame(12);
@@ -245,23 +256,29 @@ describe('XP awards', () => {
   test('cup and league finishing bonuses', () => {
     expect(cupFinishXp(0, false)).toBeNull();
     expect(cupFinishXp(0, true)).toBeNull();
-    expect(cupFinishXp(1, false)!.xp).toBe(100);
-    expect(cupFinishXp(2, false)!.xp).toBe(200);
-    expect(cupFinishXp(2, true)!.xp).toBe(500);
-    expect(leagueFinishXp(1)!.xp).toBe(800);
-    expect(leagueFinishXp(2)!.xp).toBe(400);
-    expect(leagueFinishXp(8)!.xp).toBe(50);
+    expect(cupFinishXp(1, false)!.xp).toBe(30);
+    expect(cupFinishXp(2, false)!.xp).toBe(60);
+    expect(cupFinishXp(2, true)!.xp).toBe(140);
+    expect(cupFinishXp(2, true, 1.75)!.xp).toBe(245); // a top-division cup
+    expect(leagueFinishXp(1)!.xp).toBe(400);
+    expect(leagueFinishXp(2)!.xp).toBe(240);
+    expect(leagueFinishXp(8)!.xp).toBe(25);
+    expect(leagueFinishXp(1, 1.45)!.xp).toBe(580);
   });
   test('winning the cup pays the match, the trophy bonus and the first trophy', () => {
     const s = atLevel(14, 5);
     startCup(s);
+    // Each tie pays like a ranked match against that opponent (rankedScale), read before kick-off.
+    const matchXpAgainst = () => sum(matchXp('competition', 2, 0, false, 'normal', rankedScale(s, cupOpponent(s, s.cup!)!).xp));
+    let want = matchXpAgainst();
     let last = recordCupMatch(s, 2, 0, [], homeWins);
-    expect(last.summary.xp.total).toBe(120 + 20 + 20);
+    expect(last.summary.xp.total).toBe(want);
     recordCupMatch(s, 2, 0, [], homeWins);
+    want = matchXpAgainst();
     last = recordCupMatch(s, 2, 0, [], homeWins);
     expect(last.trophy).not.toBeNull();
     expect(last.summary.xp.parts.map((p) => p.label)).toEqual(['win', '2 goals', 'clean sheet', 'cup winners', 'first trophy']);
-    expect(last.summary.xp.total).toBe(160 + 500 + 200);
+    expect(last.summary.xp.total).toBe(want + XP.cup.winner + 200);
   });
   test('a forfeited cup final pays nothing', () => {
     const s = atLevel(15, 5);
@@ -344,7 +361,7 @@ describe('saves from before levels', () => {
     s.trophies = [{ kind: 'cup', title: 'Cup 1', edition: 1, atMatch: 3 }];
     s.trainingPoints = 6 + 6;
     const r = retroXp(preLevels(s));
-    expect(r.xp).toBe(3 * 150 + 500 + 200); // three 1-0 wins, the cup, the first trophy
+    expect(r.xp).toBe(3 * 150 + XP.cup.winner + 200); // three 1-0 wins, the cup, the first trophy
     expect(r.milestones).toEqual(['first-trophy']);
   });
   test('features in use stay unlocked whatever the level', () => {
@@ -428,7 +445,7 @@ describe('saves from before the gradual unlock table', () => {
     expect(unlockLevel(s, 'ladder')).toBe(4);
     expect(unlockLevel(s, 'replays')).toBe(3);
     expect(isUnlocked(s, 'ladder')).toBe(true);
-    expect(nextUnlockText(s)).toBe('The Cup and Practice Hard at level 5 — 400 XP to go');
+    expect(nextUnlockText(s)).toBe('The Cup and Practice: Hard at level 5 — 400 XP to go');
     // A new game is never legacy: it uses the table as written.
     const fresh = newGame(54);
     expect(fresh.legacyUnlocks).toBeUndefined();

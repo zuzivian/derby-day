@@ -211,8 +211,26 @@ async function openApp(t, opts = {}) {
  * unload handlers exist only in a match, the tutorial and the two-player lobbies), so it cannot overwrite the second page's saves.
  */
 async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
+  // What the first page holds, to put in front of the new page's own boot. A page opened in the same context is meant to
+  // see it already, but under CPU contention one in ten or so starts with *empty* storage (a browser-side gap, seen with an
+  // on-disk profile too), boots a brand-new club and writes it. Restoring first makes this what the player's browser would
+  // hold: a no-op when the browser delivered it, and only once per page so later changes are never undone.
+  const held = await page.evaluate(() => Object.entries(localStorage)).catch(() => []);
   const next = await page.context().newPage(); // fonts are blocked and errors watched for the whole context (run.cjs)
-  await next.addInitScript((withHook) => { if (withHook) window.__e2e = true; window.__e2eSkipTabGuard = true; }, e2e);
+  await next.addInitScript(
+    ([withHook, entries]) => {
+      if (withHook) window.__e2e = true;
+      window.__e2eSkipTabGuard = true;
+      try {
+        if (sessionStorage.getItem('__restored')) return;
+        sessionStorage.setItem('__restored', '1');
+        for (const [k, v] of entries) if (localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+      } catch {
+        /* storage unavailable: nothing to restore */
+      }
+    },
+    [e2e, held],
+  );
   await next.goto(url);
   await next.waitForSelector(SEL.app + ' *');
   return next;
@@ -220,6 +238,34 @@ async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
 
 /** The player's next visit, with the live-match hook (window.__e2e) on. */
 const nextVisit = (page) => openSecondPage(page);
+
+/**
+ * Wait for Home's Kick off on a returning visit. When it never shows, say what the page showed instead (the welcome after lost
+ * storage, the one-club-per-browser screen, a slow boot), with the page's text, the storage it could see and a screenshot, so
+ * the failure explains itself.
+ */
+async function waitForHome(page, label = 'next visit') {
+  try {
+    await page.waitForSelector(SEL.kickOff, { timeout: 20_000 });
+  } catch (err) {
+    const seen = await page
+      .evaluate(([saveKey, prefsKey]) => {
+        const save = localStorage.getItem(saveKey);
+        const prefs = localStorage.getItem(prefsKey);
+        return {
+          url: location.href.slice(0, 80),
+          app: (document.getElementById('app')?.innerText || '').replace(/\s+/g, ' ').slice(0, 300),
+          save: save ? `${save.length} bytes` : 'none',
+          prefs: prefs ? `onboarded=${JSON.parse(prefs).onboarded}` : 'none',
+          skipGuard: !!window.__e2eSkipTabGuard,
+        };
+      }, [SAVE_KEY, PREFS_KEY])
+      .catch((e) => ({ unreadable: String(e).slice(0, 80) }));
+    const shot = path.join(process.env.E2E_SHOTS || require('node:os').tmpdir(), `${label.replace(/\W+/g, '-')}-${Date.now()}.png`);
+    await page.screenshot({ path: shot }).catch(() => {});
+    throw new Error(`${label}: Home's Kick off never showed. The page showed ${JSON.stringify(seen)} (screenshot: ${shot}). ${String(err.message).split('\n')[0]}`);
+  }
+}
 
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
@@ -243,4 +289,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { nextVisit, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { nextVisit, waitForHome, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

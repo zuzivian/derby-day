@@ -3,7 +3,9 @@
 // the change kits online validation accepts.
 
 import { describe, expect, test } from 'bun:test';
-import { avoidClash, CLASH_DE, colourDiff, deltaE2000, NEUTRAL_DARK, NEUTRAL_LIGHT, worstDiff } from '../src/client/kits.ts';
+import { avoidClash, CLASH_DE, colourDiff, deltaE2000, GRASS, GRASS_DE, grassClash, grassDiff, NEUTRAL_DARK, NEUTRAL_LIGHT, shirtAsRendered, worstDiff, type Quality } from '../src/client/kits.ts';
+import { keeperColors, PlayerKit } from '../src/client/r3d/player3d.ts';
+import probe from './fixtures/kit-probe.json';
 import { KIT_COLORS } from '../src/meta/names.ts';
 import type { TeamSetup } from '../src/sim/types.ts';
 
@@ -50,5 +52,71 @@ describe('avoidClash', () => {
     expect(avoidClash(red, team('#166534', '#ffffff')).primary).not.toBe('#166534');
     const crimson = team('#9f1239', '#93c5fd');
     expect(avoidClash(crimson, team('#166534', '#ffffff')).primary).not.toBe('#166534');
+  });
+});
+
+// Shirts against the grass (review of #19). tests/fixtures/kit-probe.json is scripts/kit-probe.cjs's
+// reading of every ladder shirt as the 3D view draws it, at both quality levels (three near-black
+// shirts left out, where the probe picked up shorts or grass instead of the shirt). The grass is the
+// natural turf of the match-look pass, read off whole-pitch screenshots (scripts/view-probe.cjs);
+// the lighting did not change, so the shirt readings still hold.
+describe('shirts against the grass, as drawn', () => {
+  const rows = probe as { quality: Quality; hex: string; drawn: string; grass: [string, string] }[];
+
+  test('the grass colours are the ones the probe read off the screen', () => {
+    for (const r of rows) expect(r.grass).toEqual(GRASS[r.quality]);
+  });
+
+  test('the lighting model gives every measured shirt within 7.5, and 3.5 on average (RMS), CIEDE2000', () => {
+    for (const q of ['low', 'high'] as const) {
+      const errs = rows.filter((r) => r.quality === q).map((r) => colourDiff(shirtAsRendered(r.hex, q), r.drawn));
+      expect(errs.length).toBeGreaterThan(18);
+      expect(Math.max(...errs)).toBeLessThan(7.5);
+      expect(Math.sqrt(errs.reduce((n, e) => n + e * e, 0) / errs.length)).toBeLessThan(3.5);
+    }
+  });
+
+  test('the model and the measurement agree on which shirts need the rim', () => {
+    for (const r of rows) {
+      const measured = Math.min(...r.grass.map((g) => worstDiff(r.drawn, g)));
+      // Within a few units of the line either may fall on either side; elsewhere they must agree.
+      if (Math.abs(measured - GRASS_DE) > 3) expect(grassDiff(r.hex, r.quality) < GRASS_DE).toBe(measured < GRASS_DE);
+    }
+  });
+
+  test('yellow, amber, cream, orange, white, grey, red and the lighter green get the rim; blue, purple, black, dark red and dark green do not', () => {
+    const clash = [...new Set([...KIT_COLORS.flat(), NEUTRAL_DARK, NEUTRAL_LIGHT])].filter(grassClash);
+    expect(clash.sort()).toEqual(['#0b7a3e', '#c8102e', '#e5e7eb', '#ea580c', '#f2a900', '#f4d03f', '#f5f5f5', '#fde68a', '#ffffff']);
+  });
+
+  test('keepers read against both shirts and the grass, for every pairing and every vision', () => {
+    const bad: string[] = [];
+    for (const [hp, hs] of KIT_COLORS) {
+      for (const [ap, as] of KIT_COLORS) {
+        const away = avoidClash(team(hp, hs), team(ap, as));
+        for (const [own, other] of [
+          [hp, away.primary],
+          [away.primary, hp],
+        ]) {
+          const k = keeperColors(own, other).shirt;
+          const d = Math.min(worstDiff(k, own), worstDiff(k, other), grassDiff(k, 'low'), grassDiff(k, 'high'));
+          if (d < CLASH_DE) bad.push(`${own} v ${other}: keeper ${k} ${d.toFixed(1)}`);
+        }
+      }
+    }
+    expect(bad).toEqual([]);
+  });
+
+  test('a rim kit gets its own player material, which darkens the silhouette', () => {
+    const kit = new PlayerKit();
+    const plain = kit.skinnedMat();
+    const rim = kit.skinnedMat(true);
+    expect(rim).not.toBe(plain);
+    expect(kit.skinnedMat(true)).toBe(rim);
+    const shader = { uniforms: {}, vertexShader: '', fragmentShader: 'void main() {\n#include <opaque_fragment>\n}' };
+    (rim as unknown as { onBeforeCompile: (s: typeof shader) => void }).onBeforeCompile(shader);
+    expect(shader.fragmentShader).toContain('rimEdge');
+    expect(shader.fragmentShader).toContain('#include <opaque_fragment>');
+    kit.dispose();
   });
 });

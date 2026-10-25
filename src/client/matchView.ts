@@ -16,7 +16,8 @@ import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type Ti
 import { InputController } from './input.ts';
 import { kickGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
-import { PitchRenderer, type RenderExtras } from './render.ts';
+import type { RenderExtras } from './render.ts';
+import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -85,8 +86,7 @@ const REPLAY_STALE = 6 * TICK_HZ;
 const REPLAY_GAP = 90 * TICK_HZ;
 /** Clicks and keys can't skip in the first moments, so a click already in progress doesn't. */
 const REPLAY_SKIP_AFTER_MS = 400;
-/** A lost WebGL context not restored within this long: the match carries on in 2D. */
-export const GFX_RESTORE_MS = 3000;
+export { GFX_RESTORE_MS } from './gfxloss.ts';
 
 /** Where a live match gets its per-tick input and the renderer's cursor and previews. */
 export interface MatchInputSource {
@@ -109,7 +109,13 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
       return e.color === 'yellow' ? `Yellow card: ${e.name}` : e.secondYellow ? `Second yellow, red card: ${e.name}` : `Red card: ${e.name}`;
     case 'advantage':
       return 'Advantage';
+    case 'addedTime':
+      return `${e.minutes} minute${e.minutes === 1 ? '' : 's'} of added time`;
+    case 'abandoned':
+      return `Match abandoned: ${team} down to six players`;
     case 'restart':
+      if (e.reason === 'advantage') return `Advantage brought back: ${e.restart === 'penalty' ? 'penalty' : 'free kick'} to ${team}`;
+      if (e.reason === 'second-touch') return `Second touch: indirect free kick to ${team}`;
       if (e.restart === 'penalty') return `Penalty to ${team}`;
       if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
       if (e.restart === 'corner') return `Corner to ${team}`;
@@ -121,7 +127,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
 
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 /** The controls line on phones and tablets: no mouse or keys to talk about. */
-const TOUCH_HINT = `<b>Touch:</b> drag on the pitch and your player runs toward your finger, faster the further it is. <b>Pass</b> passes (hold to loft) · <b>Shoot</b> shoots, or tackles without the ball · tap a player to pick him.`;
+const TOUCH_HINT = `<b>Drag</b> to run · <b>Pass</b> (hold to loft) · <b>Shoot</b> (hold for power; tackles without the ball) · <b>tap</b> a player to pick him. Your player runs toward your finger, faster the further it is.`;
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -156,7 +162,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>With the ball:</b> <b>left click</b> pass to the pointer · <b>hold left</b> loft · <b>right click</b> shoot (hold for power). <b>Without:</b> <b>left click</b> pick a player · <b>right click</b> tackle (slide if far). <b>Keys:</b> WASD · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot (hold for power) · without the ball <b>right click</b> tackles, <b>left click</b> picks a man · <b>Keys</b> WASD, Space, F, C, Shift, E. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Without the ball:</b> a far right click slides. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
@@ -265,70 +271,35 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
 
-  // WebGL context loss (a GPU or driver reset): hold the match with a calm note instead of playing on
-  // under a blank pitch. Resume when the context comes back; if it doesn't within GFX_RESTORE_MS,
-  // finish the match on the 2D renderer, on a fresh canvas, from the very same state.
-  let gfxLost = false;
-  let gfxTimer = 0;
-  const gfxNote = document.createElement('div');
-  gfxNote.className = 'gfx-note';
-  gfxNote.setAttribute('role', 'status');
-  gfxNote.hidden = true;
-  gfxNote.textContent = 'Restoring graphics…';
-  wrapEl.appendChild(gfxNote);
-  function watchContext(r: MatchRenderer) {
-    if (!(r instanceof Renderer3D)) return;
-    r.onContextLost = () => {
-      if (done || gfxLost) return;
-      gfxLost = true;
-      gfxNote.hidden = false;
-      announce('Restoring graphics.');
-      gfxTimer = window.setTimeout(fallBackTo2D, GFX_RESTORE_MS);
-    };
-    r.onContextRestored = () => {
-      clearTimeout(gfxTimer);
-      if (!gfxLost) return;
-      gfxLost = false;
-      gfxNote.hidden = true;
+  // WebGL context loss (a GPU or driver reset): hold the match under a calm note instead of playing on
+  // under a blank pitch (gfxloss.ts). Resume when the context comes back; if it doesn't, finish the
+  // match on the 2D renderer, on a fresh canvas, from the very same state.
+  const gfx = watchGfxLoss(renderer, wrapEl, {
+    onRestored: () => {
       last = performance.now();
       acc = 0;
-    };
-  }
-  function fallBackTo2D() {
-    if (done || !gfxLost) return;
-    endReplay();
-    input.dispose();
-    offCam();
-    ro.unobserve(canvas);
-    renderer.dispose();
-    const fresh = document.createElement('canvas');
-    for (const a of ['id', 'tabindex', 'role', 'aria-roledescription', 'aria-label']) {
-      const v = canvas.getAttribute(a);
-      if (v !== null) fresh.setAttribute(a, v);
-    }
-    const hadFocus = document.activeElement === canvas;
-    canvas.replaceWith(fresh);
-    canvas = fresh;
-    renderer = new PitchRenderer(fresh);
-    fresh.dataset.renderer = '2d';
-    fresh.dataset.fallback = 'context-lost';
-    input = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
-    offCam = () => {};
-    replaysOk = false;
-    replaysOn = false;
-    optReplays.closest('label')!.hidden = true;
-    root.querySelector('#zoom-hint')?.remove();
-    ro.observe(fresh);
-    renderer.resize();
-    renderer.prepare(s);
-    gfxLost = false;
-    gfxNote.hidden = true;
-    last = performance.now();
-    acc = 0;
-    if (hadFocus) fresh.focus({ preventScroll: true });
-    announce('The graphics could not be restored, so the match carries on in the 2D view.');
-  }
-  watchContext(renderer);
+    },
+    onGiveUp: () => {
+      if (done) return;
+      endReplay();
+      input.dispose();
+      offCam();
+      ro.unobserve(canvas);
+      ({ canvas, renderer } = fallback2D(canvas, renderer));
+      input = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
+      offCam = () => {};
+      replaysOk = false;
+      replaysOn = false;
+      optReplays.closest('label')!.hidden = true;
+      root.querySelector('#zoom-hint')?.remove();
+      ro.observe(canvas);
+      renderer.resize();
+      renderer.prepare(s);
+      last = performance.now();
+      acc = 0;
+      announce('The graphics could not be restored, so the match carries on in the 2D view.');
+    },
+  });
 
   function consider(h: Highlight) {
     if (!replaysOn) return;
@@ -444,14 +415,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
-    if (replay && !paused && !gfxLost) {
+    if (replay && !paused && !gfx.lost) {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
       renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
       hud.update(replay.state, 0, null);
     } else {
-      if (!paused && !gfxLost) {
+      if (!paused && !gfx.lost) {
         acc += elapsed;
         let steps = 0;
         while (acc >= DT && steps < 12) {
@@ -523,7 +494,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (s.phase === 'fulltime') {
       ending = true;
-      banner('Full time', 99999);
+      // Law 3: abandoned, the awarded result stands.
+      if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
+      else banner('Full time', 99999);
       announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
       cancelAnimationFrame(raf);
@@ -533,9 +506,22 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   canvas.focus({ preventScroll: true });
   announce(`${o.label} match. ${home.name} against ${away.name}. Esc pauses.`);
 
+  // The browser's Back (and Android's Back gesture) during a live match opens the pause menu instead of leaving the page
+  // and losing the match: the match owns one history entry, put back after each Back press, and removes it when it ends.
+  let guardingBack = false;
+  const onPop = () => {
+    if (done) return;
+    try { history.pushState({ derbyMatch: true }, ''); } catch { /* sandboxed viewer: no history to guard */ }
+    setPaused(true);
+  };
+  try {
+    history.pushState({ derbyMatch: true }, '');
+    guardingBack = true;
+    window.addEventListener('popstate', onPop);
+  } catch { /* sandboxed viewer */ }
+
   function dispose() {
-    clearTimeout(gfxTimer);
-    gfxNote.remove();
+    gfx.dispose();
     input.dispose();
     juice.dispose();
     hud.dispose();
@@ -547,6 +533,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    if (guardingBack) {
+      window.removeEventListener('popstate', onPop);
+      guardingBack = false;
+      // Take the match's own entry back off, so the player's Back button goes where it went before the match.
+      try { if ((history.state as { derbyMatch?: boolean } | null)?.derbyMatch) history.back(); } catch { /* no history */ }
+    }
     replay?.skip.remove();
     replay = null;
   }

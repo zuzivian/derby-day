@@ -22,9 +22,9 @@
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
 import { aiIntent, humanAuto, IDLE_TICKS } from './ai.ts';
-import { BOX_DEPTH, BOX_W, PITCH_H, SPRINT_MULT } from './constants.ts';
+import { BOX_DEPTH, BOX_W, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
-import { assistReceiver, humanPass, passTo, pointerPass } from './kicks.ts';
+import { assistReceiver, humanPass, humanShotLift, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
@@ -69,10 +69,14 @@ export function pointerThrottle(d: number): { throttle: number; sprint: boolean 
 // ---------------------------------------------------------------------------
 // Tackles
 
-/** Pointer closer than this: a standing tackle. Further: a slide. */
-export const STAND_TACKLE_R = 2.4;
+/** Closer than this: a standing tackle. Further: a slide. The same as a standing tackle's reach. */
+export const STAND_TACKLE_R = STAND_REACH;
 /** A slide never goes further than this, however far the pointer is. */
-export const SLIDE_MAX = 6;
+export const SLIDE_MAX = SLIDE_TRAVEL;
+/** A click this close to the man a pass is coming to is "take it", not a first-time pass. */
+const TAKE_IT_R = 3;
+/** A right click this close to an opponent with the ball (or the ball he has) is a tackle on him. */
+const ON_CARRIER = 1.5;
 
 // ---------------------------------------------------------------------------
 // Picking a player
@@ -139,10 +143,10 @@ const QUEUE_TICKS = 90;
 export const passIncoming = (s: MatchState, p: MatchPlayer): boolean => s.ball.owner < 0 && s.ball.receiver === p.i;
 
 /** Keeper with the ball in his hands: he may move about his own area with it, not out of it. */
-function keepInBox(p: MatchPlayer, move: Vec, throttle: number): { move: Vec; throttle: number } {
-  const g = ownGoal(p.team);
+function keepInBox(s: MatchState, p: MatchPlayer, move: Vec, throttle: number): { move: Vec; throttle: number } {
+  const g = ownGoal(s, p.team);
   const ahead = add(p.pos, scale(move, 0.6));
-  const depth = (ahead.x - g.x) * attackDir(p.team);
+  const depth = (ahead.x - g.x) * attackDir(s, p.team);
   const inside = depth > 0.3 && depth < BOX_DEPTH - 1 && Math.abs(ahead.y - PITCH_H / 2) < BOX_W / 2 - 1;
   return inside ? { move, throttle: Math.min(throttle, 0.5) } : { move, throttle: 0 };
 }
@@ -152,8 +156,26 @@ function keepInBox(p: MatchPlayer, move: Vec, throttle: number): { move: Vec; th
  * fast as he needs to be there before it is. Taking it earlier is what beats the defender
  * coming round the back.
  */
+/** A ball in the air drops to chest height here (no drag): where to meet it, not under its flight. */
+function dropPoint(s: MatchState): Vec {
+  const b = s.ball;
+  const z = 1.2;
+  const disc = b.vz * b.vz + 2 * GRAVITY * Math.max(0, b.z - z);
+  const t = b.z > z || b.vz > 0 ? (b.vz + Math.sqrt(Math.max(0, disc))) / GRAVITY : 0;
+  return add(b.pos, scale(b.vel, t));
+}
+
 export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const b = s.ball;
+  if (b.z > 1.5 || b.vz > 0) {
+    // Lofted: get to where it comes down and wait for it there.
+    const to = sub(dropPoint(s), p.pos);
+    const d = len(to);
+    if (d < 0.3) return { move: { x: 0, y: 0 }, throttle: 0 };
+    const t = Math.max(0.2, (b.vz + Math.sqrt(b.vz * b.vz + 2 * GRAVITY * b.z)) / GRAVITY - 0.2);
+    const effort = clamp(d / t / 6.5, 0.3, SPRINT_MULT);
+    return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
+  }
   const v = len(b.vel);
   if (v < 0.5) {
     const to = sub(b.pos, p.pos);
@@ -162,8 +184,9 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const dir = scale(b.vel, 1 / v);
   const along = dot(sub(p.pos, b.pos), dir);
   if (along < 0.5) {
+    // It is past him (or he is chasing it down): run after it, flat out if it is getting away.
     const to = sub(b.pos, p.pos);
-    return { move: norm(to), throttle: 1 };
+    return { move: norm(to), throttle: 1, sprint: v > 4 };
   }
   const onLine = add(b.pos, scale(dir, along));
   const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
@@ -191,11 +214,20 @@ export function jockey(s: MatchState, p: MatchPlayer): Intent | null {
   if (b.owner < 0 || b.inHands) return null;
   const c = s.players[b.owner];
   if (c.team === p.team || dist(c.pos, p.pos) > JOCKEY_R) return null;
-  const spot = add(add(c.pos, scale(c.vel, 0.25)), scale(norm(sub(ownGoal(p.team), c.pos)), JOCKEY_GAP));
+  const spot = add(add(c.pos, scale(c.vel, 0.25)), scale(norm(sub(ownGoal(s, p.team), c.pos)), JOCKEY_GAP));
   const to = sub(spot, p.pos);
   const d = len(to);
   if (d < 0.3) return { move: norm(sub(c.pos, p.pos)), throttle: 0 };
   return { move: scale(to, 1 / d), throttle: clamp(d / 2.5, 0.3, 1) };
+}
+
+/** The ball is loose with no receiver, and he is the nearest outfielder on his side to where it is going. */
+function looseForHim(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  if (b.owner >= 0 || b.receiver >= 0 || s.phase !== 'play') return false;
+  const at = b.z > 0 || b.vz > 0 ? dropPoint(s) : b.pos;
+  const mine = dist(p.pos, at);
+  return !s.players.some((m) => m.team === p.team && m.i !== p.i && m.role !== 'GK' && !m.sentOff && m.stun === 0 && dist(m.pos, at) < mine);
 }
 
 export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
@@ -221,7 +253,9 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
 
   // A pass is on its way to him: he goes to meet it, and a click now is played first time.
   if (passIncoming(s, p)) {
-    if (input.select || input.pass || input.tackle) {
+    // A click on himself (the second half of a double click, say) means take it, not play it on.
+    const onHimself = !!aim && !input.tackle && dist(aim, p.pos) < TAKE_IT_R;
+    if ((input.select || input.pass || input.tackle) && !onHimself) {
       const target = aim ?? heading;
       const kind = input.tackle && pointer ? 'shoot' : 'pass';
       // Who the click picks is settled now, from where he will receive it.
@@ -238,11 +272,11 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       throttle = 0;
       sprint = false;
     }
-    if (s.ball.inHands && p.role === 'GK') ({ move, throttle } = keepInBox(p, move, throttle));
+    if (s.ball.inHands && p.role === 'GK') ({ move, throttle } = keepInBox(s, p, move, throttle));
     const q = s.queued?.[team];
     if (q && q.player === p.i && !s.ball.inHands) {
       s.queued![team] = null;
-      if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT } };
+      if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, q.target, oppGoal(s, p.team).x, FIRST_TIME_SHOT, p.attrs.shooting) } };
       const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
       const r = mate && !mate.sentOff ? passTo(s, mate) : pointerPass(s, p, q.target);
       return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
@@ -253,9 +287,11 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
         const target = aim ?? add(s.ball.pos, scale(norm(sub(heading, p.pos)), 60));
         return { move, throttle, sprint, action: { kind: 'punt', target, power: clamp(input.shoot, 0, 1) } };
       }
-      const goal = oppGoal(p.team);
+      const goal = oppGoal(s, p.team);
       const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
-      return { move, throttle, sprint, action: { kind: 'shoot', target, power: clamp(input.shoot, 0, 1) } };
+      // The harder he hits it, the higher it rises (a click stays low).
+      const power = clamp(input.shoot, 0, 1);
+      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting) } };
     }
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.
@@ -272,7 +308,14 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     }
     return { move, throttle, sprint };
   }
-  if (held) {
+  if (held && looseForHim(s, p)) {
+    // A loose ball nobody is meant for, and he is our nearest: he goes for it (the CPU would
+    // leave it to the man the human steers).
+    const it = meetBall(s, p);
+    move = it.move;
+    throttle = it.throttle;
+    sprint = !!it.sprint;
+  } else if (held) {
     // Until the pointer moves, he plays like the CPU would (but takes no action of his own):
     // his place in the shape and his man to mark, or jockeying a carrier who comes at him.
     const it = jockey(s, p) ?? aiIntent(s, p);
@@ -280,10 +323,16 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     throttle = it.throttle;
     sprint = !!it.sprint;
   }
-  if (input.tackle) {
-    const target = aim ?? s.ball.pos;
+  // Not straight after his own kick: a second right click just after a shot is not a slide.
+  if (input.tackle && p.kickCd === 0) {
+    let target = aim ?? s.ball.pos;
+    // A click on (or near) the man with the ball goes in on him: stand or slide by how far
+    // he is, so the choice always matches what can reach.
+    const carrier = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    const onHim = pointer && !!carrier && carrier.team !== team && Math.min(dist(target, carrier.pos), dist(target, s.ball.pos)) < ON_CARRIER;
+    if (onHim) target = s.ball.pos;
     const to = sub(target, p.pos);
-    const d = len(to);
+    const d = onHim ? dist(carrier!.pos, p.pos) : len(to);
     if (pointer && d > STAND_TACKLE_R) {
       const slideTo = add(p.pos, scale(norm(to), Math.min(d, SLIDE_MAX)));
       return { move, throttle, sprint, action: { kind: 'tackle', target: slideTo, slide: true } };
@@ -370,10 +419,10 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   // CPU would send, ai.ts buildPlan), not one chasing back behind him: anyone upfield of the
   // ball counts as SWITCH_BEHIND metres further away.
   const theirs = owner && owner.team !== team;
-  const dir = attackDir(team);
+  const dir = attackDir(s, team);
   const cost = (m: MatchPlayer): number => {
     if (!theirs) return dist(m.pos, spot);
-    const press = add(spot, scale(norm(sub(ownGoal(team), spot)), 0.8));
+    const press = add(spot, scale(norm(sub(ownGoal(s, team), spot)), 0.8));
     return dist(m.pos, press) + ((m.pos.x - owner.pos.x) * dir > 1 ? SWITCH_BEHIND : 0);
   };
   const byDist = [...outfield].sort((a, b) => cost(a) - cost(b));

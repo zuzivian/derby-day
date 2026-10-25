@@ -14,8 +14,10 @@ import { keeperControllable } from '../src/sim/human.ts';
 import { assistRadius, groundPassPlan, pointerPass, PUNT_MIN_RANGE, receiverArrival, rollDistance } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
+import { next } from '../src/sim/rng.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
+import { openPlay } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -26,7 +28,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5, humanTeam: 0 | 1 | -1 = 0): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humanTeam });
-  while (s.phase !== 'play') step(s);
+  openPlay(s);
   return s;
 }
 
@@ -302,7 +304,9 @@ describe('quick click passes chain (ask 6)', () => {
         const me = s.players[s.controlled[0]];
         const b = s.ball;
         const input: HumanInput = { cursor };
-        if (s.phase === 'play' && b.owner === me.i && me.role !== 'GK') {
+        // The kick-off is a real kick (Law 8): the script plays it like any other pass.
+        const kickoff = s.phase === 'restart' && s.restart?.kind === 'kickoff' && s.restart.stage === 'ready';
+        if ((s.phase === 'play' || kickoff) && b.owner === me.i && me.role !== 'GK') {
           if (wait === 0) wait = 12;
           if (--wait === 0) {
             const open = s.players
@@ -472,8 +476,10 @@ describe('the ball meets bodies by height (ask 4)', () => {
 
 describe('goalkeeping (ask 5)', () => {
   /** A shot at team 1's goal (x = PITCH_W) from 20 m out, keeper set in the middle. */
-  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2) {
+  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2, burn = 0) {
     const s = livePlay(4, -1);
+    // Advance the random stream: the same scene with different luck.
+    for (let k = 0; k < burn; k++) next(s.rng);
     const gk = goalkeeper(s, 1);
     const shooter = s.players.find((p) => p.team === 0 && p.role === 'FWD')!;
     isolate(s, gk, shooter);
@@ -556,18 +562,24 @@ describe('goalkeeping (ask 5)', () => {
     expect(r.goal).toBe(true);
   });
 
-  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar', () => {
+  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar, whatever the luck', () => {
+    // Twenty draws of the random stream before each shot: on one fixed seed a parry never went in,
+    // but with the stream advanced 5 of about 1100 did (a tip round the post aimed before the ball
+    // was moved clear of his hand, so it crossed just inside the post).
     let parried = 0;
-    for (const skill of [0.3, 0.6, 0.9])
-      for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
-        for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
-          const r = shot(PITCH_H / 2 + off, 24, z, vz, skill);
-          if (!r.touched || r.caught) continue;
-          parried++;
-          expect(r.goal).toBe(false);
-        }
-    expect(parried).toBeGreaterThan(20);
-  });
+    let goals = 0;
+    for (let burn = 0; burn < 20; burn++)
+      for (const skill of [0.3, 0.6, 0.9])
+        for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
+          for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
+            const r = shot(PITCH_H / 2 + off, 24, z, vz, skill, 20, PITCH_H / 2, burn);
+            if (!r.touched || r.caught) continue;
+            parried++;
+            if (r.goal) goals++;
+          }
+    expect(goals).toBe(0);
+    expect(parried).toBeGreaterThan(400);
+  }, 30_000);
 
   test('timing: he dives late, landing as the ball arrives: he is never down and out of it when a reachable shot passes', () => {
     let untouched = 0;
@@ -785,21 +797,23 @@ describe('match stats are meaningful', () => {
 
   test('a completed lofted pass counts as a pass, and attempts are counted too', () => {
     const { s, mate } = passScene({ x: 30, y: 30 }, { x: 52, y: 30 });
+    const before = { ...s.stats[0] }; // the kick-off pass
     step(s, { cursor: mate.pos, aim: mate.pos, loft: 0.6 });
-    expect(s.stats[0].passAttempts).toBe(1);
+    expect(s.stats[0].passAttempts - before.passAttempts).toBe(1);
     let t = 0;
     while (s.ball.owner !== mate.i && t++ < 300) step(s, { cursor: mate.pos });
     expect(s.ball.owner).toBe(mate.i);
-    expect(s.stats[0].passes).toBe(1);
-    expect(s.stats[0].shots).toBe(0);
+    expect(s.stats[0].passes - before.passes).toBe(1);
+    expect(s.stats[0].shots - before.shots).toBe(0);
   });
 
   test('a chip at goal is a shot, not a pass attempt', () => {
     const { s, me } = passScene({ x: PITCH_W - 18, y: PITCH_H / 2 }, { x: 40, y: 10 });
     void me;
+    const before = { ...s.stats[0] }; // the kick-off pass
     step(s, { cursor: { x: PITCH_W, y: PITCH_H / 2 }, aim: { x: PITCH_W, y: PITCH_H / 2 }, loft: 0.3 });
-    expect(s.stats[0].shots).toBe(1);
-    expect(s.stats[0].passAttempts).toBe(0);
+    expect(s.stats[0].shots - before.shots).toBe(1);
+    expect(s.stats[0].passAttempts - before.passAttempts).toBe(0);
   });
 
   test('CPU matches split possession and pass sensibly', () => {
@@ -868,4 +882,96 @@ describe('determinism with the new physics and inputs', () => {
     expect(back.runs).toEqual(r.runs);
     expect(finalHash(replayTo(back, back.ticks))).toBe(r.fp);
   });
+});
+
+describe('the woodwork', () => {
+  /** A ball fired from `from` at `speed` toward (PITCH_W, yAim) at height z, nobody on the pitch. Where does it go? */
+  function atGoal(from: Vec, yAim: number, speed: number, z: number, vz = 0) {
+    const s = livePlay(3, -1);
+    isolate(s);
+    const d = Math.hypot(PITCH_W - from.x, yAim - from.y);
+    const v0 = { x: ((PITCH_W - from.x) / d) * speed, y: ((yAim - from.y) / d) * speed };
+    fire(s, from, v0, z, vz);
+    const goals = s.score[0] + s.score[1];
+    let turned = 0;
+    // The biggest one-tick change of velocity near the goal line, gravity aside: a knock off the woodwork.
+    let jolt = 0;
+    for (let t = 0; t < 120 && s.phase === 'play'; t++) {
+      const was = { ...s.ball.vel, z: s.ball.vz };
+      step(s);
+      const v = s.ball.vel;
+      const c = (v.x * v0.x + v.y * v0.y) / (Math.hypot(v.x, v.y) * speed || 1);
+      turned = Math.max(turned, Math.acos(Math.max(-1, Math.min(1, c))));
+      if (Math.abs(s.ball.pos.x - PITCH_W) < 1.5)
+        jolt = Math.max(jolt, Math.hypot(v.x - was.x, v.y - was.y, s.ball.vz - was.z + 9.8 / 60));
+    }
+    return { goal: s.score[0] + s.score[1] > goals, turned, jolt };
+  }
+
+  test('a shot whose path clips a post comes off it at any pace: it never passes through the post', () => {
+    // Before: only where the ball ended each tick was tested against the post, so a 26 m/s shot
+    // (0.43 m a tick, more than the post and ball together) went straight through 46-100% of the time.
+    for (const speed of [14, 20, 26, 30])
+      for (const [post, side] of [[GOAL_TOP, -1], [GOAL_BOTTOM, 1]] as const)
+        for (const off of [-0.12, -0.06, 0, 0.06, 0.12]) {
+          // From 6 m out and low, so it reaches the post before it has bounced and slowed.
+          const r = atGoal({ x: PITCH_W - 6, y: PITCH_H / 2 + side * 4 }, post + off, speed, 0.2);
+          expect(r.turned).toBeGreaterThan(0.1);
+        }
+  });
+
+  test('a shot at the height of the bar comes off it: over it, down off it, or back out, never through it', () => {
+    // Before: the bar had no body at all; a ball at the line under 2.33 m was a goal and over it was over.
+    for (const speed of [18, 24, 30]) {
+      for (const zLine of [2.36, 2.44, 2.52]) {
+        // Fired from 3 m out, rising so that it reaches the line at zLine (gravity only matters a little here).
+        const t = 3 / speed;
+        const z0 = 1.5;
+        const vz = (zLine - z0 + 0.5 * 9.8 * t * t) / t;
+        const r = atGoal({ x: PITCH_W - 3, y: PITCH_H / 2 + 1 }, PITCH_H / 2 + 1, speed, z0, vz);
+        // It came off the bar: a sharp knock at the line (back out, or up or down off it).
+        expect(r.jolt).toBeGreaterThan(3);
+      }
+    }
+  });
+});
+
+describe('a corner played to a team-mate', () => {
+  /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker. Who has it 4 s later? */
+  function cornerTo(at: Vec, by: 'flag' | 'taker', seed: number) {
+    const s = livePlay(seed + 10);
+    awardRestart(s, 'corner', 0, { ...at }, 'out');
+    let t = 0;
+    while (s.restart && s.restart.stage !== 'ready' && t++ < 900) step(s, { cursor: { x: 90, y: 34 } });
+    const taker = s.players[s.restart!.taker];
+    const ref = by === 'flag' ? s.restart!.spot : taker.pos;
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[0];
+    step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+    let high = 0;
+    for (let k = 0; k < 240 && s.ball.owner < 0 && s.phase === 'play'; k++) {
+      step(s, { cursor: { ...mate.pos } });
+      high = Math.max(high, s.ball.z);
+    }
+    const o = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    return { high, ours: !!o && o.team === 0, him: o === mate };
+  }
+
+  test('our nearest man is on the edge of the box, 40 m away: the click is crossed to him, and our side usually keeps it', () => {
+    let ours = 0;
+    let him = 0;
+    let n = 0;
+    for (const at of [{ x: 105, y: 0 }, { x: 105, y: 68 }])
+      for (const by of ['flag', 'taker'] as const)
+        for (let seed = 1; seed <= 6; seed++) {
+          const r = cornerTo(at, by, seed);
+          n++;
+          if (r.ours) ours++;
+          if (r.him) him++;
+          // A long pass from a corner goes in the air, over the box, not along the ground through it.
+          expect(r.high).toBeGreaterThan(1.5);
+        }
+    // Played along the ground through the box it was cut out: our side kept it 0 of these 24, him 0.
+    expect(ours / n).toBeGreaterThan(0.5);
+    expect(him / n).toBeGreaterThan(0.3);
+  }, 60_000);
 });

@@ -9,8 +9,8 @@ import { bestPassOption } from '../sim/ai.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { attackDir, oppGoal, ownGoal, teamX } from '../sim/field.ts';
 import { createMatch, possessionShare, step, type MatchOptions } from '../sim/match.ts';
-import { applyResult, clubTeam, newGame, pickOpponent } from './game.ts';
-import { HOME_SKILL, learnSkill, opponentSetup, outlook, skillOf, winChance } from './skill.ts';
+import { applyResult, clubTeam, newGame, offeredOpponent, winChance } from './game.ts';
+import { HOME_SKILL, learnSkill, opponentSetup, outlook, skillOf } from './skill.ts';
 import { rankedOpen, warmupTeam } from './warmup.ts';
 import { makeRng, next, type Rng } from '../sim/rng.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../sim/types.ts';
@@ -61,7 +61,7 @@ const towards = (p: MatchPlayer, to: Vec, ahead: number): Vec => add(p.pos, scal
 
 /** Where to aim a shot: the post the keeper is further from, a little inside. */
 function shotAim(s: MatchState, p: MatchPlayer): Vec {
-  const goal = oppGoal(p.team);
+  const goal = oppGoal(s, p.team);
   const gk = s.players.find((o) => o.team !== p.team && o.role === 'GK' && !o.sentOff);
   const top = { x: goal.x, y: GOAL_TOP + 0.8 };
   const bottom = { x: goal.x, y: GOAL_BOTTOM - 0.8 };
@@ -74,7 +74,7 @@ function defend(s: MatchState, team: 0 | 1, p: MatchPlayer, tackleR: number, lea
   const b = s.ball;
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
   if (owner && owner.team !== team) {
-    const goalSide = add(owner.pos, add(scale(owner.vel, lead), scale(norm(sub(ownGoal(team), owner.pos)), patient ? 1.4 : 1)));
+    const goalSide = add(owner.pos, add(scale(owner.vel, lead), scale(norm(sub(ownGoal(s, team), owner.pos)), patient ? 1.4 : 1)));
     const d = dist(p.pos, owner.pos);
     // A patient defender only goes in from in front of the man, never through his back.
     const inFront = !patient || (d > 0 && (owner.facing.x * (p.pos.x - owner.pos.x) + owner.facing.y * (p.pos.y - owner.pos.y)) / d > -0.2);
@@ -105,9 +105,9 @@ const chaser: Bot = (s, team) => {
   const p = me(s, team);
   const b = s.ball;
   if (b.owner === p.i) {
-    const goal = oppGoal(team);
+    const goal = oppGoal(s, team);
     if (dist(p.pos, goal) < 26) return { cursor: goal, shoot: 0.8, aim: shotAim(s, p), moved: true };
-    if (b.inHands) return { cursor: goal, shoot: 1, aim: add(p.pos, { x: attackDir(team) * 50, y: 0 }), moved: true };
+    if (b.inHands) return { cursor: goal, shoot: 1, aim: add(p.pos, { x: attackDir(s, team) * 50, y: 0 }), moved: true };
     return { cursor: towards(p, goal, 12), moved: true };
   }
   return defend(s, team, p, 2.2, 0.3);
@@ -124,14 +124,14 @@ function makeCompetent(): Bot {
       return defend(s, team, p, 1.8, 0.4);
     }
     held++;
-    const goal = oppGoal(team);
+    const goal = oppGoal(s, team);
     const dGoal = dist(p.pos, goal);
     const pressure = nearestOpp(s, team, p.pos).d;
     if (!b.inHands && s.phase === 'play' && dGoal < 22 && Math.abs(p.pos.y - PITCH_H / 2) < 15) return { cursor: goal, shoot: 0.72, aim: shotAim(s, p), moved: true };
     if (s.phase === 'restart' || b.inHands || pressure < 3.5 || held > 50) {
       const best = openMate(s, team, p, b.inHands || s.phase === 'restart');
       if (best) return { cursor: p.pos, pass: true, aim: { ...best.pos }, moved: true };
-      if (b.inHands) return held > 120 ? { cursor: p.pos, shoot: 0.8, aim: add(p.pos, { x: attackDir(team) * 50, y: 0 }) } : { cursor: p.pos };
+      if (b.inHands) return held > 120 ? { cursor: p.pos, shoot: 0.8, aim: add(p.pos, { x: attackDir(s, team) * 50, y: 0 }) } : { cursor: p.pos };
     }
     if (s.phase === 'restart') return { cursor: p.pos };
     return { cursor: towards(p, goal, 9), moved: true };
@@ -142,7 +142,7 @@ function makeCompetent(): Bot {
 function openMate(s: MatchState, team: 0 | 1, p: MatchPlayer, anyDirection: boolean): MatchPlayer | null {
   let best: MatchPlayer | null = null;
   let bestScore = -Infinity;
-  const px = teamX(team, p.pos.x);
+  const px = teamX(s, team, p.pos.x);
   for (const m of s.players) {
     if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK') continue;
     const d = dist(p.pos, m.pos);
@@ -151,7 +151,7 @@ function openMate(s: MatchState, team: 0 | 1, p: MatchPlayer, anyDirection: bool
     let lane = Infinity;
     for (const o of opponentsOf(s, team)) lane = Math.min(lane, segDist(o.pos, p.pos, m.pos));
     if (marker < 2.5 || lane < 1.6) continue;
-    const gain = (teamX(team, m.pos.x) - px) * PITCH_W;
+    const gain = (teamX(s, team, m.pos.x) - px) * PITCH_W;
     if (!anyDirection && gain < -12) continue;
     const score = gain * 0.12 + Math.min(marker, 8) * 0.4 + Math.min(lane, 5) * 0.4 - d * 0.03;
     if (score > bestScore) {
@@ -164,7 +164,7 @@ function openMate(s: MatchState, team: 0 | 1, p: MatchPlayer, anyDirection: bool
 
 /** A rough chance of scoring from here (the shape of the CPU's own estimate in ai.ts evalShot). */
 function shotChance(s: MatchState, p: MatchPlayer, aim: Vec): number {
-  const goal = oppGoal(p.team);
+  const goal = oppGoal(s, p.team);
   const d = dist(p.pos, goal);
   const dx = Math.max(0.5, Math.abs(goal.x - p.pos.x));
   const angle = Math.abs(Math.atan2(GOAL_BOTTOM - p.pos.y, dx) - Math.atan2(GOAL_TOP - p.pos.y, dx));
@@ -193,7 +193,7 @@ function makeStrong(cpuOffBall = false): Bot {
       return defend(s, team, p, 1.5, 0.45, true);
     }
     held++;
-    const goal = oppGoal(team);
+    const goal = oppGoal(s, team);
     const pressure = nearestOpp(s, team, p.pos).d;
     const restart = s.phase === 'restart' || b.inHands;
     const aim = shotAim(s, p);
@@ -201,13 +201,13 @@ function makeStrong(cpuOffBall = false): Bot {
     let clear = 9;
     for (const o of opponentsOf(s, team)) {
       const to = sub(o.pos, p.pos);
-      if (len(to) < 9 && to.x * attackDir(team) > -0.5) clear = Math.min(clear, len(to));
+      if (len(to) < 9 && to.x * attackDir(s, team) > -0.5) clear = Math.min(clear, len(to));
     }
     if (held >= nextLook || pressure < 2.2) {
       nextLook = held + 8;
       if (!restart && shotChance(s, p, aim) > 0.012) return { cursor: goal, shoot: clamp(0.78 + dist(p.pos, goal) * 0.008, 0.6, 0.97), aim, moved: true };
       const opt = bestPassOption(s, p, 0);
-      const px = teamX(team, p.pos.x);
+      const px = teamX(s, team, p.pos.x);
       const carry = clamp((clear - 2.5) / 4, 0, 1) * (3 + 2 * clamp((px - 0.45) * 4, 0, 1)) * (px > 0.7 ? 0.45 : 1);
       if (opt && (restart || (pressure < 2.3 && opt.score > -0.4) || opt.score > carry + 1.5 - 0.4 * p.attrs.passing || held > 150)) {
         if (opt.lofted) return { cursor: p.pos, loft: clamp(dist(p.pos, opt.target) / 50, 0.1, 1), aim: { ...opt.target }, moved: true };
@@ -367,7 +367,7 @@ export function playCareer(bot: BotId | null, seed: number, matches: number, top
   for (let k = 0; k < matches; k++) {
     const home = clubTeam(save, HOME_SKILL);
     const ranked = rankedOpen(save);
-    const opp = ranked ? pickOpponent(save) : null;
+    const opp = ranked ? offeredOpponent(save) : null;
     const away = opp ? opponentSetup(save, opp, home) : warmupTeam(save, save.history.length === 0).away;
     const shown = opp ? winChance(save, opp) : outlook(skillOf(save).est, home, away).win;
     const elo = save.club.elo;

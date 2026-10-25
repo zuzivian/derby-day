@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { cpuTeam, ladderSquad } from '../src/meta/club.ts';
-import { clubTeam, isSave, newGame, pickOpponent, type MatchRecord } from '../src/meta/game.ts';
-import { winChance as gameWinChance } from '../src/meta/game.ts';
+import { clubTeam, isSave, newGame, pickOpponent, winChance, type MatchRecord } from '../src/meta/game.ts';
 import {
   BAND_DOWN,
   BAND_UP,
@@ -17,7 +16,6 @@ import {
   setupStrength,
   skillOf,
   TARGET_WIN,
-  winChance,
 } from '../src/meta/skill.ts';
 import { AI_SKILL_MIN, humanAuto, IDLE_TICKS } from '../src/sim/ai.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -118,12 +116,11 @@ describe('matchmaking: the CPU skill band', () => {
     expect(easy.aiSkill).toBeLessThan(hard.aiSkill);
   });
 
-  test('the win chance shown is the model chance against the opponent as he will play, and game.ts exports the same function', () => {
+  test('the win chance shown (game.ts winChance) is the model chance against the opponent as he will play', () => {
     const s = newGame(8);
     const opp = pickOpponent(s);
     const home = clubTeam(s, HOME_SKILL);
     expect(winChance(s, opp)).toBeCloseTo(outlook(skillOf(s).est, home, opponentSetup(s, opp, home)).win, 12);
-    expect(gameWinChance).toBe(winChance);
     s.skill = { est: 0.9, n: 20 };
     const strong = winChance(s, opp);
     s.skill = { est: -0.4, n: 20 };

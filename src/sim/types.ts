@@ -71,6 +71,21 @@ export interface MatchPlayer {
   ai?: AiMemory;
   /** A keeper's dive in progress (match.ts keeperDives), or absent. Renderers can read it for the dive pose. */
   dive?: KeeperDive | null;
+  /** A slide tackle in progress (match.ts): he travels along `dir` and wins or fouls when his feet reach the ball or the man. */
+  slide?: SlideTackle | null;
+}
+
+/** A sliding tackle under way: judged each tick of the lunge, not once at the click. */
+export interface SlideTackle {
+  /** Unit vector, the way he is sliding. */
+  dir: Vec;
+  /** Metres still to slide, and how far it set out to go. */
+  left: number;
+  len: number;
+  /** Ticks the slide has run. */
+  ticks: number;
+  /** A late challenge on a man who has just released the ball has been judged (once per slide). */
+  lateJudged?: boolean;
 }
 
 /** A goalkeeper diving to meet a shot: committed for `ticks` more ticks, then on the floor for a moment. */
@@ -133,6 +148,13 @@ export interface Ball {
   parriedFrom?: number;
   /** Tick the ball last changed course (kicked, headed, deflected): keepers react from here. */
   redirectedAt?: number;
+  /**
+   * Laws 8, 13-17: the player who took the last restart, until anyone else touches the ball.
+   * Playing it again before then is an indirect free kick to the opponents (rules.ts secondTouch).
+   */
+  restartBy?: number;
+  /** Law 12: a keeper who released the ball from his hands, or took a goal kick, may not handle it again until someone else touches it. */
+  noHands?: number;
 }
 
 /** 'restart' is a dead ball between an out-of-play/foul/offside and the restart being taken. */
@@ -161,9 +183,14 @@ export interface Restart {
   /** Can a goal be scored straight from it? False for an indirect free kick and a throw-in. */
   direct: boolean;
   /** Why play stopped. */
-  reason: 'out' | 'foul' | 'offside' | 'goal' | 'half' | 'start';
+  reason: 'out' | 'foul' | 'offside' | 'goal' | 'half' | 'start' | 'advantage' | 'second-touch';
   /** CPU taker: ticks to wait in 'ready' before playing it. */
   wait: number;
+  /**
+   * A human taker's kick clicked during 'setup': the click (aim and kick) and the team-mate it picked,
+   * re-aimed from the spot and played as soon as it is 'ready'.
+   */
+  queued?: { input: HumanInput; receiver: number } | null;
 }
 
 export interface Referee {
@@ -239,13 +266,22 @@ export interface AdvantageEvent extends EventBase {
 export interface PhaseEvent extends EventBase {
   kind: 'halftime' | 'fulltime';
 }
+/** Law 7: the fourth official's board at the end of a half. `minutes` of added time are played. */
+export interface AddedTimeEvent extends EventBase {
+  kind: 'addedTime';
+  minutes: number;
+}
+/** Law 3: a side fell below seven players and the referee abandoned the match. `team` is that side. */
+export interface AbandonedEvent extends EventBase {
+  kind: 'abandoned';
+}
 export interface SendOffEvent extends EventBase {
   kind: 'sentOff';
   name: string;
 }
 
 /** Everything a renderer, commentary or audio might key off, in tick order. */
-export type MatchEvent = GoalEvent | FoulEvent | CardEvent | OffsideEvent | RestartEvent | RestartTakenEvent | AdvantageEvent | PhaseEvent | SendOffEvent;
+export type MatchEvent = GoalEvent | FoulEvent | CardEvent | OffsideEvent | RestartEvent | RestartTakenEvent | AdvantageEvent | PhaseEvent | SendOffEvent | AddedTimeEvent | AbandonedEvent;
 
 export interface TeamStats {
   shots: number;
@@ -279,6 +315,15 @@ export interface Advantage {
   until: number;
   spot: Vec;
   penalty: boolean;
+  /** The fouled side's shots and completed passes when it was played: once either goes up, the advantage has come to something and can't be brought back. */
+  shots?: number;
+  passes?: number;
+  /**
+   * A late challenge on a player who had just shot: the shot plays out. A goal stands; if it
+   * doesn't go in, the free kick (or penalty) for the challenge is given once the ball is dead
+   * or someone has it.
+   */
+  late?: boolean;
 }
 
 export interface PendingCard {
@@ -321,6 +366,14 @@ export interface MatchState {
   advantage: Advantage | null;
   /** Cards decided during an advantage, shown at the next stoppage. */
   pendingCards: PendingCard[];
+  /**
+   * Law 7: added time at the end of the current half, once the board has gone up. The match
+   * clock holds at 45:00 or 90:00 while `ticks` of it run; `hold` counts ticks the whistle has
+   * waited past that for a shot in flight to finish.
+   */
+  added?: { half: 1 | 2; minutes: number; ticks: number; elapsed: number; hold: number } | null;
+  /** Law 3: the match was abandoned because this side fell below seven players. The score is then the awarded result. */
+  abandoned?: { team: 0 | 1; score: [number, number] } | null;
   /** CPU team plans, owned by ai.ts. Kept in the state (not a module cache) so a cloned state replays identically. */
   aiPlans?: [AiTeamPlan | null, AiTeamPlan | null];
   /** CPU set-piece positions for the restart in progress, owned by ai.ts (refreshed every 15 ticks). */

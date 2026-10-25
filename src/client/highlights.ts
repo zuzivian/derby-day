@@ -12,6 +12,7 @@
 // replays those ticks exactly, without touching the live match.
 
 import { GOAL_BAR_H, GOAL_BOTTOM, GOAL_TOP, PITCH_W, TICK_HZ } from '../sim/constants.ts';
+import { oppGoal, ownGoal } from '../sim/field.ts';
 import { step } from '../sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
 
@@ -74,7 +75,7 @@ export class HighlightSpotter {
     // Goals.
     while (this.goals < s.goals.length) {
       const g = s.goals[this.goals++];
-      out.push({ kind: 'goal', tick: s.tick, goalX: g.team === 0 ? PITCH_W : 0, label: `Goal · ${g.scorer} ${g.minute}'` });
+      out.push({ kind: 'goal', tick: s.tick, goalX: oppGoal(s, g.team).x, label: `Goal · ${g.scorer} ${g.minute}'` });
       this.watch = null;
     }
     // Cards: replay the challenge behind it (the last foul by that player), not the referee.
@@ -90,7 +91,7 @@ export class HighlightSpotter {
         }
       }
       // The goal the fouled side was attacking: the offender's own.
-      const goalX = e.team === 0 ? 0 : PITCH_W;
+      const goalX = ownGoal(s, e.team).x;
       out.push({ kind: e.color === 'red' ? 'red' : 'yellow', tick: at, goalX, label: `${e.color === 'red' ? 'Red card' : 'Yellow card'} · ${e.name}` });
     }
     // Shots: start watching when the sim counts one.
@@ -98,7 +99,7 @@ export class HighlightSpotter {
       const st = s.stats[t];
       if (st.shots > this.shots[t]) {
         const owner = this.prev.owner;
-        this.watch = { team: t, tick: s.tick, onTarget: st.onTarget > this.onTarget[t], goalX: t === 0 ? PITCH_W : 0, shooter: name(owner), speed: Math.hypot(s.ball.vel.x, s.ball.vel.y) };
+        this.watch = { team: t, tick: s.tick, onTarget: st.onTarget > this.onTarget[t], goalX: oppGoal(s, t).x, shooter: name(owner), speed: Math.hypot(s.ball.vel.x, s.ball.vel.y) };
       }
       this.shots[t] = st.shots;
       this.onTarget[t] = st.onTarget;
