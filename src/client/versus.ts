@@ -705,7 +705,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   renderer.resize();
   renderer.prepare(s);
   const juice = mountJuice(root, s);
-  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  // One player on this screen: only his own kick-off gets the prompt.
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s, (team) => (team === me ? 'Your kick-off: click or press Space' : null));
   let offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
   // WebGL context loss (gfxloss.ts): a lockstep match can't pause (the other tab plays on), so the note
   // covers the pitch while it runs; if the context doesn't come back, carry on in 2D.

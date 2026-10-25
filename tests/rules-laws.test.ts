@@ -264,7 +264,8 @@ describe('Laws 8, 13-17: no second touch by the taker', () => {
     }
     expect(restarts).toBeGreaterThan(60);
     expect(secondTouches).toBe(0);
-  });
+    // Six whole matches: more than bun's 5 s default under load.
+  }, 30_000);
 });
 
 describe('Law 12: a keeper may not handle his own goal kick or release', () => {
