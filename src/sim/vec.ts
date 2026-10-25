@@ -31,9 +31,21 @@ export function rotate(a: Vec, rad: number): Vec {
 
 /** Distance from point p to segment ab. */
 export function distToSegment(p: Vec, a: Vec, b: Vec): number {
-  const ab = sub(b, a);
-  const l2 = dot(ab, ab);
-  if (l2 < 1e-9) return dist(p, a);
-  const t = clamp(dot(sub(p, a), ab) / l2, 0, 1);
-  return dist(p, { x: a.x + ab.x * t, y: a.y + ab.y * t });
+  return segDist(p.x, p.y, a.x, a.y, b.x, b.y);
+}
+
+/** distToSegment on plain numbers, for hot loops: the same arithmetic, no objects made. */
+export function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const l2 = abx * abx + aby * aby;
+  if (l2 < 1e-9) {
+    const dx = px - ax;
+    const dy = py - ay;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  const t = clamp(((px - ax) * abx + (py - ay) * aby) / l2, 0, 1);
+  const dx = px - (ax + abx * t);
+  const dy = py - (ay + aby * t);
+  return Math.sqrt(dx * dx + dy * dy);
 }

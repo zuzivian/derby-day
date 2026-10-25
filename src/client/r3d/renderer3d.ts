@@ -17,6 +17,7 @@ import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
 import { QualityGovernor, type GovernorState } from './governor.ts';
+import { FRAME_BUDGET, FRAME_PARTS } from './budget.ts';
 import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
 import {
   ACESFilmicToneMapping,
@@ -289,6 +290,9 @@ export class Renderer3D implements MatchRenderer {
   private pixelRatio: number;
   private fpsAt = 0;
   private fpsFrames = 0;
+  /** Frames in the last whole second of stats, and the CPU ms they spent per part (FRAME_PARTS order). */
+  private fpsLast = 0;
+  private partMs = new Float64Array(FRAME_PARTS.length);
   private me: 0 | 1 = 0;
   private cleanup: (() => void)[] = [];
 
@@ -385,6 +389,9 @@ export class Renderer3D implements MatchRenderer {
     });
     canvas.dataset.renderer = '3d';
     canvas.dataset.quality = opts.quality;
+    // The GPU side of this quality's frame budget (budget.ts), for tests and devtools next to data-calls and data-tris.
+    canvas.dataset.budgetCalls = String(FRAME_BUDGET[opts.quality].calls);
+    canvas.dataset.budgetTris = String(FRAME_BUDGET[opts.quality].tris);
     // Tooling hook for screenshots and probes: ?debug3d exposes the renderer.
     if (/[?&]debug3d\b/.test(location.search)) (window as unknown as Record<string, unknown>).__derby3d = this;
   }
@@ -656,6 +663,7 @@ export class Renderer3D implements MatchRenderer {
       if (c.player >= 0 && !s.players[c.player].sentOff) this.aim?.card(c.player, c.color, clock + 3);
     }
 
+    const tPlayers = performance.now();
     // Players. A player sent off is parked far off the pitch by the sim: not drawn.
     for (const p of s.players) {
       const model = this.players[p.i];
@@ -777,6 +785,7 @@ export class Renderer3D implements MatchRenderer {
     this.blob.scale.setScalar(0.5 + h * 0.12);
     (this.blob.material as MeshBasicMaterial).opacity = Math.max(0.15, 0.9 - h * 0.18);
 
+    const tStadium = performance.now();
     // Nets and crowd.
     const lastGoal = s.events.length ? s.events[s.events.length - 1] : null;
     const celebrating = s.phase === 'goal' && lastGoal ? lastGoal.team : -1;
@@ -795,6 +804,7 @@ export class Renderer3D implements MatchRenderer {
       this.stadium.update(dt, clock, st);
     }
 
+    const tScene = performance.now();
     // Camera.
     if (this.celebrate && (clock > this.celebrate.until || s.phase !== 'goal')) this.celebrate = null;
     const cel = this.celebrate ? s.players[this.celebrate.i] : null;
@@ -917,21 +927,34 @@ export class Renderer3D implements MatchRenderer {
     // Governor step: the shadow map is redrawn every shadowEvery-th frame only (the shadow pass is
     // a second draw of every caster).
     if (this.shadowEvery > 1) this.gl.shadowMap.needsUpdate = ++this.frameNo % this.shadowEvery === 0;
+    const tSubmit = performance.now();
     this.gl.render(this.scene, this.cam.camera);
 
     // Frame stats, and the quality governor: slow machines step down (governor.ts).
-    const ms = performance.now() - t0;
+    const tEnd = performance.now();
+    const ms = tEnd - t0;
+    // Where the frame's CPU time went, by the parts of FRAME_BUDGET (budget.ts).
+    const pm = this.partMs;
+    pm[0] += tPlayers - t0;
+    pm[1] += tStadium - tPlayers;
+    pm[2] += tScene - tStadium;
+    pm[3] += tSubmit - tScene;
+    pm[4] += tEnd - tSubmit;
     const level = this.governor?.sample(ms, dt * 1000, t0);
     if (level) this.applyLevel(level);
     this.fpsFrames++;
     if (t0 - this.fpsAt > 1000) {
       this.fps = Math.round((this.fpsFrames * 1000) / (t0 - this.fpsAt || 1000));
       this.fpsAt = t0;
+      this.fpsLast = this.fpsFrames;
       this.fpsFrames = 0;
       this.canvas.dataset.fps = String(this.fps);
       this.canvas.dataset.cpuMs = ms.toFixed(1);
       this.canvas.dataset.calls = String(this.gl.info.render.calls);
       this.canvas.dataset.tris = String(this.gl.info.render.triangles);
+      // Average ms per frame over the last second, e.g. "setup:0.2 players:1.1 stadium:0.3 scene:0.4 submit:2.0".
+      this.canvas.dataset.parts = FRAME_PARTS.map((k, i) => `${k}:${(pm[i] / (this.fpsLast || 1)).toFixed(2)}`).join(' ');
+      pm.fill(0);
     }
   }
 

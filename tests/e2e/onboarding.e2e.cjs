@@ -134,13 +134,14 @@ test('onboarding: a tip card never blocks the game: clicks pass through it, it i
   await page.waitForSelector(TIP, { timeout: 40_000 });
   expect(await page.locator('.coach-tip').evaluate((el) => getComputedStyle(el).pointerEvents), 'card passes pointer events through').toBe('none');
   expect(await page.locator('.coach-x').evaluate((el) => getComputedStyle(el).pointerEvents), 'but the button works').toBe('auto');
-  // Top-centre under the HUD row: clear of the radar (bottom) and the ball area, and inside the pitch.
+  // Top-centre under the HUD row: clear of the radar (top left on desktop) and the ball area, and inside the pitch.
   const wrap = await page.locator('.pitch-wrap').boundingBox();
   const tip = await page.locator('.coach-tip').boundingBox();
   const radar = await page.locator('.hud-radar').boundingBox();
   expect(tip.y, 'under the score row').toBeGreaterThanOrEqual(wrap.y + 50);
   expect(tip.y + tip.height, 'above the middle of the pitch').toBeLessThan(wrap.y + wrap.height * 0.4);
-  expect(tip.y + tip.height, 'clear of the radar').toBeLessThan(radar.y);
+  const apart = tip.x + tip.width <= radar.x || radar.x + radar.width <= tip.x || tip.y + tip.height <= radar.y || radar.y + radar.height <= tip.y;
+  expect(apart, 'clear of the radar').toBe(true);
   expect(tip.x, 'inside the pitch').toBeGreaterThanOrEqual(wrap.x);
   expect(tip.x + tip.width, 'inside the pitch').toBeLessThanOrEqual(wrap.x + wrap.width);
   // A point under the card reaches the canvas.

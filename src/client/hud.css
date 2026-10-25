@@ -201,6 +201,11 @@
 .edge-mark[hidden] { display: none; }
 /* The end camera puts the man on the ball low in the middle: the radar moves to the left there. */
 #pitch[data-camera="end"] ~ .hud .hud-radar { left: 52px; transform: none; }
+/* Mouse and keyboard at desktop size: the radar sits top left, under the score and over the stands,
+   so the near touchline (where the side camera puts wing play) stays clear. Any camera. */
+@media (pointer: fine) and (min-width: 641px) and (min-height: 521px) {
+  #pitch ~ .hud .hud-radar, #pitch[data-camera="end"] ~ .hud .hud-radar { left: 10px; top: 80px; bottom: auto; transform: none; }
+}
 /* The 2D view already shows the whole pitch: no radar over it. */
 #pitch[data-renderer="2d"] ~ .hud .hud-radar { display: none; }
 /* Touch: every HUD button is at least 44 px high with 8 px between them (WCAG target size), and the

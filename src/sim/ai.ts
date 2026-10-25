@@ -75,7 +75,7 @@ import {
 import { chipPlan, rollTravel } from './kicks.ts';
 import { chance, gauss, next, range } from './rng.ts';
 import type { Action, AiInterception, AiMemory, AiTeamPlan, Intent, MatchPlayer, MatchState, Restart } from './types.ts';
-import { add, clamp, dot, rotate, scale, sub, type Vec } from './vec.ts';
+import { add, clamp, dot, rotate, scale, segDist, sub, type Vec } from './vec.ts';
 import { barredSecondTouch } from './rules.ts';
 
 // Local sqrt-based helpers: Math.hypot is several times slower, and sqrt is
@@ -1433,6 +1433,9 @@ function laneShut(s: MatchState, team: 0 | 1, from: Vec, to: Vec): boolean {
 /** A supporter tries his angle and a little either side of it, short and a bit longer. */
 const SUPPORT_TURN = [-0.4, 0, 0.4];
 const SUPPORT_REACH = [0.75, 1, 1.25];
+// Scratch for supportSpot (it never re-enters): opponents as x, y pairs, and teammates' spots.
+const SUPPORT_OPP: number[] = [];
+const SUPPORT_MATES: Vec[] = [];
 
 function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, j: number): Vec {
   const team = p.team;
@@ -1444,13 +1447,17 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
   const base = plan.supportAng![j];
   const noise = 0.1 + 0.6 * (1 - skill);
-  let best = c;
+  let bestX = 0;
+  let bestY = 0;
+  let found = false;
   let bestScore = -Infinity;
   // Opponents a moment from now: a lane someone is stepping into is already shut.
-  const opp: Vec[] = [];
+  const opp = SUPPORT_OPP;
+  opp.length = 0;
   // Where teammates are, or are heading: spots too close to them are crowded. Only players near
   // enough to the carrier to touch a lane or crowd a spot this short count.
-  const mates: Vec[] = [];
+  const mates = SUPPORT_MATES;
+  mates.length = 0;
   const near = k.supportR * SUPPORT_REACH[SUPPORT_REACH.length - 1] + 9;
   const near2 = near * near;
   for (const o of s.players) {
@@ -1458,7 +1465,7 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
     if (o.team !== team) {
       const x = o.pos.x + o.vel.x * 0.35;
       const y = o.pos.y + o.vel.y * 0.35;
-      if ((x - c.x) ** 2 + (y - c.y) ** 2 < near2) opp.push({ x, y });
+      if ((x - c.x) ** 2 + (y - c.y) ** 2 < near2) opp.push(x, y);
     } else if (o.i !== p.i && o.role !== 'GK' && o.i !== carrier?.i) {
       const spot = o.ai?.target && o.ai.attacking ? o.ai.target : o.pos;
       if ((spot.x - c.x) ** 2 + (spot.y - c.y) ** 2 < near2) mates.push(spot);
@@ -1479,12 +1486,13 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
       if (toTeamX(x) > onsideX) x = fromTeamX(onsideX);
       // Never a square ball across our own six-yard box.
       if (sixYard && toTeamX(x) < 0.1) x = fromTeamX(0.1);
-      const cand = { x, y };
       let lane = 5;
       let space2 = 64;
-      for (const o of opp) {
-        lane = Math.min(lane, distToSegment(o, c, cand));
-        space2 = Math.min(space2, (o.x - x) ** 2 + (o.y - y) ** 2);
+      for (let n = 0; n < opp.length; n += 2) {
+        const ox = opp[n];
+        const oy = opp[n + 1];
+        lane = Math.min(lane, segDist(ox, oy, c.x, c.y, x, y));
+        space2 = Math.min(space2, (ox - x) ** 2 + (oy - y) ** 2);
       }
       let score = Math.min(lane, 4) * 1.1 + Math.sqrt(space2) * 0.35 - (lane < 1.6 ? 3 : 0);
       for (const spot of mates) {
@@ -1496,11 +1504,13 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
       score += (toTeamX(x) - cx) * PITCH_W * 0.035 - Math.sqrt((p.pos.x - x) ** 2 + (p.pos.y - y) ** 2) * 0.05 + gauss(s.rng) * noise;
       if (score > bestScore) {
         bestScore = score;
-        best = cand;
+        bestX = x;
+        bestY = y;
+        found = true;
       }
     }
   }
-  return best;
+  return found ? { x: bestX, y: bestY } : c;
 }
 
 function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec {
