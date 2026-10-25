@@ -309,6 +309,34 @@ describe('backup export and import', () => {
   });
 });
 
+describe('a restore that the browser did not keep', () => {
+  test('replaceSave reports a mismatch when the key reads back as something else, so the page does not reload into the old club', () => {
+    const old = newGame(1);
+    store.writeSaveResult(old);
+    const set = mem.setItem.bind(mem);
+    // A storage that accepts the write and then reads back the old value (the write was dropped).
+    mem.setItem = (k: string, v: string) => (k === KEY ? undefined : set(k, v));
+    try {
+      expect(store.replaceSave(newGame(2))).toBe('mismatch');
+      expect(store.lastWriteFailed()).toBe(true);
+    } finally {
+      mem.setItem = set;
+    }
+    expect(store.loadSave()!.club.name).toBe(old.club.name); // nothing was changed
+  });
+
+  test('a safety copy that does not read back is a mismatch too', () => {
+    store.writeSaveResult(newGame(1));
+    const set = mem.setItem.bind(mem);
+    mem.setItem = (k: string, v: string) => (k === `${KEY}.pre-import` ? undefined : set(k, v));
+    try {
+      expect(store.replaceSave(newGame(2))).toBe('mismatch');
+    } finally {
+      mem.setItem = set;
+    }
+  });
+});
+
 describe('damaged backups are refused before they can brick the club', () => {
   const good = () => JSON.parse(JSON.stringify(newGame(21)));
   const mutations: [string, (s: any) => void][] = [

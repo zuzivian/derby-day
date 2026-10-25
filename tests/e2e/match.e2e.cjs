@@ -150,3 +150,28 @@ test('quick tactics: a mentality picked in the pause menu changes the side in th
   await page.waitForFunction(() => window.__derbyMatch.teams[0].mentality === 'press', null, { timeout: 10_000 });
   expect((await readSave(page)).mentality ?? 'balanced', 'the saved default is untouched').toBe('balanced');
 });
+
+for (const renderer of ['2d', '3d']) {
+  test(`HUD (${renderer}): a card names the man you control, with his number and his legs`, async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 20 }, e2eHook: true, renderer });
+    await startRanked(page);
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 20_000 });
+    await page.waitForTimeout(500);
+    const got = await page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const p = s.players[s.controlled[0]];
+      const card = document.querySelector('.hud-me');
+      return {
+        shown: !!card && !card.hidden && card.getClientRects().length > 0,
+        name: card?.querySelector('.hud-me-name')?.textContent,
+        no: card?.querySelector('.hud-me-no')?.textContent,
+        legs: card?.querySelector('.hud-me-legs i')?.style.width,
+        want: { name: p.name, no: String(p.number), legs: `${Math.round(p.energy * 20) * 5}%` },
+      };
+    });
+    expect(got.shown, 'the card is on screen').toBe(true);
+    expect(got.name, 'his name').toBe(got.want.name);
+    expect(got.no, 'his number').toBe(got.want.no);
+    expect(got.legs, 'his energy').toBe(got.want.legs);
+  });
+}

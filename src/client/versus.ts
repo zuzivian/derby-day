@@ -34,6 +34,7 @@ import { mountMatch } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
 import { createMatchRenderer, mountCameraToggle } from './renderer.ts';
+import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
@@ -657,8 +658,9 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   </section>`;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');
-  const canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
-  const renderer = createMatchRenderer(canvas);
+  // let: a lost WebGL context that never comes back swaps both for a fresh 2D canvas (see gfx below).
+  let canvas = root.querySelector<HTMLCanvasElement>('#pitch')!;
+  let renderer = createMatchRenderer(canvas);
   const ls = new Lockstep({ state: s, side: me, transport: narrow(o.transport, isLockstepMsg), delay: o.start.delay, now: () => performance.now() });
 
   let menuOpen = false;
@@ -669,8 +671,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     $('net-menu').hidden = !v;
     (v ? $('net-resume') : canvas).focus();
   };
-  const input = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
-  input.mode = o.controls;
+  const makeInput = () => {
+    const c = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
+    c.mode = o.controls;
+    return c;
+  };
+  let input = makeInput();
   $('net-menu-btn').addEventListener('click', () => setMenu(true));
   $('net-resume').addEventListener('click', () => setMenu(false));
   $('net-leave').addEventListener('click', () => {
@@ -700,7 +706,26 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   renderer.prepare(s);
   const juice = mountJuice(root, s);
   const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
-  const offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
+  let offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
+  // WebGL context loss (gfxloss.ts): a lockstep match can't pause (the other tab plays on), so the note
+  // covers the pitch while it runs; if the context doesn't come back, carry on in 2D.
+  const gfx = watchGfxLoss(renderer, root.querySelector<HTMLElement>('.pitch-wrap')!, {
+    onGiveUp: () => {
+      if (ended) return;
+      const mode = input.mode;
+      input.dispose();
+      offCam();
+      ro.unobserve(canvas);
+      ({ canvas, renderer } = fallback2D(canvas, renderer));
+      input = makeInput();
+      input.mode = mode;
+      offCam = () => {};
+      ro.observe(canvas);
+      renderer.resize();
+      renderer.prepare(s);
+      announce('The graphics could not be restored, so the match carries on in the 2D view.');
+    },
+  });
 
   /** Stopped with a message (desync, the opponent left, the link died): the match no longer moves. */
   let halted = false;
@@ -867,6 +892,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     offLink();
     ls.dispose();
     input.dispose();
+    gfx.dispose();
     juice.dispose();
     hud.dispose();
     offCam();

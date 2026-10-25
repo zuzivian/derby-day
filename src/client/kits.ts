@@ -119,3 +119,61 @@ export function avoidClash(home: TeamSetup, away: TeamSetup): TeamSetup {
   for (const o of options) if (!shirtsClash(home.primary, o.primary)) return o;
   return options.reduce((best, o) => (worstDiff(home.primary, o.primary) > worstDiff(home.primary, best.primary) ? o : best));
 }
+
+// ---------------------------------------------------------------------------
+// Shirts against the grass. The 3D view lights and tone-maps everything, so a shirt is compared with
+// the grass as both are drawn, not as their hex codes: the grass colours were read back from the
+// game's own screenshots, and a shirt's drawn colour comes from a model of the lighting and the
+// ACES tone mapping (shirtAsRendered) fitted to screenshots of every ladder shirt
+// (scripts/kit-probe.cjs; tests/kits.test.ts checks the fit).
+
+export type Quality = 'low' | 'high';
+
+/** The grass as the 3D view draws it: the dark and the light mowing stripe, per quality level. */
+export const GRASS: Record<Quality, [string, string]> = {
+  low: ['#2b972c', '#47ab3b'],
+  high: ['#2e982d', '#48ab3b'],
+};
+
+/** Below this CIEDE2000 difference from a grass stripe, under any vision, a shirt needs the dark rim. */
+export const GRASS_DE = 20;
+
+/** Light on a player's shirt, linear RGB before exposure (sun, sky and the green bounce off the grass), fitted per quality. */
+export const SHIRT_LIGHT: Record<Quality, RGB> = {
+  low: [0.559, 0.627, 0.564],
+  high: [0.566, 0.639, 0.588],
+};
+
+/** The renderer's tone mapping exposure (renderer3d.ts). */
+const EXPOSURE = 1.05;
+
+/** three.js's ACESFilmicToneMapping, on linear RGB. */
+function aces([r, g, b]: RGB): RGB {
+  const k = EXPOSURE / 0.6;
+  const i = [r * k, g * k, b * k];
+  const v = [0.59719 * i[0] + 0.35458 * i[1] + 0.04823 * i[2], 0.076 * i[0] + 0.90834 * i[1] + 0.01566 * i[2], 0.0284 * i[0] + 0.13383 * i[1] + 0.83777 * i[2]];
+  const f = v.map((x) => (x * (x + 0.0245786) - 0.000090537) / (x * (0.983729 * x + 0.432951) + 0.238081));
+  const o = [1.60475 * f[0] - 0.53108 * f[1] - 0.07367 * f[2], -0.10208 * f[0] + 1.10813 * f[1] - 0.00605 * f[2], -0.00327 * f[0] - 0.07276 * f[1] + 1.07602 * f[2]];
+  return o.map((x) => Math.max(0, Math.min(1, x))) as RGB;
+}
+
+const toSrgb = (c: number) => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+const toHex = (rgb: RGB) => '#' + rgb.map((c) => Math.round(toSrgb(c) * 255).toString(16).padStart(2, '0')).join('');
+
+/** A shirt colour as the 3D view draws it, lit and tone-mapped, at this quality level. */
+export function shirtAsRendered(hex: string, quality: Quality): string {
+  const lin = hexToLinear(hex);
+  const e = SHIRT_LIGHT[quality];
+  return toHex(aces([lin[0] * e[0], lin[1] * e[1], lin[2] * e[2]]));
+}
+
+/** How far a shirt is, as drawn, from the nearer grass stripe, under the worst of the three visions. */
+export function grassDiff(shirt: string, quality: Quality): number {
+  const drawn = shirtAsRendered(shirt, quality);
+  return Math.min(...GRASS[quality].map((g) => worstDiff(drawn, g)));
+}
+
+/** Is this shirt too close to the grass (at either quality level) to read without a dark rim? */
+export function grassClash(shirt: string): boolean {
+  return grassDiff(shirt, 'low') < GRASS_DE || grassDiff(shirt, 'high') < GRASS_DE;
+}

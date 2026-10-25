@@ -5,6 +5,7 @@
 // Nothing here touches the pitch renderer. Effects live on an overlay canvas
 // (pointer-events: none) and on CSS transforms of the pitch wrapper.
 
+import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
 import { crowdLevel, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
 
@@ -200,12 +201,14 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     const colours = [t.primary, t.secondary, t.primary, '#ffd60a', '#ffffff'];
     const scale = Math.min(1, cw / 640);
     const n = Math.round(150 * Math.max(0.5, scale));
-    const goalX = team === 0 ? cw * 0.98 : cw * 0.02;
-    const spray = team === 0 ? Math.PI : 0; // direction pointing back into the pitch
+    // The goal it went in: the one this side attacks this half (the teams change ends at half-time).
+    const right = attackDir(s, team) > 0;
+    const goalX = right ? cw * 0.98 : cw * 0.02;
+    const spray = right ? Math.PI : 0; // direction pointing back into the pitch
     for (let i = 0; i < n; i++) {
       const fromGoal = i % 3 !== 0;
       const speed = (fromGoal ? 380 + Math.random() * 520 : 120 + Math.random() * 260) * Math.max(0.6, scale);
-      const ang = fromGoal ? spray + (Math.random() - 0.5) * 1.5 + 0.5 * (team === 0 ? 1 : -1) : -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
+      const ang = fromGoal ? spray + (Math.random() - 0.5) * 1.5 + 0.5 * (right ? 1 : -1) : -Math.PI / 2 + (Math.random() - 0.5) * 2.2;
       particles.push({
         x: fromGoal ? goalX : cw * (0.25 + Math.random() * 0.5),
         y: fromGoal ? ch * (0.4 + Math.random() * 0.2) : ch * 0.08,

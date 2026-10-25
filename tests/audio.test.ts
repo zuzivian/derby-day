@@ -154,7 +154,10 @@ describe('detectSfx over a real match', () => {
     const counts: Record<string, number> = {};
     while (s.phase !== 'fulltime') {
       step(s);
-      for (const e of detectSfx(prev, s)) counts[e.type] = (counts[e.type] ?? 0) + 1;
+      for (const e of detectSfx(prev, s)) {
+        const key = e.type === 'whistle' && e.kind === 'foul' ? 'foulWhistle' : e.type;
+        counts[key] = (counts[key] ?? 0) + 1;
+      }
       prev = snapshot(s);
     }
     const total = s.score[0] + s.score[1];
@@ -162,6 +165,9 @@ describe('detectSfx over a real match', () => {
     expect(counts.kick).toBeGreaterThan(10);
     // opening kick-off, a restart per goal, second half, half-time, full-time
     expect(counts.whistle).toBe(1 + total + 1 + 1 + 1);
+    // and one short blast for every stoppage the referee called (fouls, offsides, advantage brought back)
+    const called = s.events.filter((e) => e.kind === 'restart' && e.reason !== 'out' && e.restart !== 'kickoff').length;
+    expect(counts.foulWhistle ?? 0).toBe(called);
     expect(counts.knock ?? 0).toBeLessThan(counts.kick * 2);
   });
 });

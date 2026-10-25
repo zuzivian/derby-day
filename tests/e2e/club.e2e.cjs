@@ -1,7 +1,7 @@
 // Club management: training, transfers, lineup persistence.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, readSave, pageWidths } = require('./lib/helpers.cjs');
+const { SEL, openApp, nextVisit, goTab, readSave, pageWidths } = require('./lib/helpers.cjs');
 
 test('training spends a session and shows a toast', async (t) => {
   const page = await openApp(t);
@@ -73,11 +73,10 @@ test('lineup changes persist after reload', async (t) => {
   await page.selectOption(SEL.slot(slot), benchId);
   expect((await readSave(page)).lineup[slot], 'save updated immediately').toBe(benchId);
 
-  await page.reload();
-  await page.waitForSelector(SEL.app + ' *');
-  await goTab(page, 'squad');
-  expect(await page.locator(SEL.slot(slot)).inputValue(), 'select shows the choice after reload').toBe(benchId);
-  expect((await readSave(page)).lineup[slot], 'save after reload').toBe(benchId);
+  const next = await nextVisit(page); // not page.reload(): see helpers.cjs
+  await goTab(next, 'squad');
+  expect(await next.locator(SEL.slot(slot)).inputValue(), 'select shows the choice after reload').toBe(benchId);
+  expect((await readSave(next)).lineup[slot], 'save after reload').toBe(benchId);
 });
 
 test('tactics board: formation and mentality are radio groups that save, survive a reload and fit a phone', async (t) => {
@@ -102,12 +101,11 @@ test('tactics board: formation and mentality are radio groups that save, survive
     await page.locator(`label:has(${SEL.mentalityRadio('park')})`).click();
     expect((await readSave(page)).mentality, 'mentality saved').toBe('park');
 
-    await page.reload();
-    await page.waitForSelector(SEL.app + ' *');
-    await goTab(page, 'squad');
-    expect(await page.locator(SEL.formationChecked).getAttribute('value'), 'formation after reload').toBe('3-5-2');
-    expect(await page.locator(SEL.mentalityChecked).getAttribute('value'), 'mentality after reload').toBe('park');
-    const { scrollWidth, innerWidth } = await pageWidths(page);
+    const again = await nextVisit(page); // not page.reload(): see helpers.cjs
+    await goTab(again, 'squad');
+    expect(await again.locator(SEL.formationChecked).getAttribute('value'), 'formation after reload').toBe('3-5-2');
+    expect(await again.locator(SEL.mentalityChecked).getAttribute('value'), 'mentality after reload').toBe('park');
+    const { scrollWidth, innerWidth } = await pageWidths(again);
     expect(scrollWidth, `no horizontal scroll at ${width}px`).toBeLessThan(innerWidth + 1);
   }
 });

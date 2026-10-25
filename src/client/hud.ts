@@ -10,13 +10,15 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
-import { matchSeconds } from '../sim/rules.ts';
+import { inAddedTime, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { Gauge } from './power.ts';
 import { HUMAN_COLORS } from './render.ts';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+
+const GAUGE_LABEL: Record<Gauge['kind'], string> = { pass: 'Pass', loft: 'Loft', shot: 'Shot' };
 
 /** Where a hard shot starts to fly off target: the tick on the power bar. */
 export const SWEET_SPOT = 0.8;
@@ -60,7 +62,8 @@ export function hudMarkup(o: HudOptions): string {
       </div>
       <div class="banner hud-word" id="banner" hidden></div>
       <canvas class="hud-radar" aria-hidden="true" style="aspect-ratio: ${PITCH_W} / ${PITCH_H}"></canvas>
-      <div class="hud-power" aria-hidden="true"><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
+      <div class="hud-me" aria-hidden="true" hidden><span class="hud-me-no"></span><span class="hud-me-name"></span><span class="hud-me-legs"><i></i></span></div>
+      <div class="hud-power" aria-hidden="true"><span class="hud-power-label"></span><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden role="status"></div>
@@ -99,6 +102,15 @@ export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?:
     case 'card':
       // A second yellow is followed by its red in the same tick; the red is the word left showing.
       return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
+    case 'restart':
+      // The advantage came to nothing: play comes back for the foul.
+      if (e.reason === 'advantage') return { word: e.restart === 'penalty' ? 'Penalty' : 'Free kick', sub: 'Advantage brought back' };
+      if (e.reason === 'second-touch') return { word: 'Free kick', sub: `${s.teams[e.team].name} · second touch` };
+      return null;
+    case 'addedTime':
+      return { word: `+${e.minutes}`, sub: `minute${e.minutes === 1 ? '' : 's'} added`, live: true };
+    case 'abandoned':
+      return { word: 'Abandoned', sub: `${s.teams[e.team].name} down to six` };
     default:
       return null;
   }
@@ -109,7 +121,9 @@ export function matchClock(s: MatchState): string {
   const secs = matchSeconds(s);
   const mm = Math.floor(secs / 60);
   const ss = secs % 60;
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  const clock = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  // Law 7: the board is up; the clock holds while the added time is played.
+  return inAddedTime(s) && s.added ? `${clock} +${s.added.minutes}` : clock;
 }
 
 export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
@@ -119,6 +133,14 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   const radar = q<HTMLCanvasElement>('.hud-radar');
   const power = q('.hud-power');
   const fill = power.querySelector('i') as HTMLElement;
+  const powerLabel = q('.hud-power-label');
+  // The man you control (one human only): shirt number, name and his legs (energy), Power Soccer style.
+  const me = q('.hud-me');
+  const meNo = q('.hud-me-no');
+  const meName = q('.hud-me-name');
+  const meLegs = q('.hud-me-legs');
+  const meFill = meLegs.querySelector('i') as HTMLElement;
+  let lastMe = '';
   // The human's keeper with the ball in his hands: seconds left to play it (Law 12), src/sim/human.ts.
   const hold = q('.hud-hold');
   let lastHold: number | null = null;
@@ -194,6 +216,25 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     ctx.fill();
   }
 
+  function drawMe(s: MatchState) {
+    const team: 0 | 1 | null = s.humans[0] && !s.humans[1] ? 0 : s.humans[1] && !s.humans[0] ? 1 : null;
+    const p = team === null ? undefined : s.players[s.controlled[team]];
+    // Energy in 5% steps, so the DOM changes a few times a minute, not every frame.
+    const legs = p ? Math.round(p.energy * 20) * 5 : 0;
+    const key = p && !p.sentOff ? `${p.i}|${legs}|${p.winded}` : '';
+    if (key === lastMe) return;
+    lastMe = key;
+    me.hidden = !key;
+    if (!p || !key) return;
+    meNo.textContent = String(p.number);
+    meNo.style.background = colors[p.team];
+    meNo.style.color = s.teams[p.team].secondary;
+    meName.textContent = p.name;
+    meFill.style.width = `${legs}%`;
+    meLegs.classList.toggle('low', legs <= 35);
+    me.classList.toggle('winded', p.winded);
+  }
+
   const hud: Hud = {
     update(s, charge, gauge) {
       const c = matchClock(s);
@@ -214,6 +255,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
           power.classList.toggle('idle', !!g && charge <= 0);
           power.classList.toggle('amber', g?.band === 'amber');
           power.classList.toggle('hot', g?.band === 'red');
+          powerLabel.textContent = g ? GAUGE_LABEL[g.kind] : '';
         }
       } else if (charge !== lastCharge) {
         lastCharge = charge;
@@ -228,6 +270,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
         if (left !== null) hold.textContent = `Keeper · ${left}`;
         hold.classList.toggle('hot', left !== null && left <= 2);
       }
+      drawMe(s);
       drawRadar(s);
       if (tagUntil && performance.now() > tagUntil) {
         callTag.hidden = true;

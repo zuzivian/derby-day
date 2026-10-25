@@ -1,0 +1,22 @@
+{
+  "boot.e2e.cjs": 12,
+  "club.e2e.cjs": 10,
+  "competitions.e2e.cjs": 7,
+  "controls.e2e.cjs": 50,
+  "dots.e2e.cjs": 7,
+  "home.e2e.cjs": 35,
+  "hotseat.e2e.cjs": 21,
+  "levels.e2e.cjs": 57,
+  "lockstep.e2e.cjs": 34,
+  "match.e2e.cjs": 29,
+  "onboarding.e2e.cjs": 127,
+  "online.e2e.cjs": 33,
+  "pause.e2e.cjs": 25,
+  "perf.e2e.cjs": 191,
+  "phone.e2e.cjs": 66,
+  "platform.e2e.cjs": 96,
+  "progression.e2e.cjs": 9,
+  "replay.e2e.cjs": 64,
+  "shootout.e2e.cjs": 69,
+  "view.e2e.cjs": 24
+}
