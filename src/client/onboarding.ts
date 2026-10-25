@@ -75,7 +75,19 @@ export function celebrationWords(gf: number, ga: number): { title: string; sub: 
   return { title: 'Good effort', sub: 'Everyone loses a first game. Now you know the controls.' };
 }
 
-const listNames = (names: string[]): string => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : (names[0] ?? ''));
+/** "Squad, vs Player (one screen and two tabs) and Practice (Easy)": names like "Practice: Easy" are grouped, so a sentence has no stray colons. */
+function listNames(names: string[]): string {
+  const groups = new Map<string, string[]>();
+  for (const n of names) {
+    const [head, ...rest] = n.split(': ');
+    groups.set(head, [...(groups.get(head) ?? []), ...(rest.length ? [rest.join(': ')] : [])]);
+  }
+  const items = [...groups].map(([head, parts]) => {
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
+    return list ? `${head} (${list})` : head;
+  });
+  return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
+}
 
 /** What a screen reader hears when the celebration opens: the result and the XP, once ("Full time" was already announced by the match). */
 export function celebrationSpoken(gf: number, ga: number, xp: number): string {
@@ -186,6 +198,8 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         window.scrollTo({ top: 0 });
         return;
       case 'reroll-name':
+        nameDraft = ''; // a typed name does not silently beat the one just rolled
+        nameError = '';
         rerollName(s);
         o.persist();
         render();

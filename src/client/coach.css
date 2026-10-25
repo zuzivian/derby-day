@@ -21,6 +21,23 @@
 @media (max-width: 640px) {
   .coach-tip { left: 6px; right: 108px; top: 64px; width: auto; max-width: none; font-size: 12px; padding: 7px 8px; }
 }
+/* The first tip also says which player is you. A card that long would cover the kick-off on a narrow phone, so there the sentence
+   becomes a one-line banner in the free strip above the radar and the Pass and Shoot pad, and the card keeps only its own tip. */
+.coach-intro { display: none; }
+@media (max-width: 640px) and (orientation: portrait) {
+  .coach-lead { display: none; }
+  /* The card is only ~170 px wide beside the HUD column, so "Got it" (a real 44 px target) goes on its own line, not beside the words. */
+  .coach-tip { flex-wrap: wrap; }
+  .coach-text { flex: 1 1 calc(100% - 28px); }
+  .coach-x { margin-left: auto; }
+  .coach-intro {
+    display: block; position: absolute; left: 6px; right: 6px; bottom: 80px; z-index: 5; padding: 5px 8px; border-radius: 8px; pointer-events: none;
+    background: rgba(8, 12, 11, .82); border: 1px solid rgba(255, 255, 255, .22); color: #fff; text-align: center;
+    font: 700 12px/1.3 'Barlow', system-ui, sans-serif;
+  }
+  .coach-intro[hidden] { display: none; }
+  .coach-intro.paused { visibility: hidden; }
+}
 @media (pointer: coarse), (max-width: 640px) {
   .coach-x { min-width: 44px; min-height: 44px; padding: 0 10px; }
 }

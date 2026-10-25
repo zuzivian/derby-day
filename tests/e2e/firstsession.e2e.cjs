@@ -87,39 +87,6 @@ for (const v of VIEWS) {
     await page.locator('[data-ob="done"]').click();
     await page.waitForSelector(SEL.kickOff);
     expect((await readSave(page)).club.name, 'the typed name is the club name').toBe('Harbour Lights');
-    // Skip still means "keep what I was given".
-  });
-
-  test(`first session: the first match says who you are and which way you attack, and the tip stays off the controls (${v.name})`, async (t) => {
-    const page = await fresh(t, v);
-    await page.locator(KICK).click();
-    await page.waitForSelector(TIP, { timeout: 40_000 });
-    const text = await page.locator(TIP).innerText();
-    expect(text, 'which player is you and which way you attack').toMatch(/yellow ring.*goal on the right/i);
-    const r = await page.evaluate(() => {
-      const box = (el) => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, name: el.getAttribute('aria-label') || el.id || el.className || el.tagName }; };
-      const tip = document.querySelector('.coach-tip');
-      const tb = box(tip);
-      const hits = [];
-      let rightColumn = Infinity;
-      for (const b of document.querySelectorAll('.pitch-wrap button')) {
-        if (tip.contains(b)) continue;
-        const st = getComputedStyle(b);
-        const bb = box(b);
-        if (st.visibility === 'hidden' || st.display === 'none' || bb.w === 0) continue;
-        if (bb.x < tb.x + tb.w && bb.x + bb.w > tb.x && bb.y < tb.y + tb.h && bb.y + bb.h > tb.y) hits.push(bb.name);
-        if (bb.y < tb.y + tb.h + 200) rightColumn = Math.min(rightColumn, bb.x);
-      }
-      return { tip: tb, hits, x: box(document.querySelector('.coach-x')), rightColumn, vw: window.innerWidth };
-    });
-    expect(r.hits, 'the tip covers no pitch button').toEqual([]);
-    expect(r.tip.x + r.tip.w, 'inside the screen').toBeLessThanOrEqual(r.vw);
-    if (v.touch) {
-      expect(r.x.w, '"Got it" is at least 44 px wide').toBeGreaterThanOrEqual(44);
-      expect(r.x.h, '"Got it" is at least 44 px tall').toBeGreaterThanOrEqual(44);
-      expect(r.tip.x + r.tip.w, 'clear of the HUD column on the right').toBeLessThanOrEqual(r.rightColumn);
-    }
-    await shot(page, `first-tip-${v.name}`);
   });
 
   test(`first session: Back during the first match opens the pause menu instead of leaving (${v.name})`, async (t) => {
@@ -178,14 +145,78 @@ for (const v of VIEWS) {
   });
 }
 
-test('first session: reaching level 3 offers "Play ranked", which lands on Kick off', async (t) => {
+/** Phones as small as 320x568 and the common Android 360x640 too: the first card is the longest one a new player sees. */
+const TIP_VIEWS = [...VIEWS, { name: 'phone-320', width: 320, height: 568, touch: true }, { name: 'phone-360', width: 360, height: 640, touch: true }];
+
+for (const v of TIP_VIEWS) {
+  test(`first session: the first match says who you are and which way you attack, and the tip stays off the controls (${v.name})`, async (t) => {
+    const page = await fresh(t, v);
+    await page.locator(KICK).click();
+    await page.waitForSelector(TIP, { timeout: 40_000 });
+    await page.waitForTimeout(400); // the fade-in
+    const portraitPhone = v.width <= 640 && v.height > v.width;
+    if (portraitPhone) {
+      // No room in the card: the sentence is a one-line banner in the strip above the Pass pad.
+      expect(await page.locator('.coach-intro').innerText(), 'banner says who you are and which way you attack').toMatch(/yellow ring.*attacking right/i);
+      expect(await page.locator('.coach-lead').isVisible(), 'and the card does not repeat it').toBe(false);
+    } else {
+      expect(await page.locator(TIP).innerText(), 'which player is you and which way you attack').toMatch(/yellow ring.*goal on the right/i);
+    }
+    const r = await page.evaluate(() => {
+      const box = (el) => { const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height, name: el.getAttribute('aria-label') || el.id || el.className || el.tagName }; };
+      const hit = (a, b) => b.x < a.x + a.w && b.x + b.w > a.x && b.y < a.y + a.h && b.y + b.h > a.y;
+      const tip = document.querySelector('.coach-tip');
+      const banner = document.querySelector('.coach-intro');
+      const tb = box(tip);
+      const bb = banner && getComputedStyle(banner).display !== 'none' ? box(banner) : null;
+      const hits = [];
+      let rightColumn = Infinity;
+      for (const b of document.querySelectorAll('.pitch-wrap button, .hud-radar')) {
+        if (tip.contains(b)) continue;
+        const st = getComputedStyle(b);
+        const x = box(b);
+        if (st.visibility === 'hidden' || st.display === 'none' || x.w === 0) continue;
+        if (hit(tb, x)) hits.push(`tip over ${x.name}`);
+        if (bb && hit(bb, x)) hits.push(`banner over ${x.name}`);
+        if (x.y < tb.y + tb.h && x.y + x.h > tb.y) rightColumn = Math.min(rightColumn, x.x); // the HUD column beside the card
+      }
+      const wrap = box(document.querySelector('.pitch-wrap'));
+      return { tip: tb, hits, x: box(document.querySelector('.coach-x')), rightColumn, vw: window.innerWidth, wrapH: wrap.h };
+    });
+    expect(r.hits, 'neither the tip nor the banner covers a pitch button or the radar').toEqual([]);
+    expect(r.tip.x + r.tip.w, 'inside the screen').toBeLessThanOrEqual(r.vw);
+    expect(r.tip.h, `the tip is ${Math.round(r.tip.h)} px tall, under 40% of the pitch (${Math.round(r.wrapH)} px)`).toBeLessThan(r.wrapH * 0.4);
+    if (v.touch) {
+      expect(r.x.w, '"Got it" is at least 44 px wide').toBeGreaterThanOrEqual(44);
+      expect(r.x.h, '"Got it" is at least 44 px tall').toBeGreaterThanOrEqual(44);
+      expect(r.tip.x + r.tip.w, 'clear of the HUD column on the right').toBeLessThanOrEqual(r.rightColumn);
+    }
+    await shot(page, `first-tip-${v.name}`);
+  });
+}
+
+test('first session: a typed name does not beat the name just rolled', async (t) => {
+  const page = await fresh(t, { ...VIEWS[0], halfSeconds: 3 });
+  await page.locator(KICK).click();
+  await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
+  await page.locator('[data-ob="next"]').click();
+  await page.locator('#ob-name').fill('Foo Town');
+  await page.locator('[data-ob="reroll-name"]').click();
+  expect(await page.locator('#ob-name').inputValue(), 'the field is cleared by New name').toBe('');
+  const rolled = (await page.locator('.ob-club-name').innerText()).trim();
+  await page.locator('[data-ob="done"]').click();
+  await page.waitForSelector(SEL.kickOff);
+  expect((await readSave(page)).club.name.toLowerCase(), 'the rolled name is kept').toBe(rolled.toLowerCase());
+});
+
+test('first session: reaching level 3 offers "Go to Kick off", which lands on Kick off', async (t) => {
   const prefs = { halfSeconds: 3, controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home', 'squad'] };
   const page = await openApp(t, { xp: totalXpForLevel(3) - 10, prefs, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
   await page.locator(SEL.kickOff).click();
   await page.locator(SEL.modalClose).waitFor({ timeout: 80_000 });
   await page.locator(SEL.modalClose).click();
   await page.locator(SEL.levelUp).waitFor();
-  expect((await page.locator(SEL.levelUpGo).innerText()).trim(), 'the headline unlock is the button').toMatch(/^play ranked$/i);
+  expect((await page.locator(SEL.levelUpGo).innerText()).trim(), 'the headline unlock is the button').toMatch(/^go to kick off$/i);
   await shot(page, 'levelup-ranked');
   await page.locator(SEL.levelUpGo).click();
   await page.locator(SEL.levelUp).waitFor({ state: 'detached' });

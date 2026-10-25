@@ -96,7 +96,7 @@ export const UNLOCKS: readonly Unlock[] = [
   { id: 'local2p', level: 2, kind: 'feature', name: 'vs Player: one screen', text: 'Two humans, one keyboard, one screen. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-local2p' } },
   { id: 'link', level: 2, kind: 'feature', name: 'vs Player: two tabs', text: 'Two tabs of this browser play each other, in lockstep. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-link' } },
   { id: 'practice', level: 2, kind: 'feature', name: 'Practice: Easy', text: 'Friendlies against an Easy CPU. No Elo.', go: { screen: 'home', label: 'Show me', focusId: 'practice-easy' } },
-  { id: 'ranked', level: 3, kind: 'feature', name: 'Ranked matches', text: 'Kick off now plays ladder clubs near your Elo, live.', go: { screen: 'home', label: 'Play ranked', focusId: 'kick-off' } },
+  { id: 'ranked', level: 3, kind: 'feature', name: 'Ranked matches', text: 'Kick off now plays ladder clubs near your Elo, live.', go: { screen: 'home', label: 'Go to Kick off', focusId: 'kick-off' } },
   { id: 'club', level: 3, kind: 'feature', name: 'Club', text: 'Club news, your club level and every unlock still to come.', go: { screen: 'club', label: 'Go to Club' } },
   { id: 'replays', level: 3, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
   { id: 'drills', level: 3, kind: 'feature', name: 'Practice skills', text: 'The training-ground drills: run, pass, shoot and tackle, any time you like.', go: { screen: 'club', label: 'Show me', focusId: 'replay-tutorial' } },
@@ -185,7 +185,7 @@ export function nextUnlocks(save: Save): Unlock[] {
   return locked.filter((u) => unlockLevel(save, u.id) === first);
 }
 
-/** "The Cup and Practice Hard at level 5 — 340 XP to go", or null when everything is unlocked. */
+/** "The Cup and Practice: Hard at level 5 — 340 XP to go", or null when everything is unlocked. */
 export function nextUnlockText(save: Save): string | null {
   const next = nextUnlocks(save);
   if (!next.length) return null;
@@ -270,7 +270,7 @@ export const XP = {
 
 export type MilestoneId = 'first-match' | 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';
 export const MILESTONES: Record<MilestoneId, { xp: number; label: string }> = {
-  // Enough on top of an Easy friendly (30) that even a first-match defeat reaches level 2.
+  // On top of the match's own XP (the first match counts its result: a defeat pays 50, a win 120), enough that even a defeat reaches level 2.
   'first-match': { xp: 80, label: 'first match' },
   tutorial: { xp: 100, label: 'training ground done' },
   'first-win': { xp: 100, label: 'first ranked win' },

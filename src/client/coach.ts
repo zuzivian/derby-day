@@ -35,14 +35,14 @@ export const TIPS: Record<TipId, Tip> = {
     title: 'Run',
     mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrows.',
     keys: 'Use WASD or the arrow keys to run, and hold Shift to sprint. With a mouse, your player runs to the pointer instead.',
-    touch: 'Drag on the pitch and your player runs toward your finger. The further away it is, the faster he runs.',
+    touch: 'Drag on the pitch: your player runs to your finger, faster the further it is.',
   },
   pass: {
     id: 'pass',
     title: 'You have the ball',
     mouse: 'Left click to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running.',
     keys: 'Press Space to pass to the teammate you are facing.',
-    touch: 'Tap Pass to pass to where you are aiming. Hold it a little longer to loft the ball.',
+    touch: 'Tap Pass to pass where you are aiming. Hold it to loft the ball.',
   },
   shoot: {
     id: 'shoot',
@@ -63,12 +63,14 @@ export const TIPS: Record<TipId, Tip> = {
     title: 'Your restart',
     mouse: 'Play is stopped and your player takes it. Left click to pass where you want it. If you wait, the CPU takes it for you.',
     keys: 'Your player takes it. Press Space to pass. If you wait, the CPU takes it for you.',
-    touch: 'Play is stopped and your player takes it. Tap Pass to play it. If you wait, the CPU takes it for you.',
+    touch: 'Your player takes it: tap Pass. If you wait, the CPU takes it.',
   },
 };
 
 /** The first tip of a first match starts by saying which player is you and which way you attack (team 0 always attacks the right-hand goal). */
 export const INTRO = 'You are the player with the yellow ring, attacking the goal on the right.';
+/** The same, short enough for a one-line banner: on a narrow phone the card has no room for the long sentence (coach.css). */
+export const INTRO_SHORT = 'You are the yellow ring, attacking right →';
 
 /** Tips start a moment after the whistle. */
 const RUN_AT_TICK = 45;
@@ -179,7 +181,7 @@ export interface CoachOptions {
   /** Tip ids already shown on this browser. */
   seen: string[];
   /** A tip has really been shown (read for a few seconds, or dismissed): remember it so it never comes back. */
-  onSeen: (id: TipId) => void;
+  onSeen: (id: string) => void;
   /** 0 or 1: which side the human plays. */
   human?: 0 | 1;
 }
@@ -215,9 +217,17 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   el.hidden = true;
   el.setAttribute('data-coach-tip', '');
   host.appendChild(el);
+  // Narrow portrait phones show the intro as this banner above the Pass pad instead of inside the card (coach.css).
+  const banner = document.createElement('div');
+  banner.className = 'coach-intro';
+  banner.hidden = true;
+  banner.setAttribute('aria-hidden', 'true'); // the card says it for a screen reader
+  banner.textContent = INTRO_SHORT;
+  host.appendChild(banner);
   const touch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let shown: TipId | null = null;
-  let introPending = o.seen.length === 0;
+  // The first tip a player ever reads also says which player is you; 'intro' is remembered with the tips already seen.
+  let introPending = !o.seen.includes('intro');
   let introTip: TipId | null = null;
   let text = '';
   let age = 0;
@@ -227,20 +237,29 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     if (shown && !counted) {
       counted = true;
       o.onSeen(shown);
+      if (introTip === shown) o.onSeen('intro');
     }
   };
   const hide = () => {
     // Cut short before it could be read: not counted, and it may be offered again.
-    if (shown && !counted) tracker.forget(shown);
+    if (shown && !counted) {
+      tracker.forget(shown);
+      if (introTip === shown) {
+        introPending = true; // cut short before it could be read: its intro line comes back with it
+        introTip = null;
+      }
+    }
     shown = null;
     el.hidden = true;
     el.classList.remove('on');
+    banner.hidden = true;
   };
   const draw = (id: TipId) => {
     const tip = TIPS[id];
     text = tipText(id, o.mode(), touch(), introTip === id);
+    const lead = introTip === id ? `<span class="coach-lead">${INTRO} </span>` : '';
     el.dataset.coachTip = id;
-    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${text}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
+    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${lead}${tipText(id, o.mode(), touch())}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
   };
   const show = (id: TipId) => {
     shown = id;
@@ -253,6 +272,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     }
     draw(id);
     el.hidden = false;
+    banner.hidden = introTip !== id;
     // Next frame, so the fade-in runs.
     requestAnimationFrame(() => el.classList.add('on'));
     announce(`Tip. ${TIPS[id].title}. ${text}`);
@@ -289,11 +309,13 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     },
     setPaused(paused) {
       el.classList.toggle('paused', paused);
+      banner.classList.toggle('paused', paused);
     },
     dismiss: hide,
     dispose() {
       el.removeEventListener('click', onClick);
       el.remove();
+      banner.remove();
       if (e2eHook && (globalThis as { __derbyCoach?: unknown }).__derbyCoach === hook) delete (globalThis as { __derbyCoach?: unknown }).__derbyCoach;
     },
   };
