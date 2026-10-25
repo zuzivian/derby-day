@@ -614,7 +614,6 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
   return false;
 }
 
-/** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 /** A corner played along the ground: only this short (m), and only with nobody in its lane. */
 const CORNER_SHORT = 20;
 
@@ -632,6 +631,7 @@ function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
   return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
 }
 
+/** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   const r = s.restart!;
   const b = s.ball;
