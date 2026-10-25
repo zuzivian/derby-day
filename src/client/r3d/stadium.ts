@@ -103,14 +103,16 @@ function grassTexture(w: number, h: number, quality: 'low' | 'high', aniso: numb
   const ch = Math.round((px * h) / w);
   const [c, g] = canvas(cw, ch);
   const k = cw / w;
-  // Mowing stripes across the pitch, an even number so the halfway line sits on a seam.
+  // Mowing stripes across the pitch, an even number so the halfway line sits on a seam. Natural
+  // turf, yellow-green and soft-striped like the owner's Power Soccer references (drawn there at about
+  // #82a052 to #a0c954); the old saturated #46a83c / #3b9334 read as cartoon green.
   const bands = Math.max(10, Math.round(PITCH_W / (BIG_PITCH ? 5.25 : 5)) & ~1);
   const bw = PITCH_W / bands;
   const x0 = (w - PITCH_W) / 2;
-  g.fillStyle = '#3f9b37';
+  g.fillStyle = '#86a24c';
   g.fillRect(0, 0, cw, ch);
   for (let i = -6; i < bands + 6; i++) {
-    g.fillStyle = i % 2 === 0 ? '#46a83c' : '#3b9334';
+    g.fillStyle = i % 2 === 0 ? '#8cab52' : '#819c48';
     g.fillRect((x0 + i * bw) * k, 0, bw * k + 1, ch);
   }
   // Fine noise and soft wear, so close-ups don't look like flat paint.
@@ -126,7 +128,7 @@ function grassTexture(w: number, h: number, quality: 'low' | 'high', aniso: numb
   g.putImageData(img, 0, 0);
   g.globalAlpha = 0.06;
   for (let i = 0; i < 70; i++) {
-    g.fillStyle = r() < 0.5 ? '#2e7a2a' : '#5bb84d';
+    g.fillStyle = r() < 0.5 ? '#74903f' : '#9cba5e';
     const rx = r() * cw;
     const ry = r() * ch;
     const rr = (2 + r() * 7) * k;
@@ -520,7 +522,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
   ground.position.y = -0.03;
   ground.receiveShadow = true;
   group.add(ground);
-  const verge = new Mesh(keep(new PlaneGeometry(1600, 1600)), keep(new MeshLambertMaterial({ color: '#5d8f3e' })));
+  const verge = new Mesh(keep(new PlaneGeometry(1600, 1600)), keep(new MeshLambertMaterial({ color: '#7b9446' })));
   verge.rotation.x = -Math.PI / 2;
   verge.position.y = -0.06;
   group.add(verge);
