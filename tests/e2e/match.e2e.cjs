@@ -164,6 +164,11 @@ test('quick tactics from the keyboard: 1-5 pick a mentality mid-match, the HUD s
   await page.keyboard.press('3');
   await page.waitForFunction(() => (window.__derbyMatch.teams[0].mentality ?? 'balanced') === 'balanced', null, { timeout: 10_000 });
   expect(await mentality(), 'back to Balanced').toBe('balanced');
+  // By key position: the numpad works too (and the top row on AZERTY, where the 1 key types &).
+  await page.keyboard.press('Numpad4');
+  await page.waitForFunction(() => window.__derbyMatch.teams[0].mentality === 'attacking', null, { timeout: 10_000 });
+  await page.keyboard.press('Digit3');
+  await page.waitForFunction(() => (window.__derbyMatch.teams[0].mentality ?? 'balanced') === 'balanced', null, { timeout: 10_000 });
   await page.keyboard.press('Escape');
   await page.locator(SEL.pause).waitFor({ state: 'visible' });
   expect(await page.locator('#quick-tactics input:checked').getAttribute('value'), 'the pause menu shows the key pick').toBe('balanced');
