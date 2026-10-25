@@ -104,3 +104,19 @@ test('with the HUD Menu button focused, WASD and the arrows still move the playe
   await page.keyboard.press('Enter');
   await page.locator(SEL.pause).waitFor({ state: 'visible', timeout: 3000 });
 });
+
+test('the pause menu has a sound volume slider; the arrow keys change it and it is remembered', async (t) => {
+  const page = await openApp(t, { prefs: { halfSeconds: 600 }, e2eHook: true });
+  await startRanked(page);
+  await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play');
+  await page.keyboard.press('Escape');
+  await page.locator(SEL.pause).waitFor({ state: 'visible' });
+  const vol = page.locator('#opt-volume');
+  expect(await vol.inputValue(), 'full volume by default').toBe('100');
+  await vol.focus();
+  for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowLeft');
+  expect(await vol.inputValue(), 'four steps of 5 down').toBe('80');
+  expect(await page.locator('#opt-volume-out').textContent()).toBe('80%');
+  expect(await page.evaluate(() => localStorage.getItem('derbyday.audio.volume.v1')), 'remembered').toBe('0.8');
+  expect(await page.locator(SEL.pause).isVisible(), 'the arrows did not leave the menu').toBe(true);
+});
