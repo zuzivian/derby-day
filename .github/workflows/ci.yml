@@ -76,7 +76,9 @@ jobs:
   e2e:
     name: Browser end-to-end tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 25, not 20: "Install Chromium" has taken 6-7 min on a slow apt mirror (the system packages, not the
+    # browser download), which once cut off a shard in the second its tests finished.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

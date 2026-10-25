@@ -9,8 +9,10 @@ import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
+import { tickDue } from './ticks.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
 import { setPieceSpot, InputController } from './input.ts';
@@ -22,7 +24,6 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
-import { onPageGone } from './pagegone.ts';
 import { quickTacticsMarkup } from './tactics.ts';
 import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
 
@@ -97,6 +98,8 @@ export interface MatchInputSource {
   extras(): RenderExtras;
   /** Drop queued kicks and charges (pause, resume, replays): nothing pressed then fires afterwards. */
   reset?(): void;
+  /** A one-shot action (pass, shot, tackle, switch…) is waiting for the next tick. */
+  waiting?(): boolean;
   dispose(): void;
 }
 
@@ -164,6 +167,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           </div>
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
+          <label class="pause-opt pause-volume">Sound <input type="range" id="opt-volume" min="0" max="100" step="5" aria-label="Sound volume"><output id="opt-volume-out" for="opt-volume"></output></label>
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
@@ -210,7 +214,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     c.paused = () => paused;
     c.setPiece = () => setPieceSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -261,6 +265,18 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   optReplays.addEventListener('change', () => {
     replaysOn = optReplays.checked;
     setInstantReplaysPref(replaysOn);
+  });
+  // Sound volume (the HUD's speaker button still mutes): remembered in this browser.
+  const optVolume = root.querySelector<HTMLInputElement>('#opt-volume')!;
+  const volumeOut = root.querySelector<HTMLOutputElement>('#opt-volume-out')!;
+  const showVolume = () => {
+    volumeOut.textContent = `${optVolume.value}%`;
+  };
+  optVolume.value = String(Math.round(getSound().volume * 100));
+  showVolume();
+  optVolume.addEventListener('input', () => {
+    getSound().setVolume(Number(optVolume.value) / 100);
+    showVolume();
   });
   // A mentality picked in the pause menu goes to the sim with the next tick's input.
   let pendingTactic = 0;
@@ -436,13 +452,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
-      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: replay.acc });
       hud.update(replay.state, 0, null);
     } else {
       if (!paused && !gfx.lost) {
         acc += elapsed;
         let steps = 0;
-        while (acc >= DT && steps < 12) {
+        // A waiting click or key takes its tick now, not a frame or two later on a fast screen (ticks.ts).
+        while (steps < 12 && tickDue(acc, steps, input.waiting?.() ?? false)) {
           let raw = input.take();
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
@@ -467,10 +484,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         }
       }
       if (replay) {
-        renderer.draw((replay as { state: MatchState }).state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+        renderer.draw((replay as { state: MatchState; acc: number }).state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: (replay as { acc: number }).acc });
         hud.update((replay as { state: MatchState }).state, 0, null);
       } else {
         const extras = input.extras();
+        // Time since the last tick, so positions are drawn between ticks (RenderExtras.since). Held
+        // (paused, graphics lost) or capped at 12 ticks a frame, the picture stays on the tick.
+        extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
         hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));
@@ -537,17 +557,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.addEventListener('popstate', onPop);
   } catch { /* sandboxed viewer */ }
 
-  // The tab is closing mid-match: stop drawing and give the GPU back now (dispose loses the context).
-  const offGone = onPageGone(() => {
-    if (done) return;
-    done = true;
-    cancelAnimationFrame(raf);
-    guardingBack = false; // no history.back() while the page unloads
-    dispose();
-  });
-
   function dispose() {
-    offGone();
     gfx.dispose();
     input.dispose();
     juice.dispose();

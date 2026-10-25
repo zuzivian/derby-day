@@ -14,7 +14,6 @@ import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
 import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
-import { onPageGone } from './pagegone.ts';
 
 const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -297,7 +296,6 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   let dirty = true;
   let warmTimer = 0;
   let closed = false;
-  let offGone = () => {};
   let renderer: MatchRenderer | null = null;
   let gfx: GfxLossWatch | null = null;
   let wordTimer = 0;
@@ -316,7 +314,6 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       gfx?.dispose();
       renderer?.dispose();
       renderer = null;
-      offGone();
       popLayer(layer);
     },
     onKey: (e) => {
@@ -507,8 +504,6 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   pushLayer(layer);
-  // The tab is closing: stop drawing and give the GPU back now (dispose loses the context).
-  offGone = onPageGone(() => layer.close());
   renderer = createMatchRenderer(canvas, { cinematic: true });
   renderer.resize();
   renderer.prepare(seeker.state);

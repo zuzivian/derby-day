@@ -202,11 +202,15 @@ describe('ground pass goes where the pointer is', () => {
     const r = pointerPass(s, me, { x: 30.5, y: 14.5 });
     expect(r.receiver).toBe(mate.i);
     expect(r.target.x).toBeGreaterThan(mate.pos.x + 2);
-    // Aim the pointer well ahead of him instead and the ball goes exactly there: a through ball into space.
+    // Aim the pointer well ahead of him instead and the ball goes exactly there, a through ball into
+    // his path: he is its receiver, so he runs on to it rather than leaving it for whoever is nearest.
     const ahead = { x: 41, y: 14 };
     const through = pointerPass(s, me, ahead);
-    expect(through.receiver).toBe(-1);
+    expect(through.receiver).toBe(mate.i);
     expect(through.target).toEqual(ahead);
+    // Off his line (more than 2 m plus a quarter of the way ahead), it is a ball into space for nobody.
+    const wide = { x: 41, y: 21 };
+    expect(pointerPass(s, me, wide).receiver).toBe(-1);
   });
 
   test('a runner collects a ball played into space ahead of him', () => {
@@ -229,6 +233,28 @@ describe('ground pass goes where the pointer is', () => {
       if (s.ball.owner >= 0) got = s.ball.owner;
     }
     expect(got).toBe(mate.i);
+  });
+
+  test('a ball into a runner\'s path is timed for him and he takes it in stride', () => {
+    // Before: the click left him off the pass (no receiver), so he stopped and came back for it,
+    // or, picked, stopped on its line to wait: collected at 1-4 m/s.
+    for (const ahead of [6, 8, 10]) {
+      const { s, me } = carrier({ x: 10, y: 34 });
+      const mate = s.players.find((p) => p.team === 0 && p.role === 'MID')!;
+      for (const p of s.players) if (p !== me && p !== mate) p.pos = { x: 95 + (p.i % 5), y: 60 + (p.i % 3) };
+      mate.pos = { x: 16, y: 34 };
+      mate.vel = { x: 6, y: 0 };
+      mate.facing = { x: 1, y: 0 };
+      mate.stun = 0;
+      step(s, { cursor: { x: 16 + ahead, y: 34 }, aim: { x: 16 + ahead, y: 34 }, pass: true, moved: true });
+      expect(s.ball.receiver).toBe(mate.i);
+      let speed = -1;
+      for (let t = 0; t < 300 && speed < 0; t++) {
+        step(s, { cursor: { ...me.pos } });
+        if (s.ball.owner === mate.i) speed = len(mate.vel);
+      }
+      expect(speed).toBeGreaterThan(4);
+    }
   });
 
   test('keys: Space passes to the teammate you are heading toward, to feet', () => {
