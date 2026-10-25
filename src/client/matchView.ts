@@ -109,7 +109,13 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
       return e.color === 'yellow' ? `Yellow card: ${e.name}` : e.secondYellow ? `Second yellow, red card: ${e.name}` : `Red card: ${e.name}`;
     case 'advantage':
       return 'Advantage';
+    case 'addedTime':
+      return `${e.minutes} minute${e.minutes === 1 ? '' : 's'} of added time`;
+    case 'abandoned':
+      return `Match abandoned: ${team} down to six players`;
     case 'restart':
+      if (e.reason === 'advantage') return `Advantage brought back: ${e.restart === 'penalty' ? 'penalty' : 'free kick'} to ${team}`;
+      if (e.reason === 'second-touch') return `Second touch: indirect free kick to ${team}`;
       if (e.restart === 'penalty') return `Penalty to ${team}`;
       if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
       if (e.restart === 'corner') return `Corner to ${team}`;
@@ -488,7 +494,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (s.phase === 'fulltime') {
       ending = true;
-      banner('Full time', 99999);
+      // Law 3: abandoned, the awarded result stands.
+      if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
+      else banner('Full time', 99999);
       announce(`Full-time. ${scoreLine()}`);
       setTimeout(() => finish(false), 1100);
       cancelAnimationFrame(raf);

@@ -39,7 +39,7 @@ export function playCountingShots(o: Omit<MatchOptions, 'humanTeam' | 'humans'>,
       shots[team] = s.stats[team].shots;
       const k = s.players[s.ball.kickedBy >= 0 ? s.ball.kickedBy : s.ball.lastTouch];
       if (!k || k.team !== team) continue;
-      const band = bandOf(dist(k.pos, oppGoal(team)));
+      const band = bandOf(dist(k.pos, oppGoal(s, team)));
       tally.shots[band]++;
       last[team] = { band, tick: s.tick };
     }
