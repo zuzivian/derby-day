@@ -419,7 +419,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       if (!stepReplay(elapsed)) endReplay();
     }
     if (replay) {
-      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+      renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: replay.acc });
       hud.update(replay.state, 0, null);
     } else {
       if (!paused && !gfx.lost) {
@@ -450,10 +450,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         }
       }
       if (replay) {
-        renderer.draw((replay as { state: MatchState }).state, { cursor: null, charge: 0, showCursor: false, noAim: true });
+        renderer.draw((replay as { state: MatchState; acc: number }).state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: (replay as { acc: number }).acc });
         hud.update((replay as { state: MatchState }).state, 0, null);
       } else {
         const extras = input.extras();
+        // Time since the last tick, so positions are drawn between ticks (RenderExtras.since). Held
+        // (paused, graphics lost) or capped at 12 ticks a frame, the picture stays on the tick.
+        extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
         hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));

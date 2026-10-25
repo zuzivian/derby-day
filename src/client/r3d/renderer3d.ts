@@ -636,7 +636,9 @@ export class Renderer3D implements MatchRenderer {
     if (!jumped) clock = Math.max(prevClock, clock);
     this.clock = clock;
     const dtSim = jumped ? 0 : clock - prevClock;
-    const lead = Math.max(-1 / 60, Math.min(1 / 60, clock - tickTime));
+    // How far past the tick to draw things (extrapolated by velocity): the match loop's exact time since
+    // the tick when it gives one (RenderExtras.since), else this clock's estimate.
+    const lead = Math.max(-1 / 60, Math.min(1 / 60, x.since ?? clock - tickTime));
     this.lastTick = s.tick;
     this.lastState = s;
 
@@ -740,9 +742,10 @@ export class Renderer3D implements MatchRenderer {
       this.players[handsOf].handsWorld(this.ball.position);
       this.ball.position.y += 0.02;
     } else {
-      const free = b.owner < 0;
-      const bx = b.pos.x + (free ? b.vel.x * lead : 0);
-      const by = b.pos.y + (free ? b.vel.y * lead : 0);
+      // At someone's feet the ball moves on with him (his model is extrapolated too), else with its own velocity.
+      const v = holder ? holder.vel : b.vel;
+      const bx = b.pos.x + v.x * lead;
+      const by = b.pos.y + v.y * lead;
       this.ball.position.set(sx(bx), BALL_VIS_R + b.z, sz(by));
     }
     // Spin: roll with ground speed; keep a gentle spin in the air.
@@ -793,8 +796,11 @@ export class Renderer3D implements MatchRenderer {
     // Camera.
     if (this.celebrate && (clock > this.celebrate.until || s.phase !== 'goal')) this.celebrate = null;
     const cel = this.celebrate ? s.players[this.celebrate.i] : null;
-    let focusX = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
-    let focusY = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
+    // The camera follows what is drawn (extrapolated, as above), not the tick positions, which step
+    // every 1/60 s and would make the follow judder on a fast screen.
+    const fv = holder ? holder.vel : b.vel;
+    let focusX = (holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x) + fv.x * lead;
+    let focusY = (holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y) + fv.y * lead;
     // Set pieces: frame what matters. A corner or free kick shows the spot and the box it is aimed at,
     // a throw-in the thrower and the play in front of him.
     if (restart && restart.stage !== 'whistle') {
@@ -813,8 +819,8 @@ export class Renderer3D implements MatchRenderer {
     }
     // Replays follow the ball itself, tightly.
     if (this.replayShot) {
-      focusX = b.pos.x;
-      focusY = b.pos.y;
+      focusX = b.pos.x + b.vel.x * lead;
+      focusY = b.pos.y + b.vel.y * lead;
     }
     // The long view holds a moment after the kick, so the player sees the ball arrive, then eases back.
     let lv = this.replayShot ? null : longView(s, this.me);
