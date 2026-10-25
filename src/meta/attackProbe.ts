@@ -27,7 +27,7 @@
 //                  the AI's own estimate, so it rates the chances the AI creates.
 
 import { BOX_DEPTH, BOX_W, GOAL_W, PITCH_H, PITCH_W, TICK_HZ, type Mentality } from '../sim/constants.ts';
-import { attackDir, oppGoal, secondLastOpponentX, teamX } from '../sim/field.ts';
+import { attackDir, inOffsidePosition, oppGoal, secondLastOpponentX, teamX } from '../sim/field.ts';
 import { createMatch, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
 import { SHOT_BANDS, SHOT_BAND_LABELS } from './shotProbe.ts';
@@ -178,7 +178,8 @@ export class AttackObserver {
 
     // A new kick this tick (a pass, shot, clearance or header).
     if ((b.redirectedAt ?? -1) !== this.redirected && b.kickedBy >= 0 && b.owner < 0) {
-      this.resolve(s, false);
+      // A header or first-time shot off the tracked pass is its first touch.
+      this.resolve(s, !!this.kick && b.kickedBy !== this.kick.by);
       const p = s.players[b.kickedBy];
       const team = p.team;
       const open = !b.setPiece;
@@ -339,13 +340,15 @@ export function zoneTable(t: AttackTally): string {
 export type MentalityTallies = Record<Mentality, AttackTally>;
 
 /**
- * A scripted human for `measureAttack`: with the ball he waits a moment, then click-passes to
- * the most advanced open teammate (no opponent within 3 m of him or 1.5 m of the lane), led a
- * little into his run; in the box with a sight of goal he shoots; with nobody open he runs at
- * goal. Without the ball the pointer sits on the ball and he tackles a carrier within 2 m.
+ * A scripted human for `measureAttack`: with the ball he looks up for the most advanced open
+ * runner: an onside teammate going forward whose spot 0.7 s ahead has no opponent within 2.2 m
+ * and a lane clear by 1.5 m, and click-passes to that spot (the way a player picks out a run).
+ * After half a second with no run on he plays it to the most advanced open teammate instead; in
+ * the box with a sight of goal he shoots; with nobody open he runs at goal. Without
+ * the ball the pointer sits on the ball and he tackles a carrier within 2 m.
  */
 export function scriptedRunnerHuman(team: 0 | 1): (s: MatchState) => HumanInput {
-  let wait = 0;
+  let held = 0;
   let cursor = { x: PITCH_W / 2, y: MID_Y };
   return (s) => {
     const b = s.ball;
@@ -354,33 +357,43 @@ export function scriptedRunnerHuman(team: 0 | 1): (s: MatchState) => HumanInput 
     if (b.owner === me.i) {
       const goal = oppGoal(team);
       const dGoal = Math.hypot(goal.x - me.pos.x, goal.y - me.pos.y);
-      if (wait === 0) wait = 10;
-      if (--wait > 0) return { cursor: (cursor = { ...goal }), moved: true };
+      held++;
+      if (held < 6) return { cursor: (cursor = { ...goal }), moved: true };
       if (inAttackBox(team, me.pos) && dGoal < 16) {
         const aim = { x: goal.x, y: goal.y + (me.pos.y < MID_Y ? 2.6 : -2.6) };
         return { cursor: (cursor = aim), aim, shoot: 0.75, moved: true };
       }
-      let best = null as null | (typeof s.players)[number];
+      // A runner going forward with open grass ahead of him, picked out as soon as he is on;
+      // after half a second with none, the most advanced open teammate.
+      let run: { x: number; y: number } | null = null;
+      let best: { x: number; y: number } | null = null;
       for (const t of s.players) {
         if (t.team !== team || t.i === me.i || t.role === 'GK' || t.sentOff) continue;
-        const d = Math.hypot(t.pos.x - me.pos.x, t.pos.y - me.pos.y);
-        if (d < 5 || d > (me.role === 'GK' ? 40 : 30)) continue;
+        // Where he will be when the ball gets there (a click pass travels at about 14 m/s).
+        const tl = Math.min(1.6, Math.max(0.5, Math.hypot(t.pos.x - me.pos.x, t.pos.y - me.pos.y) / 14));
+        const lead = { x: t.pos.x + t.vel.x * tl, y: t.pos.y + t.vel.y * tl };
+        const d = Math.hypot(lead.x - me.pos.x, lead.y - me.pos.y);
+        const running = t.vel.x * attackDir(team) > 4;
+        if (d < 5 || d > (me.role === 'GK' ? 40 : running ? 38 : 30) || inOffsidePosition(s, t)) continue;
         let open = true;
         for (const o of s.players) {
           if (o.team === team || o.sentOff) continue;
-          if (Math.hypot(o.pos.x - t.pos.x, o.pos.y - t.pos.y) < 3 || segDist(o.pos, me.pos, t.pos) < 1.5) open = false;
+          if (Math.hypot(o.pos.x - lead.x, o.pos.y - lead.y) < 2.2 || segDist(o.pos, me.pos, lead) < 1.5) open = false;
         }
-        if (open && (!best || teamX(team, t.pos.x) > teamX(team, best.pos.x))) best = t;
+        if (!open) continue;
+        if (running && teamX(team, lead.x) > teamX(team, me.pos.x) + 0.05 && (!run || teamX(team, lead.x) > teamX(team, run.x))) run = lead;
+        if (!best || teamX(team, lead.x) > teamX(team, best.x)) best = lead;
       }
-      if (best && (me.role === 'GK' || teamX(team, best.pos.x) > teamX(team, me.pos.x) - 0.08)) {
-        const aim = { x: best.pos.x + best.vel.x * 0.5, y: best.pos.y + best.vel.y * 0.5 };
-        cursor = aim;
-        return { cursor, aim, pass: true, moved: true };
+      const pick = run ?? (held >= 30 && best && (me.role === 'GK' || teamX(team, best.x) > teamX(team, me.pos.x) - 0.08) ? best : null);
+      if (pick) {
+        held = 0;
+        cursor = pick;
+        return { cursor, aim: cursor, pass: true, moved: true };
       }
-      wait = 6;
+      if (held >= 30) held = 24;
       return { cursor: (cursor = { ...goal }), moved: true };
     }
-    wait = 0;
+    held = 0;
     cursor = { ...b.pos };
     const carrier = b.owner >= 0 ? s.players[b.owner] : null;
     const tackle = !!carrier && carrier.team !== team && Math.hypot(carrier.pos.x - me.pos.x, carrier.pos.y - me.pos.y) < 2;

@@ -100,6 +100,12 @@ export interface AiMemory {
   mode: 'none' | 'takeon' | 'shield' | 'dive';
   modeTicks: number;
   modeTarget: Vec | null;
+  /**
+   * An off-ball attacking run (ai.ts attackRun): in behind the last defender, a one-two after
+   * passing, or checking back onside. `go` once he has set off; `carrier` is the teammate he
+   * is running for; it lapses at `until`.
+   */
+  run?: { kind: 'behind' | 'onetwo' | 'back'; target: Vec; until: number; carrier: number; go: boolean };
 }
 
 export interface Ball {

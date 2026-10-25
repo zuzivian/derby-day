@@ -12,10 +12,13 @@
 // sampling noise don't fail the build. Corners run below a real 90 minutes
 // (about 2-3 a match): six real minutes of play rarely reach the byline as
 // often as a full match does.
+// Final-third play (src/meta/attackProbe.ts) is asserted too: at least 35% of shots
+// from inside the box, 35-55% from 18-30 m (real football: 40-50%), and at least 1.2
+// box entries per side a match (main before the attack stream: 0.9).
 
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
 import { expectedScore } from '../src/meta/elo.ts';
-import { emptyTally, playCountingShots, shotTable } from '../src/meta/shotProbe.ts';
+import { addAttack, ATTACK_HEADER, attackRow, emptyAttack, measureAttack, zoneTable } from '../src/meta/attackProbe.ts';
 import { possessionShare } from '../src/sim/match.ts';
 import type { TeamStats } from '../src/sim/types.ts';
 
@@ -32,7 +35,7 @@ const sum: Record<keyof TeamStats, number> = {
   shots: 0, onTarget: 0, passes: 0, tackles: 0, possessionTicks: 0, fouls: 0, yellows: 0, reds: 0,
   corners: 0, offsides: 0, throwIns: 0, goalKicks: 0, freeKicks: 0, penalties: 0, passAttempts: 0,
 };
-const shotsByDistance = emptyTally();
+const attack = emptyAttack();
 const t0 = performance.now();
 for (let i = 0; i < n; i++) {
   const clubs = ladders[i % ladders.length];
@@ -40,7 +43,8 @@ for (let i = 0; i < n; i++) {
   const a = clubs[j % clubs.length];
   const b = clubs[(j * 7 + 3) % clubs.length];
   if (a.id === b.id) continue;
-  const s = playCountingShots({ seed: i, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) }, shotsByDistance);
+  const { state: s, teams } = measureAttack({ seed: i, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) });
+  for (const t of teams) addAttack(attack, t);
   const [ga, gb] = s.score;
   played++;
   goals += ga + gb;
@@ -61,8 +65,14 @@ console.log(`goals/match ${goalsPer.toFixed(2)}  shots ${per('shots').toFixed(1)
 console.log(`fouls ${per('fouls').toFixed(1)}  yellows ${per('yellows').toFixed(2)}  reds ${per('reds').toFixed(2)}  penalties ${per('penalties').toFixed(2)}`);
 console.log(`corners ${per('corners').toFixed(1)}  offsides ${per('offsides').toFixed(1)}  throw-ins ${per('throwIns').toFixed(1)}  goal kicks ${per('goalKicks').toFixed(1)}  free kicks ${per('freeKicks').toFixed(1)}`);
 console.log(`favourite won ${favouriteWins}, draws ${draws}, upsets ${played - favouriteWins - draws}`);
-// Real football: about 4% of shots from 18-30 m score, and about 40% of shots come from there.
-console.log(`shots by distance (share of shots, goal rate):\n${shotTable(shotsByDistance)}`);
+// Real football: about 40-50% of shots come from 18-30 m and 4-7% of those score; 12-25% of shots in the box score.
+console.log(`shots by distance (share of shots, goal rate):\n${zoneTable(attack)}`);
+console.log(`\nfinal third, per side a match (scripts/attack-probe.ts explains the columns):\n${ATTACK_HEADER}\n${attackRow('all', attack)}`);
+const allShots = attack.shots.reduce((t, v) => t + v, 0) || 1;
+const boxShare = (100 * attack.boxShots) / allShots;
+const longShare = (100 * attack.shots[2]) / allShots;
+const e = attack.entries;
+const entries = (e.carry + e.pass + e.cross + e.other) / Math.max(1, attack.matches);
 
 if (assertMode) {
   const problems: string[] = [];
@@ -77,6 +87,9 @@ if (assertMode) {
   range('offsides/match', per('offsides'), 0.3, 6);
   range('corners/match', per('corners'), 1, 15);
   range('ms/match', msPer, 0, 900);
+  range('box shot share %', boxShare, 35, 100);
+  range('18-30 m shot share %', longShare, 35, 55);
+  range('box entries/side', entries, 1.2, Infinity);
   if (problems.length) {
     console.error(`\nBalance check FAILED:\n - ${problems.join('\n - ')}`);
     process.exit(1);

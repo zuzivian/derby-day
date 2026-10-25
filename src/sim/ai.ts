@@ -128,6 +128,8 @@ const MID_Y = PITCH_H / 2;
 const GOAL_HALF = (GOAL_BOTTOM - GOAL_TOP) / 2;
 /** Shoot when the estimated chance of scoring beats this. */
 const SHOOT_XG = 0.011;
+/** What keeping the ball in the final third is worth, as a chance of scoring later in the move (real football: 0.02-0.04). */
+const KEEP_XG = 0.02;
 /**
  * From outside the box how keen a side is to shoot is its mentality's call (Tactic.shootLong):
  * Balanced shoots as the CPU always has; Park the bus waits for a better look, Attacking and
@@ -207,6 +209,9 @@ export interface Tactic {
   supportR: number;
   /** Throttle when jogging back into shape from far away. */
   recover: number;
+  /** Attackers making runs in behind at once, and how many attack the box zones (near post, far post, spot, edge) when the ball is wide in the final third. */
+  runners: number;
+  boxBodies: number;
 }
 
 export const TACTICS: Record<Mentality, Tactic> = {
@@ -216,7 +221,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 0.34, pressNear: 3.5, extra: 0, extraFrom: 2, markR: 0.75, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 2, farFbUp: false, wbUp: 0, boxRunners: 0,
     risk: 0.75, tempo: 1.1, urgency: 0.6, carry: 1.15, shootLong: 0.7, clear: 0.8, direct: 0.5, tackle: 0.85, reach: 0,
-    supporters: 2, supportR: 11, recover: 0.95,
+    supporters: 2, supportR: 11, recover: 0.95, runners: 1, boxBodies: 2,
   },
   defensive: {
     lineGap: 0.23, lineMin: 0.06, lineMax: 0.34, boxHold: 0.16, attGap: 0.34, attMin: 0.12, attMax: 0.42,
@@ -224,7 +229,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 0.4, pressNear: 4, extra: 0, extraFrom: 2, markR: 0.8, screen: 2, screenR: 32, counter: 0, counterN: 0,
     fbUp: 0.6, farFbUp: false, wbUp: 1, boxRunners: 2,
     risk: 0.88, tempo: 1.05, urgency: 0.8, carry: 1.05, shootLong: 0.85, clear: 0.4, direct: 0.15, tackle: 0.95, reach: 0,
-    supporters: 2, supportR: 10, recover: 0.85,
+    supporters: 2, supportR: 10, recover: 0.85, runners: 1, boxBodies: 2,
   },
   balanced: {
     lineGap: 0.24, lineMin: 0.05, lineMax: 0.42, boxHold: 0.15, attGap: 0.3, attMin: 0.14, attMax: 0.52,
@@ -232,7 +237,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 0, extraFrom: 2, markR: 1, screen: 0, screenR: 0, counter: 0, counterN: 0,
     fbUp: 0.4, farFbUp: false, wbUp: 2, boxRunners: 2,
     risk: 1, tempo: 1, urgency: 1, carry: 1, shootLong: 1, clear: 0, direct: 0, tackle: 1, reach: 0,
-    supporters: 3, supportR: 10, recover: 0.7,
+    supporters: 3, supportR: 10, recover: 0.7, runners: 2, boxBodies: 3,
   },
   attacking: {
     lineGap: 0.21, lineMin: 0.08, lineMax: 0.48, boxHold: 0.15, attGap: 0.27, attMin: 0.18, attMax: 0.58,
@@ -240,7 +245,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 1, extraFrom: 0.55, markR: 1, screen: 0, screenR: 0, counter: 90, counterN: 1,
     fbUp: 0.3, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.2, tempo: 0.9, urgency: 1.25, carry: 0.95, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.1, reach: 0.1,
-    supporters: 3, supportR: 10, recover: 0.75,
+    supporters: 3, supportR: 10, recover: 0.75, runners: 3, boxBodies: 4,
   },
   press: {
     lineGap: 0.17, lineMin: 0.12, lineMax: 0.56, boxHold: 0.16, attGap: 0.25, attMin: 0.22, attMax: 0.6,
@@ -248,7 +253,7 @@ export const TACTICS: Record<Mentality, Tactic> = {
     pressUpTo: 1, pressNear: 99, extra: 2, extraFrom: 0.38, markR: 1.15, screen: 0, screenR: 0, counter: 180, counterN: 2,
     fbUp: 0.32, farFbUp: true, wbUp: 2, boxRunners: 3,
     risk: 1.25, tempo: 0.85, urgency: 1.3, carry: 0.9, shootLong: 1.15, clear: -0.3, direct: 0, tackle: 1.2, reach: 0.2,
-    supporters: 3, supportR: 9, recover: 0.9,
+    supporters: 3, supportR: 9, recover: 0.9, runners: 3, boxBodies: 4,
   },
 };
 
@@ -762,7 +767,12 @@ export interface PassOption {
   through: boolean;
   /** A lofted ball (cross, long switch). */
   lofted?: boolean;
+  /** Seconds to spare against the nearest opponent, in the lane or at the target (evalPass); unset for lofted balls. */
+  margin?: number;
 }
+
+/** The margin evalPass found for the pass it scored last (read straight after calling it). */
+let lastMargin = 0;
 
 /** Lead a pass so it arrives where the receiver will be. */
 export function leadTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
@@ -820,6 +830,7 @@ function evalPass(s: MatchState, p: MatchPlayer, m: MatchPlayer, target: Vec, th
     const tOA = Math.max(0, dist(o.pos, target) - reach) / oSp + 0.18 + turn;
     arriveM = Math.min(arriveM, tOA - Math.max(tRecv, tBallEnd));
   }
+  lastMargin = Math.min(laneM, arriveM);
   const tx = tTarget;
   const gain = (tx - teamX(team, from.x)) * PITCH_W;
   const dGoal = dist(target, oppGoal(team));
@@ -859,6 +870,13 @@ function cpuThroughTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
   const d = dist(from, m.pos);
   const tBall = d / (passSpeed(d, passing) * 1.05 * 0.8);
   const vr = len(m.vel);
+  // A runner who has set off on a run in behind is led along it, weighted to reach the space first.
+  const r = m.ai?.run;
+  if (r && r.go && r.kind !== 'back' && dist(m.pos, r.target) > 3) {
+    const lead = clamp(runSpeed(m) * SPRINT_MULT * 0.85 * tBall + 1, 4, 13);
+    const t = add(m.pos, scale(norm(sub(r.target, m.pos)), lead));
+    return clampToPitch({ x: m.team === 0 ? Math.min(t.x, PITCH_W - 6) : Math.max(t.x, 6), y: t.y }, 1.5);
+  }
   const run = vr > 1.2 ? scale(m.vel, 1 / vr) : norm(add({ x: attackDir(m.team), y: 0 }, scale(norm(sub(oppGoal(m.team), m.pos)), 0.5)));
   const lead = clamp(Math.max(vr, 3) * tBall + 1.5, 3, 9);
   return clampToPitch(add(m.pos, scale(run, lead)), 1.5);
@@ -866,13 +884,14 @@ function cpuThroughTarget(from: Vec, m: MatchPlayer, passing: number): Vec {
 
 /**
  * A ball over the top into the space behind a high line, for a forward on the
- * shoulder of the last defender: what a pressing side's high line risks.
+ * shoulder of the last defender: what a pressing side's high line risks (and, with
+ * `lanesShut`, over a deeper line for a runner when the ground lane is blocked).
  * Scored on the race to where it comes down (defenders still facing upfield
  * have to turn first); null when the line isn't high or the race isn't on.
  */
-function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: number): PassOption | null {
+function inBehindOption(s: MatchState, p: MatchPlayer, m: MatchPlayer, oppLine: number, lanesShut = false): PassOption | null {
   const team = p.team;
-  if (oppLine > 0.74 || !(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) return null;
+  if (oppLine > (lanesShut ? 0.84 : 0.74) || !(m.sub === 'ST' || m.sub === 'W' || m.sub === 'AM' || m.sub === 'WM')) return null;
   const px = teamX(team, s.ball.pos.x);
   const mx = teamX(team, m.pos.x);
   if (oppLine - px < 0.12 || mx < oppLine - 0.07 || inOffsidePosition(s, m, s.ball.pos.x)) return null;
@@ -903,7 +922,7 @@ export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOp
     const sc = evalPass(s, p, m, target, through);
     if (sc === -Infinity) return;
     const score = sc + (noise > 0 ? gauss(s.rng) * noise : 0);
-    if (!best || score > best.score) best = { receiver: m, target, score, through };
+    if (!best || score > best.score) best = { receiver: m, target, score, through, margin: lastMargin };
   };
   const px = teamX(p.team, p.pos.x);
   for (const m of s.players) {
@@ -918,8 +937,18 @@ export function bestPassOption(s: MatchState, p: MatchPlayer, noise = 0): PassOp
       const score = behind.score + (noise > 0 ? gauss(s.rng) * noise : 0);
       if (!best || score > best.score) best = { ...behind, score };
     }
-    if (px > 0.8 || !(fwdSpeed > 1.5 || mx > px + 0.06)) continue;
-    consider(m, cpuThroughTarget(s.ball.pos, m, p.attrs.passing), true);
+    const running = !!m.ai?.run?.go && m.ai.run.kind !== 'back';
+    if (px > 0.8 || !(fwdSpeed > 1.5 || mx > px + 0.06 || running)) continue;
+    const tt = cpuThroughTarget(s.ball.pos, m, p.attrs.passing);
+    consider(m, tt, true);
+    // Over the top only when the ground lane is shut.
+    if (running && !behind && dist(s.ball.pos, tt) > 14 && laneShut(s, p.team, s.ball.pos, tt)) {
+      const lob = inBehindOption(s, p, m, oppLine, true);
+      if (lob) {
+        const score = lob.score - 0.5 + (noise > 0 ? gauss(s.rng) * noise : 0);
+        if (!best || score > best.score) best = { ...lob, score };
+      }
+    }
   }
   return best;
 }
@@ -995,7 +1024,9 @@ function bestCross(s: MatchState, p: MatchPlayer, noise: number): PassOption | n
     if (inOffsidePosition(s, m, s.ball.pos.x) && offsideAware(s, p)) continue;
     let room = 6;
     for (const o of s.players) if (o.team !== team && !o.sentOff && o.role !== 'GK') room = Math.min(room, dist(o.pos, m.pos));
-    const target = clampToPitch(add(m.pos, scale(norm(sub(goal, m.pos)), 0.8)), 2);
+    // Where he will be when it comes down: crosses are hit into the space a runner is attacking.
+    const lead = len(m.vel) > 1.5 ? scale(m.vel, Math.min(0.9, 6 / len(m.vel))) : { x: 0, y: 0 };
+    const target = clampToPitch(add(add(m.pos, lead), scale(norm(sub(goal, m.pos)), 0.8)), 2);
     const dG = dist(target, goal);
     const score = room * 0.45 - dG * 0.06 + 0.6 + gauss(s.rng) * noise;
     if (!best || score > best.score) best = { receiver: m, target, score, through: false, lofted: true };
@@ -1009,6 +1040,8 @@ function bestCross(s: MatchState, p: MatchPlayer, noise: number): PassOption | n
 interface ShotOption {
   /** Rough chance of scoring, 0..1. */
   xg: number;
+  /** Opponents in the line of the shot. */
+  blockers?: number;
   target: Vec;
   power: number;
   chip: boolean;
@@ -1044,7 +1077,7 @@ function evalShot(s: MatchState, p: MatchPlayer): ShotOption {
   const keeperFactor = clamp(0.55 + keeperGap * 0.2, 0.55, 1.3);
   const xg = clamp(0.8 * Math.exp(-dGoal / 6.5) * central * (0.55 + 0.7 * p.attrs.shooting) * keeperFactor * Math.pow(0.5, blockers), 0, 0.95);
   const power = clamp(0.78 + dGoal * 0.008, 0.6, 0.97);
-  return { xg, target, power, chip: false };
+  return { xg, target, power, chip: false, blockers };
 }
 
 /** A chip over a keeper who has come off his line. Null when it isn't on. */
@@ -1072,6 +1105,48 @@ function evalChip(s: MatchState, p: MatchPlayer): ShotOption | null {
   return { xg, target, power, chip: true };
 }
 
+/**
+ * The chance of scoring from `pos` for a shooter of this quality, the way evalShot rates it but
+ * for a spot he isn't at yet (where a pass would put a teammate, or a carry would take him): the
+ * keeper taken as set, opponents now in the line to goal as blockers.
+ */
+function chanceFrom(s: MatchState, team: 0 | 1, pos: Vec, shooting: number): number {
+  const goal = oppGoal(team);
+  const dGoal = dist(pos, goal);
+  const dx = Math.max(0.3, Math.abs(goal.x - pos.x));
+  const angle = Math.abs(Math.atan2(GOAL_BOTTOM - pos.y, dx) - Math.atan2(GOAL_TOP - pos.y, dx));
+  const central = clamp(angle / (2 * Math.atan(GOAL_HALF / Math.max(dGoal, 0.5))), 0.15, 1);
+  let blockers = 0;
+  for (const o of s.players) if (o.team !== team && o.role !== 'GK' && !o.sentOff && distToSegment(o.pos, pos, goal) < 0.9 && dist(o.pos, pos) < dGoal) blockers++;
+  return 0.8 * Math.exp(-dGoal / 6.5) * central * (0.55 + 0.7 * shooting) * 0.75 * Math.pow(0.5, blockers);
+}
+
+/** How likely a pass option is to reach its man, from the time he has to spare (lofted balls: a coin toss). */
+const passSafety = (o: PassOption): number => (o.margin === undefined ? 0.5 : clamp(0.55 + 0.8 * o.margin, 0.1, 0.95));
+
+/**
+ * From near the byline: a ball pulled back along the ground to a teammate arriving around the
+ * penalty spot or the edge of the box, behind the defenders who are facing their own goal.
+ * Null when nobody is there with a clear lane.
+ */
+function bestCutBack(s: MatchState, p: MatchPlayer, noise: number): PassOption | null {
+  const team = p.team;
+  const px = teamX(team, s.ball.pos.x);
+  let best: PassOption | null = null;
+  for (const m of s.players) {
+    if (m.team !== team || m.i === p.i || m.sentOff || m.role === 'GK' || m.stun > 0) continue;
+    const mx = teamX(team, m.pos.x);
+    if (mx < 0.76 || mx > 0.94 || Math.abs(m.pos.y - MID_Y) > 11) continue;
+    const target = leadTarget(p.pos, m, p.attrs.passing);
+    if (teamX(team, target.x) > px - 0.01) continue;
+    const sc = evalPass(s, p, m, target, false);
+    if (sc === -Infinity || lastMargin < 0) continue;
+    const score = sc + 1.2 + gauss(s.rng) * noise;
+    if (!best || score > best.score) best = { receiver: m, target, score, through: false, margin: lastMargin };
+  }
+  return best;
+}
+
 // ---------------------------------------------------------------------------
 // The ball carrier
 
@@ -1081,6 +1156,16 @@ function passIntent(s: MatchState, p: MatchPlayer, opt: PassOption, skill: numbe
   const err = (1 - skill) * 0.02 * d;
   const target = clampToPitch(add(opt.target, { x: gauss(s.rng) * err, y: gauss(s.rng) * err }), 0.8);
   p.ai!.mode = 'none';
+  // Around the box, a short ball into a teammate is often a one-two: he goes past him for the return.
+  const px = teamX(p.team, p.pos.x);
+  const m = opt.receiver;
+  const k = tacticOf(s, p.team);
+  if (!opt.lofted && runsIntoBox(k, p.sub) && px > 0.58 && px < 0.86 && d < 18 && m.role !== 'GK' && teamX(p.team, m.pos.x) > px - 0.04 && chance(s.rng, 0.3 * k.risk + 0.1 * skill)) {
+    const goal = oppGoal(p.team);
+    const side = Math.sign(p.pos.y - m.pos.y) || 1;
+    const past = add(add(m.pos, scale(norm(sub(goal, m.pos)), 8)), { x: 0, y: side * 3.5 });
+    p.ai!.run = { kind: 'onetwo', target: clampToPitch(past, 3), until: s.tick + 80, carrier: m.i, go: false };
+  }
   if (opt.lofted) return { move: p.facing, throttle: 0.5, action: { kind: 'chip', target, power: chipPowerFor(dist(s.ball.pos, target)) } };
   return { move: p.facing, throttle: 0.6, action: { kind: 'pass', target, receiver: opt.receiver.i, through: opt.through } };
 }
@@ -1139,20 +1224,6 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
     const opt = bestPassOption(s, p, noise);
     const passScore = opt ? opt.score : -Infinity;
 
-    // From the edge of the box, a strike is often the best thing on (more or less often by mentality).
-    const far = dist(p.pos, goal) > LONG_SHOT_FROM;
-    const keen = far ? k.shootLong : 1;
-    const longShot = px > 0.66 && shotScore * keen > SHOOT_XG * 0.35 && passScore < 2 && chance(s.rng, (0.15 + 0.3 * p.attrs.shooting + 0.25 * urge) * keen);
-    if (shotScore * keen > SHOOT_XG || longShot || (shotScore > SHOOT_XG * 0.6 && pressure < 2 && passScore < 1.2)) return shootIntent(s, p, shot, skill);
-
-    // Wide in the final third: cross it.
-    const wide = Math.abs(p.pos.y - MID_Y) > BOX_W / 2 - 6;
-    if (px > 0.62 && wide) {
-      const cross = bestCross(s, p, noise);
-      const byline = px > 0.84 || pressure < 3;
-      if (cross && (byline || chance(s.rng, 0.45 + 0.25 * skill + 0.3 * urge))) return passIntent(s, p, cross, skill);
-    }
-
     // How much open grass is ahead to carry into.
     let clear = 9;
     for (const o of s.players) {
@@ -1161,8 +1232,68 @@ function ownerIntent(s: MatchState, p: MatchPlayer): Intent {
       const d = len(to);
       if (d < 9 && to.x * dir > -0.5) clear = Math.min(clear, d);
     }
-    // Carrying is worth most through midfield; near the box the line is set and the ball should move.
-    const carryScore = clamp((clear - 2.5) / 4, 0, 1) * (3 + 2 * clamp((px - 0.45) * 4, 0, 1)) * (px > 0.7 ? 0.45 : 1) * k.carry;
+    const dGoal = dist(p.pos, goal);
+    const central = Math.abs(p.pos.y - MID_Y) < BOX_W / 2;
+    // Room to run at the box: open grass ahead, short of the box or just inside it.
+    const runAtBox = clear >= 5 && px > 0.6 && dGoal > 9 && central;
+
+    // Shoot, or take the better chance on? What a pass would set a teammate up for (times the
+    // chance it gets to him), or a carry a few metres nearer goal. Close in he shoots unless
+    // that is clearly better; from range only with real space and a good striker, and only
+    // when nothing better is on (how keen a side is to shoot from range is its mentality's call).
+    const far = dGoal > LONG_SHOT_FROM;
+    const keen = far ? k.shootLong : 1;
+    const passOn = opt ? chanceFrom(s, p.team, opt.target, opt.receiver.attrs.shooting) * passSafety(opt) : 0;
+    const carryOn = runAtBox ? chanceFrom(s, p.team, add(p.pos, scale(norm(sub(goal, p.pos)), 6)), p.attrs.shooting) * 0.6 : 0;
+    // Keeping the ball in their half is worth something too: a side that recycles it and probes
+    // again makes a better chance than a hopeful one from range, until patience runs out.
+    const keep = px > 0.6 && opt && passScore > -0.5 ? KEEP_XG * (1 - urge) * passSafety(opt) : 0;
+    const alt = Math.max(passOn, carryOn, keep);
+    const space = pressure > 3.5 && shot.blockers === 0;
+    const bar = far ? (space && p.attrs.shooting > 0.6 ? 1.2 : 2.2) : 0.5;
+    // Beyond 28 m it is only ever the long shot below: patience running out is no reason to shoot from there.
+    const takeIt = dGoal < 28 && shotScore * keen > SHOOT_XG && shotScore * keen >= alt * bar;
+    const longShot = far && dGoal < 30 && space && px > 0.66 && p.attrs.shooting > 0.62 && shotScore * keen > SHOOT_XG * 0.6 && alt < shotScore * 1.2 && chance(s.rng, (0.1 + 0.25 * p.attrs.shooting + 0.25 * urge) * keen);
+    const snap = !far && shotScore > SHOOT_XG * 0.6 && pressure < 2 && passScore < 1.2;
+    if (takeIt || longShot || snap) return shootIntent(s, p, shot, skill);
+
+    // Near the byline: pull it back to the spot or the edge of the box if someone is there.
+    if (px > 0.84 && Math.abs(p.pos.y - MID_Y) > GOAL_W / 2 + 2) {
+      const cut = bestCutBack(s, p, noise);
+      if (cut && cut.score > 0) return passIntent(s, p, cut, skill);
+    }
+    // Wide in the final third: cross it.
+    const wide = Math.abs(p.pos.y - MID_Y) > BOX_W / 2 - 6;
+    // A wide man with grass down the line takes it to the byline rather than crossing early.
+    const wideMan = p.sub === 'W' || p.sub === 'WM' || p.sub === 'FB' || p.sub === 'WB';
+    let downLine = wideMan && wide && px > 0.55 && px < 0.86;
+    if (downLine) {
+      for (const o of s.players) {
+        if (o.team === p.team || o.sentOff) continue;
+        const ahead = (o.pos.x - p.pos.x) * dir;
+        if (ahead > -1 && ahead < 8 && Math.abs(o.pos.y - p.pos.y) < 5) downLine = false;
+      }
+    }
+    if (px > 0.62 && wide && !(downLine && urge < 0.7)) {
+      const cross = bestCross(s, p, noise);
+      const byline = px > 0.84 || pressure < 3;
+      // A defender square in front of him charges it down (match.ts blockCross): beat him or play it back first.
+      let charged = false;
+      if (cross) {
+        const cd = norm(sub(cross.target, p.pos));
+        for (const o of s.players) {
+          if (o.team === p.team || o.sentOff || o.role === 'GK') continue;
+          const to = sub(o.pos, p.pos);
+          const d = len(to);
+          if (d < 2.6 && dot(to, cd) > d * 0.45) charged = true;
+        }
+      }
+      if (cross && (!charged || chance(s.rng, 0.5)) && (byline || chance(s.rng, 0.45 + 0.25 * skill + 0.3 * urge))) return passIntent(s, p, cross, skill);
+    }
+
+    // Carrying is worth most through midfield; near the box the line is set and the ball should
+    // move, unless there is room to run at the box.
+    const carryScore = clamp((clear - 2.5) / 4, 0, 1) * (3 + 2 * clamp((px - 0.45) * 4, 0, 1)) * (px > 0.7 ? (runAtBox || downLine ? 0.9 : 0.45) : 1) * k.carry;
 
     // A deep side doesn't build up through its own half: it goes long early.
     if (k.direct > 0 && px < 0.5 && passScore < 3 && chance(s.rng, k.direct)) {
@@ -1454,8 +1585,137 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   return best;
 }
 
+/**
+ * Ball wide in the final third: the side's box runners attack the zones a cross or cut-back
+ * goes to, nearest the goal first: near post, far post, the penalty spot, the edge of the box.
+ * The mentality sets how many go (Tactic.boxBodies). Null for everyone else.
+ */
+function boxZone(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec | null {
+  const team = p.team;
+  const k = tacticOf(s, team);
+  const c = carrier ? carrier.pos : plan.focus;
+  const fx = teamX(team, c.x);
+  if (fx < 0.72 || Math.abs(c.y - MID_Y) < BOX_W / 2 - 4 || !runsIntoBox(k, p.sub) || plan.support?.includes(p.i)) return null;
+  const goal = oppGoal(team);
+  const human = s.humans[team] ? s.controlled[team] : -1;
+  const d0 = dist(p.pos, goal);
+  let rank = 0;
+  for (const m of s.players) {
+    if (m.team !== team || m.i === p.i || m.i === carrier?.i || m.i === human || m.sentOff || m.role === 'GK' || !runsIntoBox(k, m.sub) || plan.support?.includes(m.i)) continue;
+    const d = dist(m.pos, goal);
+    if (d < d0 || (d === d0 && m.i < p.i)) rank++;
+  }
+  if (rank >= k.boxBodies) return null;
+  const near = c.y < MID_Y ? -1 : 1;
+  const zones: [number, number][] = [
+    [5.5, MID_Y + near * 2.5],
+    [7, MID_Y - near * 4],
+    [11, MID_Y - near * 0.5],
+    [17, MID_Y + near * 1.5],
+  ];
+  const [back, y] = zones[rank];
+  const skill = skillOf(s, team);
+  const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
+  return fromTeam(team, Math.min(1 - back / PITCH_W, onsideX), y / PITCH_H);
+}
+
+/** Who may run in behind: strikers, wingers and the No. 10, and wide and central midfielders in a side that commits them. */
+const makesRuns = (k: Tactic, sub: SubRole): boolean => runsIntoBox(k, sub) && (sub === 'ST' || sub === 'W' || sub === 'AM' || (k.boxRunners >= 3 && (sub === 'WM' || sub === 'CM')));
+
+/** Runs in progress for this team, other than p's. */
+function runsOn(s: MatchState, p: MatchPlayer): number {
+  let n = 0;
+  for (const m of s.players) if (m.team === p.team && m.i !== p.i && m.ai?.run && m.ai.run.kind !== 'back' && m.ai.run.until >= s.tick) n++;
+  return n;
+}
+
+/**
+ * Off-ball attacking runs, or null when he isn't making one.
+ *   behind  With a teammate on the ball who can play it, a forward on the last line sets off
+ *           on a diagonal run beyond it into the channel. He stays onside: as he reaches the
+ *           line with the ball not yet played he curves along it, and if the line steps up past
+ *           him he checks back. Setting off tells the carrier to look up (his decision comes
+ *           as the run reaches the line), and the carrier weighs the through ball like any pass.
+ *   onetwo  Having just played it short around the box, he goes past the man he gave it to for the return.
+ *   back    Caught beyond the line: back onside before anything else.
+ */
+function attackRun(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null, mem: AiMemory): Vec | null {
+  const team = p.team;
+  const k = tacticOf(s, team);
+  const skill = skillOf(s, team);
+  const line = secondLastOpponentX(s, team);
+  const x = teamX(team, p.pos.x);
+  let r = mem.run;
+  if (r) {
+    // It ends when the ball goes to anyone but him or the man he is running for.
+    const rc = s.ball.receiver;
+    const passedElsewhere = !carrier && rc >= 0 && rc !== p.i && rc !== r.carrier;
+    const newCarrier = !!carrier && carrier.i !== r.carrier && carrier.i !== p.i;
+    if (s.tick > r.until || passedElsewhere || newCarrier) r = mem.run = undefined;
+  }
+  if (r && r.kind === 'back') {
+    if (x < line - 0.01 || !inOffsidePosition(s, p)) {
+      mem.run = undefined;
+      return null;
+    }
+    return fromTeam(team, line - 0.03, p.pos.y / PITCH_H);
+  }
+  if (!r) {
+    // Runs start as a teammate has it, or as it is played to him: a forward reads the pass coming.
+    const rc = s.ball.receiver >= 0 ? s.players[s.ball.receiver] : null;
+    const c = carrier ?? (rc && rc.team === team && rc.i !== p.i && rc.role !== 'GK' ? rc : null);
+    if (!c || !makesRuns(k, p.sub) || (s.tick + p.i) % 6 !== 0 || plan.support?.includes(p.i)) return null;
+    const cx = teamX(team, c.pos.x);
+    if (cx < 0.3 || cx > 0.86 || x < cx + 0.02 || x < line - 0.14 || line > 0.9) return null;
+    let free = Infinity;
+    for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, c.pos));
+    if (free < 2.2 || runsOn(s, p) >= k.runners || !chance(s.rng, 0.3 + 0.3 * skill)) return null;
+    // Into the channel: a central man goes outside the centre-back, a wide man comes inside.
+    const off = p.pos.y - MID_Y;
+    const side = Math.abs(off) > 0.5 ? Math.sign(off) : c.pos.y < MID_Y ? 1 : -1;
+    const ty = Math.abs(off) < 11 ? MID_Y + side * range(s.rng, 7, 11) : MID_Y + side * range(s.rng, 4, 8);
+    const tx = Math.min(0.94, line + 0.1 + 0.02 * k.risk);
+    r = mem.run = { kind: 'behind', target: fromTeam(team, tx, ty / PITCH_H), until: s.tick + 100, carrier: c.i, go: false };
+  }
+  // A run whose ball hasn't been played yet stays onside.
+  if (carrier && s.ball.owner === carrier.i) {
+    if (inOffsidePosition(s, p)) {
+      r.kind = 'back';
+      r.until = s.tick + 60;
+      return fromTeam(team, line - 0.03, p.pos.y / PITCH_H);
+    }
+    const human = s.humans[team] && s.controlled[team] === carrier.i;
+    if (!r.go) {
+      // Set off once on the line: he tells the carrier, who plays it as the run reaches the line.
+      if (x > line - 0.05 || r.kind === 'onetwo') {
+        r.go = true;
+        const t = Math.round(((line - x) * PITCH_W) / (runSpeed(p) * SPRINT_MULT) * TICK_HZ) - 4;
+        if (!human) carrier.aiTimer = clamp(Math.min(carrier.aiTimer, t), 1, 30);
+      } else return fromTeam(team, line - 0.03, clamp(p.pos.y + (r.target.y - p.pos.y) * 0.3, 2, PITCH_H - 2) / PITCH_H);
+    }
+    // Reaching the line before a CPU carrier plays it: curve along it rather than run offside. For a
+    // human on the ball he keeps going (the timing is the human's) and checks back if it doesn't come.
+    if (!human && x > line - 0.012) return fromTeam(team, line - 0.006, r.target.y / PITCH_H);
+  }
+  return r.target;
+}
+
 function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: MatchPlayer | null): Vec {
   const mem = memOf(s, p);
+  const run = attackRun(s, p, plan, carrier, mem);
+  if (run) {
+    mem.attacking = true;
+    mem.target = run;
+    mem.retarget = 0;
+    return run;
+  }
+  const zone = boxZone(s, p, plan, carrier);
+  if (zone) {
+    mem.attacking = true;
+    mem.target = zone;
+    mem.retarget = 0;
+    return zone;
+  }
   const sj = plan.support ? plan.support.indexOf(p.i) : -1;
   // A supporter re-reads the lanes every few ticks; everyone else holds a target longer. One who
   // has just become a supporter drops the target he had and finds his angle at once, and one
@@ -1488,19 +1748,6 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   const runner = runsIntoBox(k, sub_);
   // How far forward a runner may stand and still be onside.
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
-
-  // A run in behind: from onside, spin past the last defender while the
-  // carrier has his head up. Timed right it beats the trap; late, it's offside.
-  if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(team, p.pos.x) > onsideX - 0.06) {
-    let free = Infinity;
-    for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
-    if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
-      mem.retarget = Math.round(40 + 20 * next(s.rng));
-      const y = clamp(p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 6, PITCH_H - 6);
-      mem.target = fromTeam(team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
-      return mem.target;
-    }
-  }
 
   if (sub_ === 'ST' || sub_ === 'W') {
     // On the shoulder of the last defender, ready to spin in behind.
@@ -1967,7 +2214,7 @@ export function aiIntent(s: MatchState, p: MatchPlayer): Intent {
     const skill = skillOf(s, p.team);
     const target = supportTarget(s, p, plan, carrier);
     const runCap = dist(target, p.pos) > 8 ? 1 : 0.9 + 0.1 * skill;
-    const run = dist(target, p.pos) > 8 && teamX(p.team, target.x) > teamX(p.team, p.pos.x) + 0.08;
+    const run = (dist(target, p.pos) > 8 && teamX(p.team, target.x) > teamX(p.team, p.pos.x) + 0.08) || (!!p.ai?.run?.go && dist(target, p.pos) > 2);
     return { ...seek(p, target, 2.5, runCap), sprint: sprintOk(s, p, run) };
   }
   return defendIntent(s, p, plan, owner && owner.team !== p.team ? owner : null);
