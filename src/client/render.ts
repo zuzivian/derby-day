@@ -5,7 +5,7 @@ import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP
 import { pickTeammate } from '../sim/human.ts';
 import { humanPass, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
 import { freeKickPlan } from '../sim/match.ts';
-import type { MatchState } from '../sim/types.ts';
+import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 
 export const MARGIN = 3.5;
@@ -29,6 +29,19 @@ export interface RenderExtras {
   charges?: [number, number];
   /** An instant replay is showing: no pointer, aim wedge or previews. */
   noAim?: boolean;
+  /**
+   * Seconds of wall time since the drawn state's last tick (the match loop's accumulator, -DT..DT).
+   * Positions are drawn extrapolated by velocity times this, so motion is smooth between 60 Hz ticks
+   * on any refresh rate instead of moving in tick-sized steps. Omitted: drawn as at the tick.
+   */
+  since?: number;
+}
+
+/** Where to draw something now: its tick position moved on by its velocity for `since` seconds. */
+export function drawnAt(out: Vec, pos: Vec, vel: Vec, since: number): Vec {
+  out.x = pos.x + vel.x * since;
+  out.y = pos.y + vel.y * since;
+  return out;
 }
 
 /** Controlled-player marker colours when both teams have a human: home yellow, away cyan. */
@@ -43,6 +56,17 @@ export class PitchRenderer {
   private k = 10;
   private ballSpin = 0;
   private trail: Vec[] = [];
+  /** RenderExtras.since for the frame being drawn, and scratch drawn positions (no allocation per frame). */
+  private since = 0;
+  private drawn: Vec[] = [];
+  private ballAt: Vec = { x: 0, y: 0 };
+  private refAt: Vec = { x: 0, y: 0 };
+
+  /** A player's drawn position this frame (see RenderExtras.since). */
+  private at(p: MatchPlayer): Vec {
+    const q = (this.drawn[p.i] ??= { x: 0, y: 0 });
+    return drawnAt(q, p.pos, p.vel, this.since);
+  }
 
   private dpr: PixelRatioWatch;
 
@@ -80,6 +104,7 @@ export class PitchRenderer {
 
   draw(s: MatchState, x: RenderExtras): void {
     this.dpr.check();
+    this.since = x.since ?? 0;
     const { ctx, k } = this;
     ctx.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
     this.drawPitch();
@@ -174,12 +199,13 @@ export class PitchRenderer {
       if (sp < 1) continue;
       const dx = p.vel.x / sp;
       const dy = p.vel.y / sp;
+      const q = this.at(p);
       for (let i = -1; i <= 1; i++) {
         ctx.strokeStyle = `rgba(255,255,255,${i === 0 ? 0.32 : 0.18})`;
         ctx.lineWidth = 0.14;
         ctx.beginPath();
-        ctx.moveTo(p.pos.x - dx * (PLAYER_R + 0.25) - dy * i * 0.5, p.pos.y - dy * (PLAYER_R + 0.25) + dx * i * 0.5);
-        ctx.lineTo(p.pos.x - dx * (PLAYER_R + 1.6) - dy * i * 0.5, p.pos.y - dy * (PLAYER_R + 1.6) + dx * i * 0.5);
+        ctx.moveTo(q.x - dx * (PLAYER_R + 0.25) - dy * i * 0.5, q.y - dy * (PLAYER_R + 0.25) + dx * i * 0.5);
+        ctx.lineTo(q.x - dx * (PLAYER_R + 1.6) - dy * i * 0.5, q.y - dy * (PLAYER_R + 1.6) + dx * i * 0.5);
         ctx.stroke();
       }
     }
@@ -189,26 +215,28 @@ export class PitchRenderer {
     ctx.fillStyle = 'rgba(0,0,0,.22)';
     for (const p of s.players) {
       if (p.sentOff) continue;
+      const q = this.at(p);
       ctx.beginPath();
-      ctx.ellipse(p.pos.x + 0.18, p.pos.y + 0.22, PLAYER_R, PLAYER_R * 0.8, 0, 0, Math.PI * 2);
+      ctx.ellipse(q.x + 0.18, q.y + 0.22, PLAYER_R, PLAYER_R * 0.8, 0, 0, Math.PI * 2);
       ctx.fill();
     }
     for (const p of s.players) {
       if (p.sentOff) continue; // sent off: gone from the pitch
       const team = s.teams[p.team];
+      const q = this.at(p);
       const isCtrl = s.humans[p.team] && p.i === s.controlled[p.team];
       ctx.globalAlpha = p.stun > 0 ? 0.55 : 1;
       if (isCtrl) {
         ctx.fillStyle = HUMAN_GLOW[mark(p.team)];
         ctx.beginPath();
-        ctx.arc(p.pos.x, p.pos.y, PLAYER_R + 0.55, 0, Math.PI * 2);
+        ctx.arc(q.x, q.y, PLAYER_R + 0.55, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.fillStyle = p.role === 'GK' ? team.secondary : team.primary;
       ctx.strokeStyle = p.role === 'GK' ? team.primary : team.secondary;
       ctx.lineWidth = 0.16;
       ctx.beginPath();
-      ctx.arc(p.pos.x, p.pos.y, PLAYER_R, 0, Math.PI * 2);
+      ctx.arc(q.x, q.y, PLAYER_R, 0, Math.PI * 2);
       ctx.fill();
       // Away players get a dashed rim so the teams differ by shape, not only by colour.
       if (p.team === 1) ctx.setLineDash([0.34, 0.2]);
@@ -217,33 +245,33 @@ export class PitchRenderer {
       // Facing notch
       ctx.fillStyle = ctx.strokeStyle;
       ctx.beginPath();
-      ctx.arc(p.pos.x + p.facing.x * PLAYER_R * 0.78, p.pos.y + p.facing.y * PLAYER_R * 0.78, 0.15, 0, Math.PI * 2);
+      ctx.arc(q.x + p.facing.x * PLAYER_R * 0.78, q.y + p.facing.y * PLAYER_R * 0.78, 0.15, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = p.role === 'GK' ? team.primary : team.secondary;
       ctx.font = `800 1.05px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(p.number), p.pos.x, p.pos.y + 0.04);
+      ctx.fillText(String(p.number), q.x, q.y + 0.04);
       ctx.globalAlpha = 1;
       if (p.yellow > 0) {
         // Booked: a small yellow card by the shoulder.
         ctx.fillStyle = '#ffd60a';
         ctx.strokeStyle = 'rgba(0,0,0,.6)';
         ctx.lineWidth = 0.05;
-        ctx.fillRect(p.pos.x + PLAYER_R * 0.6, p.pos.y - PLAYER_R - 0.2, 0.42, 0.6);
-        ctx.strokeRect(p.pos.x + PLAYER_R * 0.6, p.pos.y - PLAYER_R - 0.2, 0.42, 0.6);
+        ctx.fillRect(q.x + PLAYER_R * 0.6, q.y - PLAYER_R - 0.2, 0.42, 0.6);
+        ctx.strokeRect(q.x + PLAYER_R * 0.6, q.y - PLAYER_R - 0.2, 0.42, 0.6);
       }
       if (isCtrl) {
         ctx.fillStyle = HUMAN_COLORS[mark(p.team)];
         ctx.beginPath();
-        ctx.moveTo(p.pos.x, p.pos.y - PLAYER_R - 0.35);
-        ctx.lineTo(p.pos.x - 0.38, p.pos.y - PLAYER_R - 0.95);
-        ctx.lineTo(p.pos.x + 0.38, p.pos.y - PLAYER_R - 0.95);
+        ctx.moveTo(q.x, q.y - PLAYER_R - 0.35);
+        ctx.lineTo(q.x - 0.38, q.y - PLAYER_R - 0.95);
+        ctx.lineTo(q.x + 0.38, q.y - PLAYER_R - 0.95);
         ctx.closePath();
         ctx.fill();
         ctx.font = `600 0.8px 'Barlow', system-ui, sans-serif`;
         ctx.fillStyle = 'rgba(255,255,255,.92)';
-        ctx.fillText(p.name, p.pos.x, p.pos.y + PLAYER_R + 0.75);
+        ctx.fillText(p.name, q.x, q.y + PLAYER_R + 0.75);
       }
     }
 
@@ -252,8 +280,11 @@ export class PitchRenderer {
     const speed = Math.hypot(b.vel.x, b.vel.y);
     this.ballSpin += speed * 0.03;
     const lift = b.z * 0.55;
-    const bx = b.pos.x;
-    const by = b.pos.y - lift;
+    // At someone's feet the ball moves with him, else with its own velocity.
+    const carrier = b.owner >= 0 ? s.players[b.owner] : null;
+    const bp = drawnAt(this.ballAt, b.pos, carrier ? carrier.vel : b.vel, this.since);
+    const bx = bp.x;
+    const by = bp.y - lift;
     const br = BALL_R * (1 + b.z * 0.09);
 
     // Trail behind fast shots, fading out.
@@ -277,7 +308,7 @@ export class PitchRenderer {
 
     ctx.fillStyle = `rgba(0,0,0,${Math.max(0.12, 0.3 - b.z * 0.05).toFixed(3)})`;
     ctx.beginPath();
-    ctx.ellipse(b.pos.x + 0.12 + b.z * 0.1, b.pos.y + 0.14 + b.z * 0.06, BALL_R * (1 + b.z * 0.03), BALL_R * 0.8 * (1 + b.z * 0.03), 0, 0, Math.PI * 2);
+    ctx.ellipse(bp.x + 0.12 + b.z * 0.1, bp.y + 0.14 + b.z * 0.06, BALL_R * (1 + b.z * 0.03), BALL_R * 0.8 * (1 + b.z * 0.03), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fbfbf7';
     ctx.strokeStyle = '#1b1f24';
@@ -431,15 +462,16 @@ export class PitchRenderer {
       ctx.restore();
     }
     const ref = s.referee;
+    const rq = drawnAt(this.refAt, ref.pos, ref.vel, this.since);
     ctx.fillStyle = 'rgba(0,0,0,.22)';
     ctx.beginPath();
-    ctx.ellipse(ref.pos.x + 0.15, ref.pos.y + 0.18, 0.7, 0.56, 0, 0, Math.PI * 2);
+    ctx.ellipse(rq.x + 0.15, rq.y + 0.18, 0.7, 0.56, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#111418';
     ctx.strokeStyle = '#f5d90a';
     ctx.lineWidth = 0.14;
     ctx.beginPath();
-    ctx.arc(ref.pos.x, ref.pos.y, 0.7, 0, Math.PI * 2);
+    ctx.arc(rq.x, rq.y, 0.7, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }

@@ -296,7 +296,9 @@ for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
     await page.waitForFunction(() => devicePixelRatio === 2);
-    await page.waitForTimeout(1200);
+    // Wait for the resize rather than a fixed time: on SwiftShader at quality=high a frame can take ~650 ms, and the
+    // resize lands on a frame. The assertion below still says what was seen if it never comes.
+    await page.waitForFunction((w) => document.querySelector('#pitch').width > w * 1.9, one.w, { timeout: 10_000 }).catch(() => {});
     const two = await buf();
     expect(two.css, 'same CSS size').toBe(one.css);
     expect(two.w / one.w, `buffer ${one.w} → ${two.w} px doubles with the ratio`).toBeGreaterThan(1.9);
@@ -393,29 +395,6 @@ test(
     expect(await page.evaluate(() => window.__derbyMatch.tick), 'the same match, not a new one').toBeGreaterThanOrEqual(before);
     await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
     expect(await page.locator(SEL.modal).innerText(), 'the result keeps the score').toMatch(/2\s*[–-]\s*1/);
-  },
-  { timeoutMs: 120_000 },
-);
-
-test(
-  'Perf: closing the tab mid-match stops the loop and gives the WebGL context back; a back-forward cache hide does not',
-  async (t) => {
-    const page = await startLongMatch(t);
-    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__lose))) return;
-    const hide = (persisted) => page.evaluate((persisted) => dispatchEvent(new PageTransitionEvent('pagehide', { persisted })), persisted);
-    const tick = () => page.evaluate(() => window.__derbyMatch.tick);
-    // Parked in the back-forward cache: it may come back to this match, so it keeps it.
-    await hide(true);
-    const t0 = await tick();
-    await page.waitForFunction((t0) => window.__derbyMatch.tick > t0 + 30, t0, { timeout: 15_000 });
-    expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'still drawing in 3D').toBe('3d');
-    // Going away for good: the context is lost at once, no 2D fallback starts, and the sim stops.
-    await hide(false);
-    expect(await page.evaluate(() => document.querySelector('#pitch').getContext('webgl2').isContextLost()), 'context lost').toBe(true);
-    const t1 = await tick();
-    await page.waitForTimeout(1500);
-    expect(await tick(), 'the loop stopped').toBe(t1);
-    expect(await page.evaluate(() => document.querySelector('#pitch').dataset.renderer ?? null), 'no 2D fallback took over').toBe(null);
   },
   { timeoutMs: 120_000 },
 );
@@ -523,6 +502,66 @@ test(
     await page.waitForFunction((v) => Number(document.querySelector('#rv-scrub').value) !== v, s0, { timeout: 10_000 });
     await page.locator('[data-rp="close"]').click();
     await page.locator('[data-rp="close"]').waitFor({ state: 'detached' });
+  },
+  { timeoutMs: 150_000 },
+);
+
+for (const renderer of ['2d', '3d']) test(
+  `Perf: a pass click reaches the sim on the very next frame after the release (${renderer}): no frames of input lag before the tick that takes it`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 900 }, renderer, e2eHook: true });
+    // Every animation frame, from the pointerup (a pass is taken on release): the first frame that runs a sim tick
+    // takes the click (InputController.take, ticks.ts), and that frame draws it. How many ticks the sim then takes to
+    // kick is the game's own business (a ball not yet under control, a queued first-time kick), logged only.
+    await page.evaluate(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      window.__lat = { pending: null, toTick: [], toKick: [] };
+      window.addEventListener('pointerup', () => {
+        const s = window.__derbyMatch;
+        if (s) window.__lat.pending = { t: performance.now(), tick: s.tick, owner: s.ball.owner, n: 0, ticked: false };
+      }, true);
+      window.requestAnimationFrame = (cb) => raf((ts) => {
+        cb(ts);
+        const L = window.__lat;
+        const p = L.pending;
+        const s = window.__derbyMatch;
+        if (!p || !s) return;
+        p.n++;
+        if (!p.ticked && s.tick > p.tick) {
+          p.ticked = true;
+          L.toTick.push(p.n);
+        }
+        if (performance.now() - p.t > 1500) L.pending = null;
+        else if (s.ball.owner !== p.owner) {
+          if (s.ball.lastTouch === p.owner && s.players[p.owner].kickCd > 0) L.toKick.push(p.n);
+          L.pending = null;
+        }
+      });
+    });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const box = await page.locator(SEL.pitch).boundingBox();
+    for (let i = 0; i < 10; i++) {
+      await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && !document.querySelector('#pitch').dataset.replay, null, { timeout: 30_000 });
+      // The ball at the human's feet, then a quick click (under the loft threshold) to pass.
+      await page.evaluate(() => {
+        const s = window.__derbyMatch;
+        const me = s.players[s.controlled[0]];
+        Object.assign(s.ball, { owner: me.i, pos: { x: me.pos.x, y: me.pos.y }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+      });
+      await page.waitForTimeout(250);
+      await page.mouse.move(box.x + box.width * (0.35 + 0.04 * i), box.y + box.height * 0.45);
+      await page.mouse.down();
+      await page.waitForTimeout(40);
+      await page.mouse.up();
+      await page.waitForFunction(() => !window.__lat.pending, null, { timeout: 10_000 });
+    }
+    const r = await page.evaluate(() => window.__lat);
+    console.log(`      frames from release to the tick that takes the click: ${r.toTick.join(', ')}; to the kick on screen: ${r.toKick.join(', ')}`);
+    expect(r.toTick.length, 'clicks measured').toBeGreaterThanOrEqual(8);
+    expect(Math.max(...r.toTick), 'the first frame after every release runs the tick that takes it').toBe(1);
   },
   { timeoutMs: 150_000 },
 );

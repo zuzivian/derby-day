@@ -30,11 +30,15 @@
  *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
  *      supporter) until the final third, and forwards on the shoulder follow the line
  *  11  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
- *  12  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
+ *  12  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
+ *  13  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
+ *  14  a back five forms: defenders leave a man 10 m upfield of their place to the midfield,
+ *      and one 8 m or more upfield of his place runs back instead of jogging
+ *  15  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
  *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
  *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
  */
-export const SIM_VERSION = 12;
+export const SIM_VERSION = 15;
 
 export const TICK_HZ = 60;
 

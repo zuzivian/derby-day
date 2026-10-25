@@ -213,7 +213,8 @@ describe("the human's free kick", () => {
 
   test('a quick free kick: over the ball before the wall is set, a click plays it at once', () => {
     let quick = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6]) {
+    let unformed = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       const s = freeKick(seed, 24, 0, true, 'setup');
       const r = s.restart!;
       const taker = s.players[r.taker];
@@ -221,13 +222,16 @@ describe("the human's free kick", () => {
       for (let t = 0; t < 200 && s.restart?.stage === 'setup' && dist(taker.pos, r.spot) > 1.2; t++) step(s, still(s));
       if (s.restart?.stage !== 'setup') continue;
       const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, taker.pos) - dist(b.pos, taker.pos))[0];
-      const formed = s.wall!.players.every((i) => dist(s.players[i].pos, s.aiRestart!.targets[i]!) < 0.3);
+      // Only a kick taken before the wall is set is a quick one.
+      if (s.wall!.players.every((i) => dist(s.players[i].pos, s.aiRestart!.targets[i]!) < 0.3)) continue;
+      unformed++;
       step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
-      // Played there and then, the wall not yet formed, and it breaks up.
-      if (!formed && s.phase === 'play' && s.ball.owner !== taker.i && s.ball.lastTouch === taker.i && !s.wall) quick++;
+      // Played there and then, and the wall breaks up.
+      if (s.phase === 'play' && s.ball.owner !== taker.i && s.ball.lastTouch === taker.i && !s.wall) quick++;
     }
     // On main the click was held until the kick was ready (about 1.5 s later).
-    expect(quick).toBeGreaterThanOrEqual(5);
+    expect(unformed).toBeGreaterThanOrEqual(5);
+    expect(quick).toBe(unformed);
   });
 });
 

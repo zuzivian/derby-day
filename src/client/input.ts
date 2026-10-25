@@ -508,6 +508,11 @@ export class InputController {
     this.keys.clear();
   }
 
+  /** A one-shot action is waiting for the next tick (take() consumes it): the match loop runs that tick now. */
+  waiting(): boolean {
+    return this.pass || this.tackle || this.select || this.switchReq || this.loft !== null || this.shoot !== null;
+  }
+
   /** Called once per sim tick. One-shot actions are consumed here. */
   take(): HumanInput {
     const input: HumanInput = {};
