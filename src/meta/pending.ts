@@ -74,6 +74,7 @@ export function settleAbandoned(save: Save): Settled | null {
   const before = save.club.elo;
   const budget = save.budget;
   const owedBefore = save.xpOwed ?? 0;
+  const moneyOwedBefore = save.moneyOwed ?? 0;
   let recorded = false;
   if (p.kind === 'ranked') {
     const opp = save.ladder.find((c) => c.id === p.opponentId);
@@ -91,7 +92,7 @@ export function settleAbandoned(save: Save): Settled | null {
   if (!recorded) return null;
   maybeRollover(save);
   const delta = save.club.elo - before;
-  const fine = budget - save.budget;
+  const fine = budget - save.budget + (save.moneyOwed ?? 0) - moneyOwedBefore;
   const owed = (save.xpOwed ?? 0) - owedBefore;
   const cost = [delta ? `Elo ${signed(delta)}` : '', fine > 0 ? `a ${formatMoney(fine)} fine` : '', owed > 0 ? `${owed} XP owed from your next matches` : 'no XP'].filter(Boolean).join(', ');
   return {

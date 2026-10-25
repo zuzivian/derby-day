@@ -85,7 +85,7 @@ describe('league forfeits', () => {
       out = recordSeasonMatch(s, 0, 3, [], homeWins, true);
       fines += out.summary.fine ?? 0;
     }
-    expect(s.budget).toBe(budget - fines);
+    expect(s.budget - (s.moneyOwed ?? 0)).toBe(budget - fines); // what it couldn't pay is owed
     expect(s.xp).toBe(xp);
     expect(out!.money).toBe(0);
     expect(s.trophies!.length).toBe(0);
@@ -351,5 +351,24 @@ describe('promotion needs an honest season', () => {
     expect(seasonVerdict(2, 3, null, 3)).toBe('Runners-up, but promotion needs a season with at most 2 forfeits.');
     expect(seasonVerdict(1, 3, null, 3)).toContain('the title and promotion need a season with at most 2 forfeits');
     expect(seasonVerdict(2, 3, 'up', 0)).toBe('Runners-up. Promoted to Division 2.');
+  });
+});
+
+describe('a broke club', () => {
+  test('owes the fine it cannot pay, from half of its later income', () => {
+    const s = newGame(43);
+    s.budget = 0;
+    const o = offeredOpponent(s);
+    const r = applyResult(s, o, o, 0, 3, true, [], undefined, true);
+    expect(s.budget).toBe(0);
+    expect(s.moneyOwed).toBeGreaterThan(0);
+    expect(r.fine).toBe(s.moneyOwed);
+    const owed = s.moneyOwed!;
+    const next = offeredOpponent(s);
+    const win = applyResult(s, next, next, 2, 0, true, []);
+    expect(win.money).toBeGreaterThan(0);
+    expect(s.moneyOwed).toBeLessThan(owed);
+    expect(s.budget).toBe(win.money);
+    expect(owed - s.moneyOwed!).toBeLessThanOrEqual(win.money); // half or less went to the debt
   });
 });

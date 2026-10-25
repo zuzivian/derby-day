@@ -130,6 +130,8 @@ export interface Save {
   marketAt?: number;
   /** XP owed for forfeits, taken from the next rated matches (forfeitCost). */
   xpOwed?: number;
+  /** Fines a club couldn't pay, taken from half of its later income (bankIncome). */
+  moneyOwed?: number;
   /** Lifetime match count at the last match voided by a crash (pending.ts): at most one in VOID_EVERY. */
   voidAt?: number;
 }
@@ -396,9 +398,27 @@ export interface ResultSummary {
  * fine of what a win would have paid (at most what is in the bank) and a win's
  * XP, owed from the next rated matches.
  */
-export function forfeitCost(save: Save, scale: { xp: number; money: number }): { fine: number; owed: number } {
-  const fine = Math.min(Math.max(0, save.budget), Math.round((RANKED_MONEY.win * scale.money) / 5_000) * 5_000);
-  return { fine, owed: Math.round(XP.win * scale.xp) };
+export function forfeitCost(save: Save, scale: { xp: number; money: number }): { fine: number; owed: number; moneyOwed: number } {
+  const full = Math.round((RANKED_MONEY.win * scale.money) / 5_000) * 5_000;
+  const fine = Math.min(Math.max(0, save.budget), full);
+  return { fine, owed: Math.round(XP.win * scale.xp), moneyOwed: full - fine };
+}
+
+/** Bounds on what can be owed (deepCheck in backup.ts holds imports to them too). */
+export const MAX_XP_OWED = 10_000_000;
+export const MAX_MONEY_OWED = 1_000_000_000;
+
+/**
+ * Bank income (match money, prizes): up to half of it first pays off money
+ * owed for forfeits a club couldn't afford (forfeitCost). Returns what reached
+ * the budget.
+ */
+export function bankIncome(save: Save, amount: number): number {
+  if (amount <= 0) return 0;
+  const pay = Math.min(save.moneyOwed ?? 0, Math.floor(amount / 2));
+  if (pay > 0) save.moneyOwed = save.moneyOwed! - pay;
+  save.budget += amount - pay;
+  return amount - pay;
 }
 
 /** Ranked money by result, before rankedScale: a win, a draw, a defeat, and each goal scored. */
@@ -448,9 +468,8 @@ export function applyResult(
     tallyRecord(opponent, goalsAgainst, goalsFor);
     const draw = goalsFor === goalsAgainst;
     const base = (win ? RANKED_MONEY.win : draw ? RANKED_MONEY.draw : RANKED_MONEY.loss) + goalsFor * RANKED_MONEY.goal;
-    money = forfeited ? 0 : Math.round((base * scale.money) / 5_000) * 5_000;
+    money = forfeited ? 0 : bankIncome(save, Math.round((base * scale.money) / 5_000) * 5_000);
     tp = win ? 3 : 2;
-    save.budget += money;
     simulateLadderRound(save, opponent.id);
     save.nextOpp = null; // the next offer is picked fresh
   }
@@ -459,10 +478,14 @@ export function applyResult(
   let fine = 0;
   let owed = 0;
   if (forfeited && rated && scale) {
-    ({ fine, owed } = forfeitCost(save, scale));
+    const cost = forfeitCost(save, scale);
+    ({ fine, owed } = cost);
     save.budget -= fine;
     money = -fine;
-    save.xpOwed = (save.xpOwed ?? 0) + owed;
+    save.xpOwed = Math.min(MAX_XP_OWED, (save.xpOwed ?? 0) + owed);
+    // A club that can't pay owes the rest, from half of its later income (bankIncome): being broke is no free pass.
+    if (cost.moneyOwed) save.moneyOwed = Math.min(MAX_MONEY_OWED, (save.moneyOwed ?? 0) + cost.moneyOwed);
+    fine += cost.moneyOwed;
   }
   if ((ranked || competition) && win) tp += winTrainingBonus(save);
   if (forfeited) tp = 0;
@@ -585,7 +608,7 @@ export function isSave(x: unknown): x is Save {
     // Club level fields (also optional).
     numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones)) &&
     // World and history fields (also optional).
-    numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) && numOrUndef(s.xpOwed) && numOrUndef(s.voidAt) &&
+    numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) && numOrUndef(s.xpOwed) && numOrUndef(s.moneyOwed) && numOrUndef(s.voidAt) &&
     (s.nextOpp === undefined || s.nextOpp === null || typeof s.nextOpp === 'string') && objOrNull(s.pending) && objOrNull(s.records) &&
     (s.seasons === undefined || Array.isArray(s.seasons)) && (s.yearNotes === undefined || Array.isArray(s.yearNotes))
     // Tactics (formation, mentality) are never a reason to refuse a save: ensureElevenASide repairs them.

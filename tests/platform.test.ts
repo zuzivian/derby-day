@@ -337,6 +337,10 @@ describe('damaged backups are refused before they can brick the club', () => {
     ['hostile news line', (s) => s.news.push('<script>alert(1)</script>')],
     ['markup hidden deep in an optional field', (s) => (s.cup = { kind: 'cup', note: { a: ['"><b>'] } })],
     ['squad ids repeat', (s) => (s.squad[1].id = s.squad[0].id)],
+    ['a forfeit debt that would halve XP forever', (s) => (s.xpOwed = 1e15)],
+    ['a negative forfeit debt', (s) => (s.xpOwed = -500)],
+    ['a money debt out of range', (s) => (s.moneyOwed = 1e13)],
+    ['a voided-match marker from the future, blocking voids for good', (s) => (s.voidAt = 1e9)],
   ];
   for (const [name, mutate] of mutations) {
     test(name, async () => {

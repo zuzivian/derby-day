@@ -268,15 +268,17 @@ const ms = performance.now() - t0;
  * (results from the XIs, as above, no training or transfers). Returns XP and
  * money per real match, forfeit costs included, averaged over a few seeds.
  */
-function sandbag(json: string, forfeits: number): { xp: number; money: number; eloDrop: number } {
+function sandbag(json: string, forfeits: number, broke = false): { xp: number; money: number; eloDrop: number } {
   let xp = 0;
   let money = 0;
   let drop = 0;
   for (let k = 0; k < SANDBAG_SEEDS; k++) {
     const t: Save = JSON.parse(json);
+    if (broke) t.budget = 0; // a club with nothing to fine
     const pr = makeRng((SEED ^ 0x5a5a) + k);
     const xp0 = t.xp ?? 0;
-    const money0 = t.budget;
+    const worth = (x: Save) => x.budget - (x.moneyOwed ?? 0);
+    const money0 = worth(t);
     const elo0 = t.club.elo;
     for (let f = 0; f < forfeits; f++) {
       const o = offeredOpponent(t);
@@ -289,13 +291,15 @@ function sandbag(json: string, forfeits: number): { xp: number; money: number; e
       applyResult(t, o, o, gf, ga, true, []);
     }
     xp += (t.xp ?? 0) - xp0;
-    money += t.budget - money0;
+    money += worth(t) - money0;
   }
   const n = SANDBAG_SEEDS * SANDBAG_MATCHES;
   return { xp: xp / n, money: money / n, eloDrop: drop / SANDBAG_SEEDS };
 }
 const honest = sandbagFrom ? sandbag(sandbagFrom, 0) : null;
 const tanked = sandbagFrom ? sandbag(sandbagFrom, 20) : null;
+const brokeHonest = sandbagFrom ? sandbag(sandbagFrom, 0, true) : null;
+const brokeTanked = sandbagFrom ? sandbag(sandbagFrom, 20, true) : null;
 if (honest && tanked) {
   console.log(`sandbag probe from match ${SANDBAG_AT}: honest ${honest.xp.toFixed(0)} XP and ${(honest.money / 1000).toFixed(0)}k a match; after 20 forfeits (Elo −${tanked.eloDrop.toFixed(0)}) ${tanked.xp.toFixed(0)} XP and ${(tanked.money / 1000).toFixed(0)}k a match, over ${SANDBAG_MATCHES} matches x ${SANDBAG_SEEDS} seeds`);
 }
@@ -341,6 +345,9 @@ if (ASSERT) {
   // Losing Elo on purpose never pays: 20 forfeits, then honest play, earns at most 5% more a real match than honest play.
   band('sandbag XP a real match / honest', tanked!.xp / Math.max(1, honest!.xp), 0, 1.05);
   band('sandbag money a real match / honest', tanked!.money / Math.max(1, honest!.money), 0, 1.05);
+  // The same from ƒ0, where the fine can't be paid and is owed instead.
+  band('broke sandbag XP a real match / honest', brokeTanked!.xp / Math.max(1, brokeHonest!.xp), 0, 1.05);
+  band('broke sandbag money a real match / honest', brokeTanked!.money / Math.max(1, brokeHonest!.money), 0, 1.05);
   // From match 200 on, the world keeps up: the strongest CPU XI is never more than 3 below yours, and ranked is never a walkover.
   const later = late.slice(1);
   band('worst gap, strongest CPU XI minus yours (from match 200)', Math.min(...later.map((x) => x.gap)), -3, 40);

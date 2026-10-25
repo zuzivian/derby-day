@@ -110,7 +110,10 @@ const crashedMidMatch = (reason: unknown) => {
     /* never let this throw */
   }
 };
-window.addEventListener('error', (e) => crashedMidMatch(e.error ?? e.message));
+window.addEventListener('error', (e) => {
+  if (!e.error && !e.message) return; // a failed <img>/<script> load, not an exception (as in errors.ts)
+  crashedMidMatch(e.error ?? e.message);
+});
 window.addEventListener('unhandledrejection', (e) => crashedMidMatch(e.reason));
 
 function persist() {

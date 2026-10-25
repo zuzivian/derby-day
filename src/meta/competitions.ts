@@ -28,7 +28,7 @@
 //    passed to recordCupMatch.
 
 import { autoLineup, cpuTeam, ladderSquad, type ClubIdentity, type LadderClub } from './club.ts';
-import { applyResult, CUP_WAIT, formatMoney, type ResultSummary, type Save } from './game.ts';
+import { applyResult, bankIncome, CUP_WAIT, formatMoney, type ResultSummary, type Save } from './game.ts';
 import { lifetimeMatches, noteDivision, noteYear } from './history.ts';
 import { award, claimMilestone, cupFinishXp, leagueFinishXp, prizeBonus } from './levels.ts';
 import { overall, type Player } from './player.ts';
@@ -379,8 +379,8 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
 
   let money = round === 0 && !forfeited ? prizeIn(CUP_PRIZES[0] * prizeBonus(save), division) : 0;
   if (won) money += prizeIn(CUP_PRIZES[round + 1] * prizeBonus(save), division);
+  money = bankIncome(save, money);
   cup.earned += money;
-  save.budget += money;
   summary.money = money;
 
   finishCupRound(save, cup, sim);
@@ -596,9 +596,9 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   const days = season.matchdays.length;
   const share = Math.max(0, days - (season.forfeits ?? 0)) / days;
   const money = Math.round((prizeIn((SEASON_PRIZES[pos - 1] ?? 0) * prizeBonus(save), division) * share) / 5_000) * 5_000;
-  season.earned += money;
-  save.budget += money;
-  summary.money = money;
+  const banked = bankIncome(save, money);
+  season.earned += banked;
+  summary.money = banked;
   // A title or promotion has to be played for. Relegation needs no such proof.
   const honest = (season.forfeits ?? 0) <= MAX_SEASON_FORFEITS;
   let trophy: Trophy | null = null;

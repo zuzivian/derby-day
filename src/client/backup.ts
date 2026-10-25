@@ -1,7 +1,7 @@
 // Export and import of a club: a JSON file, or a copyable code (the same JSON, gzipped, as text).
 // Pure functions (plus the standard CompressionStream); the dialog that uses them is settings.ts.
 
-import { isSave, type Save } from '../meta/game.ts';
+import { isSave, MAX_MONEY_OWED, MAX_XP_OWED, type Save } from '../meta/game.ts';
 import { levelForXp } from '../meta/levels.ts';
 import { ATTR_KEYS } from '../meta/player.ts';
 import { CREST_PATTERNS, STYLE_KEYS } from '../meta/names.ts';
@@ -159,6 +159,10 @@ export function deepCheck(s: Save): string | null {
     if (l.slots !== undefined && (!Array.isArray(l.slots) || l.slots.length > 40 || !l.slots.every((x) => Array.isArray(x) && x.length === 3 && num(x[0], 0, MAX_SEED) && num(x[1], 10, 70) && num(x[2], -40, 40)))) return 'ladder';
   }
   if (s.division !== undefined && !num(s.division, 1, 10)) return 'division';
+  // What a club owes for forfeits, and the last voided match: out-of-range values would halve XP or block voids for good.
+  if (s.xpOwed !== undefined && !num(s.xpOwed, 0, MAX_XP_OWED)) return 'forfeit debt';
+  if (s.moneyOwed !== undefined && !num(s.moneyOwed, 0, MAX_MONEY_OWED)) return 'forfeit debt';
+  if (s.voidAt !== undefined && !num(s.voidAt, -1, (num(s.historyBase, 0, 1e9) ? s.historyBase : 0) + (Array.isArray(s.history) ? s.history.length : 0))) return 'voided match';
   const p = s.pending as unknown;
   if (p !== undefined && p !== null && (!isObj(p) || !['ranked', 'cup', 'league', 'friendly'].includes(p.kind as string) || typeof p.opponent !== 'string' || typeof p.label !== 'string')) return 'unfinished match';
   if (s.seasons !== undefined && (!Array.isArray(s.seasons) || s.seasons.length > 1000 || !s.seasons.every((x) => isObj(x) && num(x.year, 0, 1e6) && Array.isArray(x.notes)))) return 'club history';
