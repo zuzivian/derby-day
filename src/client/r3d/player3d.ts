@@ -9,7 +9,7 @@
 //
 // Local space: +z is forward, +y up, +x the player's left. Feet at y = 0.
 
-import { grassDiff, worstDiff } from '../kits.ts';
+import { CLASH_DE, grassDiff, worstDiff } from '../kits.ts';
 import type { MatchPlayer } from '../../sim/types.ts';
 import { angleDelta, clamp01, damp, smooth, sx, sz } from './space.ts';
 import { merge, type Part } from './geo.ts';
@@ -908,9 +908,11 @@ const HAIRS = ['#16110d', '#2b1c12', '#4a2f1b', '#73492a', '#a5733f', '#d7b56d',
 
 /**
  * The keeper's kit: of these, the one that reads best against both sides' shirts and the grass,
- * for normal and red-green colour-blind vision alike (kits.ts worstDiff, grassDiff).
+ * for normal and red-green colour-blind vision alike (kits.ts worstDiff, grassDiff). `otherKeeper`
+ * is the other side's keeper's shirt, when already chosen: of the kits that still read against the
+ * shirts and the grass (CLASH_DE), the one furthest from his, so the two keepers differ too.
  */
-export function keeperColors(own: string, other: string): { shirt: string; shorts: string; socks: string; trim: string } {
+export function keeperColors(own: string, other: string, otherKeeper?: string): { shirt: string; shorts: string; socks: string; trim: string } {
   const options = [
     { shirt: '#f4dc1c', shorts: '#1b1b1b', socks: '#f4dc1c', trim: '#1b1b1b' },
     { shirt: '#24b35a', shorts: '#0f3d22', socks: '#24b35a', trim: '#f5f5f5' },
@@ -918,8 +920,17 @@ export function keeperColors(own: string, other: string): { shirt: string; short
     { shirt: '#7c3fe0', shorts: '#2a1a4a', socks: '#7c3fe0', trim: '#f5f5f5' },
     { shirt: '#2e2e2e', shorts: '#2e2e2e', socks: '#2e2e2e', trim: '#f4dc1c' },
     { shirt: '#1fc7c7', shorts: '#0d3a3a', socks: '#1fc7c7', trim: '#111111' },
+    // Teal, cream and navy: with these every ladder fixture has two keeper kits that read against
+    // both shirts and the grass and against each other (tests/dots.test.ts).
+    { shirt: '#2f8f8f', shorts: '#123838', socks: '#2f8f8f', trim: '#f5f5f5' },
+    { shirt: '#efefcf', shorts: '#2a2a2a', socks: '#efefcf', trim: '#111111' },
+    { shirt: '#0f0f4f', shorts: '#0a0a2a', socks: '#0f0f4f', trim: '#f5f5f5' },
   ];
-  const score = (o: { shirt: string }) => Math.min(worstDiff(o.shirt, own), worstDiff(o.shirt, other), grassDiff(o.shirt, 'low'), grassDiff(o.shirt, 'high'));
+  const reads = (o: { shirt: string }) => Math.min(worstDiff(o.shirt, own), worstDiff(o.shirt, other), grassDiff(o.shirt, 'low'), grassDiff(o.shirt, 'high'));
+  const score = (o: { shirt: string }) => {
+    const r = reads(o);
+    return otherKeeper && r >= CLASH_DE ? CLASH_DE + Math.min(r, worstDiff(o.shirt, otherKeeper)) : r;
+  };
   let best = options[0];
   let bestD = -1;
   for (const o of options) {

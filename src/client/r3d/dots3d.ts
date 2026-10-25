@@ -10,6 +10,12 @@ import { BufferAttribute, BufferGeometry, CanvasTexture, Color, Points, PointsMa
 /** Dots show when a player would be drawn shorter than this, CSS px (fully in by DOT_BELOW - DOT_FADE). */
 export const DOT_BELOW = 11;
 export const DOT_FADE = 3;
+/**
+ * Draw order: after the pitch and the players (the dots ignore depth, so they show over them), but
+ * before the shadow blobs (1), the ball (1.5) and the aim layer (3 and up: the controlled player's
+ * ring and marker, the pointer, the wedge), so none of those is ever covered by a dot.
+ */
+export const DOT_ORDER = 0.9;
 /** Dot diameter, CSS px. */
 export const DOT_PX = 10;
 
@@ -71,7 +77,7 @@ export class PlayerDots {
     this.mat = new PointsMaterial({ size: DOT_PX, sizeAttenuation: false, map: this.tex, vertexColors: true, transparent: true, depthTest: false, depthWrite: false, alphaTest: 0.05, toneMapped: false } as Record<string, unknown>);
     this.object = new Points(this.geo, this.mat);
     this.object.frustumCulled = false;
-    this.object.renderOrder = 7;
+    this.object.renderOrder = DOT_ORDER;
     this.object.visible = false;
   }
 

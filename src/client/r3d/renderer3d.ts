@@ -274,7 +274,10 @@ export class Renderer3D implements MatchRenderer {
     fill.position.set(30, 40, 60);
     scene.add(fill);
 
-    this.ball = new Mesh(ballGeometry(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0 } as Record<string, unknown>));
+    // Drawn in the transparent pass (fully opaque) after the player dots, so the ball is never
+    // hidden under one (dots3d.ts DOT_ORDER); its shadow blob (renderOrder 1) comes after them too.
+    this.ball = new Mesh(ballGeometry(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0, transparent: true } as Record<string, unknown>));
+    this.ball.renderOrder = 1.5;
     this.ball.castShadow = true;
     this.blobMat = new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, toneMapped: false });
     this.blob = new Mesh(new PlaneGeometry(1, 1), this.blobMat.clone());
@@ -410,12 +413,14 @@ export class Renderer3D implements MatchRenderer {
     }
     for (const p of this.players) p.dispose();
     this.players = [];
+    // The home keeper first, then the away keeper in a kit that also differs from his.
+    const homeKeeper = keeperColors(s.teams[0].primary, s.teams[1].primary);
+    const keepers = [homeKeeper, keeperColors(s.teams[1].primary, s.teams[0].primary, homeKeeper.shirt)];
     const kits = ([0, 1] as const).map((t) => {
       const team = s.teams[t];
-      const other = s.teams[t === 0 ? 1 : 0];
       const numberColor = colorDist(team.primary, team.secondary) > 110 ? team.secondary : colorDist(team.primary, '#ffffff') > 200 ? '#ffffff' : '#111111';
       const shorts = colorDist(team.secondary, team.primary) > 60 ? team.secondary : '#f5f5f5';
-      const keeper = keeperColors(team.primary, other.primary);
+      const keeper = keepers[t];
       // A kit too close to the grass as drawn gets a dark rim round its players (kits.ts grassClash).
       return {
         field: { shirt: team.primary, shorts, socks: team.primary, trim: numberColor, rim: grassClash(team.primary) },
