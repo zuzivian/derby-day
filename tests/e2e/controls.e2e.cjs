@@ -308,13 +308,18 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       const me = s.players[s.controlled[0]];
       const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
       for (const p of s.players) p.stun = 1e7;
-      Object.assign(me, { stun: 0, tackleCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
+      // kickCd too: when nobody clicks at the kick-off the CPU takes it for our man after five seconds
+      // (Law 8: it is a kick), and a right click straight after his own kick is never a tackle.
+      Object.assign(me, { stun: 0, tackleCd: 0, kickCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
       // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
       Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
       opp.attrs.dribbling = 0;
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
       s.switchTimer[0] = 1e9;
+      // He is the human's man now, not one handed over by the kick-off pass: no hold waiting for the
+      // pointer to move (MatchState.ctlHold), which under load can outlast the click.
+      s.ctlHold = [false, false];
       // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
       // 1000 headless), and a right click during the restart that follows is not a tackle.
       Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });

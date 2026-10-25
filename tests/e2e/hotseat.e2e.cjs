@@ -31,11 +31,14 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   await page.waitForSelector(SEL.pitch);
   expect(await page.locator('.scoreboard').innerText(), 'the picked club is the away side').toContain(pickedName);
 
-  // Kick-off pause; player 1 holds the ball at the centre spot. Player 2 runs down on the arrows,
+  // Player 1 kicks off and his teammate holds the ball near the centre spot. Player 2 runs down on the arrows,
   // then player 1 runs up on W, each while the other is idle; then both at once, sideways.
   // Wait for play to start (the HUD clock moves) rather than a fixed time: a software-rendered 3D
   // view can take a couple of seconds to get its first frames up.
-  await page.waitForFunction(() => (document.getElementById('sb-clock')?.textContent ?? '00:00') !== '00:00', null, { timeout: 15_000 });
+  // The kick-off is a kick (Law 8): player 1 plays it with Space, then his teammate has the ball.
+  await page.waitForFunction(() => window.__derbyMatch?.phase === 'restart' && window.__derbyMatch.restart?.kind === 'kickoff', null, { timeout: 15_000 });
+  await page.keyboard.press('Space');
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner >= 0 && Math.hypot(window.__derbyMatch.ball.vel.x, window.__derbyMatch.ball.vel.y) < 0.5, null, { timeout: 15_000, polling: 'raf' });
   await page.waitForTimeout(250);
   // Hold keys until each listed man has covered `dist` metres the way his key says, or for at most
   // two seconds of SIM time once they start moving, then let go; the assertions below check the

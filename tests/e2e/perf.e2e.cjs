@@ -140,20 +140,31 @@ for (const quality of ['low', 'high']) test(
       s.events.push({ kind: 'card', color: 'yellow', player: p.i, team: 1, tick: s.tick, minute: 1, name: p.name });
     });
     await page.waitForTimeout(1500);
-    // A goal: net ripple, celebration, then the instant replay with its cameras.
-    await page.evaluate(() => {
-      const s = window.__derbyMatch;
-      const b = s.ball;
-      b.owner = -1;
-      for (const k of s.players) if (k.team === 1 && k.role === 'GK') k.pos = { x: 100, y: 40 };
-      b.pos = { x: 95, y: 31.5 };
-      b.vel = { x: 26, y: 0 };
-      b.z = 0.3;
-      b.vz = 0.5;
-      b.lastTouch = s.controlled[0];
-      s.stats[0].shots++;
-    });
-    await page.waitForFunction(() => window.__derbyMatch.score[0] === 1, null, { timeout: 30_000 });
+    // A goal: net ripple, celebration, then the instant replay with its cameras. Staged in the page, on an
+    // animation frame when play is live and no replay holds the match, so a goal the AI scores first (and
+    // its kick-off and replay) can't swallow it; then wait for our goal by count, not for the score to read 1-0.
+    const goals = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const tryStage = () => {
+            const s = window.__derbyMatch;
+            if (s.phase !== 'play' || document.querySelector('#pitch').dataset.replay || s.ball.inHands) return requestAnimationFrame(tryStage);
+            const n = s.goals.length;
+            const b = s.ball;
+            b.owner = -1;
+            for (const k of s.players) if (k.team === 1 && k.role === 'GK') k.pos = { x: 100, y: 40 };
+            b.pos = { x: 95, y: 31.5 };
+            b.vel = { x: 26, y: 0 };
+            b.z = 0.3;
+            b.vz = 0.5;
+            b.lastTouch = s.controlled[0];
+            s.stats[0].shots++;
+            res(n);
+          };
+          tryStage();
+        }),
+    );
+    await page.waitForFunction((n) => window.__derbyMatch.goals.slice(n).some((g) => g.team === 0), goals, { timeout: 30_000 });
     await page.waitForFunction(() => document.querySelector('#pitch').dataset.replay === 'goal', null, { timeout: 30_000 });
     await page.waitForTimeout(2000);
     const added = await page.evaluate(() => window.__newPrograms);
@@ -394,14 +405,15 @@ test(
     await page.locator(SEL.playRanked).click();
     await page.locator(SEL.pitch).waitFor();
     if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
-    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
-    const w0 = await page.evaluate(() => document.querySelector('#pitch').width);
-    // Record each level as it changes: one notch at a time, never back up.
-    await page.evaluate(() => {
+    // Record each level as it changes: one notch at a time, never back up. Watch from the start: the
+    // kick-off is a kick (Law 8) and can wait five seconds for the CPU, long enough for a first step.
+    const w0 = await page.evaluate(() => {
       const c = document.querySelector('#pitch');
       window.__levels = [];
       new MutationObserver(() => window.__levels.push(Number(c.dataset.governor))).observe(c, { attributes: true, attributeFilter: ['data-governor'] });
+      return c.width;
     });
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
     const stepped = await page.waitForFunction(() => Number(document.querySelector('#pitch').dataset.governor || 0) >= 1, null, { timeout: 30_000 }).then(() => true, () => false);
     if (!stepped) {
       // A fast enough machine (a real GPU) never needs to step down.

@@ -1,7 +1,10 @@
 // The Laws of the Game as the sim applies them. Pure functions of the match
 // state plus the seeded rng, like the rest of src/sim.
 //
-//   Law 8   kick-off                      resetKickoff in match.ts
+//   Law 3   fewer than seven players      sendOff -> abandon
+//   Law 7   added time                    addedMinutes, runClock in match.ts
+//   Law 8   kick-off                      resetKickoff in match.ts, then a restart like any other
+//   Laws 8, 13-17  no second touch        barredSecondTouch / secondTouch
 //   Law 11  offside                       noteBallPlayed / offsideOnTouch
 //   Law 12  fouls and misconduct          judgeFoul, issueCard, sendOff
 //   Law 13  free kicks (direct/indirect)  awardRestart('freekick')
@@ -36,7 +39,7 @@ import {
   SIX_W,
   THROW_Z0,
 } from './constants.ts';
-import { attackDir, goalkeeper, inOffsidePosition, inOwnBox, inOwnSix, oppGoal, ownGoal, secondLastOpponentX, teamX } from './field.ts';
+import { attackDir, fromTeam, goalkeeper, inOffsidePosition, inOwnBox, inOwnSix, oppGoal, ownGoal, secondLastOpponentX, teamAtEnd, teamX } from './field.ts';
 import { next } from './rng.ts';
 import type {
   CardEvent,
@@ -55,7 +58,28 @@ export type { RestartKind };
 // ---------------------------------------------------------------------------
 // Clock and events
 
+/** Law 7: the board is up and added time is being played (the clock holds at 45:00 or 90:00). */
+export function inAddedTime(s: MatchState): boolean {
+  return !!s.added && s.added.half === s.half && s.clock >= s.halfTicks * s.half;
+}
+
+/**
+ * Law 7: minutes of added time for the half just ending. A minute at least (two after the
+ * break), and half a minute for each goal, card and penalty in the half, at most six.
+ */
+export function addedMinutes(s: MatchState): number {
+  let from = 0;
+  if (s.half === 2) for (let i = s.events.length - 1; i >= 0; i--) if (s.events[i].kind === 'halftime') { from = i; break; }
+  let lost = 0;
+  for (let i = from; i < s.events.length; i++) {
+    const e = s.events[i];
+    if (e.kind === 'goal' || e.kind === 'card' || (e.kind === 'restart' && e.restart === 'penalty')) lost += 0.5;
+  }
+  return Math.min(6, (s.half === 1 ? 1 : 2) + Math.floor(lost));
+}
+
 export function matchMinute(s: MatchState): number {
+  if (inAddedTime(s)) return 45 * s.half;
   return Math.min(90, Math.floor((s.clock / (s.halfTicks * 2)) * 90) + 1);
 }
 
@@ -85,31 +109,31 @@ export const NO_OFFSIDE: ReadonlySet<RestartKind> = new Set(['throwin', 'goalkic
 const MID_Y = PITCH_H / 2;
 
 /** Where the ball goes for this restart, given roughly where the offence or exit happened. */
-export function restartSpot(kind: RestartKind, team: 0 | 1, at: Vec, direct: boolean): Vec {
+export function restartSpot(s: MatchState, kind: RestartKind, team: 0 | 1, at: Vec, direct: boolean): Vec {
   switch (kind) {
     case 'kickoff':
       return { x: PITCH_W / 2, y: MID_Y };
     case 'throwin':
       return { x: clamp(at.x, 0.5, PITCH_W - 0.5), y: at.y < MID_Y ? 0 : PITCH_H };
     case 'corner': {
-      const gx = oppGoal(team).x;
+      const gx = oppGoal(s, team).x;
       const inset = CORNER_R * 0.5;
       return { x: gx === 0 ? inset : PITCH_W - inset, y: at.y < MID_Y ? inset : PITCH_H - inset };
     }
     case 'goalkick': {
-      const g = ownGoal(team);
-      return { x: g.x + attackDir(team) * (SIX_DEPTH - 0.4), y: MID_Y + (at.y < MID_Y ? -1 : 1) * (SIX_W / 2 - 4.6) };
+      const g = ownGoal(s, team);
+      return { x: g.x + attackDir(s, team) * (SIX_DEPTH - 0.4), y: MID_Y + (at.y < MID_Y ? -1 : 1) * (SIX_W / 2 - 4.6) };
     }
     case 'penalty': {
-      const g = oppGoal(team);
-      return { x: g.x - attackDir(team) * PENALTY_SPOT, y: MID_Y };
+      const g = oppGoal(s, team);
+      return { x: g.x - attackDir(s, team) * PENALTY_SPOT, y: MID_Y };
     }
     case 'freekick': {
       let p = { x: clamp(at.x, 0.3, PITCH_W - 0.3), y: clamp(at.y, 0.3, PITCH_H - 0.3) };
       // Law 13: an indirect free kick to the attackers inside the goal area is
       // taken from the goal-area line nearest where the offence happened.
       const opp = other(team);
-      if (!direct && inOwnSix(opp, p)) p = { x: ownGoal(opp).x + attackDir(opp) * SIX_DEPTH, y: p.y };
+      if (!direct && inOwnSix(s, opp, p)) p = { x: ownGoal(s, opp).x + attackDir(s, opp) * SIX_DEPTH, y: p.y };
       return p;
     }
   }
@@ -121,9 +145,10 @@ export function restartSpot(kind: RestartKind, team: 0 | 1, at: Vec, direct: boo
  * others follow their Law). Pending cards from an advantage are shown now.
  */
 export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: Vec, reason: Restart['reason'], direct = true): void {
+  if (s.abandoned) return;
   if (kind === 'throwin') direct = false;
   else if (kind !== 'freekick') direct = true;
-  const spot = restartSpot(kind, team, at, direct);
+  const spot = restartSpot(s, kind, team, at, direct);
   const b = s.ball;
   b.owner = -1;
   b.receiver = -1;
@@ -131,6 +156,8 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
   b.inHands = false;
   b.setPiece = null;
   b.kickedBy = -1;
+  b.restartBy = -1;
+  b.noHands = -1;
   s.offside = null;
   s.advantage = null;
   s.restart = { kind, team, spot, taker: -1, stage: 'whistle', ticks: 0, direct, reason, wait: 0 };
@@ -147,6 +174,7 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
 
 /** The ball has wholly crossed a touchline or goal line (not into the goal). */
 export function ballOut(s: MatchState, at: Vec): void {
+  if (lateFoulOut(s)) return;
   const last = s.ball.lastTouch >= 0 ? s.players[s.ball.lastTouch] : null;
   const lastTeam: 0 | 1 = last ? last.team : 0;
   if (at.y < 0 || at.y > PITCH_H) {
@@ -154,9 +182,29 @@ export function ballOut(s: MatchState, at: Vec): void {
     return;
   }
   // Goal line: whose?
-  const defending: 0 | 1 = at.x < PITCH_W / 2 ? 0 : 1;
+  const defending = teamAtEnd(s, at.x < PITCH_W / 2 ? 0 : 1);
   if (lastTeam === defending) awardRestart(s, 'corner', other(defending), at, 'out');
   else awardRestart(s, 'goalkick', defending, at, 'out');
+}
+
+/**
+ * Laws 8, 13-17: the taker of the last restart may not play the ball again until another
+ * player has touched it. True while that is still so for p.
+ */
+export function barredSecondTouch(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  return b.restartBy === p.i && b.lastTouch === p.i;
+}
+
+/** Law 12: a keeper may not handle his own goal kick, free kick or release until someone else has touched the ball. */
+export function handsBarred(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  return b.noHands === p.i && b.lastTouch === p.i;
+}
+
+/** The taker played it a second time: an indirect free kick to the opponents where he did. */
+export function secondTouch(s: MatchState, p: MatchPlayer): void {
+  awardRestart(s, 'freekick', other(p.team), { ...p.pos }, 'second-touch', false);
 }
 
 /** Pick who takes it: the CPU's choice, used for human sides too (a human then steers the taker if it isn't the keeper). */
@@ -166,6 +214,7 @@ export function chooseTaker(s: MatchState, r: Restart): number {
   const outfield = mates.filter((p) => p.role !== 'GK');
   const pool = outfield.length ? outfield : mates;
   const gk = goalkeeper(s, team);
+  if (!pool.length) return gk.i; // nobody left (the match is abandoned long before this)
   const best = (cost: (p: MatchPlayer) => number, from = pool) => from.reduce((a, b) => (cost(b) < cost(a) ? b : a)).i;
   switch (r.kind) {
     case 'goalkick':
@@ -179,9 +228,9 @@ export function chooseTaker(s: MatchState, r: Restart): number {
       return best((p) => dist(p.pos, r.spot) * 0.35 - p.attrs.passing * 22, wide.length ? wide : pool);
     }
     case 'freekick': {
-      if (inOwnBox(team, r.spot)) return gk.i;
-      if (r.direct && dist(r.spot, oppGoal(team)) < 30) return best((p) => -p.attrs.shooting * 30 - p.attrs.passing * 8 + dist(p.pos, r.spot) * 0.15);
-      return best((p) => dist(p.pos, r.spot) - (p.role === 'DEF' && teamX(team, r.spot.x) < 0.3 ? 3 : 0));
+      if (inOwnBox(s, team, r.spot)) return gk.i;
+      if (r.direct && dist(r.spot, oppGoal(s, team)) < 30) return best((p) => -p.attrs.shooting * 30 - p.attrs.passing * 8 + dist(p.pos, r.spot) * 0.15);
+      return best((p) => dist(p.pos, r.spot) - (p.role === 'DEF' && teamX(s, team, r.spot.x) < 0.3 ? 3 : 0));
     }
     case 'kickoff':
       return best((p) => (p.role === 'FWD' ? 0 : 10) + p.slot * 0.1);
@@ -189,32 +238,32 @@ export function chooseTaker(s: MatchState, r: Restart): number {
 }
 
 /** Where the taker stands to take it. */
-export function takerSpot(r: Restart): Vec {
+export function takerSpot(s: MatchState, r: Restart): Vec {
   if (r.kind === 'throwin') return { x: r.spot.x, y: r.spot.y + (r.spot.y < MID_Y ? -0.45 : 0.45) };
-  const dir = r.kind === 'goalkick' ? norm({ x: attackDir(r.team), y: 0 }) : norm(sub(oppGoal(r.team), r.spot));
-  const d = len(dir) > 0 ? dir : { x: attackDir(r.team), y: 0 };
+  const dir = r.kind === 'goalkick' ? norm({ x: attackDir(s, r.team), y: 0 }) : norm(sub(oppGoal(s, r.team), r.spot));
+  const d = len(dir) > 0 ? dir : { x: attackDir(s, r.team), y: 0 };
   return sub(r.spot, scale(d, 0.75));
 }
 
 /** Ball height while it waits for the restart (a throw-in is held above the head). */
 export const restartBallZ = (r: Restart): number => (r.kind === 'throwin' && r.stage === 'ready' ? THROW_Z0 : 0);
 
-function pushOut(p: MatchPlayer, centre: Vec, radius: number): void {
+function pushOut(s: MatchState, p: MatchPlayer, centre: Vec, radius: number): void {
   const d = sub(p.pos, centre);
   const l = len(d);
   if (l >= radius) return;
-  const n = l > 1e-6 ? scale(d, 1 / l) : { x: -attackDir(p.team), y: 0 };
+  const n = l > 1e-6 ? scale(d, 1 / l) : { x: -attackDir(s, p.team), y: 0 };
   p.pos = add(centre, scale(n, radius + 0.02));
 }
 
 /** Push a point out of `team`'s penalty area, through its nearest edge. */
-function outOfBox(p: MatchPlayer, team: 0 | 1): void {
-  if (!inOwnBox(team, p.pos)) return;
-  const g = ownGoal(team);
-  const depth = teamX(team, p.pos.x) * PITCH_W;
+function outOfBox(s: MatchState, p: MatchPlayer, team: 0 | 1): void {
+  if (!inOwnBox(s, team, p.pos)) return;
+  const g = ownGoal(s, team);
+  const depth = teamX(s, team, p.pos.x) * PITCH_W;
   const toFront = BOX_DEPTH - depth;
   const toSide = BOX_W / 2 - Math.abs(p.pos.y - MID_Y);
-  if (toFront <= toSide) p.pos = { x: g.x + attackDir(team) * (BOX_DEPTH + 0.3), y: p.pos.y };
+  if (toFront <= toSide) p.pos = { x: g.x + attackDir(s, team) * (BOX_DEPTH + 0.3), y: p.pos.y };
   else p.pos = { x: p.pos.x, y: MID_Y + Math.sign(p.pos.y - MID_Y || 1) * (BOX_W / 2 + 0.3) };
 }
 
@@ -231,42 +280,42 @@ export function enforceRestartPositions(s: MatchState): void {
     switch (r.kind) {
       case 'kickoff':
         // Own half; the opponents also outside the centre circle.
-        if (teamX(p.team, p.pos.x) > 0.5 - 0.3 / PITCH_W) p.pos = { x: PITCH_W / 2 - attackDir(p.team) * 0.3, y: p.pos.y };
-        if (opp) pushOut(p, r.spot, RETREAT);
+        if (teamX(s, p.team, p.pos.x) > 0.5 - 0.3 / PITCH_W) p.pos = { x: PITCH_W / 2 - attackDir(s, p.team) * 0.3, y: p.pos.y };
+        if (opp) pushOut(s, p, r.spot, RETREAT);
         break;
       case 'throwin':
-        if (opp) pushOut(p, r.spot, 2);
+        if (opp) pushOut(s, p, r.spot, 2);
         break;
       case 'goalkick':
-        if (opp) outOfBox(p, r.team);
+        if (opp) outOfBox(s, p, r.team);
         break;
       case 'corner':
-        if (opp) pushOut(p, r.spot, RETREAT);
+        if (opp) pushOut(s, p, r.spot, RETREAT);
         break;
       case 'freekick': {
         if (!opp) break;
         // Defenders may stand on their own goal line between the posts for an indirect kick close in.
-        const g = ownGoal(p.team);
+        const g = ownGoal(s, p.team);
         const onLine = Math.abs(p.pos.x - g.x) < 0.6 && Math.abs(p.pos.y - MID_Y) < GOAL_W / 2;
-        if (!onLine) pushOut(p, r.spot, RETREAT);
-        if (inOwnBox(r.team, r.spot)) outOfBox(p, r.team); // a free kick in its own area: opponents outside it
+        if (!onLine) pushOut(s, p, r.spot, RETREAT);
+        if (inOwnBox(s, r.team, r.spot)) outOfBox(s, p, r.team); // a free kick in its own area: opponents outside it
         break;
       }
       case 'penalty': {
         const defGk = goalkeeper(s, other(r.team));
         if (p.i === defGk.i) {
           // On the goal line between the posts until it is kicked.
-          const g = ownGoal(p.team);
-          p.pos = { x: g.x + attackDir(p.team) * 0.15, y: clamp(p.pos.y, MID_Y - GOAL_W / 2 + 0.5, MID_Y + GOAL_W / 2 - 0.5) };
+          const g = ownGoal(s, p.team);
+          p.pos = { x: g.x + attackDir(s, p.team) * 0.15, y: clamp(p.pos.y, MID_Y - GOAL_W / 2 + 0.5, MID_Y + GOAL_W / 2 - 0.5) };
           break;
         }
         // Everyone else: outside the area, behind the mark, and 9.15 m from it.
         const defTeam = other(r.team);
-        outOfBox(p, defTeam);
-        pushOut(p, r.spot, RETREAT);
-        const behind = teamX(r.team, r.spot.x) - 0.3 / PITCH_W;
-        if (teamX(r.team, p.pos.x) > behind) p.pos = { x: r.team === 0 ? behind * PITCH_W : (1 - behind) * PITCH_W, y: p.pos.y };
-        outOfBox(p, defTeam);
+        outOfBox(s, p, defTeam);
+        pushOut(s, p, r.spot, RETREAT);
+        const behind = teamX(s, r.team, r.spot.x) - 0.3 / PITCH_W;
+        if (teamX(s, r.team, p.pos.x) > behind) p.pos = { x: fromTeam(s, r.team, behind, 0).x, y: p.pos.y };
+        outOfBox(s, p, defTeam);
         break;
       }
     }
@@ -315,6 +364,19 @@ export function offsideOnTouch(s: MatchState, p: MatchPlayer, deliberate: boolea
   return false;
 }
 
+/**
+ * Player p touched the ball and play goes on (a header, a deflection off him, a ball that
+ * came off his leg): Law 11 judges his teammates' positions at that moment, as for a pass.
+ * Only an opponent's deliberate play starts a new phase for the side that was watched; an
+ * opponent's deflection or save keeps the old judgement (offsideOnTouch already decided
+ * whether p himself was offside).
+ */
+export function offsidePlayed(s: MatchState, p: MatchPlayer, deliberate: boolean): void {
+  const w = s.offside;
+  if (w && w.team !== p.team && !deliberate) return;
+  noteBallPlayed(s, p);
+}
+
 // ---------------------------------------------------------------------------
 // Fouls and misconduct (Law 12)
 
@@ -326,34 +388,51 @@ export interface FoulContext {
   attempt: boolean;
   /** Does the victim's team still have the ball after the challenge? */
   keptBall: boolean;
+  /** A late challenge on a player who had already shot: no opportunity was denied, and the shot plays out. */
+  afterShot?: boolean;
+}
+
+/**
+ * The loose ball is on its way toward the goal `team` attacks: fast, from within 40 m, and
+ * crossing the line no more than 2 m wide of a post. A shot in flight, for the referee.
+ */
+export function goalBound(s: MatchState, team: 0 | 1): boolean {
+  const b = s.ball;
+  if (b.owner >= 0 || len(b.vel) < 6) return false;
+  // Measured to a metre behind the line, so a ball already part-way over it still counts.
+  const gx = oppGoal(s, team).x + attackDir(s, team);
+  const gap = gx - b.pos.x;
+  if (Math.abs(gap) > 40 || Math.abs(b.vel.x) < 1e-6 || Math.sign(gap) !== Math.sign(b.vel.x)) return false;
+  const y = b.pos.y + (b.vel.y * gap) / b.vel.x;
+  return Math.abs(y - MID_Y) < GOAL_W / 2 + 2;
 }
 
 /** Denying an obvious goal-scoring opportunity: through on goal with no covering defender but the keeper. */
 export function isDogso(s: MatchState, victim: MatchPlayer, offender: MatchPlayer): boolean {
-  const goal = oppGoal(victim.team);
+  const goal = oppGoal(s, victim.team);
   const d = dist(victim.pos, goal);
   if (d > 25) return false;
   const towards = dot(norm(sub(goal, victim.pos)), norm(len(victim.vel) > 0.5 ? victim.vel : victim.facing));
   if (towards < 0.2) return false;
   // Wide on the byline is not obvious.
-  if (Math.abs(victim.pos.y - MID_Y) > 16 && teamX(victim.team, victim.pos.x) > 0.9) return false;
-  const vx = teamX(victim.team, victim.pos.x);
+  if (Math.abs(victim.pos.y - MID_Y) > 16 && teamX(s, victim.team, victim.pos.x) > 0.9) return false;
+  const vx = teamX(s, victim.team, victim.pos.x);
   for (const m of s.players) {
     if (m.team === victim.team || m.sentOff || m.i === offender.i || m.role === 'GK') continue;
-    if (teamX(victim.team, m.pos.x) > vx - 0.01 && distToSegment(m.pos, victim.pos, goal) < 5) return false;
+    if (teamX(s, victim.team, m.pos.x) > vx - 0.01 && distToSegment(m.pos, victim.pos, goal) < 5) return false;
   }
   return true;
 }
 
 /** Stopping a promising attack: a carry into the attacking third with few defenders goal-side. */
 export function isSpa(s: MatchState, victim: MatchPlayer, offender: MatchPlayer): boolean {
-  const vx = teamX(victim.team, victim.pos.x);
+  const vx = teamX(s, victim.team, victim.pos.x);
   if (vx < 0.58) return false;
-  const goal = oppGoal(victim.team);
+  const goal = oppGoal(s, victim.team);
   let goalSide = 0;
   for (const m of s.players) {
     if (m.team === victim.team || m.sentOff || m.i === offender.i || m.role === 'GK') continue;
-    if (teamX(victim.team, m.pos.x) > vx && distToSegment(m.pos, victim.pos, goal) < 9) goalSide++;
+    if (teamX(s, victim.team, m.pos.x) > vx && distToSegment(m.pos, victim.pos, goal) < 9) goalSide++;
   }
   return goalSide <= 1;
 }
@@ -375,11 +454,13 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
   const at = { ...victim.pos };
   if (next(s.rng) >= whistleChance(s, at, severity)) return false;
   const victimTeam = victim.team;
-  const penalty = inOwnBox(offender.team, at);
-  const dogso = isDogso(s, victim, offender);
-  const spa = !dogso && isSpa(s, victim, offender);
-  // Advantage: the fouled side kept the ball in a good attacking position. Never for a penalty.
-  const advantage = !penalty && f.keptBall && teamX(victimTeam, at.x) > 0.45 && severity !== 'excessive' && next(s.rng) < 0.8;
+  const penalty = inOwnBox(s, offender.team, at);
+  // After the shot has gone, the challenge denied no goal-scoring opportunity or attack.
+  const dogso = !f.afterShot && isDogso(s, victim, offender);
+  const spa = !f.afterShot && !dogso && isSpa(s, victim, offender);
+  // Advantage: the fouled side kept the ball in a good attacking position. Never for a penalty;
+  // always for a shot already on its way (the whistle waits to see where it goes).
+  const advantage = !!f.afterShot || (!penalty && f.keptBall && teamX(s, victimTeam, at.x) > 0.45 && severity !== 'excessive' && next(s.rng) < 0.8);
 
   s.stats[offender.team].fouls++;
   pushEvent(s, { kind: 'foul', ...eventBase(s, offender.team, offender.i), victim: victim.i, spot: at, severity, penalty, advantage });
@@ -401,7 +482,10 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
 
   if (advantage) {
     for (const c of cards) s.pendingCards.push({ player: offender.i, color: c.color, reason: c.reason });
-    s.advantage = { team: victimTeam, until: s.tick + ADVANTAGE_TICKS, spot: at, penalty: false };
+    const st = s.stats[victimTeam];
+    s.advantage = f.afterShot
+      ? { team: victimTeam, until: s.tick + 600, spot: at, penalty, late: true }
+      : { team: victimTeam, until: s.tick + ADVANTAGE_TICKS, spot: at, penalty: false, shots: st.shots, passes: st.passes };
     pushEvent(s, { kind: 'advantage', ...eventBase(s, victimTeam, victim.i), spot: at });
     return false;
   }
@@ -412,17 +496,49 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
   return true;
 }
 
-/** Each tick of play during an advantage: call it back if the fouled side lost the ball. */
+/**
+ * Each tick of play during an advantage. Called back (the free kick for the original foul,
+ * Restart reason 'advantage') if the fouled side loses the ball within ADVANTAGE_TICKS; once
+ * it has had a shot, completed a pass or carried it into the box the advantage has come to
+ * something and stands. A late challenge after a shot waits for the shot to finish instead.
+ */
 export function tickAdvantage(s: MatchState): void {
   const a = s.advantage;
   if (!a) return;
-  const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
-  if (owner && owner.team !== a.team) {
+  const b = s.ball;
+  const owner = b.owner >= 0 ? s.players[b.owner] : null;
+  if (a.late) {
+    // The shot is over once anyone has the ball or it has died: then the late challenge is given.
+    if (owner || len(b.vel) < 2 || s.tick >= a.until) callBack(s);
+    return;
+  }
+  const st = s.stats[a.team];
+  const ensued = st.shots > (a.shots ?? Infinity) || st.passes > (a.passes ?? Infinity) || (!!owner && owner.team === a.team && inOwnBox(s, other(a.team), owner.pos));
+  if (ensued) {
     s.advantage = null;
-    awardRestart(s, 'freekick', a.team, a.spot, 'foul', true);
+    return;
+  }
+  if (owner && owner.team !== a.team) {
+    callBack(s);
     return;
   }
   if (s.tick >= a.until) s.advantage = null;
+}
+
+/** The advantage came to nothing: back for the original foul. */
+export function callBack(s: MatchState): void {
+  const a = s.advantage;
+  if (!a) return;
+  s.advantage = null;
+  if (a.penalty) awardRestart(s, 'penalty', a.team, a.spot, 'advantage');
+  else awardRestart(s, 'freekick', a.team, a.spot, 'advantage', true);
+}
+
+/** A shot fouled late went in, wide or over: not a goal, so the late challenge is given now. True if it was. */
+export function lateFoulOut(s: MatchState): boolean {
+  if (!s.advantage?.late) return false;
+  callBack(s);
+  return true;
 }
 
 /** Show cards held back while advantage was played. Called at every stoppage. */
@@ -462,9 +578,13 @@ export function issueCard(s: MatchState, p: MatchPlayer, color: 'yellow' | 'red'
 /** Where a player who has been sent off is parked: well outside the pitch, out of every calculation. */
 export const OFF_PITCH: Vec = { x: PITCH_W / 2, y: -60 };
 
+/** Law 3: a match may not continue if either side has fewer than seven players. */
+export const MIN_PLAYERS = 7;
+
 export function sendOff(s: MatchState, p: MatchPlayer): void {
   p.sentOff = true;
   pushEvent(s, { kind: 'sentOff', ...eventBase(s, p.team, p.i), name: p.name });
+  if (!s.abandoned && s.players.filter((m) => m.team === p.team && !m.sentOff).length < MIN_PLAYERS) abandon(s, p.team);
   const b = s.ball;
   if (b.owner === p.i) {
     b.owner = -1;
@@ -486,6 +606,31 @@ export function sendOff(s: MatchState, p: MatchPlayer): void {
   }
   if (s.restart && s.restart.taker === p.i) s.restart.taker = chooseTaker(s, s.restart);
   fixControlled(s);
+}
+
+/** The match was abandoned and awarded 3-0: the goals actually scored don't stand. */
+export const scoreAwarded = (s: MatchState): boolean => !!s.abandoned && (s.abandoned.score[0] !== s.score[0] || s.abandoned.score[1] !== s.score[1]);
+
+/**
+ * Law 3: `team` is down to six. The referee abandons the match and it is awarded against
+ * that side, 3-0 (or the score, if the other side was already winning by more).
+ */
+export function abandon(s: MatchState, team: 0 | 1): void {
+  const opp = other(team);
+  s.abandoned = { team, score: [s.score[0], s.score[1]] };
+  if (s.score[opp] - s.score[team] < 3) {
+    s.score[team] = 0;
+    s.score[opp] = 3;
+  }
+  s.restart = null;
+  s.advantage = null;
+  s.offside = null;
+  s.ball.owner = -1;
+  s.ball.inHands = false;
+  s.ball.receiver = -1;
+  s.phase = 'fulltime';
+  pushEvent(s, { kind: 'abandoned', ...eventBase(s, team, -1) });
+  pushEvent(s, { kind: 'fulltime', ...eventBase(s, team, -1) });
 }
 
 /**
@@ -523,12 +668,12 @@ export function moveReferee(s: MatchState): void {
   const ball = r && r.stage !== 'whistle' ? r.spot : s.ball.pos;
   const diag = { x: ball.x, y: 10 + (PITCH_H - 20) * clamp(ball.x / PITCH_W, 0, 1) };
   let away = sub(diag, ball);
-  if (len(away) < 4) away = { x: -attackDir(s.ball.owner >= 0 ? s.players[s.ball.owner].team : 0) * 6, y: ball.y < MID_Y ? 8 : -8 };
+  if (len(away) < 4) away = { x: -attackDir(s, s.ball.owner >= 0 ? s.players[s.ball.owner].team : 0) * 6, y: ball.y < MID_Y ? 8 : -8 };
   let target = add(ball, scale(norm(away), r?.kind === 'penalty' ? 14 : 13));
   if (r && r.stage !== 'whistle' && (r.kind === 'corner' || r.kind === 'freekick')) {
     // Stand where the drop zone and the wall are both in view.
-    const g = oppGoal(r.team);
-    target = add(add(g, scale(sub(r.spot, g), 0.55)), { x: -attackDir(r.team) * 6, y: ball.y < MID_Y ? 12 : -12 });
+    const g = oppGoal(s, r.team);
+    target = add(add(g, scale(sub(r.spot, g), 0.55)), { x: -attackDir(s, r.team) * 6, y: ball.y < MID_Y ? 12 : -12 });
   }
   target = { x: clamp(target.x, 2, PITCH_W - 2), y: clamp(target.y, 2, PITCH_H - 2) };
   const to = sub(target, ref.pos);
