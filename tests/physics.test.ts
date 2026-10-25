@@ -243,8 +243,9 @@ describe('quick click passes chain (ask 6)', () => {
     const got = { ...mate.pos };
     for (let k = 0; k < 30; k++) step(s, { cursor: stale });
     expect(dist(mate.pos, got)).toBeLessThan(0.6);
-    // Move the pointer and he goes.
-    for (let k = 0; k < 30; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
+    // Move the pointer and he goes: a turn with the ball, then the run (0.6 s; at 0.5 s how far he
+    // has got depends on a few centimetres of where he met the pass).
+    for (let k = 0; k < 36; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
     expect(mate.pos.x).toBeGreaterThan(got.x + 2);
   });
 

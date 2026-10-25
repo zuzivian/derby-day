@@ -14,10 +14,21 @@
  *   3  ball physics by height (control, chest, headers, bounces off bodies), keeper dives,
  *      catches and parries, firm click passes with assist, the human's keeper and first-time kicks
  *   4  Law 12: opponents standing close can't touch the keeper's release
+ *   5  nine formations and five mentalities that change how the CPU defends,
+ *      presses and supports the ball (src/sim/ai.ts TACTICS); CPU shot selection and
+ *      long-shot error; mentality changes from the pause menu (HumanInput.tactic)
  */
-export const SIM_VERSION = 4;
+export const SIM_VERSION = 5;
 
 export const TICK_HZ = 60;
+
+/**
+ * Extra spread on a shot (radians) per metre beyond 16 m from goal (up to 30 m: further out a
+ * strike is a long ball more than a shot), times (1.3 - shooting).
+ * Real football scores about 4% of shots from 18-30 m; without it a shot from 25 m was as
+ * well placed as one from the penalty spot. The ball physics and the keepers are in match.ts.
+ */
+export const LONG_SHOT_ERR = 0.01;
 export const DT = 1 / TICK_HZ;
 
 export const PITCH_W = 105;
@@ -91,9 +102,18 @@ export const RESTART_HUMAN_WAIT = 300;
 export const ADVANTAGE_TICKS = 120;
 
 export type Role = 'GK' | 'DEF' | 'MID' | 'FWD';
-/** Finer positions inside a role: full-back/centre-back, holding/central/wide midfielder, winger/striker. */
-export type SubRole = 'GK' | 'CB' | 'FB' | 'DM' | 'CM' | 'WM' | 'W' | 'ST';
-export type FormationId = '4-4-2' | '4-3-3';
+/**
+ * Finer positions inside a role, what the CPU (src/sim/ai.ts) plays to:
+ *   CB  centre-back: holds the line          FB  full-back: overlaps on the ball side
+ *   WB  wing-back: the width in a back three or five, higher than a full-back
+ *   DM  holding midfielder: screens the back line   CM  central midfielder: box to box
+ *   AM  attacking midfielder or second striker: between the lines
+ *   WM  wide midfielder: tracks back into a four    W   winger: stays high and wide
+ *   ST  striker: on the last defender's shoulder
+ */
+export type SubRole = 'GK' | 'CB' | 'FB' | 'WB' | 'DM' | 'CM' | 'AM' | 'WM' | 'W' | 'ST';
+/** Order matters: replays store the index into FORMATION_IDS, so new formations go on the end. */
+export type FormationId = '4-4-2' | '4-3-3' | '4-2-3-1' | '4-1-4-1' | '4-4-1-1' | '3-5-2' | '3-4-3' | '5-3-2' | '5-4-1';
 
 export interface FormationSlot {
   role: Role;
@@ -105,33 +125,91 @@ export interface FormationSlot {
   y: number;
 }
 
+const GK_SLOT: FormationSlot = { role: 'GK', sub: 'GK', label: 'GK', x: 0.02, y: 0.5 };
+/** Back four: full-backs a touch higher than the centre-backs. */
+const BACK_FOUR: FormationSlot[] = [
+  { role: 'DEF', sub: 'FB', label: 'LB', x: 0.2, y: 0.13 },
+  { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.39 },
+  { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.61 },
+  { role: 'DEF', sub: 'FB', label: 'RB', x: 0.2, y: 0.87 },
+];
+/** Back three; the wing-backs are added per formation (high in a 3-5-2, on the line in a 5-3-2). */
+const BACK_THREE: FormationSlot[] = [
+  { role: 'DEF', sub: 'CB', label: 'CB', x: 0.17, y: 0.3 },
+  { role: 'DEF', sub: 'CB', label: 'CB', x: 0.16, y: 0.5 },
+  { role: 'DEF', sub: 'CB', label: 'CB', x: 0.17, y: 0.7 },
+];
+const wingBacks = (x: number): [FormationSlot, FormationSlot] => [
+  { role: 'DEF', sub: 'WB', label: 'LWB', x, y: 0.08 },
+  { role: 'DEF', sub: 'WB', label: 'RWB', x, y: 0.92 },
+];
+const TWO_STRIKERS: FormationSlot[] = [
+  { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.37 },
+  { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.63 },
+];
+const LONE_STRIKER: FormationSlot = { role: 'FWD', sub: 'ST', label: 'ST', x: 0.6, y: 0.5 };
+/** A flat midfield four: wide men, a holding and a central midfielder. */
+const MID_FOUR: FormationSlot[] = [
+  { role: 'MID', sub: 'WM', label: 'LM', x: 0.4, y: 0.12 },
+  { role: 'MID', sub: 'DM', label: 'CM', x: 0.36, y: 0.4 },
+  { role: 'MID', sub: 'CM', label: 'CM', x: 0.4, y: 0.6 },
+  { role: 'MID', sub: 'WM', label: 'RM', x: 0.4, y: 0.88 },
+];
+/** A midfield three: one holding, two central. */
+const MID_THREE = (dmX: number, cmX: number, cmY = 0.33): FormationSlot[] => [
+  { role: 'MID', sub: 'DM', label: 'DM', x: dmX, y: 0.5 },
+  { role: 'MID', sub: 'CM', label: 'CM', x: cmX, y: cmY },
+  { role: 'MID', sub: 'CM', label: 'CM', x: cmX, y: 1 - cmY },
+];
+
+/**
+ * Every slot list runs keeper, defence, midfield, attack. Lineups are stored
+ * in slot order, so a formation's slots are never reordered once shipped.
+ */
 export const FORMATIONS: Record<FormationId, FormationSlot[]> = {
-  '4-4-2': [
-    { role: 'GK', sub: 'GK', label: 'GK', x: 0.02, y: 0.5 },
-    { role: 'DEF', sub: 'FB', label: 'LB', x: 0.2, y: 0.13 },
-    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.39 },
-    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.61 },
-    { role: 'DEF', sub: 'FB', label: 'RB', x: 0.2, y: 0.87 },
-    { role: 'MID', sub: 'WM', label: 'LM', x: 0.4, y: 0.12 },
-    { role: 'MID', sub: 'DM', label: 'CM', x: 0.36, y: 0.4 },
-    { role: 'MID', sub: 'CM', label: 'CM', x: 0.4, y: 0.6 },
-    { role: 'MID', sub: 'WM', label: 'RM', x: 0.4, y: 0.88 },
-    { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.37 },
-    { role: 'FWD', sub: 'ST', label: 'ST', x: 0.58, y: 0.63 },
-  ],
+  '4-4-2': [GK_SLOT, ...BACK_FOUR, ...MID_FOUR, ...TWO_STRIKERS],
   '4-3-3': [
-    { role: 'GK', sub: 'GK', label: 'GK', x: 0.02, y: 0.5 },
-    { role: 'DEF', sub: 'FB', label: 'LB', x: 0.2, y: 0.13 },
-    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.39 },
-    { role: 'DEF', sub: 'CB', label: 'CB', x: 0.18, y: 0.61 },
-    { role: 'DEF', sub: 'FB', label: 'RB', x: 0.2, y: 0.87 },
-    { role: 'MID', sub: 'DM', label: 'DM', x: 0.32, y: 0.5 },
-    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.33 },
-    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.67 },
+    GK_SLOT,
+    ...BACK_FOUR,
+    ...MID_THREE(0.32, 0.42),
     { role: 'FWD', sub: 'W', label: 'LW', x: 0.58, y: 0.12 },
     { role: 'FWD', sub: 'ST', label: 'ST', x: 0.6, y: 0.5 },
     { role: 'FWD', sub: 'W', label: 'RW', x: 0.58, y: 0.88 },
   ],
+  '4-2-3-1': [
+    GK_SLOT,
+    ...BACK_FOUR,
+    { role: 'MID', sub: 'DM', label: 'DM', x: 0.32, y: 0.36 },
+    { role: 'MID', sub: 'DM', label: 'DM', x: 0.32, y: 0.64 },
+    { role: 'MID', sub: 'W', label: 'LW', x: 0.5, y: 0.14 },
+    { role: 'MID', sub: 'AM', label: 'AM', x: 0.48, y: 0.5 },
+    { role: 'MID', sub: 'W', label: 'RW', x: 0.5, y: 0.86 },
+    LONE_STRIKER,
+  ],
+  '4-1-4-1': [
+    GK_SLOT,
+    ...BACK_FOUR,
+    { role: 'MID', sub: 'DM', label: 'DM', x: 0.3, y: 0.5 },
+    { role: 'MID', sub: 'WM', label: 'LM', x: 0.42, y: 0.12 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.36 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.42, y: 0.64 },
+    { role: 'MID', sub: 'WM', label: 'RM', x: 0.42, y: 0.88 },
+    LONE_STRIKER,
+  ],
+  '4-4-1-1': [GK_SLOT, ...BACK_FOUR, ...MID_FOUR, { role: 'FWD', sub: 'AM', label: 'SS', x: 0.5, y: 0.5 }, LONE_STRIKER],
+  '3-5-2': [GK_SLOT, ...BACK_THREE, ...wingBacks(0.32), ...MID_THREE(0.32, 0.42), ...TWO_STRIKERS],
+  '3-4-3': [
+    GK_SLOT,
+    ...BACK_THREE,
+    ...wingBacks(0.34),
+    { role: 'MID', sub: 'DM', label: 'CM', x: 0.36, y: 0.4 },
+    { role: 'MID', sub: 'CM', label: 'CM', x: 0.4, y: 0.6 },
+    { role: 'FWD', sub: 'W', label: 'LW', x: 0.58, y: 0.15 },
+    LONE_STRIKER,
+    { role: 'FWD', sub: 'W', label: 'RW', x: 0.58, y: 0.85 },
+  ],
+  '5-3-2': [GK_SLOT, ...BACK_THREE, ...wingBacks(0.22), ...MID_THREE(0.34, 0.38, 0.3), ...TWO_STRIKERS],
+  '5-4-1': [GK_SLOT, ...BACK_THREE, ...wingBacks(0.22), ...MID_FOUR, LONE_STRIKER],
 };
 
 export const FORMATION_IDS = Object.keys(FORMATIONS) as FormationId[];
@@ -141,7 +219,28 @@ export const DEFAULT_FORMATION: FormationId = '4-4-2';
 export const FORMATION: FormationSlot[] = FORMATIONS[DEFAULT_FORMATION];
 
 export const formationOf = (id: FormationId | undefined): FormationSlot[] => FORMATIONS[id ?? DEFAULT_FORMATION] ?? FORMATION;
+export const isFormationId = (v: unknown): v is FormationId => typeof v === 'string' && Object.prototype.hasOwnProperty.call(FORMATIONS, v);
 
+/**
+ * How aggressively a side plays, from a deep low block to pressing high. The
+ * CPU's knobs for each step are TACTICS in src/sim/ai.ts: line height,
+ * compactness, who presses and when, counter-pressing, how many commit
+ * forward, pass risk and tempo, how far the full-backs go.
+ */
+export type Mentality = 'park' | 'defensive' | 'balanced' | 'attacking' | 'press';
+/** Deepest to most aggressive, the order the tactics board shows. (Replays store a mentality by its own code, MENTALITY_CODES in src/meta/replay.ts.) */
+export const MENTALITY_IDS: Mentality[] = ['park', 'defensive', 'balanced', 'attacking', 'press'];
+export const DEFAULT_MENTALITY: Mentality = 'balanced';
+export const MENTALITY_LABEL: Record<Mentality, string> = {
+  park: 'Park the bus',
+  defensive: 'Defensive',
+  balanced: 'Balanced',
+  attacking: 'Attacking',
+  press: 'High press',
+};
+export const isMentality = (v: unknown): v is Mentality => typeof v === 'string' && (MENTALITY_IDS as string[]).includes(v);
+/** A team's mentality, Balanced when it has none. */
+export const mentalityOf = (m: Mentality | undefined): Mentality => (isMentality(m) ? m : DEFAULT_MENTALITY);
 /**
  * Rolling ball. Below ROLL_FAST_V it slows at ROLL_A + ROLL_B * v m/s per
  * second (a short pass feels the same as it always did); above, the speed
