@@ -12,6 +12,7 @@ import { announce, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
+import { tickDue } from './ticks.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
 import { InputController } from './input.ts';
@@ -97,6 +98,8 @@ export interface MatchInputSource {
   extras(): RenderExtras;
   /** Drop queued kicks and charges (pause, resume, replays): nothing pressed then fires afterwards. */
   reset?(): void;
+  /** A one-shot action (pass, shot, tackle, switch…) is waiting for the next tick. */
+  waiting?(): boolean;
   dispose(): void;
 }
 
@@ -210,7 +213,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (o.controls) c.mode = o.controls;
     c.paused = () => paused;
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -454,7 +457,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       if (!paused && !gfx.lost) {
         acc += elapsed;
         let steps = 0;
-        while (acc >= DT && steps < 12) {
+        // A waiting click or key takes its tick now, not a frame or two later on a fast screen (ticks.ts).
+        while (steps < 12 && tickDue(acc, steps, input.waiting?.() ?? false)) {
           let raw = input.take();
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
