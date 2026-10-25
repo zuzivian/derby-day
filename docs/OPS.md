@@ -148,6 +148,11 @@ system-font fallbacks without them.
   hand over; the owner refuses while a *match* is on screen, and the asking tab waits, so a result is never lost;
   menus and first-run setup do not block it) and **Use as a guest tab** (the game runs read-only, which is what
   Link play's second tab needs).
+- **The guard cannot hang the page or a hand-over.** Boot never waits more than 3 s for the browser's lock manager (if it
+  does not answer, the lease takes over, and a lock it grants late is released at once). A page that finds the lock held
+  waits 0.8 s for it before deciding another tab owns the club, because a reload (and the reload that ends "Play here
+  instead") starts while the page it replaces is still letting go. A hand-over asks the owner (1.5 s), then waits up to 3 s for
+  the lock to come free (an owner that closes or crashes releases it at once), and only then takes it by force.
 - **Saves are written defensively.** Each write first copies the previous readable save to
   `derbyday.save.v1.bak`. A save that fails validation on load is replaced by the backup (the unreadable text
   is kept as `derbyday.save.v1.corrupt` for support) and the player is told. A full disk (quota) or blocked
@@ -161,7 +166,7 @@ system-font fallbacks without them.
 - **Back up your club** (Club tab → Back up or restore): downloads `derby-day-<club>-<date>.json`, or shows a
   copyable code (`DD1.` + gzip, base64url). Restore checks every field of the backup (players, lineup, ladder, colours, number ranges) and dry-runs the game's boot
   and every screen on it before offering the confirm button, previews the club's name, level and record, says what
-  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone from the same dialog ("Swap back to …"). If a club ever crashes the game right
+  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone from the same dialog ("Swap back to …"). After writing, it reads the club and the safety copy back; if either differs from what was written it shows an error and does not reload. A successful restore shows "Restoring…" and reloads after 300 ms, so the browser has time to flush storage before the next page opens (a reload straight after the write can open the old club). If a club ever crashes the game right
   at start-up, the crash panel offers "Restore my previous club" from that copy or the rolling backup. A full disk
   gives up the safety copies (unreadable-save copy, pre-import copy, rolling backup, in that order) before it gives up
   on the save.
