@@ -21,6 +21,8 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
+import { quickTacticsMarkup } from './tactics.ts';
+import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
@@ -130,6 +132,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   // Replays record one human's input; two-human matches (hot-seat) aren't recorded.
   const rec = o.humans?.[0] && o.humans?.[1] ? null : new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
+  // Quick tactics: only for a single human side (hot-seat has two, and no setup to change).
+  const me: 0 | 1 | null = s.humans[0] !== s.humans[1] ? (s.humans[0] ? 0 : 1) : null;
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
@@ -142,6 +146,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
             <button class="btn primary" id="resume">Resume</button>
             <button class="btn" id="forfeit">${esc(o.forfeitText ?? (o.label === 'Ranked' ? 'Forfeit (counts as 0–3)' : 'Leave match'))}</button>
           </div>
+          ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
@@ -233,6 +238,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   optReplays.addEventListener('change', () => {
     replaysOn = optReplays.checked;
     setInstantReplaysPref(replaysOn);
+  });
+  // A mentality picked in the pause menu goes to the sim with the next tick's input.
+  let pendingTactic = 0;
+  root.querySelector('#quick-tactics')?.addEventListener('change', (e) => {
+    const v = (e.target as HTMLInputElement).value as Mentality;
+    pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
+    announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
   });
   const spotter = new HighlightSpotter(s);
   const buffer = new ReplayBuffer(s);
@@ -443,7 +455,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         acc += elapsed;
         let steps = 0;
         while (acc >= DT && steps < 12) {
-          const raw = input.take();
+          let raw = input.take();
+          if (pendingTactic && !Array.isArray(raw)) {
+            raw = { ...raw, tactic: pendingTactic };
+            pendingTactic = 0;
+          }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
           step(s, used);
           juice.tick(s);

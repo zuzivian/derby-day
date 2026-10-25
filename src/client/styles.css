@@ -401,7 +401,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-width: 600px) {
   .tbl .opt, .tbl .opt-phone { display: none; }
   .tbl th, .tbl td { padding-left: 5px; padding-right: 5px; }
-  .tbl td.name { white-space: normal; overflow-wrap: anywhere; min-width: 0; }
+  /* Names wrap between words; a surname too long for the column ends in an ellipsis instead of
+     breaking mid-word. The name column takes the spare width (max-width: 0 lets it shrink). */
+  .tbl td.name { white-space: normal; min-width: 0; max-width: 0; width: 100%; }
+  .tbl .name-text { display: block; overflow: hidden; text-overflow: ellipsis; }
   /* Starters already carry the accent edge; the XI pill stays for screen readers only. */
   .tbl td.name .pill { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .tbl .btn.small { padding-left: 10px; padding-right: 10px; }
@@ -412,6 +415,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .tbl td.name { font-size: var(--fs-sm); }
 }
 .tbl .name { font-weight: 600; }
+/* "Confirm sale": the flex gap stands in for the space, so trim it to a word space. */
+.btn > .opt-phone { margin-left: calc(.28em - var(--sp-2)); }
 .tbl .ovr { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-lg); }
 .tbl .pill { margin-left: 4px; background: color-mix(in srgb, var(--accent) 14%, var(--surface)); color: var(--accent); }
 .attr.t-a { color: var(--t-a); font-weight: 800; }
@@ -622,13 +627,24 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .rs-foot .replay-actions .btn { flex: 1 1 0; min-width: 0; padding: 6px 8px; font-size: var(--fs-sm); min-height: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rs-foot .btn.big { min-height: 44px; padding-top: 8px; padding-bottom: 8px; font-size: var(--fs-lg); }
 }
-@media (max-height: 500px) {
+/* Short screens (600 px tall or less: a small phone, a landscape phone, 200% zoom): a compact hero,
+   so the rewards and the XP card are on screen when the dialog opens. */
+@media (max-height: 600px) {
   .result-card .rs-hero { padding: 10px var(--sp-4) 12px; }
   .result-card .rs-eyebrow { font-size: var(--fs-2xs); }
   .result-card .result-title { font-size: 34px; margin-bottom: 6px; }
   .result-card .big-score { font-size: 48px; }
   .result-card .rs-crest .crest { width: 38px; height: 42px; }
   .result-card .rs-name { font-size: 15px; }
+  .result-card .rs-panel { padding-top: 12px; padding-bottom: 12px; gap: 8px; }
+  .result-card .rs-chip { padding-top: 3px; padding-bottom: 3px; }
+  .result-card .rs-chip-main { font-size: 20px; }
+  .result-card .rs-chips { gap: 4px; }
+  /* The chips say what they are; the "Rewards" heading stays for screen readers only. */
+  .result-card .rs-rewards > .rs-section { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .result-card .xp-card { padding-top: 8px; padding-bottom: 8px; gap: 4px var(--sp-3); }
+}
+@media (max-height: 500px) {
   .rs-foot { flex-direction: row; align-items: center; }
   .rs-foot .replay-actions { flex: 1 1 auto; }
   .rs-foot .rs-close { width: auto; flex: 1 1 auto; }

@@ -2,7 +2,8 @@
 // and DOM-free, balance questions ("is pace too strong?") become scripts.
 //   bun run balance [matches] [--assert]
 // Eleven-a-side, 2 x HALF_SECONDS (3 minutes) a half, each club in its own
-// formation. With --assert the process exits non-zero when the averages leave
+// formation and mentality, drawn in turn from three ladders (seeds 2026-2028:
+// one ladder's mix of deep and attacking clubs swings goals by a goal a match). With --assert the process exits non-zero when the averages leave
 // the sane range, so CI catches a broken tuning change:
 //   goals 1.5-5, passes >= 80, fouls 5-25, yellows 0.5-6, reds <= 1,
 //   offsides 0.3-6, corners >= 1, and well under a second per match.
@@ -14,14 +15,15 @@
 
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
 import { expectedScore } from '../src/meta/elo.ts';
-import { possessionShare, simulate } from '../src/sim/match.ts';
+import { emptyTally, playCountingShots, shotTable } from '../src/meta/shotProbe.ts';
+import { possessionShare } from '../src/sim/match.ts';
 import type { TeamStats } from '../src/sim/types.ts';
 
 const args = process.argv.slice(2);
 const assertMode = args.includes('--assert');
 const n = Number(args.find((a) => !a.startsWith('--')) ?? 30);
 if (!Number.isFinite(n) || n < 1) throw new Error('Usage: bun run balance [matches] [--assert]');
-const clubs = generateLadder(2026, 16);
+const ladders = [2026, 2027, 2028].map((seed) => generateLadder(seed, 16));
 let played = 0;
 let goals = 0;
 let favouriteWins = 0;
@@ -30,12 +32,15 @@ const sum: Record<keyof TeamStats, number> = {
   shots: 0, onTarget: 0, passes: 0, tackles: 0, possessionTicks: 0, fouls: 0, yellows: 0, reds: 0,
   corners: 0, offsides: 0, throwIns: 0, goalKicks: 0, freeKicks: 0, penalties: 0, passAttempts: 0,
 };
+const shotsByDistance = emptyTally();
 const t0 = performance.now();
 for (let i = 0; i < n; i++) {
-  const a = clubs[i % clubs.length];
-  const b = clubs[(i * 7 + 3) % clubs.length];
+  const clubs = ladders[i % ladders.length];
+  const j = Math.floor(i / ladders.length);
+  const a = clubs[j % clubs.length];
+  const b = clubs[(j * 7 + 3) % clubs.length];
   if (a.id === b.id) continue;
-  const s = simulate({ seed: i, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) });
+  const s = playCountingShots({ seed: i, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)) }, shotsByDistance);
   const [ga, gb] = s.score;
   played++;
   goals += ga + gb;
@@ -56,6 +61,8 @@ console.log(`goals/match ${goalsPer.toFixed(2)}  shots ${per('shots').toFixed(1)
 console.log(`fouls ${per('fouls').toFixed(1)}  yellows ${per('yellows').toFixed(2)}  reds ${per('reds').toFixed(2)}  penalties ${per('penalties').toFixed(2)}`);
 console.log(`corners ${per('corners').toFixed(1)}  offsides ${per('offsides').toFixed(1)}  throw-ins ${per('throwIns').toFixed(1)}  goal kicks ${per('goalKicks').toFixed(1)}  free kicks ${per('freeKicks').toFixed(1)}`);
 console.log(`favourite won ${favouriteWins}, draws ${draws}, upsets ${played - favouriteWins - draws}`);
+// Real football: about 4% of shots from 18-30 m score, and about 40% of shots come from there.
+console.log(`shots by distance (share of shots, goal rate):\n${shotTable(shotsByDistance)}`);
 
 if (assertMode) {
   const problems: string[] = [];

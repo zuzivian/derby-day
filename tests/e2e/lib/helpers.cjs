@@ -55,6 +55,13 @@ const SEL = {
   sellConfirmAny: '[data-action="sell-confirm"]',
   // Squad
   slot: (n) => `[data-change="slot"][data-slot="${n}"]`,
+  // Tactics board (src/client/tactics.ts): radio groups for formation and mentality.
+  formationRadio: (id) => `input[name="formation"][value="${id}"]`,
+  mentalityRadio: (id) => `input[name="mentality"][value="${id}"]`,
+  formationChecked: 'input[name="formation"]:checked',
+  mentalityChecked: 'input[name="mentality"]:checked',
+  // Pause-menu quick tactics (src/client/tactics.ts quickTacticsMarkup).
+  quickMentality: (id) => `#quick-tactics label:has(input[value="${id}"])`,
   // Two humans (versus.ts)
   playLocal2p: '[data-action="play-local2p"]',
   playLink: '[data-action="play-link"]',
