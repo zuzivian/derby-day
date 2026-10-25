@@ -84,9 +84,9 @@ describe('shirts against the grass, as drawn', () => {
     }
   });
 
-  test('yellow, amber, cream and orange shirts get the rim; red, green, blue, purple, black, white and the rest do not', () => {
+  test('yellow, amber, cream, orange, white, grey, red and the lighter green get the rim; blue, purple, black, dark red and dark green do not', () => {
     const clash = [...new Set([...KIT_COLORS.flat(), NEUTRAL_DARK, NEUTRAL_LIGHT])].filter(grassClash);
-    expect(clash.sort()).toEqual(['#ea580c', '#f2a900', '#f4d03f', '#fde68a']);
+    expect(clash.sort()).toEqual(['#0b7a3e', '#c8102e', '#e5e7eb', '#ea580c', '#f2a900', '#f4d03f', '#f5f5f5', '#fde68a', '#ffffff']);
   });
 
   test('keepers read against both shirts and the grass, for every pairing and every vision', () => {

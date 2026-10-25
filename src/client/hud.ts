@@ -132,6 +132,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
   let lastClock = '';
   let lastCharge = -1;
   const colors: [string, string] = [s0.teams[0].primary, s0.teams[1].primary];
+  // Radar dot outlines: light round a dark kit, dark round a light one, so every team's dots stand
+  // off the dark radar panel.
+  const rims = colors.map((c) => (luma(c) < 0.35 ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.9)'));
 
   function drawRadar(s: MatchState) {
     if (!ctx) return;
@@ -150,7 +153,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     const oy = (h - PITCH_H * k) / 2;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(10,16,14,.28)';
+    // A dark panel, so kit-coloured dots read even when the kit is the grass's colour (a green team's
+    // dots on a see-through radar over green grass vanished).
+    ctx.fillStyle = 'rgba(8,12,10,.62)';
     ctx.fillRect(0, 0, w, h);
     ctx.setTransform(k, 0, 0, k, ox, oy);
     ctx.strokeStyle = 'rgba(255,255,255,.85)';
@@ -170,8 +175,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
       if (p.sentOff) continue;
       const ctrl = s.humans[p.team] && s.controlled[p.team] === p.i;
       ctx.fillStyle = colors[p.team];
-      ctx.strokeStyle = ctrl ? HUMAN_COLORS[s.humans[0] && s.humans[1] ? p.team : 0] : 'rgba(0,0,0,.7)';
-      ctx.lineWidth = (ctrl ? 1.6 : 0.8) * dpr / k;
+      ctx.strokeStyle = ctrl ? HUMAN_COLORS[s.humans[0] && s.humans[1] ? p.team : 0] : rims[p.team];
+      ctx.lineWidth = (ctrl ? 1.6 : 1.1) * dpr / k;
       ctx.beginPath();
       if (p.team === 0) ctx.arc(p.pos.x, p.pos.y, dot, 0, Math.PI * 2);
       else {
@@ -261,4 +266,15 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
     },
   };
   return hud;
+}
+
+/** Relative luminance (0..1) of a #rrggbb colour, for picking a contrasting outline. */
+function luma(hex: string): number {
+  const h = hex.replace('#', '');
+  const f = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const c = parseInt(f.slice(i, i + 2), 16) / 255;
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
