@@ -369,6 +369,58 @@ describe('camera', () => {
     expect(penaltyView(s)).toBe(null);
   });
 
+  // Set-piece camera: from 24 m out wide, or 35 m out, the broadcast view lost the goal (both posts
+  // off the edge at 1280x800; at 35 m on a phone too).
+  test('a free kick in the attacking half frames the ball, the run-up, the wall and the goal, for either side', () => {
+    for (const [aspect, w] of [
+      [1041 / 697, 1041],
+      [358 / 636, 358],
+      [358 / 448, 358],
+      [828 / 374, 828],
+    ]) {
+      for (const team of [0, 1] as const) {
+        for (const [d, y] of [[22, 34], [24, 14], [24, 54], [35, 30], [30, 6], [45, 34]]) {
+          const s = match(16);
+          // Team 0 attacks x = PITCH_W in the first half, team 1 x = 0.
+          const gx = team === 0 ? PITCH_W : 0;
+          const x = team === 0 ? PITCH_W - d : d;
+          s.restart = { kind: 'freekick', team, spot: { x, y }, stage: 'ready' } as MatchState['restart'];
+          const lv = longView(s, 0)!;
+          expect(lv.kind).toBe('setpiece');
+          const c = new MatchCamera();
+          const f = { ...focus, x: x - PITCH_W / 2, z: y - PITCH_H / 2, long: { points: lv.points.map((p) => ({ x: p.x - PITCH_W / 2, z: p.y - PITCH_H / 2 })), corner: true } };
+          for (let i = 0; i < 400; i++) c.update(1 / 60, f, aspect, w, false);
+          const l = Math.hypot(gx - x, PITCH_H / 2 - y);
+          const [ux, uy] = [(gx - x) / l, (PITCH_H / 2 - y) / l];
+          const must = [
+            { x, y },
+            { x: x - ux * 2, y: y - uy * 2 },
+            { x: x + ux * 9.15 - uy * 2.5, y: y + uy * 9.15 + ux * 2.5 },
+            { x: x + ux * 9.15 + uy * 2.5, y: y + uy * 9.15 - ux * 2.5 },
+            { x: gx, y: PITCH_H / 2 - 3.66 },
+            { x: gx, y: PITCH_H / 2 + 3.66 },
+          ];
+          for (const p of must) {
+            const v = new Vector3(p.x - PITCH_W / 2, 0, p.y - PITCH_H / 2).project(c.camera);
+            if (Math.abs(v.x) > 0.9 || Math.abs(v.y) > 0.9) throw new Error(`free kick ${team} at ${x},${y}, aspect ${aspect.toFixed(2)}: (${p.x.toFixed(1)},${p.y.toFixed(1)}) at ndc ${v.x.toFixed(2)},${v.y.toFixed(2)}`);
+          }
+        }
+      }
+    }
+    // In the taking side's own half it stays the long view (the human's), or none (the CPU's).
+    const s = match(16);
+    s.restart = { kind: 'freekick', team: 0, spot: { x: 40, y: 30 }, stage: 'ready' } as MatchState['restart'];
+    expect(longView(s, 0)!.kind).toBe('long');
+    s.restart = { kind: 'freekick', team: 1, spot: { x: 65, y: 30 }, stage: 'ready' } as MatchState['restart'];
+    expect(longView(s, 0)).toBe(null);
+    // Not while the ball is still rolling dead ('whistle'), and not with two humans on one screen.
+    s.restart = { kind: 'freekick', team: 0, spot: { x: 83, y: 34 }, stage: 'whistle' } as MatchState['restart'];
+    expect(longView(s, 0)).toBe(null);
+    const hs = match(16, [true, true]);
+    hs.restart = { kind: 'freekick', team: 0, spot: { x: 83, y: 34 }, stage: 'ready' } as MatchState['restart'];
+    expect(longView(hs, 0)).toBe(null);
+  });
+
   test('a portrait phone shows at least 40 m across at the ball', () => {
     const c = new MatchCamera();
     const y = settle(c, focus, 0.8, 358);

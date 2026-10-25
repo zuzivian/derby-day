@@ -10,6 +10,8 @@
 //     Left press and hold  lofted ball that lands at the pointer; the charge shows from CLICK_MS and is
 //                          full at CLICK_MS + LOFT_RAMP_MS (900 ms in all); the longer, the higher and further
 //     Right click          shot toward the pointer; hold right for more power, release to strike
+//     (free kick)          the shot goes where right went down; drag sideways while holding to curl it
+//                          that way (CURL_DRAG_M, about 4 m of pitch, for full bend; see curlFrom)
 //     (keeper)             left click rolls it out, left hold throws or kicks it high, right click punts
 //   Without the ball
 //     Left click           switch to the teammate under the pointer, else the nearest one in that direction
@@ -158,6 +160,35 @@ export interface Armed {
   kind: 'loft' | 'shot' | null;
   /** The power the kick would go with if released now: loft hold 0..1, or shot power SHOT_MIN..1. */
   power: number;
+  /** A shot by the taker over a free kick: it goes to `at` (where the button went down), bent by `curl` (curlFrom). */
+  at?: Vec;
+  curl?: number;
+}
+
+/** World metres the pointer is dragged sideways, while the button is held, for full curl on a set-piece shot. */
+export const CURL_DRAG_M = 4;
+/** A drag shorter than this (m) is a wobble, not curl. */
+const CURL_DEAD_M = 0.4;
+
+/**
+ * The bend on a set-piece shot from the ball at `ball` to the point the button went down (`at`), with the pointer
+ * now at `cursor`: how far it has been dragged across the line of the shot, -1..1. Dragged to the kicker's left it
+ * bends left (positive, HumanInput.curl), to his right it bends right.
+ */
+export function curlFrom(ball: Vec, at: Vec, cursor: Vec): number {
+  const dx = at.x - ball.x;
+  const dy = at.y - ball.y;
+  const l = Math.hypot(dx, dy);
+  if (l < 1e-6) return 0;
+  const across = ((cursor.x - at.x) * -dy + (cursor.y - at.y) * dx) / l;
+  if (Math.abs(across) < CURL_DEAD_M) return 0;
+  return Math.max(-1, Math.min(1, (across - Math.sign(across) * CURL_DEAD_M) / (CURL_DRAG_M - CURL_DEAD_M)));
+}
+
+/** The ball's spot while `team`'s steered man is over a free kick he takes (InputController.setPiece), else null. */
+export function freeKickSpot(s: MatchState, team: 0 | 1): Vec | null {
+  const r = s.restart;
+  return r && r.kind === 'freekick' && r.team === team && r.stage !== 'whistle' && s.controlled[team] === r.taker ? r.spot : null;
 }
 
 /** Tap on a touch screen: at most this long and this many CSS pixels of travel. */
@@ -173,6 +204,7 @@ export class InputController {
   private select = false;
   private switchReq = false;
   private shoot: number | null = null;
+  private curl = 0;
   private loft: number | null = null;
   /** Left button (or the Pass button) down with the ball: when, or null. */
   private leftStart: number | null = null;
@@ -384,8 +416,24 @@ export class InputController {
     this.shoot = shotPower(performance.now() - this.shotStart);
     this.shotStart = null;
     this.lastKickAt = performance.now();
-    this.aim = this.cursor;
+    const bend = this.setPieceBend();
+    this.aim = bend ? bend.at : this.cursor;
+    this.curl = bend ? bend.curl : 0;
   }
+
+  /**
+   * Over a free kick with the mouse, a shot goes where the button went down and a drag across its line while held
+   * bends it (curlFrom). Anywhere else a shot goes where the button comes up, as it always has.
+   */
+  private setPieceBend(): { at: Vec; curl: number } | null {
+    const ball = this.setPiece();
+    const at = this.press?.type === 'mouse' ? this.press.world : null;
+    if (!ball || !at || !this.cursor || this.mode !== 'mouse') return null;
+    return { at, curl: curlFrom(ball, at, this.cursor) };
+  }
+
+  /** The ball's spot while the human's man is over a free kick (set by the match view), else null. */
+  setPiece: () => Vec | null = () => null;
 
   /** On-screen buttons for touch screens. */
   bindTouchButtons(passBtn: HTMLElement, shootBtn: HTMLElement): void {
@@ -411,7 +459,10 @@ export class InputController {
   /** The kick being charged, for the renderer: a loft (left held past a click, or C) or a shot (right, Shoot or F). */
   armed(): Armed {
     const now = performance.now();
-    if (this.shotStart !== null) return { kind: 'shot', power: shotPower(now - this.shotStart) };
+    if (this.shotStart !== null) {
+      const bend = this.setPieceBend();
+      return bend ? { kind: 'shot', power: shotPower(now - this.shotStart), at: bend.at, curl: bend.curl } : { kind: 'shot', power: shotPower(now - this.shotStart) };
+    }
     if (this.loftKeyStart !== null) return { kind: 'loft', power: loftPower(now - this.loftKeyStart) };
     if (this.leftStart !== null && now - this.leftStart >= this.clickMs()) return { kind: 'loft', power: loftPower(now - this.leftStart, this.clickMs()) };
     return { kind: null, power: 0 };
@@ -490,6 +541,7 @@ export class InputController {
     if (this.pass) input.pass = true;
     if (this.loft !== null) input.loft = this.loft;
     if (this.shoot !== null) input.shoot = this.shoot;
+    if (this.shoot !== null && this.curl) input.curl = Math.round(this.curl * 100) / 100;
     if (this.tackle) input.tackle = true;
     if (this.select && pointer) input.select = true;
     if (this.keys.has('shift')) input.sprint = true;
@@ -497,6 +549,7 @@ export class InputController {
     if (pointer && this.aim && (input.pass || input.loft !== undefined || input.shoot !== undefined || input.select || input.tackle)) input.aim = this.aim;
     this.pass = this.tackle = this.select = this.switchReq = false;
     this.loft = this.shoot = null;
+    this.curl = 0;
     this.aim = null;
     this.travel = 0;
     // Lose the ball mid-charge and the charge is dropped.

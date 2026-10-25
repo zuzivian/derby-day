@@ -70,7 +70,7 @@ describe('team and start validation', () => {
 
 describe('lockstep message validation', () => {
   test('every HumanInput field survives cleaning, so no control is lost online', () => {
-    const full: Required<HumanInput> = { cursor: { x: 50, y: 30 }, dir: { x: 0.5, y: -1 }, pass: true, loft: 0.4, shoot: 0.9, tackle: true, select: true, sprint: true, switchPlayer: true, aim: { x: 104, y: 34 }, moved: true, tactic: 5 };
+    const full: Required<HumanInput> = { cursor: { x: 50, y: 30 }, dir: { x: 0.5, y: -1 }, pass: true, loft: 0.4, shoot: 0.9, tackle: true, select: true, sprint: true, switchPlayer: true, aim: { x: 104, y: 34 }, moved: true, tactic: 5, curl: -0.5 };
     // INPUT_FIELDS (src/net/validate.ts) is type-checked to list every HumanInput field.
     expect(Object.keys(full).sort()).toEqual(Object.keys(INPUT_FIELDS).sort());
     expect(cleanInput(full)).toEqual(full);

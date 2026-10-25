@@ -78,6 +78,10 @@ export function quantiseInput(i: HumanInput): HumanInput {
   if (i.aim) o.aim = { x: q100(i.aim.x), y: q100(i.aim.y) };
   if (i.moved) o.moved = true;
   if (i.tactic && i.tactic >= 1 && i.tactic <= MENTALITY_IDS.length) o.tactic = Math.round(i.tactic);
+  if (i.curl) {
+    const c = q100(Math.min(1, Math.max(-1, i.curl)));
+    if (c) o.curl = c;
+  }
   return o;
 }
 
@@ -98,6 +102,7 @@ export function inputsEqual(a: HumanInput, b: HumanInput): boolean {
     a.aim?.y === b.aim?.y &&
     a.moved === b.moved &&
     a.tactic === b.tactic &&
+    a.curl === b.curl &&
     !a.cursor === !b.cursor &&
     !a.dir === !b.dir &&
     !a.aim === !b.aim
@@ -537,6 +542,8 @@ const E_SWITCH = 16;
 const E_AIM = 32;
 /** Format 6: a mentality change (HumanInput.tactic) byte follows everything else in the run. */
 const E_TACTIC = 64;
+/** Format 7: a set-piece shot's bend (HumanInput.curl, -1..1) follows as a byte, 0..200, after the mentality byte. */
+const E_CURL = 128;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
   // Cursor and axes are delta-coded against the previous run's, in whole cm.
@@ -553,6 +560,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
     if (i.switchPlayer) e |= E_SWITCH;
     if (i.aim) e |= E_AIM;
     if (i.tactic) e |= E_TACTIC;
+    if (i.curl) e |= E_CURL;
     let f = 0;
     if (i.cursor) f |= F_CURSOR;
     if (i.dir) f |= F_DIR;
@@ -586,6 +594,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
       w.ivar(Math.round(i.aim.y * 100) - cy);
     }
     if (i.tactic) w.byte(i.tactic);
+    if (i.curl) w.byte(Math.round(i.curl * 100) + 100);
     if (n > 1) w.uvar(n);
   }
 }
@@ -628,6 +637,11 @@ function readRuns(r: Reader, ticks: number, version: number): InputRun[] {
     if (version >= 6 && e & E_TACTIC) {
       input.tactic = r.byte();
       if (input.tactic < 1 || input.tactic > MENTALITY_IDS.length) throw new Error('Replay code is damaged or cut short.');
+    }
+    if (version >= 7 && e & E_CURL) {
+      const c = r.byte();
+      if (c > 200) throw new Error('Replay code is damaged or cut short.');
+      if (c !== 100) input.curl = (c - 100) / 100;
     }
     const n = f & F_MULTI ? r.uvar() : 1;
     if (n < 1 || total + n > ticks) throw new Error('Replay code is damaged or cut short.');
@@ -688,8 +702,12 @@ function checksum(b: Uint8Array): number {
  * the other fields), and a team's mentality rides in the high four bits of its formation byte
  * (0 is Balanced, as every older code has). Version 5 and 4 codes still open, flagged as from
  * another sim version.
+ * 7: inputs may carry `curl` (the bend on a set-piece shot, E bit 128, a byte 0..200 after the
+ * mentality byte). That was E's last free bit: the next field needs a second extra byte, for
+ * instance signalled by F bit 128 (reserved until then). Version 6 and older codes still open,
+ * flagged as from another sim version.
  */
-export const REPLAY_VERSION = 6;
+export const REPLAY_VERSION = 7;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
