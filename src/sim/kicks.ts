@@ -5,7 +5,7 @@ import { resolvePassTarget } from './ai.ts';
 import { AIR_DRAG, CHIP_Z0, GRAVITY, ROLL_A, ROLL_B, ROLL_FAST_B, ROLL_FAST_V } from './constants.ts';
 import { clampToPitch } from './field.ts';
 import type { MatchPlayer, MatchState } from './types.ts';
-import { add, clamp, dist, len, norm, scale, sub, type Vec } from './vec.ts';
+import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
 export interface ChipPlan {
   /** Where the ball first touches down. */
@@ -178,9 +178,34 @@ export function leadPoint(from: Vec, m: MatchPlayer): Vec {
   return lead;
 }
 
+/** A click up to this far ahead of a running team-mate, along his run, is a ball into his path. */
+export const THROUGH_AHEAD = 14;
+
+/**
+ * Is `aim` ahead of team-mate `m` on his run, a ball into his path? How far off his line it is as a
+ * share of the room allowed (2 m, plus a quarter of how far ahead), or Infinity.
+ */
+function intoPath(m: MatchPlayer, aim: Vec): number {
+  const v = len(m.vel);
+  if (v < 2.5) return Infinity;
+  const run = scale(m.vel, 1 / v);
+  const to = sub(aim, m.pos);
+  const ahead = dot(to, run);
+  if (ahead < 1 || ahead > THROUGH_AHEAD) return Infinity;
+  const off = Math.abs(to.x * run.y - to.y * run.x);
+  const room = 2 + 0.25 * ahead;
+  return off < room ? off / room : Infinity;
+}
+
 /** The teammate the assist gives a pass from `from` aimed at `aim`, or -1 (see PASS_ASSIST_R). */
 export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): number {
+  return assistPick(s, p, from, aim).receiver;
+}
+
+/** assistReceiver, and whether he was picked for a ball into his path (played to the pointer, timed for him) rather than to him. */
+function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { receiver: number; into: boolean } {
   let receiver = -1;
+  let into = false;
   const toAim = sub(aim, from);
   const dAim = len(toAim);
   const radius = assistRadius(dAim);
@@ -200,13 +225,34 @@ export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Ve
     }
     // A keeper is only played to on purpose (pointer right on him).
     if (m.role === 'GK' && near > PASS_ASSIST_R) err = Infinity;
+    // Past all that, a click into the path of a man making a run is for him.
+    const path = err === Infinity && m.role !== 'GK' ? intoPath(m, aim) : Infinity;
+    if (path < Infinity) err = 2 + path;
     if (err < bestErr) {
       bestErr = err;
       receiver = m.i;
+      into = path < Infinity;
     }
   }
-  return receiver;
+  return { receiver, into };
 }
+
+/** The pace a ball rolled `d` metres should still have when it gets there, to arrive in about `t` seconds. */
+function timedArrival(d: number, t: number): number {
+  let lo = PASS_ARRIVAL_SPEED;
+  let hi = THROUGH_MAX_ARRIVAL;
+  if (groundPassPlan(d, lo).flight <= t) return lo;
+  if (groundPassPlan(d, hi).flight >= t) return hi;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (groundPassPlan(d, mid).flight > t) lo = mid;
+    else hi = mid;
+  }
+  return hi;
+}
+
+/** A ball into a runner's path is never rolled faster than this as it reaches the pointer. */
+const THROUGH_MAX_ARRIVAL = 14;
 
 /** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
 /** `lead`: play it to where he will be if he is running (false: to his feet, e.g. a man who stops when a restart is ready). */
@@ -231,7 +277,14 @@ export function passToPoint(s: MatchState, m: MatchPlayer, at: Vec): { target: V
  */
 export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number } {
   const ball = s.ball.pos;
-  const receiver = assistReceiver(s, p, ball, aim);
+  const { receiver, into } = assistPick(s, p, ball, aim);
+  if (into) {
+    // Into his path: to the pointer, timed to get there as he does at the pace he is running.
+    const m = s.players[receiver];
+    const target = clampToPitch(aim, 0.5);
+    const d = dist(ball, target);
+    return { target, receiver, speed: groundPassPlan(d, timedArrival(d, dist(m.pos, target) / len(m.vel))).speed };
+  }
   let target = receiver >= 0 ? leadPoint(ball, s.players[receiver]) : clampToPitch(aim, 0.5);
   // A pointer on top of the ball: play it a couple of metres the way the player faces.
   if (dist(ball, target) < 2) {
