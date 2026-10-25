@@ -5,11 +5,13 @@ import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.
 import { attackDir } from '../../sim/field.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
+import { grassClash } from '../kits.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer, type AimFrame } from './aim3d.ts';
 import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
+import { PlayerDots, playerPx } from './dots3d.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
@@ -220,6 +222,9 @@ export class Renderer3D implements MatchRenderer {
   private lastNow = 0;
   private lastState: MatchState | null = null;
   private heads: Vector3[] = [];
+  /** Shirt-coloured dots over the players when they are drawn too small to read (dots3d.ts). */
+  private dots: PlayerDots | null = null;
+  private dotsOn: boolean | null = null;
   private reduced = prefersReducedMotion();
   private celebrate: { i: number; until: number } | null = null;
   /** The referee turns to the player he is booking until this clock time. */
@@ -295,7 +300,10 @@ export class Renderer3D implements MatchRenderer {
     fill.position.set(30, 40, 60);
     scene.add(fill);
 
-    this.ball = new Mesh(ballGeometry(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0 } as Record<string, unknown>));
+    // Drawn in the transparent pass (fully opaque) after the player dots, so the ball is never
+    // hidden under one (dots3d.ts DOT_ORDER); its shadow blob (renderOrder 1) comes after them too.
+    this.ball = new Mesh(ballGeometry(), new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0, transparent: true } as Record<string, unknown>));
+    this.ball.renderOrder = 1.5;
     this.ball.castShadow = true;
     this.blobMat = new MeshBasicMaterial({ map: blobTexture(), transparent: true, depthWrite: false, toneMapped: false });
     this.blob = new Mesh(new PlaneGeometry(1, 1), this.blobMat.clone());
@@ -455,14 +463,18 @@ export class Renderer3D implements MatchRenderer {
     }
     for (const p of this.players) p.dispose();
     this.players = [];
+    // The home keeper first, then the away keeper in a kit that also differs from his.
+    const homeKeeper = keeperColors(s.teams[0].primary, s.teams[1].primary);
+    const keepers = [homeKeeper, keeperColors(s.teams[1].primary, s.teams[0].primary, homeKeeper.shirt)];
     const kits = ([0, 1] as const).map((t) => {
       const team = s.teams[t];
-      const other = s.teams[t === 0 ? 1 : 0];
       const numberColor = colorDist(team.primary, team.secondary) > 110 ? team.secondary : colorDist(team.primary, '#ffffff') > 200 ? '#ffffff' : '#111111';
       const shorts = colorDist(team.secondary, team.primary) > 60 ? team.secondary : '#f5f5f5';
+      const keeper = keepers[t];
+      // A kit too close to the grass as drawn gets a dark rim round its players (kits.ts grassClash).
       return {
-        field: { shirt: team.primary, shorts, socks: team.primary, trim: numberColor },
-        keeper: keeperColors(team.primary, other.primary),
+        field: { shirt: team.primary, shorts, socks: team.primary, trim: numberColor, rim: grassClash(team.primary) },
+        keeper: { ...keeper, rim: grassClash(keeper.shirt) },
       };
     });
     for (const p of s.players) {
@@ -487,6 +499,9 @@ export class Renderer3D implements MatchRenderer {
     this.aim?.dispose();
     this.aim = new AimLayer(s.players.length);
     this.scene.add(this.aim.group);
+    this.dots?.dispose();
+    this.dots = new PlayerDots(s.players.map((p) => (p.role === 'GK' ? kits[p.team].keeper : kits[p.team].field).shirt));
+    this.scene.add(this.dots.object);
     this.director.reset(s);
   }
 
@@ -812,6 +827,11 @@ export class Renderer3D implements MatchRenderer {
       this.aim.update(af);
     }
     this.edgeMarks(s, !!x.noAim);
+    // The controlled player has his own marker; the sent off have left.
+    const dotted = (i: number) => !s.players[i].sentOff && !(s.humans[s.players[i].team] && s.controlled[s.players[i].team] === i);
+    this.dots?.update(this.heads, dotted, playerPx(this.cam.camera, this.cam.target, this.cssH), this.pixelRatio);
+    const dotsOn = !!this.dots?.object.visible;
+    if (dotsOn !== this.dotsOn) this.canvas.dataset.dots = (this.dotsOn = dotsOn) ? 'on' : 'off';
 
     // Placed after the scene's matrix pass above: the ball, its shadow blob, the sun and the overlays.
     this.ball.updateMatrixWorld();
@@ -948,6 +968,7 @@ export class Renderer3D implements MatchRenderer {
     this.referee?.dispose();
     this.kit.dispose();
     this.aim?.dispose();
+    this.dots?.dispose();
     this.stadium?.dispose();
     this.ball.geometry.dispose();
     (this.ball.material as MeshStandardMaterial).dispose();
