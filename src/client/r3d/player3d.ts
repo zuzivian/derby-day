@@ -345,13 +345,20 @@ function keys(t: number, k: number[]): number {
 // ---------------------------------------------------------------------------
 // Builder
 
+/**
+ * Players are drawn a little larger than life, as arcade football games do: with the camera pulled
+ * back to show 45-60 m of pitch (owner's ask 1) a true-size player is a thin 35 px figure at
+ * 1280x800, thinner than the Power Soccer references. The sim's sizes and collisions are unchanged.
+ */
+export const PLAYER_SCALE = 1.12;
+
 export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player3D {
   // One skinned mesh per player: every primitive is baked into a single
   // geometry with vertex colours and rigidly bound to its bone, so a player is
   // one draw call (two with the shirt number) and all players share one material.
   const root = new Group();
   root.name = 'player';
-  const h = look.height;
+  const h = look.height * PLAYER_SCALE;
   root.scale.setScalar(h);
   const bw = 1 + look.build * 0.06;
 
@@ -529,7 +536,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     const gait = smooth(0.25, 3.6, speed);
     const sprint = smooth(5.2, 7.6, speed);
     // Stride length grows with speed, so cadence rises more slowly than speed.
-    const stride = 1.25 + 0.32 * speed;
+    const stride = (1.25 + 0.32 * speed) * PLAYER_SCALE; // longer legs, longer strides: the feet keep pace with the ground
     const back = fwdS < -0.6 && speed > 0.8 ? -1 : 1;
     phase += ((speed * dtSim) / stride) * Math.PI * 2 * back;
     const s = Math.sin(phase);
