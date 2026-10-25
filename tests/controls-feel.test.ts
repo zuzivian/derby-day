@@ -377,3 +377,50 @@ describe('a click while our restart is being set up', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Minor: human shots rise with power, by shooting skill
+
+/** The human strikes from `d` m out at the middle of the goal; nobody else on the pitch. Height as it crosses the line (or its peak if short). */
+function shotHeight(d: number, power: number, shooting: number, seed: number) {
+  const s = livePlay(seed);
+  const me = role(s, 0, 'FWD');
+  isolate(s, me);
+  s.controlled[0] = me.i;
+  me.pos = { x: 105 - d - 1, y: 34 };
+  me.vel = { x: 0, y: 0 };
+  me.facing = { x: 1, y: 0 };
+  me.stun = 0;
+  me.attrs.shooting = shooting;
+  Object.assign(s.ball, { owner: me.i, pos: { x: 105 - d, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
+  const goal = { x: 105, y: 34 };
+  step(s, { cursor: goal, aim: goal, shoot: power });
+  let peak = 0;
+  for (let t = 0; t < 120 && s.ball.pos.x < 105; t++) {
+    step(s, { cursor: goal });
+    peak = Math.max(peak, s.ball.z);
+  }
+  return { atLine: s.ball.pos.x >= 105 ? s.ball.z : peak, peak };
+}
+
+const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+
+describe('human shots rise with power', () => {
+  const seeds = Array.from({ length: 21 }, (_, i) => i + 1);
+  test('a quick click stays low; a full-power strike from 18-25 m rises to around 1.5-2.4 m at the goal line', () => {
+    for (const d of [18, 25]) {
+      const low = median(seeds.map((sd) => shotHeight(d, 0.55, 0.7, sd).atLine));
+      const high = median(seeds.map((sd) => shotHeight(d, 1, 0.7, sd).atLine));
+      // Main: 0.12-0.35 m at every power.
+      expect(low).toBeLessThan(0.8);
+      expect(high).toBeGreaterThan(1.4);
+      expect(high).toBeLessThan(2.44);
+    }
+  });
+
+  test('it stays skill-based: a poor shooter puts a full-power strike over the bar more often than a good one', () => {
+    const over = (shooting: number) => seeds.filter((sd) => shotHeight(20, 1, shooting, sd).atLine > 2.44).length;
+    expect(over(0.2)).toBeGreaterThan(over(0.95));
+    expect(over(0.95)).toBeLessThanOrEqual(5);
+  });
+});

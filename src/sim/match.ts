@@ -56,7 +56,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
+import { assistReceiver, chipPlan, loftPlan, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
 import {
   awardRestart,
   ballOut,
@@ -352,13 +352,15 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
   }
   if (a.kind === 'shoot' && b.owner === p.i) {
     const power = a.power;
-    const speed = (13 + 17 * power) * (0.8 + 0.3 * p.attrs.shooting);
+    const speed = shotSpeed(power, p.attrs.shooting);
     let err = 0.02 + 0.12 * power * power * (1.3 - p.attrs.shooting);
     if (s.restart?.kind === 'penalty') err *= 0.45; // a dead ball from 11 m: no one closing you down
     kick(s, p, a.target, speed, err, -1);
     if (a.lift && a.lift > 0) {
-      b.z = 0.05;
+      b.z = SHOT_Z0;
       b.vz = a.lift;
+      // A human's rising shot scatters up and down too: more with power, less for a good shooter.
+      if (isHumanControlled(s, p)) b.vz = Math.max(0, b.vz + gauss(s.rng) * power * power * (1.3 - p.attrs.shooting) * (s.restart?.kind === 'penalty' ? 0.45 : 1));
     }
     b.passFrom = -1;
     countShot(s, team, true);

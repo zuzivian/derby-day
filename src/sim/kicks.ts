@@ -257,3 +257,28 @@ export function puntPlan(from: Vec, target: Vec, power: number): ChipPlan {
 export function humanPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number } {
   return resolvePassTarget(s, p, aim);
 }
+
+// ---------------------------------------------------------------------------
+// Shots
+
+/** How hard a shot is struck (m/s) for a power 0..1 and a shooting attribute 0..1. */
+export const shotSpeed = (power: number, shooting: number): number => (13 + 17 * power) * (0.8 + 0.3 * shooting);
+
+/** Height a lifted shot leaves the foot at. */
+export const SHOT_Z0 = 0.05;
+
+/** The human's shot power runs from this (a quick click) to 1 (a full hold). */
+export const HUMAN_SHOT_MIN = 0.55;
+
+/**
+ * The lift (initial vz, m/s) that puts a human shot at a height on the goal line that rises with
+ * the power: a quick click stays low (about 0.3 m), a full hold rises to about 2 m. match.ts adds
+ * a vertical scatter that grows with power and falls with shooting, so a poor shooter's blast
+ * can go over.
+ */
+export function humanShotLift(from: Vec, target: Vec, power: number, shooting: number): number {
+  const k = clamp((power - HUMAN_SHOT_MIN) / (1 - HUMAN_SHOT_MIN), 0, 1);
+  const h = 0.3 + 1.7 * Math.pow(k, 1.2);
+  const t = Math.max(0.15, dist(from, target) / shotSpeed(power, shooting));
+  return Math.max(0, (h - SHOT_Z0 + 0.5 * GRAVITY * t * t) / t);
+}
