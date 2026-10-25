@@ -234,7 +234,11 @@ test('back up the club to a file and a code, then restore it into a different cl
     init: () => {
       const set = Storage.prototype.setItem;
       Storage.prototype.setItem = function (k, v) {
-        if (this === localStorage && /^derbyday\.save\.v1(\.pre-import)?$/.test(k)) sessionStorage.setItem('__wrote:' + k, v);
+        if (this === localStorage && /^derbyday\.save\.v1(\.pre-import)?$/.test(k)) {
+          const log = JSON.parse(sessionStorage.getItem('__wrote:' + k) || '[]');
+          try { log.push(JSON.parse(v).club.name); } catch { log.push('?'); }
+          sessionStorage.setItem('__wrote:' + k, JSON.stringify(log));
+        }
         return set.call(this, k, v);
       };
     },
@@ -255,9 +259,10 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect((await readSave(c)).club.name, 'nothing replaced before confirming').toBe(nameC);
   await Promise.all([c.waitForNavigation(), c.locator('#bk-confirm').click()]);
   await c.waitForSelector(SEL.tab);
-  const wrote = (k) => c.evaluate((key) => JSON.parse(sessionStorage.getItem('__wrote:' + key)).club.name, k);
-  expect(await wrote(SAVE_KEY), 'club restored from the file').toBe(nameA);
-  expect(await wrote(SAVE_KEY + '.pre-import'), 'old club kept as a safety copy').toBe(nameC);
+  // Every club the app wrote under each key, in order (the page that loads after the restore may write more, so it is "wrote", not "last").
+  const wrote = (k) => c.evaluate((key) => JSON.parse(sessionStorage.getItem('__wrote:' + key) || '[]'), k);
+  expect(await wrote(SAVE_KEY), 'club restored from the file').toContain(nameA);
+  expect(await wrote(SAVE_KEY + '.pre-import'), 'old club kept as a safety copy').toEqual([nameC]);
 
   // The code works the same way.
   const d = await openApp(t, { level: 5 });
