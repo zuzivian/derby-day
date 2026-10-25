@@ -12,7 +12,7 @@ import { AimLayer, type AimFrame } from './aim3d.ts';
 import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerDots, playerPx } from './dots3d.ts';
-import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
+import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
 import { QualityGovernor, type GovernorState } from './governor.ts';
@@ -531,9 +531,8 @@ export class Renderer3D implements MatchRenderer {
     }
     for (const p of this.players) p.dispose();
     this.players = [];
-    // The home keeper first, then the away keeper in a kit that also differs from his.
-    const homeKeeper = keeperColors(s.teams[0].primary, s.teams[1].primary);
-    const keepers = [homeKeeper, keeperColors(s.teams[1].primary, s.teams[0].primary, homeKeeper.shirt)];
+    // Both keepers' kits, chosen together so they also differ from each other.
+    const keepers = keeperPair(s.teams[0].primary, s.teams[1].primary);
     const kits = ([0, 1] as const).map((t) => {
       const team = s.teams[t];
       const numberColor = colorDist(team.primary, team.secondary) > 110 ? team.secondary : colorDist(team.primary, '#ffffff') > 200 ? '#ffffff' : '#111111';

@@ -13,12 +13,12 @@
 // keeps them whatever its level), or when it was unlocked once before
 // (`unlocksSeen`): once unlocked, always unlocked, even if the XP table is
 // rebalanced later. Match controls (sprint, lofted balls, slides) are never
-// gated. Both ways to play another human (Local 2P, Link two tabs) are open
-// from level 1: "vs Player" is one of the home screen's play modes.
+// gated. Both ways to play another human (vs Player: one screen, vs Player: two
+// tabs) open at level 2, with Squad and Easy practice; level 1 is Home and Kick off.
 //
 // XP. See XP below and docs/ROADMAP.md ("Club levels") for the table and the
 // pacing. Forfeits and abandoned matches earn nothing, and two-human matches
-// (Local 2P, Link two tabs) record nothing, so they earn nothing either.
+// (vs Player) record nothing, so they earn nothing either.
 
 import type { MatchRecord, Save } from './game.ts';
 
@@ -73,7 +73,8 @@ export type UnlockId =
   | 'home' | 'club' | 'squad' | 'ranked' | 'practice'
   | 'training' | 'transfers' | 'ladder' | 'cup' | 'practice-hard' | 'replays' | 'local2p' | 'league' | 'calendar' | 'link' | 'drills' | 'practice-normal'
   | 'squad-15' | 'crest' | 'market-20' | 'kit' | 'scouting' | 'badge-silver' | 'squad-30' | 'win-bonus' | 'replays-40'
-  | 'squad-50' | 'badge-gold' | 'replays-65' | 'badge-platinum' | 'market-80' | 'badge-legend';
+  | 'squad-50' | 'badge-gold' | 'replays-65' | 'badge-platinum' | 'market-80' | 'badge-legend'
+  | 'history' | 'academy-plus' | 'analysts' | 'sponsor' | 'youth-coach' | 'win-bonus-2' | 'market-90' | 'squad-95';
 
 export interface Unlock {
   id: UnlockId;
@@ -93,35 +94,43 @@ export interface Unlock {
 export const UNLOCKS: readonly Unlock[] = [
   { id: 'home', level: 1, kind: 'feature', name: 'Home and Kick off', text: 'Kick off your next match from Home. Everything else opens as the club levels up.' },
   { id: 'squad', level: 2, kind: 'feature', name: 'Squad', text: 'See your players and pick the starting eleven.', go: { screen: 'squad', label: 'Go to Squad' } },
-  { id: 'local2p', level: 2, kind: 'feature', name: 'Local 2P', text: 'vs Player on one screen: two humans, one keyboard. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-local2p' } },
-  { id: 'link', level: 2, kind: 'feature', name: 'Link two tabs', text: 'vs Player in two tabs of this browser, in lockstep. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-link' } },
-  { id: 'practice', level: 2, kind: 'feature', name: 'Practice (Easy)', text: 'Friendlies against an Easy CPU. No Elo.', go: { screen: 'home', label: 'Show me', focusId: 'practice-easy' } },
-  { id: 'ranked', level: 3, kind: 'feature', name: 'Ranked matches', text: 'Play ladder clubs near your Elo, live. Until then, Kick off is a warm-up friendly.' },
+  { id: 'local2p', level: 2, kind: 'feature', name: 'vs Player: one screen', text: 'Two humans, one keyboard, one screen. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-local2p' } },
+  { id: 'link', level: 2, kind: 'feature', name: 'vs Player: two tabs', text: 'Two tabs of this browser play each other, in lockstep. Nothing recorded.', go: { screen: 'home', label: 'Show me', focusId: 'play-link' } },
+  { id: 'practice', level: 2, kind: 'feature', name: 'Practice: Easy', text: 'Friendlies against an Easy CPU. No Elo.', go: { screen: 'home', label: 'Show me', focusId: 'practice-easy' } },
+  { id: 'ranked', level: 3, kind: 'feature', name: 'Ranked matches', text: 'Kick off now plays ladder clubs near your Elo, live.', go: { screen: 'home', label: 'Go to Kick off', focusId: 'kick-off' } },
   { id: 'club', level: 3, kind: 'feature', name: 'Club', text: 'Club news, your club level and every unlock still to come.', go: { screen: 'club', label: 'Go to Club' } },
   { id: 'replays', level: 3, kind: 'feature', name: 'Replays', text: 'Watch your goals again, keep recent replays and share replay codes.', go: { screen: 'club', label: 'Show me', focusId: 'replay-paste' } },
   { id: 'drills', level: 3, kind: 'feature', name: 'Practice skills', text: 'The training-ground drills: run, pass, shoot and tackle, any time you like.', go: { screen: 'club', label: 'Show me', focusId: 'replay-tutorial' } },
   { id: 'training', level: 4, kind: 'feature', name: 'Training', text: 'Spend the sessions you earn on player attributes.', go: { screen: 'training', label: 'Go to Training' } },
-  { id: 'practice-normal', level: 4, kind: 'feature', name: 'Practice Normal', text: 'A fairer CPU friendly: the Academy Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-normal' } },
+  { id: 'practice-normal', level: 4, kind: 'feature', name: 'Practice: Normal', text: 'A fairer CPU friendly: the Academy Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-normal' } },
   { id: 'cup', level: 5, kind: 'feature', name: 'The Cup', text: 'The Competitions tab opens with an 8-club knockout cup: prize money, penalties, a trophy.', go: { screen: 'competitions', label: 'Go to Competitions' } },
-  { id: 'practice-hard', level: 5, kind: 'feature', name: 'Practice Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-hard' } },
+  { id: 'practice-hard', level: 5, kind: 'feature', name: 'Practice: Hard', text: 'A tougher CPU friendly: the Veterans Select.', go: { screen: 'home', label: 'Show me', focusId: 'practice-hard' } },
   { id: 'transfers', level: 6, kind: 'feature', name: 'Transfers', text: 'Sign players from the market and sell to CPU clubs.', go: { screen: 'transfers', label: 'Go to Transfers' } },
-  { id: 'ladder', level: 7, kind: 'feature', name: 'Ladder', text: 'The full Elo table of all 16 clubs.', go: { screen: 'ladder', label: 'Go to the Ladder' } },
+  { id: 'ladder', level: 7, kind: 'feature', name: 'Ladder', text: 'The full Elo table of all 32 clubs, in four divisions.', go: { screen: 'ladder', label: 'Go to the Ladder' } },
   { id: 'league', level: 8, kind: 'feature', name: 'League season', text: 'An 8-club round robin over 7 matchdays, with prize money for every place.', go: { screen: 'competitions', label: 'Go to Competitions', focusId: 'comp-start-season' } },
   { id: 'calendar', level: 10, kind: 'feature', name: 'Season calendar and academy', text: 'Seasons of 10 matches start counting: players age, veterans retire and academy prospects arrive.', go: { screen: 'club', label: 'Show me', focusId: 'news-title' } },
   { id: 'squad-15', level: 15, kind: 'perk', name: 'Squad of 25', text: 'Room for one more player (24 to 25).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'crest', level: 18, kind: 'perk', name: 'Crest pattern', text: 'Change your crest pattern any time from Club news.', go: { screen: 'club', label: 'Show me', focusId: 'crest-select' } },
   { id: 'market-20', level: 20, kind: 'perk', name: 'Deeper market', text: 'Two extra players on the transfer market (10 to 12).', go: { screen: 'transfers', label: 'Go to Transfers' } },
   { id: 'kit', level: 22, kind: 'perk', name: 'Custom kit colours', text: 'Pick your own kit colours from Club news.', go: { screen: 'club', label: 'Show me', focusId: 'kit-primary' } },
+  { id: 'history', level: 24, kind: 'perk', name: 'Club history', text: 'Every season in one table, and the club records: biggest win, longest unbeaten run, highest Elo, best division.', go: { screen: 'club', label: 'Show me', focusId: 'history-title' } },
   { id: 'scouting', level: 25, kind: 'perk', name: 'Sharper scouts', text: "An academy prospect's potential is known one match sooner (5 instead of 6)." },
   { id: 'badge-silver', level: 25, kind: 'perk', name: 'Silver badge', text: 'Your level badge turns silver.' },
   { id: 'squad-30', level: 30, kind: 'perk', name: 'Squad of 26', text: 'Room for another player (25 to 26).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'win-bonus', level: 35, kind: 'perk', name: 'Win bonus', text: 'One extra training session for every ranked or competition win.' },
   { id: 'replays-40', level: 40, kind: 'perk', name: 'Replay shelf of 8', text: 'Keep your last 8 replays instead of 5.' },
+  { id: 'academy-plus', level: 45, kind: 'perk', name: 'Bigger academy', text: 'One more academy prospect every season (3 to 4 instead of 2 to 3).' },
   { id: 'squad-50', level: 50, kind: 'perk', name: 'Squad of 27', text: 'Room for another player (26 to 27).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'badge-gold', level: 50, kind: 'perk', name: 'Gold badge', text: 'Your level badge turns gold.' },
+  { id: 'analysts', level: 55, kind: 'perk', name: 'Data analysts', text: "An academy prospect's potential is known after 3 matches." },
+  { id: 'sponsor', level: 60, kind: 'perk', name: 'Shirt sponsor', text: 'Cup and league prize money +10%.' },
   { id: 'replays-65', level: 65, kind: 'perk', name: 'Replay shelf of 10', text: 'Keep your last 10 replays.' },
+  { id: 'youth-coach', level: 70, kind: 'perk', name: 'Youth coach', text: 'Academy prospects arrive with 3 more potential.' },
   { id: 'badge-platinum', level: 75, kind: 'perk', name: 'Platinum badge', text: 'Your level badge turns platinum.' },
   { id: 'market-80', level: 80, kind: 'perk', name: 'Scouting network', text: 'Two more players on the transfer market (12 to 14).', go: { screen: 'transfers', label: 'Go to Transfers' } },
+  { id: 'win-bonus-2', level: 85, kind: 'perk', name: 'Bigger win bonus', text: 'Two extra training sessions for every ranked or competition win.' },
+  { id: 'market-90', level: 90, kind: 'perk', name: 'Global scouting', text: 'Two more players on the transfer market (14 to 16).', go: { screen: 'transfers', label: 'Go to Transfers' } },
+  { id: 'squad-95', level: 95, kind: 'perk', name: 'Squad of 28', text: 'Room for another player (27 to 28).', go: { screen: 'squad', label: 'Go to Squad' } },
   { id: 'badge-legend', level: 99, kind: 'perk', name: 'Legend badge', text: 'Level 99. The bar keeps counting toward a future prestige.' },
 ];
 
@@ -185,7 +194,7 @@ export function nextUnlocks(save: Save): Unlock[] {
   return locked.filter((u) => unlockLevel(save, u.id) === first);
 }
 
-/** "The Cup and Practice Hard at level 5 — 340 XP to go", or null when everything is unlocked. */
+/** "The Cup and Practice: Hard at level 5 — 340 XP to go", or null when everything is unlocked. */
 export function nextUnlockText(save: Save): string | null {
   const next = nextUnlocks(save);
   if (!next.length) return null;
@@ -220,21 +229,31 @@ const has = (save: Save, id: UnlockId) => isUnlocked(save, id);
 /** Base squad cap (MAX_SQUAD in game.ts) plus one at levels 15, 30 and 50. */
 export const BASE_SQUAD_CAP = 24;
 export function squadCap(save: Save): number {
-  return BASE_SQUAD_CAP + (['squad-15', 'squad-30', 'squad-50'] as const).filter((id) => has(save, id)).length;
+  return BASE_SQUAD_CAP + (['squad-15', 'squad-30', 'squad-50', 'squad-95'] as const).filter((id) => has(save, id)).length;
 }
 
 export const BASE_MARKET_SIZE = 10;
 export function marketSize(save: Save): number {
-  return BASE_MARKET_SIZE + 2 * (['market-20', 'market-80'] as const).filter((id) => has(save, id)).length;
+  return BASE_MARKET_SIZE + 2 * (['market-20', 'market-80', 'market-90'] as const).filter((id) => has(save, id)).length;
 }
 
-/** Matches an academy prospect plays before their potential is exact (SCOUT_MATCHES, one fewer with Sharper scouts). */
+/** Matches an academy prospect plays before their potential is exact (SCOUT_MATCHES, one fewer with Sharper scouts, 3 with Data analysts). */
 export function scoutMatchesFor(save: Save, base: number): number {
+  if (has(save, 'analysts')) return Math.min(base, 3);
   return has(save, 'scouting') ? base - 1 : base;
 }
 
 /** Extra training sessions for a ranked or competition win. */
-export const winTrainingBonus = (save: Save): number => (has(save, 'win-bonus') ? 1 : 0);
+export const winTrainingBonus = (save: Save): number => (has(save, 'win-bonus-2') ? 2 : has(save, 'win-bonus') ? 1 : 0);
+
+/** Academy prospects each season: 2-3, or 3-4 with the Bigger academy. */
+export const academyIntake = (save: Save): [number, number] => (has(save, 'academy-plus') ? [3, 4] : [2, 3]);
+
+/** Potential added to every academy prospect (Youth coach). */
+export const academyPotentialBonus = (save: Save): number => (has(save, 'youth-coach') ? 3 : 0);
+
+/** Multiplier on cup and league prize money (Shirt sponsor). */
+export const prizeBonus = (save: Save): number => (has(save, 'sponsor') ? 1.1 : 1);
 
 /** How many recent replays this browser keeps. */
 export function replaySlots(save: Save): number {
@@ -263,14 +282,15 @@ export const XP = {
   cleanSheet: 20,
   practice: { easy: 30, normal: 40, hard: 60 } as Record<PracticeLevel, number>,
   trainingSession: 5,
-  cup: { winner: 500, runnerUp: 200, semiFinal: 100 },
-  /** League finishing bonus by position, 1st to 8th. */
-  league: [800, 400, 200, 200, 100, 100, 50, 50],
+  /** Cup finishing bonus, times your division's XP scale (DIVISION_XP in world.ts). */
+  cup: { winner: 140, runnerUp: 60, semiFinal: 30 },
+  /** League finishing bonus by position, 1st to 8th, times your division's XP scale. */
+  league: [400, 240, 120, 100, 70, 50, 35, 25],
 } as const;
 
 export type MilestoneId = 'first-match' | 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';
 export const MILESTONES: Record<MilestoneId, { xp: number; label: string }> = {
-  // Enough on top of an Easy friendly (30) that even a first-match defeat reaches level 2.
+  // On top of the match's own XP (the first match counts its result: a defeat pays 50, a win 120), enough that even a defeat reaches level 2.
   'first-match': { xp: 80, label: 'first match' },
   tutorial: { xp: 100, label: 'training ground done' },
   'first-win': { xp: 100, label: 'first ranked win' },
@@ -292,8 +312,17 @@ export interface XpGain {
 
 export type MatchKind = 'ranked' | 'competition' | 'practice';
 
-/** XP for one match. Ranked and competition: result + goals + clean sheet. Practice: a flat amount by difficulty. Forfeits: nothing. */
-export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = false, practice: PracticeLevel = 'normal'): XpPart[] {
+const scaled = (p: XpPart, scale: number): XpPart => ({ label: p.label, xp: Math.round(p.xp * scale) });
+
+/**
+ * XP for one match. Ranked and competition: result + goals + clean sheet,
+ * times `scale` (the opponent's division and strength for ranked, your
+ * division for the cup and league: rankedScale in game.ts, DIVISION_XP in
+ * world.ts). The labels stay short ("win 174"): the result's XP line has to fit
+ * a 320 px phone, and the Club level panel explains the scaling. Practice: a
+ * flat amount by difficulty. Forfeits: nothing.
+ */
+export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = false, practice: PracticeLevel = 'normal', scale = 1): XpPart[] {
   if (forfeited) return [];
   if (kind === 'practice') {
     const name = practice[0].toUpperCase() + practice.slice(1);
@@ -302,21 +331,21 @@ export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = fal
   const parts: XpPart[] = [gf > ga ? { label: 'win', xp: XP.win } : gf === ga ? { label: 'draw', xp: XP.draw } : { label: 'loss', xp: XP.loss }];
   if (gf > 0) parts.push({ label: `${gf} goal${gf === 1 ? '' : 's'}`, xp: gf * XP.goal });
   if (ga === 0) parts.push({ label: 'clean sheet', xp: XP.cleanSheet });
-  return parts;
+  if (scale === 1) return parts;
+  return parts.map((p) => scaled(p, scale));
 }
 
-/** Cup finishing bonus for the round you went out in (0 = quarter-final) or won the final in. */
-export function cupFinishXp(round: number, won: boolean): XpPart | null {
-  if (round === 2) return won ? { label: 'cup winners', xp: XP.cup.winner } : { label: 'cup runners-up', xp: XP.cup.runnerUp };
-  if (round === 1 && !won) return { label: 'cup semi-final', xp: XP.cup.semiFinal };
-  return null;
+/** Cup finishing bonus for the round you went out in (0 = quarter-final) or won the final in, times your division's XP scale. */
+export function cupFinishXp(round: number, won: boolean, scale = 1): XpPart | null {
+  const part = round === 2 ? (won ? { label: 'cup winners', xp: XP.cup.winner } : { label: 'cup runners-up', xp: XP.cup.runnerUp }) : round === 1 && !won ? { label: 'cup semi-final', xp: XP.cup.semiFinal } : null;
+  return part && scaled(part, scale);
 }
 
-export function leagueFinishXp(position: number): XpPart | null {
+export function leagueFinishXp(position: number, scale = 1): XpPart | null {
   const xp = XP.league[position - 1];
   if (!xp) return null;
   const labels = ['league champions', 'league runners-up'];
-  return { label: labels[position - 1] ?? `league ${position}${position === 3 ? 'rd' : 'th'} place`, xp };
+  return scaled({ label: labels[position - 1] ?? `league ${position}${position === 3 ? 'rd' : 'th'} place`, xp }, scale);
 }
 
 /** A gain that hasn't added anything yet, starting from the save's current level. */
@@ -328,7 +357,8 @@ export function startGain(save: Save): XpGain {
 /** Add XP parts to the save (zero parts are dropped) and to `gain`. */
 export function award(save: Save, parts: (XpPart | null)[], gain: XpGain = startGain(save)): XpGain {
   for (const p of parts) {
-    if (!p || p.xp <= 0) continue;
+    // Zero parts are dropped. A negative part (XP owed for forfeits, game.ts) is only ever paid out of the same award's gains.
+    if (!p || p.xp === 0) continue;
     save.xp = (save.xp ?? 0) + p.xp;
     gain.parts.push(p);
     gain.total += p.xp;

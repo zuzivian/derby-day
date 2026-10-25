@@ -296,7 +296,9 @@ for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
     await page.waitForFunction(() => devicePixelRatio === 2);
-    await page.waitForTimeout(1200);
+    // Wait for the resize rather than a fixed time: on SwiftShader at quality=high a frame can take ~650 ms, and the
+    // resize lands on a frame. The assertion below still says what was seen if it never comes.
+    await page.waitForFunction((w) => document.querySelector('#pitch').width > w * 1.9, one.w, { timeout: 10_000 }).catch(() => {});
     const two = await buf();
     expect(two.css, 'same CSS size').toBe(one.css);
     expect(two.w / one.w, `buffer ${one.w} → ${two.w} px doubles with the ratio`).toBeGreaterThan(1.9);

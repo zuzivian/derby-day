@@ -42,11 +42,11 @@ function keepTabInView(root: HTMLElement): void {
   else if (t.right > b.right - pad) bar.scrollLeft += t.right - (b.right - pad);
 }
 
-/** The XP card's bar fill and level-up flourish start once most of the card is visible (levels.css). */
-function armXpCard(root: HTMLElement): void {
+/** The XP card's bar fill and level-up flourish start once most of the card is visible (levels.css): in the result dialog and in the first-match celebration. */
+export function armXpCard(root: HTMLElement): void {
   xpWatch?.disconnect();
   xpWatch = null;
-  const card = root.querySelector<HTMLElement>('.modal .xp-card');
+  const card = root.querySelector<HTMLElement>('.modal .xp-card, .ob-celebrate .xp-card');
   if (!card) return;
   if (typeof IntersectionObserver === 'undefined') {
     card.classList.add('is-visible');
