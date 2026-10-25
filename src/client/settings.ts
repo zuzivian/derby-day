@@ -7,6 +7,7 @@ import { dryRunBoot } from './dryrun.ts';
 import { isSaveGuest, previousClub, replaceSave, restorePrevious, type WriteResult } from './store.ts';
 import type { Save } from '../meta/game.ts';
 import { showToast } from './a11y.ts';
+import { expectRestore } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
 
 const esc = (t: string | number): string => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -145,6 +146,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       }
       // Reloading at once can outrun the browser writing its storage to disk, and the next page would open the old club.
       preview.innerHTML = '<p class="bk-found" role="status">Restoring…</p>';
+      expectRestore();
       setTimeout(() => {
         wrap.remove();
         document.removeEventListener('keydown', onKey, true);
@@ -162,6 +164,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       preview.innerHTML = '<p class="bk-bad" role="alert">The earlier club could not be restored.</p>';
       return;
     }
+    expectRestore();
     wrap.remove();
     document.removeEventListener('keydown', onKey, true);
     hooks.onImported();
