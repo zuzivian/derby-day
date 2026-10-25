@@ -26,6 +26,8 @@ import {
   GRAVITY,
   HEAD_Z,
   KEEPER_REACH_Z,
+  LONG_SHOT_ERR,
+  MENTALITY_IDS,
   rollDecel,
   RESTART_HUMAN_WAIT,
   RESTART_SETUP_MAX,
@@ -164,7 +166,8 @@ export function createMatch(o: MatchOptions): MatchState {
   const s: MatchState = {
     tick: 0,
     rng: makeRng(o.seed),
-    teams: [o.home, o.away],
+    // Copies: quick tactics change a side's mentality mid-match without touching the caller's setup.
+    teams: [{ ...o.home }, { ...o.away }],
     players,
     ball: {
       pos: { x: PITCH_W / 2, y: PITCH_H / 2 },
@@ -354,6 +357,8 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     const power = a.power;
     const speed = shotSpeed(power, p.attrs.shooting);
     let err = 0.02 + 0.12 * power * power * (1.3 - p.attrs.shooting);
+    // From distance a shot is harder to place (LONG_SHOT_ERR).
+    err += clamp(dist(p.pos, oppGoal(team)) - 16, 0, 14) * LONG_SHOT_ERR * (1.3 - p.attrs.shooting);
     if (s.restart?.kind === 'penalty') err *= 0.45; // a dead ball from 11 m: no one closing you down
     kick(s, p, a.target, speed, err, -1);
     if (a.lift && a.lift > 0) {
@@ -920,11 +925,13 @@ const DIVE_LEAD = 6;
 const DIVE_DOWN = 24;
 /** A diving or lying keeper's body blocks a ball below this height along the whole line of the dive. */
 const DIVE_BODY_Z = 0.8;
-export const diveSpeed = (gk: MatchPlayer): number => 1.0 + 3.6 * gk.attrs.goalkeeping;
+// Tuned so a 0.9 keeper saves about 90% of evenly placed shots on target from 12-25 m (a
+// well-struck corner still beats him) and a 0.3 keeper about half (tests/tactics.test.ts).
+export const diveSpeed = (gk: MatchPlayer): number => 1.2 + 2.6 * gk.attrs.goalkeeping;
 /** Seconds a dive carries him at most (at most DIVE_TICKS). */
 export const diveSpan = (gk: MatchPlayer): number => Math.min(DIVE_TICKS / TICK_HZ, 0.12 + 0.35 * gk.attrs.goalkeeping);
 /** How far his hands reach past his body along a dive. */
-export const diveArm = (gk: MatchPlayer): number => 0.6 + 0.3 * gk.attrs.goalkeeping;
+export const diveArm = (gk: MatchPlayer): number => 0.6 + 0.1 * gk.attrs.goalkeeping;
 /** Standing, his hands cover this radius up to 1.9 m (and a little less above, up to KEEPER_REACH_Z). */
 export const standReach = (gk: MatchPlayer, z: number): number => (z <= 1.9 ? 0.55 + 0.35 * gk.attrs.goalkeeping : 0.45 + 0.25 * gk.attrs.goalkeeping);
 /** Law 12: a keeper may hold the ball for about six seconds. Then the CPU plays it for a human. */
@@ -1427,6 +1434,17 @@ const NO_INPUT: HumanInput = {};
  * one-human shorthand: it goes to team 0, or to team 1 when only team 1 has a
  * human. A pair is [home input, away input]; a CPU team's entry is ignored.
  */
+/** Quick tactics (HumanInput.tactic): a human side switches mentality, whatever the phase. */
+function applyTactics(s: MatchState, input: HumanInput | TeamInputs | undefined): void {
+  const inputs = teamInputs(s, input);
+  for (const team of [0, 1] as const) {
+    const m = MENTALITY_IDS[(inputs[team].tactic ?? 0) - 1];
+    if (!m || !s.humans[team]) continue;
+    if (m === 'balanced') delete s.teams[team].mentality;
+    else s.teams[team].mentality = m;
+  }
+}
+
 export function teamInputs(s: MatchState, input: HumanInput | TeamInputs | undefined): TeamInputs {
   if (Array.isArray(input)) return [input[0] ?? NO_INPUT, input[1] ?? NO_INPUT];
   const one = input ?? NO_INPUT;
@@ -1623,6 +1641,7 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   }
 
   if (s.phase === 'fulltime') return;
+  applyTactics(s, input);
   moveReferee(s);
   if (s.phase === 'kickoff') {
     if (--s.phaseTicks <= 0) {

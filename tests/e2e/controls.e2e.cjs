@@ -243,6 +243,8 @@ test('mouse with the ball: right click shoots at the pointer, hold right for pow
   const target = { x: 52, y: 6 };
   const shot = async (ms) => {
     const me = await carrier(page, { x: 38, y: 24 });
+    // A top finisher, so this checks where the controls send it, not how far a 67 m strike strays (LONG_SHOT_ERR).
+    await page.evaluate((i) => (window.__derbyMatch.players[i].attrs.shooting = 1), me);
     if (ms) await hold(page, target, ms, 'right');
     else await click(page, target, 'right');
     await afterKick(page, me);

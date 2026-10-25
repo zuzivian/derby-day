@@ -1,0 +1,71 @@
+/* Tactics board (src/client/tactics.ts): formation cards and the mentality scale. */
+.tactics .tac-now { color: var(--muted); font-size: 14px; }
+.tactics .tac-now b { color: var(--ink); }
+.tac-group { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.tac-legend { padding: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.tac-legend .muted { text-transform: none; letter-spacing: 0; font-weight: 500; }
+.tac-hint { margin: 0; }
+
+.tac-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.tac-card {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px 6px;
+  border: 1px solid var(--control-line); border-radius: 8px; background: var(--surface-2); cursor: pointer;
+  transition: border-color .12s, box-shadow .12s, transform .12s;
+}
+.tac-card:hover { border-color: var(--ink); }
+.tac-card.on, .tac-card:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--surface); }
+.tac-card:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tac-card input, .tac-step input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.tac-shape { width: 100%; max-width: 96px; height: auto; display: block; }
+.tac-pitch { fill: var(--felt); stroke: var(--chalk); stroke-width: 1.2; }
+.tac-mark { fill: none; stroke: var(--chalk); stroke-width: .7; opacity: .6; }
+.tac-dot { fill: var(--chalk); stroke: rgba(0, 0, 0, .35); stroke-width: .6; }
+.tac-dot.tac-GK { fill: var(--marker); }
+.tac-card.on .tac-dot:not(.tac-GK), .tac-card:has(input:checked) .tac-dot:not(.tac-GK) { fill: var(--accent); stroke: var(--chalk); }
+.tac-name { font-family: var(--font-display); font-weight: 800; font-size: 18px; line-height: 1; letter-spacing: .02em; }
+
+.tac-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.tac-step {
+  position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px; min-width: 0;
+  border: 1px solid var(--control-line); border-radius: 8px; background: var(--surface-2); cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+.tac-step:hover { border-color: var(--ink); }
+.tac-step.on, .tac-step:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--surface); }
+.tac-step:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tac-pips { display: flex; gap: 3px; }
+.tac-pips i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
+.tac-pips i.lit { background: var(--muted); }
+.tac-step.on .tac-pips i.lit, .tac-step:has(input:checked) .tac-pips i.lit { background: var(--accent); }
+.tac-step-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1.05; }
+.tac-step-note { font-size: 13px; line-height: 1.35; color: var(--muted); }
+
+/* The opponent's shape on the home hero. */
+.hero-tactic { font-size: 14px; color: var(--hero-muted); letter-spacing: .02em; }
+.hero-tactic b { color: var(--hero-ink); font-weight: 700; }
+
+@media (max-width: 860px) {
+  .tac-steps { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .tac-step { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: center; padding: 10px 12px; }
+  .tac-pips { grid-row: 1 / span 2; }
+  .tac-step-name { font-size: 18px; }
+  /* Only the chosen step keeps its description, so the lineup stays near the top on a phone. */
+  .tac-step:not(.on):not(:has(input:checked)) .tac-step-note { display: none; }
+  .tac-step:not(.on):not(:has(input:checked)) { padding-block: 8px; }
+}
+@media (max-width: 640px) {
+  .tac-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .tac-name { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tac-card, .tac-step { transition: none; }
+}
+
+/* Quick tactics in the pause menu (matchView.ts). */
+.pause-tactics { border: 0; margin: 14px 0 0; padding: 0; min-width: 0; }
+.pause-tactics legend { margin: 0 auto 6px; font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; opacity: .8; }
+.qt-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; }
+.qt-step { position: relative; display: grid; place-items: center; min-height: 40px; padding: 4px 6px; border: 1px solid var(--control-line); border-radius: 6px; font-size: 13px; font-weight: 700; line-height: 1.1; text-align: center; cursor: pointer; }
+.qt-step input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
+.qt-step:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+.qt-step:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }

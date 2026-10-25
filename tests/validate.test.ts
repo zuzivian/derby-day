@@ -70,7 +70,7 @@ describe('team and start validation', () => {
 
 describe('lockstep message validation', () => {
   test('every HumanInput field survives cleaning, so no control is lost online', () => {
-    const full: Required<HumanInput> = { cursor: { x: 50, y: 30 }, dir: { x: 0.5, y: -1 }, pass: true, loft: 0.4, shoot: 0.9, tackle: true, select: true, sprint: true, switchPlayer: true, aim: { x: 104, y: 34 }, moved: true };
+    const full: Required<HumanInput> = { cursor: { x: 50, y: 30 }, dir: { x: 0.5, y: -1 }, pass: true, loft: 0.4, shoot: 0.9, tackle: true, select: true, sprint: true, switchPlayer: true, aim: { x: 104, y: 34 }, moved: true, tactic: 5 };
     // INPUT_FIELDS (src/net/validate.ts) is type-checked to list every HumanInput field.
     expect(Object.keys(full).sort()).toEqual(Object.keys(INPUT_FIELDS).sort());
     expect(cleanInput(full)).toEqual(full);
@@ -186,5 +186,23 @@ describe('names and the guest checking its own team', () => {
     now += 40;
     ls.emit({ t: 'pong', n: ping!.n, at: ping!.at });
     expect(peer.rttMs).toBe(40);
+  });
+});
+
+describe('tactics online', () => {
+  test("a side's mentality survives cleaning, and a host can't change the guest's", () => {
+    const { home } = teams(4);
+    for (const m of ['park', 'defensive', 'attacking', 'press'] as const) expect(cleanTeam({ ...home, mentality: m })!.mentality).toBe(m);
+    // Balanced (or junk) is left off, as toTeamSetup does.
+    expect('mentality' in cleanTeam({ ...home, mentality: 'balanced' })!).toBe(false);
+    expect('mentality' in cleanTeam({ ...home, mentality: 'gegenpress' })!).toBe(false);
+    const mine = { ...home, mentality: 'press' as const };
+    expect(isOwnTeam(cleanTeam(mine)!, mine)).toBe(true);
+    expect(isOwnTeam(cleanTeam({ ...mine, mentality: 'park' })!, mine)).toBe(false);
+  });
+
+  test('a quick-tactics input is a whole mentality step or nothing', () => {
+    for (const t of [1, 3, 5]) expect(cleanInput({ tactic: t })).toEqual({ tactic: t });
+    for (const t of [0, 6, 2.5, -1, '3', Infinity]) expect(cleanInput({ tactic: t })).toEqual({});
   });
 });
