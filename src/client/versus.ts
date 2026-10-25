@@ -39,6 +39,7 @@ import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
 import { esc, type ResultView } from './ui.ts';
+import { onPageGone } from './pagegone.ts';
 
 export interface VersusOptions {
   save: Save;
@@ -699,6 +700,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     o.link?.close(); // the relay tells the opponent at once too
   };
   window.addEventListener('pagehide', onHide);
+  // After onHide: stop drawing and give the GPU back as the tab closes (dispose loses the context).
+  const offGone = onPageGone(() => {
+    if (ended) return;
+    ended = true;
+    dispose();
+  });
 
   const ro = new ResizeObserver(() => renderer.resize());
   ro.observe(canvas);
@@ -901,6 +908,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     document.removeEventListener('keydown', onKey);
     window.removeEventListener('pagehide', onHide);
     window.removeEventListener('pageshow', onShow);
+    offGone();
   }
   function finish(end: NetEnd) {
     if (ended) return;

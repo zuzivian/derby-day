@@ -398,6 +398,29 @@ test(
 );
 
 test(
+  'Perf: closing the tab mid-match stops the loop and gives the WebGL context back; a back-forward cache hide does not',
+  async (t) => {
+    const page = await startLongMatch(t);
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__lose))) return;
+    const hide = (persisted) => page.evaluate((persisted) => dispatchEvent(new PageTransitionEvent('pagehide', { persisted })), persisted);
+    const tick = () => page.evaluate(() => window.__derbyMatch.tick);
+    // Parked in the back-forward cache: it may come back to this match, so it keeps it.
+    await hide(true);
+    const t0 = await tick();
+    await page.waitForFunction((t0) => window.__derbyMatch.tick > t0 + 30, t0, { timeout: 15_000 });
+    expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'still drawing in 3D').toBe('3d');
+    // Going away for good: the context is lost at once, no 2D fallback starts, and the sim stops.
+    await hide(false);
+    expect(await page.evaluate(() => document.querySelector('#pitch').getContext('webgl2').isContextLost()), 'context lost').toBe(true);
+    const t1 = await tick();
+    await page.waitForTimeout(1500);
+    expect(await tick(), 'the loop stopped').toBe(t1);
+    expect(await page.evaluate(() => document.querySelector('#pitch').dataset.renderer ?? null), 'no 2D fallback took over').toBe(null);
+  },
+  { timeoutMs: 120_000 },
+);
+
+test(
   'Perf: on a slow renderer (SwiftShader) the quality governor steps the 3D view down, one notch at a time',
   async (t) => {
     const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true });
