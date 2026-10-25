@@ -81,6 +81,8 @@ export interface SlideTackle {
   left: number;
   /** Ticks the slide has run. */
   ticks: number;
+  /** A late challenge on a man who has just released the ball has been judged (once per slide). */
+  lateJudged?: boolean;
 }
 
 /** A goalkeeper diving to meet a shot: committed for `ticks` more ticks, then on the floor for a moment. */

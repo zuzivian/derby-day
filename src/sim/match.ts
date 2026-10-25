@@ -480,7 +480,11 @@ function slideContact(s: MatchState, p: MatchPlayer, before: number): boolean {
     b.noPickup[p.i] = 12;
     return done();
   }
-  if (!owner && lateChallenge(s, p, before)) return done();
+  // Sliding into a man who has just released the ball: judged once, when the slide reaches him.
+  if (!owner && !sl.lateJudged && s.players.some((q) => q.team !== p.team && !q.sentOff && q.kickCd > 9 && b.lastTouch === q.i && dist(q.pos, p.pos) < 1.4)) {
+    sl.lateJudged = true;
+    if (lateChallenge(s, p, before)) return done();
+  }
   return false;
 }
 
