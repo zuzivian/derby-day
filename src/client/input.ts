@@ -12,6 +12,8 @@
 //     Right click          shot toward the pointer; hold right for more power, release to strike
 //     (free kick)          the shot goes where right went down; drag sideways while holding to curl it
 //                          that way (CURL_DRAG_M, about 4 m of pitch, for full bend; see curlFrom)
+//     (corner, free kick)  hold left: a cross that lands where left went down at any range, driven for a
+//                          short hold and floated for a long one; drag sideways while holding to swing it
 //     (keeper)             left click rolls it out, left hold throws or kicks it high, right click punts
 //   Without the ball
 //     Left click           switch to the teammate under the pointer, else the nearest one in that direction
