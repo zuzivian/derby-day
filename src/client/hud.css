@@ -111,6 +111,16 @@
 }
 .hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
+/* The kind of free kick being taken: under the call tag, quiet for a direct one, the referee's yellow for an indirect one. */
+.hud-fk {
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  font: italic 700 12px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: 4px; padding: 3px 9px;
+}
+.hud-fk b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+.hud-fk.indirect { background: rgba(8, 12, 11, .78); box-shadow: inset 0 0 0 1.5px #ffd60a; }
+.hud-fk.indirect b { color: #ffd60a; }
+.hud-fk small { font-weight: 600; font-size: 11px; opacity: .85; margin-left: 4px; }
+.hud-fk[hidden] { display: none; }
 /* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
 .hud-prompt {
   position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
@@ -154,6 +164,8 @@
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: 11px; padding: 3px 8px; }
+  .hud-fk { top: 78px; font-size: 11px; }
+  .hud-fk small { display: none; }
   .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
   .hud-prompt b { font-size: 13px; }
   .hud-tag b { font-size: 13px; }
@@ -189,6 +201,11 @@
 .edge-mark[hidden] { display: none; }
 /* The end camera puts the man on the ball low in the middle: the radar moves to the left there. */
 #pitch[data-camera="end"] ~ .hud .hud-radar { left: 52px; transform: none; }
+/* Mouse and keyboard at desktop size: the radar sits top left, under the score and over the stands,
+   so the near touchline (where the side camera puts wing play) stays clear. Any camera. */
+@media (pointer: fine) and (min-width: 641px) and (min-height: 521px) {
+  #pitch ~ .hud .hud-radar, #pitch[data-camera="end"] ~ .hud .hud-radar { left: 10px; top: 80px; bottom: auto; transform: none; }
+}
 /* The 2D view already shows the whole pitch: no radar over it. */
 #pitch[data-renderer="2d"] ~ .hud .hud-radar { display: none; }
 /* Touch: every HUD button is at least 44 px high with 8 px between them (WCAG target size), and the

@@ -462,3 +462,58 @@ test('trackpad: a pinch (ctrl+wheel) over the pitch zooms the 3D camera, not the
   expect(smoothPrevented, 'a smooth-scrolling mouse ctrl+wheel still zooms the page').toBe(false);
   expect(await zoom(), 'and leaves the camera alone too').toBe(before);
 });
+
+test('a free kick in range: the wall forms 9.15 m off, the HUD names it, and a right press dragged sideways curls the shot', async (t) => {
+  const page = await openMatch(t);
+  // A foul 23 m out, a little left of centre (awardRestart's fields), with both sides gathered round the ball first.
+  await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    const spot = { x: 82.2, y: 36 };
+    for (const p of s.players) {
+      if (p.role === 'GK') continue;
+      p.pos = { x: Math.min(103, Math.max(2, 52.5 + (p.pos.x - 52.5) * 0.5 + 0.85 * (spot.x - 52.5))), y: p.pos.y };
+      p.vel = { x: 0, y: 0 };
+    }
+    Object.assign(s.ball, { owner: -1, receiver: -1, passFrom: -1, inHands: false, setPiece: null, kickedBy: -1, restartBy: -1, noHands: -1, pos: { ...spot }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+    s.offside = null;
+    s.advantage = null;
+    s.restart = { kind: 'freekick', team: 0, spot, taker: -1, stage: 'whistle', ticks: 0, direct: true, reason: 'foul', wait: 0 };
+    s.phase = 'restart';
+  });
+  await page.waitForFunction(() => window.__derbyMatch.restart?.stage === 'ready' && window.__derbyMatch.controlled[0] === window.__derbyMatch.restart.taker, null, { timeout: 30_000 });
+  // A slow CI browser must not run out the human's five seconds while the mouse is moving.
+  await page.evaluate(() => {
+    window.__holdRestart = setInterval(() => {
+      const r = window.__derbyMatch.restart;
+      if (r && r.stage === 'ready') r.ticks = 0;
+    }, 50);
+  });
+  const wall = await page.evaluate(() => {
+    const s = window.__derbyMatch;
+    return (s.wall?.players ?? []).map((i) => Math.hypot(s.players[i].pos.x - s.restart.spot.x, s.players[i].pos.y - s.restart.spot.y));
+  });
+  expect(wall.length, 'three men in the wall at 23 m').toBe(3);
+  for (const d of wall) expect(d, 'each 9.15 m off, or a little more').toBeGreaterThanOrEqual(9.14);
+  expect(await page.locator('.hud-fk').innerText(), 'the HUD names it').toMatch(/direct free kick/i);
+  // Right down on the far top corner, dragged 3 m across toward the middle of the goal, released.
+  const aim = await screen(page, { x: 105, y: 31 });
+  const drag = await screen(page, { x: 105, y: 34 });
+  await page.mouse.move(aim.x, aim.y);
+  await frames(page);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.move(drag.x, drag.y, { steps: 5 });
+  await frames(page);
+  await page.mouse.up({ button: 'right' });
+  await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner < 0, null, { timeout: 10_000 });
+  await page.evaluate(() => clearInterval(window.__holdRestart));
+  const shot = await page.evaluate(() => {
+    const b = window.__derbyMatch.ball;
+    return { spin: b.spin, vx: b.vel.x, vy: b.vel.y, vz: b.vz, y: b.pos.y };
+  });
+  // Dragged to the kicker's left (+y, shooting toward x = 105): it bends left, so it sets off to the right of the line.
+  expect(shot.spin, 'the strike carries spin').toBeTruthy();
+  expect(shot.spin.side, 'bent to the left').toBeGreaterThan(1);
+  expect(shot.spin.top, 'and dips over the wall').toBeGreaterThan(0);
+  expect(shot.vx, 'struck toward goal').toBeGreaterThan(10);
+  expect(shot.vz, 'rising to clear the wall').toBeGreaterThan(4);
+});

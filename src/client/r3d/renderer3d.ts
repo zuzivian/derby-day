@@ -3,6 +3,7 @@
 
 import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir, oppGoal } from '../../sim/field.ts';
+import { indirectPending } from '../../sim/rules.ts';
 import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
@@ -16,6 +17,7 @@ import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
 import { QualityGovernor, type GovernorState } from './governor.ts';
+import { FRAME_BUDGET, FRAME_PARTS } from './budget.ts';
 import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
 import {
   ACESFilmicToneMapping,
@@ -288,6 +290,9 @@ export class Renderer3D implements MatchRenderer {
   private pixelRatio: number;
   private fpsAt = 0;
   private fpsFrames = 0;
+  /** Frames in the last whole second of stats, and the CPU ms they spent per part (FRAME_PARTS order). */
+  private fpsLast = 0;
+  private partMs = new Float64Array(FRAME_PARTS.length);
   private me: 0 | 1 = 0;
   private cleanup: (() => void)[] = [];
 
@@ -384,6 +389,9 @@ export class Renderer3D implements MatchRenderer {
     });
     canvas.dataset.renderer = '3d';
     canvas.dataset.quality = opts.quality;
+    // The GPU side of this quality's frame budget (budget.ts), for tests and devtools next to data-calls and data-tris.
+    canvas.dataset.budgetCalls = String(FRAME_BUDGET[opts.quality].calls);
+    canvas.dataset.budgetTris = String(FRAME_BUDGET[opts.quality].tris);
     // Tooling hook for screenshots and probes: ?debug3d exposes the renderer.
     if (/[?&]debug3d\b/.test(location.search)) (window as unknown as Record<string, unknown>).__derby3d = this;
   }
@@ -635,7 +643,9 @@ export class Renderer3D implements MatchRenderer {
     if (!jumped) clock = Math.max(prevClock, clock);
     this.clock = clock;
     const dtSim = jumped ? 0 : clock - prevClock;
-    const lead = Math.max(-1 / 60, Math.min(1 / 60, clock - tickTime));
+    // How far past the tick to draw things (extrapolated by velocity): the match loop's exact time since
+    // the tick when it gives one (RenderExtras.since), else this clock's estimate.
+    const lead = Math.max(-1 / 60, Math.min(1 / 60, x.since ?? clock - tickTime));
     this.lastTick = s.tick;
     this.lastState = s;
 
@@ -653,6 +663,7 @@ export class Renderer3D implements MatchRenderer {
       if (c.player >= 0 && !s.players[c.player].sentOff) this.aim?.card(c.player, c.color, clock + 3);
     }
 
+    const tPlayers = performance.now();
     // Players. A player sent off is parked far off the pitch by the sim: not drawn.
     for (const p of s.players) {
       const model = this.players[p.i];
@@ -668,6 +679,7 @@ export class Renderer3D implements MatchRenderer {
       c.holding = p.i === handsOf && !throwHold;
       c.hasBall = b.owner === p.i;
       c.wall = inWall(s, p);
+      c.armUp = false;
       c.reducedMotion = this.reduced;
       model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, c);
       const ev = dir.events[p.i];
@@ -712,6 +724,7 @@ export class Renderer3D implements MatchRenderer {
       c.lead = lead;
       c.keeperSet = 0;
       c.throwHold = c.holding = c.hasBall = c.wall = false;
+      c.armUp = indirectPending(s);
       c.reducedMotion = this.reduced;
       this.referee.update(dt, rb, dir.referee, c);
     } else if (this.referee) {
@@ -739,9 +752,10 @@ export class Renderer3D implements MatchRenderer {
       this.players[handsOf].handsWorld(this.ball.position);
       this.ball.position.y += 0.02;
     } else {
-      const free = b.owner < 0;
-      const bx = b.pos.x + (free ? b.vel.x * lead : 0);
-      const by = b.pos.y + (free ? b.vel.y * lead : 0);
+      // At someone's feet the ball moves on with him (his model is extrapolated too), else with its own velocity.
+      const v = holder ? holder.vel : b.vel;
+      const bx = b.pos.x + v.x * lead;
+      const by = b.pos.y + v.y * lead;
       this.ball.position.set(sx(bx), BALL_VIS_R + b.z, sz(by));
     }
     // Spin: roll with ground speed; keep a gentle spin in the air.
@@ -771,6 +785,7 @@ export class Renderer3D implements MatchRenderer {
     this.blob.scale.setScalar(0.5 + h * 0.12);
     (this.blob.material as MeshBasicMaterial).opacity = Math.max(0.15, 0.9 - h * 0.18);
 
+    const tStadium = performance.now();
     // Nets and crowd.
     const lastGoal = s.events.length ? s.events[s.events.length - 1] : null;
     const celebrating = s.phase === 'goal' && lastGoal ? lastGoal.team : -1;
@@ -789,11 +804,15 @@ export class Renderer3D implements MatchRenderer {
       this.stadium.update(dt, clock, st);
     }
 
+    const tScene = performance.now();
     // Camera.
     if (this.celebrate && (clock > this.celebrate.until || s.phase !== 'goal')) this.celebrate = null;
     const cel = this.celebrate ? s.players[this.celebrate.i] : null;
-    let focusX = holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x;
-    let focusY = holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y;
+    // The camera follows what is drawn (extrapolated, as above), not the tick positions, which step
+    // every 1/60 s and would make the follow judder on a fast screen.
+    const fv = holder ? holder.vel : b.vel;
+    let focusX = (holder ? holder.pos.x * 0.6 + b.pos.x * 0.4 : b.pos.x) + fv.x * lead;
+    let focusY = (holder ? holder.pos.y * 0.6 + b.pos.y * 0.4 : b.pos.y) + fv.y * lead;
     // Set pieces: frame what matters. A corner or free kick shows the spot and the box it is aimed at,
     // a throw-in the thrower and the play in front of him.
     if (restart && restart.stage !== 'whistle') {
@@ -812,8 +831,8 @@ export class Renderer3D implements MatchRenderer {
     }
     // Replays follow the ball itself, tightly.
     if (this.replayShot) {
-      focusX = b.pos.x;
-      focusY = b.pos.y;
+      focusX = b.pos.x + b.vel.x * lead;
+      focusY = b.pos.y + b.vel.y * lead;
     }
     // The long view holds a moment after the kick, so the player sees the ball arrive, then eases back.
     let lv = this.replayShot ? null : longView(s, this.me);
@@ -908,21 +927,34 @@ export class Renderer3D implements MatchRenderer {
     // Governor step: the shadow map is redrawn every shadowEvery-th frame only (the shadow pass is
     // a second draw of every caster).
     if (this.shadowEvery > 1) this.gl.shadowMap.needsUpdate = ++this.frameNo % this.shadowEvery === 0;
+    const tSubmit = performance.now();
     this.gl.render(this.scene, this.cam.camera);
 
     // Frame stats, and the quality governor: slow machines step down (governor.ts).
-    const ms = performance.now() - t0;
+    const tEnd = performance.now();
+    const ms = tEnd - t0;
+    // Where the frame's CPU time went, by the parts of FRAME_BUDGET (budget.ts).
+    const pm = this.partMs;
+    pm[0] += tPlayers - t0;
+    pm[1] += tStadium - tPlayers;
+    pm[2] += tScene - tStadium;
+    pm[3] += tSubmit - tScene;
+    pm[4] += tEnd - tSubmit;
     const level = this.governor?.sample(ms, dt * 1000, t0);
     if (level) this.applyLevel(level);
     this.fpsFrames++;
     if (t0 - this.fpsAt > 1000) {
       this.fps = Math.round((this.fpsFrames * 1000) / (t0 - this.fpsAt || 1000));
       this.fpsAt = t0;
+      this.fpsLast = this.fpsFrames;
       this.fpsFrames = 0;
       this.canvas.dataset.fps = String(this.fps);
       this.canvas.dataset.cpuMs = ms.toFixed(1);
       this.canvas.dataset.calls = String(this.gl.info.render.calls);
       this.canvas.dataset.tris = String(this.gl.info.render.triangles);
+      // Average ms per frame over the last second, e.g. "setup:0.2 players:1.1 stadium:0.3 scene:0.4 submit:2.0".
+      this.canvas.dataset.parts = FRAME_PARTS.map((k, i) => `${k}:${(pm[i] / (this.fpsLast || 1)).toFixed(2)}`).join(' ');
+      pm.fill(0);
     }
   }
 
