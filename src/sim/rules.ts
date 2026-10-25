@@ -179,6 +179,8 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
   s.offside = null;
   s.advantage = null;
   clearWall(s);
+  s.marks = null;
+  s.runs = null;
   s.restart = { kind, team, spot, taker: -1, stage: 'whistle', ticks: 0, direct, reason, wait: 0 };
   s.phase = 'restart';
   const st = s.stats[team];

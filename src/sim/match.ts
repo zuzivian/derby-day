@@ -13,7 +13,7 @@
 //   restart   dead ball: rules.ts Restart (whistle -> setup -> ready -> taken)
 //   goal, halftime, fulltime
 
-import { aiIntent, passSpeed, penaltyCommit, penaltyDive, restartAction, restartIntent } from './ai.ts';
+import { aiIntent, humanAuto, passSpeed, penaltyCommit, penaltyDive, restartAction, restartIntent } from './ai.ts';
 import {
   AIR_DRAG,
   BALL_R,
@@ -60,7 +60,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, humanShotHeight, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
+import { assistReceiver, chipPlan, deliveryPlan, humanShotHeight, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
 import {
   addedMinutes,
   awardRestart,
@@ -220,6 +220,8 @@ export function createMatch(o: MatchOptions): MatchState {
     offside: null,
     advantage: null,
     wall: null,
+    marks: null,
+    runs: null,
     pendingCards: [],
     poss: -1,
     ctlHold: [false, false],
@@ -676,6 +678,32 @@ function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
   return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
 }
 
+/** How a lofted ball from the corner, free kick or goal kick in progress would fly (kicks.ts deliveryPlan): no error, for the aim preview too. */
+export function setPieceDelivery(s: MatchState, p: MatchPlayer, target: Vec, hold: number, curl: number): StrikePlan & { landing: Vec; from: Vec } {
+  const from = s.restart?.spot ?? s.ball.pos;
+  return { ...deliveryPlan(from, target, hold, curl, p.attrs.passing), from };
+}
+
+/**
+ * A lofted ball from a corner, a free kick or a goal kick (kicks.ts deliveryPlan): it comes down where it was aimed, driven or
+ * floated by the hold and bent by the curl, meant for the team-mate nearest where it drops (the same assist as an
+ * open-play loft), with the passer's error on top.
+ */
+function deliver(s: MatchState, p: MatchPlayer, a: Extract<Action, { kind: 'loft' }>): void {
+  const b = s.ball;
+  const plan = setPieceDelivery(s, p, a.target, a.power, a.curl ?? 0);
+  const err = (0.015 + 0.04 * a.power * (1.3 - p.attrs.passing)) * (isHumanControlled(s, p) ? HUMAN_AIM : 1);
+  kick(s, p, add(b.pos, plan.dir), plan.speed, err, assistReceiver(s, p, b.pos, plan.landing));
+  b.z = CHIP_Z0;
+  b.vz = plan.vz;
+  b.spin = plan.side ? { side: plan.side, top: 0, dir: plan.normal, by: p.i } : null;
+  if (blockCross(s, p)) return;
+  if (!countShot(s, p.team)) {
+    b.passFrom = p.i;
+    s.stats[p.team].passAttempts++;
+  } else b.receiver = -1;
+}
+
 /** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   const r = s.restart!;
@@ -688,17 +716,22 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   b.noPickup.fill(0);
   p.stun = 0;
   if (r.kind === 'throwin') {
-    // Law 15: from the hands, both feet on or behind the line, into the field.
+    // Law 15: from the hands, both feet on or behind the line, into the field. A long throw (a held or right
+    // click) goes up to where it was aimed, as far as his arms go, and is meant for the team-mate nearest where
+    // it comes down (the same assist as a lofted pass); a short one goes to the man clicked.
     const long = action.kind !== 'pass';
-    const maxD = long ? 16 + 14 * p.attrs.passing : 22;
-    let to = sub(action.target, r.spot);
+    const maxD = long ? LONG_THROW + 14 * p.attrs.passing : 22;
+    // Led to a place an opponent is standing on: to his feet instead.
+    const mate = action.kind === 'pass' && action.receiver !== undefined && action.receiver >= 0 ? s.players[action.receiver] : null;
+    const aim = mate && dist(mate.pos, action.target) > 2 && s.players.some((o) => o.team !== p.team && !o.sentOff && dist(o.pos, action.target) < Math.min(THROW_MARKED, dist(mate.pos, action.target))) ? mate.pos : action.target;
+    let to = sub(aim, r.spot);
     const inward = r.spot.y < PITCH_H / 2 ? 1 : -1;
     if (to.y * inward < 0.5) to = { x: to.x, y: inward * Math.max(1.5, Math.abs(to.y)) };
     const d = clamp(len(to), 3, maxD);
     const target = add(r.spot, scale(norm(to), d));
     const T = clamp(0.4 + 0.034 * d, 0.5, 1.4);
     const speed = (d * AIR_DRAG) / (1 - Math.exp(-AIR_DRAG * T));
-    kick(s, p, target, speed, 0.03 + 0.05 * (1 - p.attrs.passing), action.kind === 'pass' ? action.receiver : -1);
+    kick(s, p, target, speed, 0.03 + 0.05 * (1 - p.attrs.passing), action.kind === 'pass' ? action.receiver : longThrowReceiver(s, p, r.spot, target, T));
     b.z = THROW_Z0;
     b.vz = (0.5 * GRAVITY * T * T - THROW_Z0) / T;
     b.passFrom = p.i;
@@ -710,6 +743,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
     if (r.kind === 'corner') action = cornerKick(s, p, action);
     if (r.kind === 'penalty' && action.kind === 'shoot') penaltyStrike(s, p, action);
+    else if ((r.kind === 'corner' || r.kind === 'freekick' || r.kind === 'goalkick') && action.kind === 'loft') deliver(s, p, action);
     else applyAction(s, p, { move: { x: 0, y: 0 }, throttle: 0, action });
     if (b.owner === p.i) {
       // Not a kick (a tackle input): ignore, stay ready.
@@ -1298,6 +1332,7 @@ function contacts(s: MatchState, from: Vec): void {
     // A CPU restart taker leaves it for someone else (a human who plays it again gives away a free kick).
     if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
     if ((p.air ?? 0) > 0.05) continue; // in the air (a wall jumping): a header or his body, never his feet
+    if (z > FOOT_Z && keepersBall(s, p)) continue;
     const d = approach(p.pos, from, b.pos);
     let reach: number;
     if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
@@ -1310,7 +1345,10 @@ function contacts(s: MatchState, from: Vec): void {
     }
   }
   if (best) {
-    control(s, best, bestD, bestReach);
+    // Taking a cross on the chest in the box: the man marking him challenges for it, and may come away with it.
+    const duel = best.team === lastTeam ? aerialDuel(s, best) : { rival: null, contested: false };
+    if (duel.rival) control(s, duel.rival, Math.min(dist(duel.rival.pos, b.pos), bestReach), bestReach);
+    else control(s, best, bestD, bestReach, duel.contested);
     return;
   }
 
@@ -1348,6 +1386,14 @@ function contacts(s: MatchState, from: Vec): void {
     }
   }
   if (!hit || !hitAt) return;
+  // A cross dropping onto an attacker in the box: the man at his shoulder challenges, and may get it off him.
+  if (hit.team === lastTeam && !hit.dive) {
+    const duel = aerialDuel(s, hit);
+    if (duel.rival) {
+      hit = duel.rival;
+      hitAt = duel.rival.pos;
+    }
+  }
   // A keeper who may handle it deals with anything that reaches him: it is his to hold or parry.
   if (keeperHands(s, hit) && z <= KEEPER_REACH_Z) {
     // On the floor or mid-dive his legs and body are no place to catch it: no 'into his body' help.
@@ -1367,7 +1413,7 @@ function contacts(s: MatchState, from: Vec): void {
  * chest: he takes it, or it is too hot and comes off him. Stretching for a hot ball that is
  * not coming at his body he may not get a touch at all.
  */
-function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void {
+function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challenged = false): void {
   const b = s.ball;
   const receiver = b.receiver === p.i;
   // A dropping ball is harder to kill than its pace across the ground; the man it was meant for
@@ -1376,6 +1422,8 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
   const chest = b.z > FOOT_Z;
   let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : 0);
   if (chest && !receiver) limit *= 0.75;
+  // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
+  if (challenged) limit *= 0.6;
   const takes = speed <= limit;
   if (barredSecondTouch(s, p)) {
     secondTouch(s, p);
@@ -1625,6 +1673,48 @@ function keeperDives(s: MatchState): void {
   }
 }
 
+/** A team-mate leaves a high ball his own keeper is under (this close to it, m, and allowed to handle it): it is the keeper's. */
+const KEEPERS_BALL = 2;
+
+function keepersBall(s: MatchState, p: MatchPlayer): boolean {
+  if (p.role === 'GK') return false;
+  const gk = goalkeeper(s, p.team);
+  return !gk.sentOff && gk.stun === 0 && keeperHands(s, gk) && dist(gk.pos, s.ball.pos) < KEEPERS_BALL;
+}
+
+/**
+ * A defender this close (m) to an attacker going for a high ball in the box challenges him for it. Two men
+ * stand at least 2 x PLAYER_R (1.3 m) apart (separate()), so this is a marker at his shoulder.
+ */
+const DUEL_R = 2.0;
+
+/**
+ * An attacker in the opponents' box goes for a ball in the air (to head it or take it on the chest): a defender
+ * marking him close by challenges for it. The attacker wins it about one time in three between equals, more the
+ * better a striker he is against the defender's defending. Returns the defender who wins it (or null: the
+ * attacker has it), and whether there was a challenge at all.
+ */
+function aerialDuel(s: MatchState, att: MatchPlayer): { rival: MatchPlayer | null; contested: boolean } {
+  const b = s.ball;
+  const none = { rival: null, contested: false };
+  if (b.z <= FOOT_Z || !inOwnBox(s, att.team === 0 ? 1 : 0, att.pos)) return none;
+  let rival: MatchPlayer | null = null;
+  let rivalD = DUEL_R;
+  for (const o of s.players) {
+    if (o.team === att.team || o.sentOff || o.stun > 0 || o.role === 'GK' || b.noPickup[o.i] > 0 || b.whiff === o.i) continue;
+    const zr = b.z - (o.air ?? 0);
+    if (zr > HEAD_Z) continue;
+    const d = dist(o.pos, att.pos);
+    if (d < rivalD) {
+      rival = o;
+      rivalD = d;
+    }
+  }
+  if (!rival) return none;
+  const win = clamp(0.35 + 0.4 * (att.attrs.shooting - rival.attrs.defending) + 0.1 * (rivalD / DUEL_R - 0.5), 0.12, 0.65);
+  return next(s.rng) < win ? { rival: null, contested: true } : { rival, contested: true };
+}
+
 /**
  * A ball between CHEST_Z and HEAD_Z can be headed: by an opponent of whoever played
  * it (a clearance), or by an attacker in the opponents' box (at goal; a human aims it with
@@ -1640,6 +1730,7 @@ function header(s: MatchState): boolean {
     if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
     const zr = b.z - (p.air ?? 0);
     if (zr <= CHEST_Z || zr > HEAD_Z) continue;
+    if (keepersBall(s, p)) continue;
     const attacking = p.team === lastTeam && inOwnBox(s, p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
@@ -1649,7 +1740,8 @@ function header(s: MatchState): boolean {
     }
   }
   if (!best) return false;
-  const p = best;
+  // An attacker going up for it with a defender at his shoulder has to win it first.
+  const p = (best.team === lastTeam && aerialDuel(s, best).rival) || best;
   // Not every jump connects: he misses it, and it may still hit him.
   if (next(s.rng) > 0.62 + 0.25 * (p.role === 'DEF' ? p.attrs.defending : p.attrs.shooting)) {
     // No second jump at this ball, but his body is still there for it to hit.
@@ -1736,8 +1828,8 @@ export function teamInputs(s: MatchState, input: HumanInput | TeamInputs | undef
 const IDLE_INTENT: Intent = { move: { x: 0, y: 0 }, throttle: 0 };
 const isKick = (a: Action | undefined): a is Action => !!a && (a.kind === 'pass' || a.kind === 'chip' || a.kind === 'loft' || a.kind === 'shoot' || a.kind === 'punt');
 
-/** The human is holding a player still after an automatic switch (human.ts): the CPU positions him meanwhile. */
-const heldByCpu = (s: MatchState, p: MatchPlayer, input: HumanInput): boolean => !!s.ctlHold?.[p.team] && input.cursor !== undefined;
+/** The human is held after an automatic switch, or idle (ai.ts humanAuto): the CPU positions his player meanwhile. */
+const heldByCpu = (s: MatchState, p: MatchPlayer): boolean => humanAuto(s, p.team);
 
 /**
  * The intent of a player a human steers. A keeper who has held the ball for KEEPER_HOLD_TICKS
@@ -1868,6 +1960,41 @@ function penaltySave(s: MatchState, prev: Vec): boolean {
   return true;
 }
 
+/** An opponent this close (m) to where a throw was led to is standing on it: the throw goes to its man's feet. */
+const THROW_MARKED = 3;
+
+/** A long throw reaches this far (m), and up to 14 m more for a good passer. */
+const LONG_THROW = 18;
+
+/** Who a long throw is for: the pass assist's pick, else the nearest outfield team-mate who can get there while it's in the air. */
+function longThrowReceiver(s: MatchState, p: MatchPlayer, from: Vec, target: Vec, T: number): number {
+  const assisted = assistReceiver(s, p, from, target);
+  if (assisted >= 0) return assisted;
+  let best = -1;
+  let bestD = 3 + 7 * T;
+  for (const m of s.players) {
+    if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
+    const d = dist(m.pos, target);
+    if (d < bestD) {
+      bestD = d;
+      best = m.i;
+    }
+  }
+  return best;
+}
+
+/** At a corner, the attacking side's men are this close to their places (m) when it is ready to be taken. */
+const CORNER_SET = 3;
+/** A corner waits up to this long for them (ticks; a centre-back coming up from his own half). */
+const CORNER_SETUP_MAX = 330;
+
+/** A corner's attackers (the men in the box, and the one short) have got to their places. */
+function cornerSet(s: MatchState, r: Restart): boolean {
+  const t = s.aiRestart?.targets;
+  if (r.kind !== 'corner' || !t) return true;
+  return s.players.every((p) => p.team !== r.team || p.sentOff || p.i === r.taker || p.role === 'GK' || !t[p.i] || teamX(s, r.team, t[p.i]!.x) < 0.6 || dist(p.pos, t[p.i]!) < CORNER_SET);
+}
+
 /** A human taker this close to the ball at a free kick (m) may take it quickly, before the wall is formed. */
 const QUICK_FREE_KICK_R = 1.5;
 
@@ -1957,7 +2084,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   if (r.stage === 'whistle') {
     for (const p of s.players) {
       if (p.sentOff) continue;
-      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p, inputs[p.team]);
+      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p);
       const it = humanCtl ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
       movePlayer(s, p, { move: it.move, throttle: Math.min(it.throttle, 0.7) });
     }
@@ -2016,7 +2143,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
       p.vel = { x: 0, y: 0 };
       continue;
     }
-    const it = humanCtl && !heldByCpu(s, p, inputs[p.team]) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
+    const it = humanCtl && !heldByCpu(s, p) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
     movePlayer(s, p, { move: it.move, throttle: it.throttle, sprint: it.sprint });
   }
   separate(s);
@@ -2035,7 +2162,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   }
   if (r.stage === 'setup') {
     const there = dist(taker.pos, spot) < 0.6;
-    if ((there && r.ticks >= setupLength(s, r) && wallFormed(s)) || r.ticks >= RESTART_SETUP_MAX) beginReady(s, r);
+    if ((there && r.ticks >= setupLength(s, r) && wallFormed(s) && cornerSet(s, r)) || r.ticks >= (r.kind === 'corner' ? CORNER_SETUP_MAX : RESTART_SETUP_MAX)) beginReady(s, r);
     return;
   }
   if (kickAction) {

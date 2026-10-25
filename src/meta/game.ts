@@ -21,6 +21,7 @@ import {
 import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
 import type { SeasonReview } from './progression.ts';
+import { HOME_SKILL, opponentSetup, outlook, skillOf, type SkillEstimate } from './skill.ts';
 import { pushHistory, type ClubRecords, type SeasonSummary } from './history.ts';
 import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, UNLOCKS_VERSION, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
 import type { PendingMatch } from './pending.ts';
@@ -108,6 +109,8 @@ export interface Save {
   formation?: FormationId;
   /** How the CPU players of your side defend, press and attack (MENTALITY_IDS in sim/constants.ts). Default Balanced. */
   mentality?: Mentality;
+  /** Hidden estimate of how well this person plays, which sets the CPU's skill (skill.ts). Separate from Elo. A new club has none until its first match (skillOf: a newcomer). */
+  skill?: SkillEstimate;
   // The world (src/meta/world.ts) and the economy around it. Optional so older
   // saves still load; ensureWorldFields() and ensureHistoryFields() fill them.
   /** Your division, 1 (top) to DIVISIONS. */
@@ -346,15 +349,27 @@ export function offeredOpponent(save: Save): LadderClub {
 }
 
 /**
- * Your chance of beating `opp` (an expected score, 0 to 1): the one number the
- * win-chance gauge, the reward scale and (with the fairness stream) the
- * opponent's difficulty all read, so the chance shown, the stake and the CPU
- * you meet agree. The fairness stream owns its body. Until then it is mostly
- * the two XIs (xiExpected, the CPU-fixture model) with a fifth of public Elo,
- * so losing Elo on purpose doesn't make an easy opponent look hard: the squads
- * still say you should win.
+ * Your chance of beating `opp`, 0 to 1: the one number the win-chance gauge and
+ * the reward scale read. It is the chance against the opponent as he will really
+ * play you: his own squad, with the CPU's skill set from your hidden skill
+ * estimate (skill.ts opponentSetup), through the result model fitted to the
+ * fairness harness (skill.ts outlook, `bun run fairness --calibrate`). So the
+ * chance shown, the stake and the CPU you meet agree. Losing on purpose lowers
+ * the estimate and so the CPU's skill, never the opponent's squad, so the pay
+ * (rankedScale) is set by the squads instead (stakeOdds).
  */
 export function winChance(save: Save, opp: LadderClub): number {
+  const home = clubTeam(save, HOME_SKILL);
+  return outlook(skillOf(save).est, home, opponentSetup(save, opp, home)).win;
+}
+
+/**
+ * How unlikely beating `opp` looks on paper, for the pay: mostly the two XIs (xiExpected, the
+ * CPU-fixture model) with a fifth of public Elo. The CPU's skill adapts to you (winChance), so
+ * the squads alone say who is the bigger scalp: a stronger club pays more, and losing Elo on
+ * purpose to meet weaker clubs pays less.
+ */
+function stakeOdds(save: Save, opp: LadderClub): number {
   const xi = teamStrength(save.squad, save.lineup, save.formation);
   return 0.8 * xiExpected(xi, cpuStrength(opp)) + 0.2 * expectedScore(save.club.elo, opp.elo);
 }
@@ -362,12 +377,12 @@ export function winChance(save: Save, opp: LadderClub): number {
 /**
  * What a ranked match against `opp` pays, as a multiplier on the money and XP
  * tables (cup and league matches use its XP side): the opponent's division (DIVISION_MONEY, DIVISION_XP), times 0.7 to
- * 1.3 by how unlikely you were to win (winChance 1 to 0). Beating a weak
+ * 1.3 by how unlikely you were to win on paper (stakeOdds 1 to 0). Beating a weak
  * club pays less than beating an equal one, so losing Elo on purpose to meet
  * weaker clubs never pays.
  */
 export function rankedScale(save: Save, opp: LadderClub): { xp: number; money: number } {
-  const odds = 0.7 + 0.6 * (1 - winChance(save, opp));
+  const odds = 0.7 + 0.6 * (1 - stakeOdds(save, opp));
   const r2 = (n: number) => Math.round(n * 100) / 100;
   return { xp: r2(divisionXp(opp.division) * odds), money: r2(divisionMoney(opp.division) * odds) };
 }
@@ -610,7 +625,10 @@ export function isSave(x: unknown): x is Save {
     // World and history fields (also optional).
     numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) && numOrUndef(s.xpOwed) && numOrUndef(s.moneyOwed) && numOrUndef(s.voidAt) &&
     (s.nextOpp === undefined || s.nextOpp === null || typeof s.nextOpp === 'string') && objOrNull(s.pending) && objOrNull(s.records) &&
-    (s.seasons === undefined || Array.isArray(s.seasons)) && (s.yearNotes === undefined || Array.isArray(s.yearNotes))
+    (s.seasons === undefined || Array.isArray(s.seasons)) && (s.yearNotes === undefined || Array.isArray(s.yearNotes)) &&
+    // The skill estimate is optional too; a broken one is replaced by ensureSkill, not a reason to refuse the save.
+    (s.skill === undefined || typeof s.skill === 'object')
     // Tactics (formation, mentality) are never a reason to refuse a save: ensureElevenASide repairs them.
   );
 }
+

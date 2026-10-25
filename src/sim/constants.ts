@@ -37,10 +37,23 @@
  *  15  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
  *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
  *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
- *  16  a penalty in a match is the shootout's kick (sim/penalty.ts resolveKick): the human's aim and power or the
+ *  16  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
+ *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
+ *      CPU below skill 0 (AI_SKILL_MIN)
+ *  17  far-side width: the wide man on the far side holds the touchline for a switch until the
+ *      final third, and makes his run in behind down the line
+ *  18  corners: a cross comes down where it was aimed, driven or floated by the hold and bent by a drag;
+ *      a man comes short; the box waits out of its zones and attacks them as it is struck; markers
+ *      challenge in the air; a keeper comes for a floated ball into his six-yard box
+ *  19  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
+ *  20  throw-ins and goal kicks: a long throw reaches 18 m (+14 m by passing) and is meant for the man nearest where
+ *      it comes down; a throw led to where a marker stands goes to its man's feet instead; a lofted goal kick
+ *      comes down where it was aimed (the set-piece delivery)
+ *  21  a penalty in a match is the shootout's kick (sim/penalty.ts resolveKick): the human's aim and power or the
  *      CPU's choice against the keeper's dive decide it, and the ball and keeper play it out
  */
-export const SIM_VERSION = 16;
+export const SIM_VERSION = 21;
 
 export const TICK_HZ = 60;
 

@@ -399,6 +399,16 @@ export interface MatchState {
    */
   wall?: { team: 0 | 1; spot: Vec; players: number[]; struck: number } | null;
   /**
+   * Man-marking at the set piece in progress (ai.ts boxSetPiece): for each player index the attacker he marks, or -1.
+   * Markers stay goal-side of their man while the delivery is in the air (Ball.setPiece), then play on.
+   */
+  marks?: number[] | null;
+  /**
+   * Runs at the set piece in progress (ai.ts boxSetPiece): for each attacker the zone he attacks (near post, far post,
+   * penalty spot...), or null. He waits a few metres further out and runs in as it is struck, while it is in the air.
+   */
+  runs?: (Vec | null)[] | null;
+  /**
    * Team in possession for the stats: the last team to control the ball, kept while it is in
    * flight between teammates, -1 before anyone has it. Only live-ball ticks are counted.
    */
@@ -411,6 +421,11 @@ export interface MatchState {
   ctlHold?: [boolean, boolean];
   /** Per team: ticks the pointer has really moved since the hold began (it ends at HOLD_MOVES, human.ts). */
   ctlHoldMoves?: [number, number];
+  /**
+   * Per team: ticks the human has given no input at all: no pointer on the pitch, no keyboard
+   * input (key mode always sends `dir`), no button (human.ts). From IDLE_TICKS (ai.ts) his player is positioned by the CPU, as during ctlHold.
+   */
+  idleTicks?: [number, number];
   /** Per team: a first-time kick queued while a pass was on its way to the human's player (human.ts). */
   queued?: [QueuedKick | null, QueuedKick | null];
   /** Per team: this tick's pointer aim of a human (headers at goal go toward it), or null. */
@@ -565,7 +580,7 @@ export type Action =
    * Human lofted ball: lands on `target`, up to the range `power` allows, and
    * `power` (0..1) also sets how high it flies. `loftPlan()` previews it.
    */
-  | { kind: 'loft'; target: Vec; power: number }
+  | { kind: 'loft'; target: Vec; power: number; curl?: number }
   /**
    * Goalkeeper's long kick: a punt from the hands, or a long goal kick. Lands on `target`, up
    * to the range `power` (0..1) allows (puntPlan in kicks.ts).

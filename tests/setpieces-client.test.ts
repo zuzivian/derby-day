@@ -6,7 +6,7 @@ import { describe, expect, test } from 'bun:test';
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
 import { CoachTracker } from '../src/client/coach.ts';
 import { freeKickKind } from '../src/client/hud.ts';
-import { CURL_DRAG_M, curlFrom, freeKickSpot, InputController } from '../src/client/input.ts';
+import { CURL_DRAG_M, curlFrom, setPieceSpot, InputController } from '../src/client/input.ts';
 import { PITCH_H } from '../src/sim/constants.ts';
 import { oppGoal } from '../src/sim/field.ts';
 import { strikePath } from '../src/sim/kicks.ts';
@@ -58,7 +58,7 @@ describe('curl from a drag', () => {
       const canvas = Object.assign(new EventTarget(), { getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 700 }) }) as unknown as HTMLCanvasElement;
       // Screen pixels are world decimetres.
       const input = new InputController(canvas, { toWorld: (x, y) => ({ x: x / 10, y: y / 10 }) }, () => s.ball.owner === s.controlled[0], () => {});
-      input.setPiece = () => freeKickSpot(s, 0);
+      input.setPiece = () => setPieceSpot(s, 0);
       canvas.dispatchEvent(pointerEvent('pointermove', 1040, 360));
       canvas.dispatchEvent(pointerEvent('pointerdown', 1040, 360, 2));
       canvas.dispatchEvent(pointerEvent('pointermove', 1040, 390)); // 3 m toward +y, while held
@@ -68,7 +68,7 @@ describe('curl from a drag', () => {
       return taken;
     };
     const s = freeKickReady();
-    expect(freeKickSpot(s, 0)).toEqual(s.restart!.spot);
+    expect(setPieceSpot(s, 0)).toEqual(s.restart!.spot);
     const fk = run(s);
     expect(fk.shoot).toBeGreaterThan(0);
     expect(fk.aim).toEqual({ x: 104, y: 36 });
