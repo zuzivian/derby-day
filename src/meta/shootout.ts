@@ -18,6 +18,7 @@
 // the seed and the kick number, so the same inputs always give the same kick.
 
 import { gauss, hashString, makeRng, next, type Rng } from '../sim/rng.ts';
+import type { MatchState } from '../sim/types.ts';
 import { shortName, type Player } from './player.ts';
 
 export const KICKS_PER_SIDE = 5;
@@ -79,7 +80,10 @@ export interface KickResult {
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-/** The five outfield players with the best shooting, best first, and the keeper. */
+/**
+ * The order of kicks for a lineup: the outfield players best shooter first, then the keeper
+ * (Law 10: nobody kicks twice until every eligible player has kicked once).
+ */
 export function penaltySide(name: string, squad: Player[], lineup: string[]): PenaltySide {
   const xi = lineup.map((id) => squad.find((p) => p.id === id)).filter((p): p is Player => !!p);
   const gk = xi[0];
@@ -88,7 +92,26 @@ export function penaltySide(name: string, squad: Player[], lineup: string[]): Pe
     .map((p) => ({ name: shortName(p), shooting: p.attrs.shooting / 100 }))
     .sort((x, y) => y.shooting - x.shooting);
   while (takers.length < KICKS_PER_SIDE) takers.push({ name: `Player ${takers.length + 2}`, shooting: 0.4 });
+  if (gk) takers.push({ name: shortName(gk), shooting: gk.attrs.shooting / 100 });
   return { name, takers, keeper: { name: gk ? shortName(gk) : 'Keeper', goalkeeping: (gk?.attrs.goalkeeping ?? 50) / 100 } };
+}
+
+/**
+ * Law 10, after a drawn match: only the players on the pitch at full time take kicks (not
+ * anyone sent off), the keeper is whoever was in goal at the end, and the side with more
+ * players leaves out its weakest shooters so both have the same number. Outfield players
+ * kick best shooter first, the keeper last.
+ */
+export function matchPenaltySides(m: MatchState): [PenaltySide, PenaltySide] {
+  const on = ([0, 1] as const).map((team) => m.players.filter((p) => p.team === team && !p.sentOff));
+  const n = Math.min(on[0].length, on[1].length);
+  return ([0, 1] as const).map((team) => {
+    const gk = on[team].find((p) => p.role === 'GK') ?? on[team][0];
+    const outfield = on[team].filter((p) => p !== gk).sort((x, y) => y.attrs.shooting - x.attrs.shooting).slice(0, Math.max(0, n - 1));
+    const takers: Taker[] = outfield.map((p) => ({ name: p.name, shooting: p.attrs.shooting }));
+    if (gk) takers.push({ name: gk.name, shooting: gk.attrs.shooting });
+    return { name: m.teams[team].name, takers, keeper: { name: gk?.name ?? 'Keeper', goalkeeping: gk?.attrs.goalkeeping ?? 0.5 } };
+  }) as [PenaltySide, PenaltySide];
 }
 
 /** Which third of the goal an x position is in, as a dive. */

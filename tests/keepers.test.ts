@@ -15,6 +15,7 @@ import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } fr
 import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
+import { openPlay } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -25,7 +26,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5, humanTeam: 0 | 1 | -1 = 0): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humanTeam });
-  while (s.phase !== 'play') step(s);
+  openPlay(s);
   return s;
 }
 

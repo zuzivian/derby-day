@@ -13,6 +13,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { createMatch, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
+import { openPlay } from './helpers.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
 
 function teams(seed: number) {
@@ -24,7 +25,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 600, humanTeam: 0 });
-  while (s.phase !== 'play') step(s);
+  openPlay(s);
   return s;
 }
 

@@ -35,12 +35,15 @@ export type SfxEvent =
   | { type: 'knock'; kind: 'board' | 'post'; power: number }
   | { type: 'tackle'; won: boolean }
   | { type: 'goal'; team: 0 | 1 }
-  | { type: 'whistle'; kind: 'kickoff' | 'halftime' | 'fulltime' | 'foul' }
+  | { type: 'whistle'; kind: WhistleKind }
   /** The crowd's "ooh": a shot just wide or over, or a hard shot saved. */
   | { type: 'ooh'; power: number }
   /** A keeper gathering the ball into his hands. */
   | { type: 'catch'; power: number }
   | { type: 'header'; power: number };
+
+/** 'foul': one short blast when the referee stops play for a foul, an offside, an advantage brought back or a second touch. */
+export type WhistleKind = 'kickoff' | 'halftime' | 'fulltime' | 'foul';
 
 /** A tackle sets tackleCd to 36 (win/neutral) or 50 (lost) on the tick it starts. */
 const LUNGE_CD = 36;
@@ -63,6 +66,15 @@ export function snapshot(s: MatchState): Snapshot {
     bz: s.ball.z,
     events: s.events.length,
   };
+}
+
+/** Play has just stopped: was it the referee's whistle (not the ball going out of play)? */
+function stoppedForFoul(s: MatchState): boolean {
+  for (let i = s.events.length - 1; i >= 0; i--) {
+    const e = s.events[i];
+    if (e.kind === 'restart') return e.reason !== 'out' && e.restart !== 'kickoff';
+  }
+  return false;
 }
 
 /** A snapshot to start from so the opening kick-off whistles. */
@@ -91,17 +103,15 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
     if (next.phase === 'kickoff') out.push({ type: 'whistle', kind: 'kickoff' });
     else if (next.phase === 'halftime') out.push({ type: 'whistle', kind: 'halftime' });
     else if (next.phase === 'fulltime') out.push({ type: 'whistle', kind: 'fulltime' });
+    else if (next.phase === 'restart' && prev.phase === 'play' && stoppedForFoul(next)) out.push({ type: 'whistle', kind: 'foul' });
   }
   const prevSpeed = speedOf(prev.vx, prev.vy);
-  // New match events: the referee whistles for a foul or an offside (one blast however many came at
-  // once), and a shot that has just gone out for a goal kick or corner close to the posts gets an "ooh".
-  let foul = false;
+  // A shot that has just gone out for a goal kick or corner close to the posts gets an "ooh". (The
+  // referee's whistle for a stoppage is the phase change above.)
   for (let i = prev.events; i < next.events.length; i++) {
     const e = next.events[i];
-    if (e.kind === 'foul' || e.kind === 'offside') foul = true;
-    else if (e.kind === 'restart' && e.reason === 'out' && (e.restart === 'goalkick' || e.restart === 'corner') && nearMiss(prev, prevSpeed)) out.push({ type: 'ooh', power: clamp01((prevSpeed - 10) / 16) });
+    if (e.kind === 'restart' && e.reason === 'out' && (e.restart === 'goalkick' || e.restart === 'corner') && nearMiss(prev, prevSpeed)) out.push({ type: 'ooh', power: clamp01((prevSpeed - 10) / 16) });
   }
-  if (foul) out.push({ type: 'whistle', kind: 'foul' });
   if (prev.phase !== 'play' && prev.phase !== 'init') return out;
 
   const speed = speedOf(b.vel.x, b.vel.y);
@@ -601,10 +611,16 @@ export class SoundEngine {
     this.burst(ctx, out, t, 0.06, 'lowpass', 700, 250, 0.7, 0.14 + 0.1 * power);
   }
 
-  private whistle(ctx: Ctx, out: AudioNode, kind: 'kickoff' | 'halftime' | 'fulltime' | 'foul'): void {
+  private whistle(ctx: Ctx, out: AudioNode, kind: WhistleKind): void {
     const t = ctx.currentTime + 0.01;
     const blasts: [number, number][] =
-      kind === 'kickoff' ? [[0, 0.26]] : kind === 'foul' ? [[0, 0.16]] : kind === 'halftime' ? [[0, 0.42], [0.58, 0.42]] : [[0, 0.32], [0.46, 0.32], [0.92, 0.7]];
+      kind === 'foul'
+        ? [[0, 0.18]]
+        : kind === 'kickoff'
+          ? [[0, 0.26]]
+          : kind === 'halftime'
+            ? [[0, 0.42], [0.58, 0.42]]
+            : [[0, 0.32], [0.46, 0.32], [0.92, 0.7]];
     for (const [off, dur] of blasts) this.blast(ctx, out, t + off, dur);
   }
 

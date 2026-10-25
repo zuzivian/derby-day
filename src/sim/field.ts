@@ -2,29 +2,41 @@ import { BOX_DEPTH, BOX_W, formationOf, GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W,
 import type { MatchPlayer, MatchState } from './types.ts';
 import { dist, type Vec } from './vec.ts';
 
-/** Team 0 attacks toward x = PITCH_W, team 1 toward x = 0. */
-export const attackDir = (team: 0 | 1): number => (team === 0 ? 1 : -1);
+/**
+ * Which half it is: everything about direction depends on it, because the teams change ends
+ * at half-time (Law 8). A MatchState, or anything else that knows the half.
+ */
+export type HalfOf = Pick<MatchState, 'half'>;
+
+/** The end `team` defends this half: 0 is the goal at x = 0, 1 the goal at x = PITCH_W. Team 0 starts at x = 0. */
+export const endOf = (s: HalfOf, team: 0 | 1): 0 | 1 => (s.half === 2 ? (team === 0 ? 1 : 0) : team);
+
+/** The team defending the goal at this end this half (0: the goal at x = 0). */
+export const teamAtEnd = (s: HalfOf, end: 0 | 1): 0 | 1 => endOf(s, end);
+
+/** +1 if `team` attacks toward x = PITCH_W this half, -1 toward x = 0. */
+export const attackDir = (s: HalfOf, team: 0 | 1): number => (endOf(s, team) === 0 ? 1 : -1);
 
 /** World x to 0..1 measured from this team's own goal toward the opponent's. */
-export const teamX = (team: 0 | 1, x: number): number => (team === 0 ? x / PITCH_W : 1 - x / PITCH_W);
+export const teamX = (s: HalfOf, team: 0 | 1, x: number): number => (endOf(s, team) === 0 ? x / PITCH_W : 1 - x / PITCH_W);
 
-export const fromTeam = (team: 0 | 1, nx: number, ny: number): Vec => ({
-  x: team === 0 ? nx * PITCH_W : (1 - nx) * PITCH_W,
+export const fromTeam = (s: HalfOf, team: 0 | 1, nx: number, ny: number): Vec => ({
+  x: endOf(s, team) === 0 ? nx * PITCH_W : (1 - nx) * PITCH_W,
   y: ny * PITCH_H,
 });
 
-export const oppGoal = (team: 0 | 1): Vec => ({ x: team === 0 ? PITCH_W : 0, y: PITCH_H / 2 });
-export const ownGoal = (team: 0 | 1): Vec => ({ x: team === 0 ? 0 : PITCH_W, y: PITCH_H / 2 });
+export const oppGoal = (s: HalfOf, team: 0 | 1): Vec => ({ x: endOf(s, team) === 0 ? PITCH_W : 0, y: PITCH_H / 2 });
+export const ownGoal = (s: HalfOf, team: 0 | 1): Vec => ({ x: endOf(s, team) === 0 ? 0 : PITCH_W, y: PITCH_H / 2 });
 
 /** Inside `team`'s own penalty area (lines included). */
-export function inOwnBox(team: 0 | 1, p: Vec): boolean {
-  const nx = teamX(team, p.x) * PITCH_W;
+export function inOwnBox(s: HalfOf, team: 0 | 1, p: Vec): boolean {
+  const nx = teamX(s, team, p.x) * PITCH_W;
   return nx >= -0.5 && nx <= BOX_DEPTH && Math.abs(p.y - PITCH_H / 2) <= BOX_W / 2;
 }
 
 /** Inside `team`'s own goal area. */
-export function inOwnSix(team: 0 | 1, p: Vec): boolean {
-  const nx = teamX(team, p.x) * PITCH_W;
+export function inOwnSix(s: HalfOf, team: 0 | 1, p: Vec): boolean {
+  const nx = teamX(s, team, p.x) * PITCH_W;
   return nx >= -0.5 && nx <= SIX_DEPTH && Math.abs(p.y - PITCH_H / 2) <= SIX_W / 2;
 }
 
@@ -73,7 +85,7 @@ export function secondLastOpponentX(s: MatchState, team: 0 | 1): number {
   let b = -1;
   for (const o of s.players) {
     if (o.team === team || o.sentOff) continue;
-    const x = teamX(team, o.pos.x);
+    const x = teamX(s, team, o.pos.x);
     if (x > a) {
       b = a;
       a = x;
@@ -89,6 +101,6 @@ export function secondLastOpponentX(s: MatchState, team: 0 | 1): number {
  */
 export function inOffsidePosition(s: MatchState, m: MatchPlayer, ballX = s.ball.pos.x, secondLast = secondLastOpponentX(s, m.team)): boolean {
   const LEVEL = 0.05 / PITCH_W;
-  const x = teamX(m.team, m.pos.x);
-  return x > 0.5 && x > teamX(m.team, ballX) + LEVEL && x > secondLast + LEVEL;
+  const x = teamX(s, m.team, m.pos.x);
+  return x > 0.5 && x > teamX(s, m.team, ballX) + LEVEL && x > secondLast + LEVEL;
 }

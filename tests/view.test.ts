@@ -11,6 +11,7 @@ import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
 import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
+import { kickOff } from './helpers.ts';
 
 function match(seed: number, humans: [boolean, boolean] = [true, false]): MatchState {
   const [a, b] = generateLadder(seed, 2);
@@ -320,7 +321,8 @@ describe('camera', () => {
 
   test('long view: goal kicks and the keeper holding the ball, for the human side only', () => {
     const s = match(13);
-    for (let t = 0; t < 300; t++) step(s, {});
+    kickOff(s);
+    for (let t = 0; t < 250; t++) step(s, {});
     expect(longView(s, 0)).toBe(null);
     // The ball goes out over the human's goal line off an opponent: a goal kick.
     const away = s.players.find((p) => p.team === 1 && p.role !== 'GK')!;

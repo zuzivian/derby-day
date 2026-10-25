@@ -150,16 +150,6 @@ describe('detectSfx', () => {
 describe('detectSfx: referee, crowd and keeper', () => {
   const ev = (e: Record<string, unknown>) => e as unknown as MatchEvent;
 
-  test('a foul or an offside gets one short whistle, however many events came at once', () => {
-    const s = liveMatch();
-    const before = snapshot(s);
-    s.events.push(ev({ kind: 'foul', tick: s.tick }), ev({ kind: 'card', tick: s.tick }), ev({ kind: 'restart', tick: s.tick, restart: 'freekick', reason: 'foul' }));
-    expect(detectSfx(before, s)).toEqual([{ type: 'whistle', kind: 'foul' }]);
-    const again = snapshot(s);
-    s.events.push(ev({ kind: 'offside', tick: s.tick }));
-    expect(detectSfx(again, s)).toEqual([{ type: 'whistle', kind: 'foul' }]);
-  });
-
   test('a shot going out just wide of the post draws an "ooh"; one well wide, or a slow ball, does not', () => {
     for (const [y, speed, want] of [
       [GOAL_TOP - 2, 22, true],
@@ -217,8 +207,8 @@ describe('detectSfx over a real match', () => {
     while (s.phase !== 'fulltime') {
       step(s);
       for (const e of detectSfx(prev, s)) {
-        const k = e.type === 'whistle' ? `whistle:${e.kind === 'foul' ? 'foul' : 'phase'}` : e.type;
-        counts[k] = (counts[k] ?? 0) + 1;
+        const key = e.type === 'whistle' && e.kind === 'foul' ? 'foulWhistle' : e.type;
+        counts[key] = (counts[key] ?? 0) + 1;
       }
       prev = snapshot(s);
     }
@@ -226,10 +216,10 @@ describe('detectSfx over a real match', () => {
     expect(counts.goal ?? 0).toBe(total);
     expect(counts.kick).toBeGreaterThan(10);
     // opening kick-off, a restart per goal, second half, half-time, full-time
-    expect(counts['whistle:phase']).toBe(1 + total + 1 + 1 + 1);
-    // One foul whistle per tick with a foul or offside in it.
-    const foulTicks = new Set(s.events.filter((e) => e.kind === 'foul' || e.kind === 'offside').map((e) => e.tick)).size;
-    expect(counts['whistle:foul'] ?? 0).toBe(foulTicks);
+    expect(counts.whistle).toBe(1 + total + 1 + 1 + 1);
+    // and one short blast for every stoppage the referee called (fouls, offsides, advantage brought back)
+    const called = s.events.filter((e) => e.kind === 'restart' && e.reason !== 'out' && e.restart !== 'kickoff').length;
+    expect(counts.foulWhistle ?? 0).toBe(called);
     expect(counts.knock ?? 0).toBeLessThan(counts.kick * 2);
     // The crowd's "ooh" and the keeper's catch are occasional, not every kick.
     expect(counts.ooh ?? 0).toBeLessThan(counts.kick / 4);

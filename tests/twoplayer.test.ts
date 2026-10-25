@@ -5,6 +5,7 @@ import { keeperControllable } from '../src/sim/human.ts';
 import { createMatch, fingerprint, step, teamInputs } from '../src/sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../src/sim/types.ts';
 import { len, sub } from '../src/sim/vec.ts';
+import { kickOff } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -18,7 +19,7 @@ function twoHumans(seed = 3, halfSeconds = 30): MatchState {
 }
 
 function toPlay(s: MatchState, inputs?: TeamInputs): MatchState {
-  while (s.phase !== 'play') step(s, inputs);
+  kickOff(s, inputs);
   return s;
 }
 
@@ -100,8 +101,10 @@ describe('two humans in one match', () => {
     const a = s.players[s.controlled[0]];
     const b = s.players[s.controlled[1]];
     for (const p of s.players) if (p !== a && p !== b) p.stun = 1000; // keep control where it is
-    const aTarget = { x: a.pos.x, y: 2 };
-    const bTarget = { x: b.pos.x, y: 38 };
+    s.switchTimer = [1000, 1000]; // and no auto-switch to whoever is now nearer the ball
+    // One runs toward each touchline, from wherever the kick-off left them.
+    const aTarget = { x: a.pos.x, y: a.pos.y - 14 };
+    const bTarget = { x: b.pos.x, y: b.pos.y + 14 };
     const [ay, by] = [a.pos.y, b.pos.y];
     for (let t = 0; t < 60; t++) step(s, [{ cursor: aTarget }, { cursor: bTarget }]);
     expect(s.controlled).toEqual([a.i, b.i]);
@@ -115,7 +118,7 @@ describe('two humans in one match', () => {
       return [c.players[a.i].pos, c.players[b.i].pos];
     };
     const up = { cursor: { x: 30, y: 2 } };
-    const down = { cursor: { x: 30, y: 38 } };
+    const down = { cursor: { x: 30, y: 66 } };
     const [a1, b1] = run([up, up]);
     const [a2, b2] = run([up, down]);
     const [a3, b3] = run([down, up]);

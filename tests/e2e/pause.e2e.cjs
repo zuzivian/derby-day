@@ -70,7 +70,8 @@ test('with the HUD Menu button focused, WASD and the arrows still move the playe
   // onto Mute, Menu or Cam could not move.
   const page = await openApp(t, { prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d' });
   await startRanked(page);
-  await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play');
+  // The kick-off is a kick (Law 8): wait until it has been taken and someone has the ball.
+  await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner >= 0);
   const freeze = () =>
     page.evaluate(() => {
       const s = window.__derbyMatch;
@@ -81,6 +82,9 @@ test('with the HUD Menu button focused, WASD and the arrows still move the playe
       s.ball.owner = me.i;
       s.ball.pos = { x: 52.4, y: 34 };
       s.ball.vel = { x: 0, y: 0 };
+      s.ball.receiver = -1;
+      // He is the human's own pick now, not one handed over by the kick-off pass (no CPU-driven hold).
+      s.ctlHold = [false, false];
       return me.i;
     });
   const posOf = (i) => page.evaluate((i) => ({ ...window.__derbyMatch.players[i].pos }), i);
