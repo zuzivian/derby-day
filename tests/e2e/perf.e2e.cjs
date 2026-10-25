@@ -296,7 +296,9 @@ for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
     await page.waitForFunction(() => devicePixelRatio === 2);
-    await page.waitForTimeout(1200);
+    // Wait for the resize rather than a fixed time: on SwiftShader at quality=high a frame can take ~650 ms, and the
+    // resize lands on a frame. The assertion below still says what was seen if it never comes.
+    await page.waitForFunction((w) => document.querySelector('#pitch').width > w * 1.9, one.w, { timeout: 10_000 }).catch(() => {});
     const two = await buf();
     expect(two.css, 'same CSS size').toBe(one.css);
     expect(two.w / one.w, `buffer ${one.w} → ${two.w} px doubles with the ratio`).toBeGreaterThan(1.9);
@@ -393,29 +395,6 @@ test(
     expect(await page.evaluate(() => window.__derbyMatch.tick), 'the same match, not a new one').toBeGreaterThanOrEqual(before);
     await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
     expect(await page.locator(SEL.modal).innerText(), 'the result keeps the score').toMatch(/2\s*[–-]\s*1/);
-  },
-  { timeoutMs: 120_000 },
-);
-
-test(
-  'Perf: closing the tab mid-match stops the loop and gives the WebGL context back; a back-forward cache hide does not',
-  async (t) => {
-    const page = await startLongMatch(t);
-    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d' || !(await page.evaluate(() => !!window.__lose))) return;
-    const hide = (persisted) => page.evaluate((persisted) => dispatchEvent(new PageTransitionEvent('pagehide', { persisted })), persisted);
-    const tick = () => page.evaluate(() => window.__derbyMatch.tick);
-    // Parked in the back-forward cache: it may come back to this match, so it keeps it.
-    await hide(true);
-    const t0 = await tick();
-    await page.waitForFunction((t0) => window.__derbyMatch.tick > t0 + 30, t0, { timeout: 15_000 });
-    expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'still drawing in 3D').toBe('3d');
-    // Going away for good: the context is lost at once, no 2D fallback starts, and the sim stops.
-    await hide(false);
-    expect(await page.evaluate(() => document.querySelector('#pitch').getContext('webgl2').isContextLost()), 'context lost').toBe(true);
-    const t1 = await tick();
-    await page.waitForTimeout(1500);
-    expect(await tick(), 'the loop stopped').toBe(t1);
-    expect(await page.evaluate(() => document.querySelector('#pitch').dataset.renderer ?? null), 'no 2D fallback took over').toBe(null);
   },
   { timeoutMs: 120_000 },
 );

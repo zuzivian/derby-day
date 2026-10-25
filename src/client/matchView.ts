@@ -9,6 +9,7 @@ import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
@@ -22,7 +23,6 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
-import { onPageGone } from './pagegone.ts';
 import { quickTacticsMarkup } from './tactics.ts';
 import { MENTALITY_IDS, type Mentality } from '../sim/constants.ts';
 
@@ -164,6 +164,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           </div>
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
+          <label class="pause-opt pause-volume">Sound <input type="range" id="opt-volume" min="0" max="100" step="5" aria-label="Sound volume"><output id="opt-volume-out" for="opt-volume"></output></label>
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
@@ -260,6 +261,18 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   optReplays.addEventListener('change', () => {
     replaysOn = optReplays.checked;
     setInstantReplaysPref(replaysOn);
+  });
+  // Sound volume (the HUD's speaker button still mutes): remembered in this browser.
+  const optVolume = root.querySelector<HTMLInputElement>('#opt-volume')!;
+  const volumeOut = root.querySelector<HTMLOutputElement>('#opt-volume-out')!;
+  const showVolume = () => {
+    volumeOut.textContent = `${optVolume.value}%`;
+  };
+  optVolume.value = String(Math.round(getSound().volume * 100));
+  showVolume();
+  optVolume.addEventListener('input', () => {
+    getSound().setVolume(Number(optVolume.value) / 100);
+    showVolume();
   });
   // A mentality picked in the pause menu goes to the sim with the next tick's input.
   let pendingTactic = 0;
@@ -536,17 +549,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.addEventListener('popstate', onPop);
   } catch { /* sandboxed viewer */ }
 
-  // The tab is closing mid-match: stop drawing and give the GPU back now (dispose loses the context).
-  const offGone = onPageGone(() => {
-    if (done) return;
-    done = true;
-    cancelAnimationFrame(raf);
-    guardingBack = false; // no history.back() while the page unloads
-    dispose();
-  });
-
   function dispose() {
-    offGone();
     gfx.dispose();
     input.dispose();
     juice.dispose();
