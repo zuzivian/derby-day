@@ -17,8 +17,11 @@ export interface SettingsHooks {
   onImported: () => void;
 }
 
+/** After a restore is written: long enough for the browser to flush storage before the page reloads. */
+const RELOAD_DELAY_MS = 300;
+
 const failText = (r: WriteResult): string =>
-  r === 'quota' ? 'This browser has no room left to store the club. Free some space and try again.' : r === 'guest' ? 'This tab is not the one that owns your club. Restore from the tab that does.' : 'This browser blocked storage, so the backup could not be restored.';
+  r === 'quota' ? 'This browser has no room left to store the club. Free some space and try again.' : r === 'guest' ? 'This tab is not the one that owns your club. Restore from the tab that does.' : r === 'mismatch' ? 'This browser did not keep the restored club, so nothing was changed. Try again, or use another browser.' : 'This browser blocked storage, so the backup could not be restored.';
 
 export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): void {
   if (document.getElementById('settings-dialog')) return;
@@ -140,9 +143,13 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
         preview.innerHTML = `<p class="bk-bad" role="alert">${esc(failText(res))}</p>`;
         return;
       }
-      wrap.remove();
-      document.removeEventListener('keydown', onKey, true);
-      hooks.onImported();
+      // Reloading at once can outrun the browser writing its storage to disk, and the next page would open the old club.
+      preview.innerHTML = '<p class="bk-found" role="status">Restoring…</p>';
+      setTimeout(() => {
+        wrap.remove();
+        document.removeEventListener('keydown', onKey, true);
+        hooks.onImported();
+      }, RELOAD_DELAY_MS);
     });
   };
   if (guestTab) {
