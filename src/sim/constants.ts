@@ -25,11 +25,13 @@
  *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
- *   8  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
+ *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
+ *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
+ *  10  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
  *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
  *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
  */
-export const SIM_VERSION = 8;
+export const SIM_VERSION = 10;
 
 export const TICK_HZ = 60;
 

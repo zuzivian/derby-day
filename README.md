@@ -98,7 +98,7 @@ The club earns experience and opens up as it levels (1 to 99; clearing level L t
 
 ## Two players
 
-Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two tabs** is Link two tabs, and **Online** when a relay is configured), open from club level 1. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
+Both are on Home in the **vs Player** card (**One screen** is Local 2P, **Two tabs** is Link two tabs, and **Online** when a relay is configured), open from club level 2. Each human steers one player of their side (yellow marker for home, cyan for away); the CPU runs the rest of both teams. Nothing is recorded: no Elo, money, training or replay.
 
 - **Local 2P:** hot-seat on one keyboard, your club against a ladder club you pick.
 

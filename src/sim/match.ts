@@ -60,7 +60,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
+import { assistReceiver, chipPlan, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
 import {
   addedMinutes,
   awardRestart,
@@ -167,6 +167,8 @@ export function createMatch(o: MatchOptions): MatchState {
         holdTicks: 0,
         yellow: 0,
         sentOff: false,
+        // Set from the start, as on every player: an object that gains a field mid-match slows every function that reads it.
+        air: 0,
       });
     });
   });
@@ -193,6 +195,9 @@ export function createMatch(o: MatchOptions): MatchState {
       setPieceDirect: true,
       kickedBy: -1,
       inHands: false,
+      restartBy: -1,
+      noHands: -1,
+      spin: null,
     },
     score: [0, 0],
     phase: 'kickoff',
@@ -212,6 +217,7 @@ export function createMatch(o: MatchOptions): MatchState {
     referee: { pos: { x: PITCH_W / 2 - 6, y: PITCH_H / 2 + 12 }, vel: { x: 0, y: 0 }, facing: { x: 0, y: -1 } },
     offside: null,
     advantage: null,
+    wall: null,
     pendingCards: [],
     poss: -1,
     ctlHold: [false, false],
@@ -651,6 +657,23 @@ function strikeFreeKick(s: MatchState, p: MatchPlayer, a: Extract<Action, { kind
   countShot(s, p.team, true);
 }
 
+/** A corner played along the ground: only this short (m), and only with nobody in its lane. */
+const CORNER_SHORT = 20;
+
+/**
+ * A corner "pass" to a team-mate that is long, or has an opponent in its lane, would be cut out in a
+ * crowded box: it is crossed instead, a lofted ball to him (with the lofted pass's receiver, so he goes
+ * to meet it). A short pass along a clear lane stays on the ground.
+ */
+function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
+  if (action.kind !== 'pass') return action;
+  const from = s.ball.pos;
+  const d = dist(from, action.target);
+  const blocked = s.players.some((o) => o.team !== p.team && !o.sentOff && distToSegment(o.pos, from, action.target) < 2);
+  if (d <= CORNER_SHORT && !blocked) return action;
+  return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
+}
+
 /** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
 function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   const r = s.restart!;
@@ -683,6 +706,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     strikeFreeKick(s, p, action);
   } else {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
+    if (r.kind === 'corner') action = cornerKick(s, p, action);
     applyAction(s, p, { move: { x: 0, y: 0 }, throttle: 0, action });
     if (b.owner === p.i) {
       // Not a kick (a tackle input): ignore, stay ready.
@@ -798,7 +822,13 @@ function separate(s: MatchState): void {
   const holder = b0.owner >= 0 && b0.inHands && ps[b0.owner].role === 'GK' ? b0.owner : -1;
   // Nor does a man standing in a free-kick wall (or in the air from it): the wall stands shoulder to shoulder,
   // closer than anyone else is let stand, and nobody shoves it out of shape.
-  const planted = wallPlanted(s);
+  // 1: in the wall (they squeeze into line together), 2: in it and on his mark (nobody moves him).
+  let wall: Uint8Array | null = null;
+  if (s.wall) {
+    wall = new Uint8Array(ps.length);
+    for (const i of s.wall.players) wall[i] = 1;
+    for (const i of wallPlanted(s)) wall[i] = 2;
+  }
   for (let a = 0; a < ps.length; a++) {
     if (ps[a].sentOff) continue;
     for (let b = a + 1; b < ps.length; b++) {
@@ -806,9 +836,9 @@ function separate(s: MatchState): void {
       const dx = ps[b].pos.x - ps[a].pos.x;
       const dy = ps[b].pos.y - ps[a].pos.y;
       if (dx > PLAYER_R * 2 || dx < -PLAYER_R * 2 || dy > PLAYER_R * 2 || dy < -PLAYER_R * 2) continue;
-      const pa = planted.includes(a);
-      const pb = planted.includes(b);
-      if (s.wall && s.wall.players.includes(a) && s.wall.players.includes(b)) continue; // they squeeze into line together
+      const pa = !!wall && wall[a] === 2;
+      const pb = !!wall && wall[b] === 2;
+      if (wall && wall[a] && wall[b]) continue;
       const l = Math.sqrt(dx * dx + dy * dy);
       const overlap = PLAYER_R * 2 - l;
       if (overlap > 0 && l > 1e-6) {
@@ -881,7 +911,80 @@ const POSTS: Vec[] = [
 ];
 
 /** The goal frame: net on three sides behind the line, and the posts. There are no boards. */
-function goalFrame(s: MatchState, prevX: number): void {
+/** Radius of a post and of the crossbar (m), and how much of its pace into the woodwork a ball keeps. */
+const POST_R = 0.06;
+const WOODWORK_E = 0.7;
+
+/**
+ * The earliest point (0..1 along the step) at which a ball moving from `a` to `b` comes within `r`
+ * of the point `c` (a post seen from above, or the bar seen side-on), or -1 if it doesn't.
+ */
+function sweptHit(a: Vec, b: Vec, c: Vec, r: number): number {
+  const d = sub(b, a);
+  const f = sub(a, c);
+  const cc = f.x * f.x + f.y * f.y - r * r;
+  if (cc <= 0) return 0;
+  const aa = d.x * d.x + d.y * d.y;
+  if (aa < 1e-12) return -1;
+  const bb = 2 * (f.x * d.x + f.y * d.y);
+  const disc = bb * bb - 4 * aa * cc;
+  if (disc < 0) return -1;
+  const t = (-bb - Math.sqrt(disc)) / (2 * aa);
+  return t >= 0 && t <= 1 ? t : -1;
+}
+
+/**
+ * The ball against the woodwork, along its whole path this tick (a fast shot moves 0.5 m a tick, more
+ * than a post is wide, so testing only where it ends lets it pass through). Posts are tested from
+ * above, up to the bar; the bar side-on, in the vertical plane through the ball's path, between the posts.
+ */
+function woodwork(s: MatchState, prev: Vec, prevZ: number): void {
+  const b = s.ball;
+  const r = BALL_R + POST_R;
+  let best = Infinity;
+  let hit: (() => void) | null = null;
+  for (const post of POSTS) {
+    const t = sweptHit(prev, b.pos, post, r);
+    if (t < 0 || t >= best) continue;
+    if (prevZ + (b.z - prevZ) * t > GOAL_BAR_H + BALL_R) continue;
+    best = t;
+    hit = () => {
+      const at = add(prev, scale(sub(b.pos, prev), t));
+      const n = norm(sub(at, post));
+      b.pos = add(post, scale(n, r));
+      const vn = b.vel.x * n.x + b.vel.y * n.y;
+      if (vn < 0) b.vel = sub(b.vel, scale(n, (1 + WOODWORK_E) * vn));
+    };
+  }
+  for (const lineX of [0, PITCH_W]) {
+    // Side-on: x along the path toward the goal, z up; the bar is the point (lineX, GOAL_BAR_H).
+    const t = sweptHit({ x: prev.x, y: prevZ }, { x: b.pos.x, y: b.z }, { x: lineX, y: GOAL_BAR_H }, r);
+    if (t < 0 || t >= best) continue;
+    const y = prev.y + (b.pos.y - prev.y) * t;
+    if (y < GOAL_TOP || y > GOAL_BOTTOM) continue;
+    best = t;
+    hit = () => {
+      const at = add(prev, scale(sub(b.pos, prev), t));
+      const z = prevZ + (b.z - prevZ) * t;
+      const n = norm({ x: at.x - lineX, y: z - GOAL_BAR_H });
+      b.pos = { x: lineX + n.x * r, y: at.y };
+      b.z = Math.max(0, GOAL_BAR_H + n.y * r);
+      const vn = b.vel.x * n.x + b.vz * n.y;
+      if (vn < 0) {
+        b.vel = { x: b.vel.x - (1 + WOODWORK_E) * vn * n.x, y: b.vel.y };
+        b.vz -= (1 + WOODWORK_E) * vn * n.y;
+      }
+    };
+  }
+  if (hit) {
+    hit();
+    b.redirectedAt = s.tick;
+  }
+}
+
+function goalFrame(s: MatchState, prev: Vec, prevZ: number): void {
+  woodwork(s, prev, prevZ);
+  const prevX = prev.x;
   const b = s.ball;
   const p = b.pos;
   const behind = p.x < 0 || p.x > PITCH_W;
@@ -899,17 +1002,6 @@ function goalFrame(s: MatchState, prevX: number): void {
     }
     if (b.z > GOAL_BAR_H - BALL_R) { b.z = GOAL_BAR_H - BALL_R; b.vz = Math.min(0, b.vz); }
     return;
-  }
-  if (b.z > GOAL_BAR_H + 0.2) return;
-  for (const post of POSTS) {
-    const d = sub(p, post);
-    const l = len(d);
-    if (l < BALL_R + 0.06 && l > 1e-6) {
-      const n = scale(d, 1 / l);
-      b.pos = add(post, scale(n, BALL_R + 0.06));
-      const vn = b.vel.x * n.x + b.vel.y * n.y;
-      if (vn < 0) b.vel = sub(b.vel, scale(n, 1.7 * vn));
-    }
   }
 }
 
@@ -961,6 +1053,7 @@ function updateBall(s: MatchState, live: boolean): void {
   // Spin lasts until anyone else touches it, or it lands.
   if (b.spin && b.lastTouch !== b.spin.by) b.spin = null;
   const speed = len(b.vel);
+  const prevZ = b.z;
   if (b.z > 0 || b.vz > 0) {
     // In the air: gravity, light drag, damped bounce. z never goes below 0. A struck set piece bends and dips (Ball.spin).
     b.vz -= (GRAVITY + (b.spin?.top ?? 0)) * DT;
@@ -981,7 +1074,7 @@ function updateBall(s: MatchState, live: boolean): void {
   }
   const prev = { ...b.pos };
   b.pos = add(b.pos, scale(b.vel, DT));
-  goalFrame(s, prev.x);
+  goalFrame(s, prev, prevZ);
   if (!live) return;
   if (checkLines(s)) return;
   contacts(s, prev);
@@ -1391,7 +1484,36 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
   b.redirectedAt = s.tick;
   const gapR = BODY_R + BALL_R + 0.02;
   if (dist(b.pos, pt) < gapR) b.pos = add(pt, scale(awayFrom(s, pt), gapR));
+  // Whatever the parry, from where the ball now is it must not cross the line between the posts
+  // under the bar: if it would, he has turned it back out instead.
+  if (parryGoesIn(b, g.x) && b.z > 1.5 && Math.abs(b.vel.x) > 0.5) {
+    // Up high: tipped a little higher, enough to clear the bar allowing for drag.
+    const t = Math.abs(g.x - b.pos.x) / Math.abs(b.vel.x);
+    const tLate = t * (1 + AIR_DRAG * t);
+    const vz = (GOAL_BAR_H + 0.4 - b.z + 0.5 * GRAVITY * tLate * tLate) / tLate;
+    if (vz < 9) b.vz = Math.max(b.vz, vz);
+  }
+  if (parryGoesIn(b, g.x)) {
+    b.vel = { x: out * Math.max(1.5, Math.abs(b.vel.x) * 0.4), y: b.vel.y };
+    b.vz = Math.max(b.vz, 0.3);
+  }
   b.noPickup[p.i] = 18;
+}
+
+/**
+ * Would a parried ball, as it now is, cross the goal line at `lineX` between the posts and under
+ * the bar? Judged on its straight path with gravity, with 0.3 m to spare outside each post and
+ * over the bar, and drag allowed for (it gets there later and lower than drag-free flight says).
+ */
+function parryGoesIn(b: MatchState['ball'], lineX: number): boolean {
+  const gap = lineX - b.pos.x;
+  if (Math.abs(b.vel.x) < 1e-6 || Math.sign(gap) !== Math.sign(b.vel.x)) return false;
+  const t = gap / b.vel.x;
+  const y = b.pos.y + b.vel.y * t;
+  if (Math.abs(y - PITCH_H / 2) > GOAL_W / 2 + 0.3) return false;
+  const tLate = t * (1 + AIR_DRAG * t);
+  const z = Math.min(b.z + b.vz * t - 0.5 * GRAVITY * t * t, b.z + b.vz * tLate - 0.5 * GRAVITY * tLate * tLate);
+  return z < GOAL_BAR_H + 0.3;
 }
 
 /** Seconds until the loose ball has gone `d` metres along its path: rolling friction on the floor, light drag in the air. */
