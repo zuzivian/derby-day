@@ -7,12 +7,14 @@ import type { MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
-import { AimLayer } from './aim3d.ts';
-import { MatchCamera, ZOOM_STEP, clampZoom, type CameraMode } from './camera3d.ts';
+import { AimLayer, type AimFrame } from './aim3d.ts';
+import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } from './camera3d.ts';
 import { AnimDirector, inWall, keeperSet } from './director.ts';
-import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D } from './player3d.ts';
+import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
+import { QualityGovernor, type GovernorStep } from './governor.ts';
+import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
 import {
   ACESFilmicToneMapping,
   CanvasTexture,
@@ -194,6 +196,14 @@ export class Renderer3D implements MatchRenderer {
   /** Ghost balls behind a fast shot, newest first. */
   private trail: InstancedMesh;
   private trailPts: Vector3[] = [];
+  private trailSpare: Vector3[] = [];
+  // Scratch objects refilled every frame, so the render loop doesn't allocate them (GC pauses).
+  private axis = new Vector3();
+  private pctx: PlayerContext = { time: 0, dtSim: 0, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: false };
+  private refBody: SimBody = { pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } };
+  private stadiumFrame = { excite: [0, 0] as [number, number], ball: { x: 0, y: 0, z: 0, speed: 0 } };
+  private focus: CameraFocus = { x: 0, z: 0, vx: 0, vz: 0, air: 0, attack: 0, phase: '', close: null, humanDir: 1, long: null, replay: null };
+  private aimFrame = { heads: [] } as unknown as AimFrame;
   private feet: InstancedMesh | null = null;
   private m4 = new Matrix4();
   private aim: AimLayer | null = null;
@@ -215,7 +225,10 @@ export class Renderer3D implements MatchRenderer {
   /** The referee turns to the player he is booking until this clock time. */
   private cardFace: { player: number; until: number } | null = null;
   private lost = false;
-  private frameTimes: number[] = [];
+  /** null with ?governor=off (tooling: fixed quality for measurements). */
+  private governor: QualityGovernor | null = null;
+  private shadowEvery = 1;
+  private frameNo = 0;
   private pixelRatio: number;
   private fpsAt = 0;
   private fpsFrames = 0;
@@ -229,19 +242,32 @@ export class Renderer3D implements MatchRenderer {
     const hi = opts.quality === 'high';
     this.gl = new WebGLRenderer({ canvas, antialias: hi, powerPreference: 'high-performance', stencil: false });
     // Software rendering (low): no shadow maps, and a slightly reduced resolution.
-    this.pixelRatio = hi ? Math.min(2, window.devicePixelRatio || 1) : Math.min(1, window.devicePixelRatio || 1) * 0.8;
+    this.pixelRatio = this.basePixelRatio();
     this.gl.setPixelRatio(this.pixelRatio);
+    // A new screen or browser zoom: re-pick the ratio, so the pitch stays sharp (or stops overdrawing).
+    this.dpr = watchPixelRatio(() => {
+      this.pixelRatio = Math.min(this.basePixelRatio(), this.pixelCap);
+      this.gl.setPixelRatio(this.pixelRatio);
+      this.resize();
+    });
+    this.cleanup.push(() => this.dpr.dispose());
     this.gl.outputColorSpace = SRGBColorSpace;
     this.gl.toneMapping = ACESFilmicToneMapping;
     this.gl.toneMappingExposure = 1.05;
     this.gl.shadowMap.enabled = hi;
     this.gl.shadowMap.type = PCFShadowMap;
+    if (!/[?&]governor=off\b/.test(location.search)) this.governor = new QualityGovernor({ shadows: hi, pixelRatio: this.pixelRatio, minRatio: hi ? 0.75 : 0.55, now: performance.now() });
     this.prefMode = storedCamera();
     this.cam.mode = this.prefMode;
     this.cam.zoom = storedZoom();
     this.cam.cinematic = !!opts.cinematic;
 
     const scene = this.scene;
+    // Matrices: draw() updates the scene's once a frame itself (players, then the few things placed
+    // after them), so three's render() doesn't walk all ~600 objects a second time. The scene itself
+    // never moves, which also lets the static stadium skip its matrices (stadium.ts).
+    scene.matrixAutoUpdate = false;
+    scene.matrixWorldAutoUpdate = false;
     scene.background = new Color('#9cc8f0');
     scene.fog = new Fog('#c6dcf0', 220, 1100);
     const hemi = new HemisphereLight('#d6ebff', '#4d7d3a', 1.5);
@@ -282,10 +308,14 @@ export class Renderer3D implements MatchRenderer {
 
     const onLost = (e: Event) => {
       e.preventDefault();
+      if (this.disposed) return;
       this.lost = true;
+      this.onContextLost?.();
     };
     const onRestored = () => {
+      if (this.disposed) return;
       this.lost = false;
+      this.onContextRestored?.();
     };
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
@@ -300,6 +330,26 @@ export class Renderer3D implements MatchRenderer {
   }
 
   private prefMode: CameraMode = 'broadcast';
+
+  /** The GPU dropped the context (a driver reset, too many contexts): the pitch can't be drawn until it is restored. */
+  onContextLost: (() => void) | null = null;
+  /** The context is back; three re-uploads everything on the next draw. */
+  onContextRestored: (() => void) | null = null;
+
+  /** Is the GL context lost right now? */
+  get contextLost(): boolean {
+    return this.lost && !this.disposed;
+  }
+
+  /** Software rendering (low): a slightly reduced resolution. */
+  private basePixelRatio(): number {
+    const dpr = window.devicePixelRatio || 1;
+    return this.opts.quality === 'high' ? Math.min(2, dpr) : Math.min(1, dpr) * 0.8;
+  }
+
+  private dpr: PixelRatioWatch;
+  /** The most the slow-machine step-down allows (Infinity until it steps). */
+  private pixelCap = Infinity;
 
   get cameraMode(): CameraMode {
     return this.prefMode;
@@ -462,6 +512,7 @@ export class Renderer3D implements MatchRenderer {
 
   draw(s: MatchState, x: RenderExtras): void {
     if (this.lost) return;
+    this.dpr.check();
     const t0 = performance.now();
     this.build(s);
     const now = t0 / 1000;
@@ -526,17 +577,17 @@ export class Renderer3D implements MatchRenderer {
       model.object.visible = !p.sentOff;
       if (p.sentOff) continue;
       const throwHold = p.i === throwTaker && (b.inHands || b.owner === p.i || restart?.stage === 'ready');
-      model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, {
-        time: clock,
-        dtSim,
-        lead,
-        keeperSet: keeperSet(s, p),
-        throwHold,
-        holding: p.i === handsOf && !throwHold,
-        hasBall: b.owner === p.i,
-        wall: inWall(s, p),
-        reducedMotion: this.reduced,
-      });
+      const c = this.pctx;
+      c.time = clock;
+      c.dtSim = dtSim;
+      c.lead = lead;
+      c.keeperSet = keeperSet(s, p);
+      c.throwHold = throwHold;
+      c.holding = p.i === handsOf && !throwHold;
+      c.hasBall = b.owner === p.i;
+      c.wall = inWall(s, p);
+      c.reducedMotion = this.reduced;
+      model.update(dt, p, dir.events[p.i] ?? NO_EVENTS, c);
       const ev = dir.events[p.i];
       if (ev) for (const e of ev) if (e.kind === 'celebrate') this.celebrate = { i: p.i, until: clock + 2.4 };
     }
@@ -569,17 +620,18 @@ export class Renderer3D implements MatchRenderer {
         });
         this.scene.add(this.referee.object);
       }
-      this.referee.update(dt, { pos: ref.pos, vel: ref.vel, facing }, dir.referee, {
-        time: clock,
-        dtSim,
-        lead,
-        keeperSet: 0,
-        throwHold: false,
-        holding: false,
-        hasBall: false,
-        wall: false,
-        reducedMotion: this.reduced,
-      });
+      const rb = this.refBody;
+      rb.pos = ref.pos;
+      rb.vel = ref.vel;
+      rb.facing = facing;
+      const c = this.pctx;
+      c.time = clock;
+      c.dtSim = dtSim;
+      c.lead = lead;
+      c.keeperSet = 0;
+      c.throwHold = c.holding = c.hasBall = c.wall = false;
+      c.reducedMotion = this.reduced;
+      this.referee.update(dt, rb, dir.referee, c);
     } else if (this.referee) {
       this.referee.dispose();
       this.referee = null;
@@ -613,21 +665,23 @@ export class Renderer3D implements MatchRenderer {
     // Spin: roll with ground speed; keep a gentle spin in the air.
     const sp = Math.hypot(b.vel.x, b.vel.y);
     if (sp > 0.05 && dtSim > 0 && !inHands) {
-      const axis = new Vector3(b.vel.y / sp, 0, -b.vel.x / sp);
+      const axis = this.axis.set(b.vel.y / sp, 0, -b.vel.x / sp);
       const ang = (sp * dtSim) / BALL_VIS_R;
       this.ballQ.setFromAxisAngle(axis, b.z > 0.05 ? ang * 0.6 : ang);
       this.ball.quaternion.premultiply(this.ballQ);
     }
     // Trail behind fast, free balls (shots, hard passes), fading as it shrinks.
     if (sp > 14 && b.owner < 0 && s.phase === 'play' && dtSim > 0) {
-      this.trailPts.unshift(this.ball.position.clone());
-      if (this.trailPts.length > 10) this.trailPts.pop();
-    } else if (this.trailPts.length && (dtSim > 0 || jumped)) this.trailPts.pop();
-    this.trailPts.forEach((p, i) => {
+      // Recycle the oldest point (a pool of 10 vectors, no allocation per frame).
+      const pt = this.trailPts.length >= 10 ? this.trailPts.pop()! : this.trailSpare.pop() ?? new Vector3();
+      this.trailPts.unshift(pt.copy(this.ball.position));
+    } else if (this.trailPts.length && (dtSim > 0 || jumped)) this.trailSpare.push(this.trailPts.pop()!);
+    for (let i = 0; i < this.trailPts.length; i++) {
+      const p = this.trailPts[i];
       const k = 1 - i / 11;
       this.m4.makeScale(k, k, k).setPosition(p.x, p.y, p.z);
       this.trail.setMatrixAt(i, this.m4);
-    });
+    }
     this.trail.count = Math.max(0, this.trailPts.length - 1);
     this.trail.instanceMatrix.needsUpdate = true;
     const h = Math.max(0, this.ball.position.y - BALL_VIS_R);
@@ -639,11 +693,18 @@ export class Renderer3D implements MatchRenderer {
     const lastGoal = s.events.length ? s.events[s.events.length - 1] : null;
     const celebrating = s.phase === 'goal' && lastGoal ? lastGoal.team : -1;
     const owner = holder ? holder.team : -1;
-    const nearGoal = (team: 0 | 1) => owner === team && Math.abs(b.pos.x - oppGoal(s, team).x) < 18;
-    const excite: [number, number] = [celebrating === 0 ? 1 : nearGoal(0) ? 0.45 : 0.08, celebrating === 1 ? 1 : nearGoal(1) ? 0.45 : 0.08];
+    const st = this.stadiumFrame;
+    for (const team of [0, 1] as const) {
+      const nearGoal = owner === team && Math.abs(b.pos.x - oppGoal(s, team).x) < 18;
+      st.excite[team] = celebrating === team ? 1 : nearGoal ? 0.45 : 0.08;
+    }
+    st.ball.x = this.ball.position.x;
+    st.ball.y = this.ball.position.z;
+    st.ball.z = h;
+    st.ball.speed = sp;
     if (this.stadium) {
       if (dir.goal) this.stadium.ripple(dir.goal.side, this.ball.position, dir.goal.speed);
-      this.stadium.update(dt, clock, { excite, ball: { x: this.ball.position.x, y: this.ball.position.z, z: h, speed: sp } });
+      this.stadium.update(dt, clock, st);
     }
 
     // Camera.
@@ -685,23 +746,25 @@ export class Renderer3D implements MatchRenderer {
       this.cutCount++;
     }
     this.longViewOn = !!lv;
-    this.canvas.dataset.camera = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
+    const camName = this.replayShot ? `replay-${this.replayShot.kind}` : lv ? lv.kind : this.cam.mode;
+    if (this.canvas.dataset.camera !== camName) this.canvas.dataset.camera = camName;
     const rs = this.replayShot;
+    // One focus object, refilled each frame; only the rarer parts (celebration, long view, replay) allocate.
+    const f = this.focus;
+    f.x = sx(focusX);
+    f.z = sz(focusY);
+    f.vx = b.vel.x;
+    f.vz = b.vel.y;
+    f.air = b.z;
+    f.attack = holder && s.phase === 'play' ? attackDir(s, holder.team) : 0;
+    f.phase = s.phase;
+    f.close = cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null;
+    f.humanDir = attackDir(s, this.me) as 1 | -1;
+    f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null;
+    f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
     this.cam.update(
       dt,
-      {
-        x: sx(focusX),
-        z: sz(focusY),
-        vx: b.vel.x,
-        vz: b.vel.y,
-        air: b.z,
-        attack: holder && s.phase === 'play' ? attackDir(s, holder.team) : 0,
-        phase: s.phase,
-        close: cel && !this.replayShot ? { x: sx(cel.pos.x), z: sz(cel.pos.y) } : null,
-        humanDir: attackDir(s, this.me) as 1 | -1,
-        long: lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null,
-        replay: rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null,
-      },
+      f,
       this.cssW / this.cssH,
       this.cssW,
       this.reduced,
@@ -737,15 +800,33 @@ export class Renderer3D implements MatchRenderer {
     this.sun.position.set(fx - 55, 70, fz + 78);
     this.sun.target.updateMatrixWorld();
 
-    this.aim?.update({ s, x, heads: this.heads, ball: this.ball.position, time: clock, reduced: this.reduced, camDist });
+    if (this.aim) {
+      const af = this.aimFrame;
+      af.s = s;
+      af.x = x;
+      af.heads = this.heads;
+      af.ball = this.ball.position;
+      af.time = clock;
+      af.reduced = this.reduced;
+      af.camDist = camDist;
+      this.aim.update(af);
+    }
     this.edgeMarks(s, !!x.noAim);
 
+    // Placed after the scene's matrix pass above: the ball, its shadow blob, the sun and the overlays.
+    this.ball.updateMatrixWorld();
+    this.blob.updateMatrixWorld();
+    this.sun.updateMatrixWorld();
+    this.aim?.group.updateMatrixWorld();
+    // Governor step: the shadow map is redrawn every shadowEvery-th frame only (the shadow pass is
+    // a second draw of every caster).
+    if (this.shadowEvery > 1) this.gl.shadowMap.needsUpdate = ++this.frameNo % this.shadowEvery === 0;
     this.gl.render(this.scene, this.cam.camera);
 
-    // Frame stats and a gentle resolution step-down on slow machines.
+    // Frame stats, and the quality governor: slow machines step down (governor.ts).
     const ms = performance.now() - t0;
-    this.frameTimes.push(dt * 1000);
-    if (this.frameTimes.length > 120) this.frameTimes.shift();
+    const step = this.governor?.sample(ms, dt * 1000, t0);
+    if (step) this.applyStep(step);
     this.fpsFrames++;
     if (t0 - this.fpsAt > 1000) {
       this.fps = Math.round((this.fpsFrames * 1000) / (t0 - this.fpsAt || 1000));
@@ -755,14 +836,20 @@ export class Renderer3D implements MatchRenderer {
       this.canvas.dataset.cpuMs = ms.toFixed(1);
       this.canvas.dataset.calls = String(this.gl.info.render.calls);
       this.canvas.dataset.tris = String(this.gl.info.render.triangles);
-      const avg = this.frameTimes.reduce((a, b2) => a + b2, 0) / this.frameTimes.length;
-      if (this.frameTimes.length >= 120 && avg > 30 && this.pixelRatio > 1) {
-        this.pixelRatio = Math.max(1, this.pixelRatio - 0.5);
-        this.gl.setPixelRatio(this.pixelRatio);
-        this.resize();
-        this.frameTimes = [];
-      }
     }
+  }
+
+  private applyStep(step: GovernorStep): void {
+    if (step.kind === 'shadows') {
+      this.shadowEvery = step.every;
+      this.gl.shadowMap.autoUpdate = false;
+    } else {
+      this.pixelCap = step.ratio;
+      this.pixelRatio = Math.min(this.pixelRatio, step.ratio);
+      this.gl.setPixelRatio(this.pixelRatio);
+      this.resize();
+    }
+    this.canvas.dataset.governor = String(this.governor!.level);
   }
 
   private disposed = false;
@@ -798,7 +885,7 @@ export class Renderer3D implements MatchRenderer {
         off = Math.abs(v.x) > 1 || Math.abs(v.y) > 1;
       }
       if (!off) {
-        if (el) el.hidden = true;
+        if (el && !el.hidden) el.hidden = true;
         continue;
       }
       if (!el) {
@@ -823,11 +910,40 @@ export class Renderer3D implements MatchRenderer {
     }
   }
 
+  /**
+   * three.js keeps a few module-level singletons that every renderer uploads: the Sprite quad
+   * geometry and the DFG lookup texture of the standard material. Each WebGLRenderer hangs a dispose
+   * listener on them that closes over its GL context, so after a match they would pin that context,
+   * its canvas, the detached match DOM and every closure on it (about 3 MB of heap and 10-20 MB of
+   * canvas backing per match). Disposing every geometry and every texture uniform the scene uses,
+   * singletons included, fires those listeners and removes them. A singleton is re-uploaded by the
+   * next renderer that draws it, so this is safe with another renderer alive.
+   */
+  private releaseShared(): void {
+    const geos = new Set<{ dispose(): void }>();
+    const textures = new Set<{ dispose(): void }>();
+    this.scene.traverse((o) => {
+      const m = o as Mesh;
+      if (m.geometry) geos.add(m.geometry);
+      const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+      for (const mat of mats) {
+        const uniforms = (this.gl.properties.get(mat) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
+        for (const u of Object.values(uniforms ?? {})) {
+          const v = u?.value as { isTexture?: boolean; dispose(): void } | null;
+          if (v && v.isTexture) textures.add(v);
+        }
+      }
+    });
+    for (const g of geos) g.dispose();
+    for (const t of textures) t.dispose();
+  }
+
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
     this.lost = true;
     for (const c of this.cleanup) c();
+    this.releaseShared();
     for (const p of this.players) p.dispose();
     this.referee?.dispose();
     this.kit.dispose();

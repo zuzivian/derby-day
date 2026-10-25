@@ -192,6 +192,9 @@ export class SoundEngine {
   private crowdLevelNow = 0;
   private lastCrowdPush = 0;
   private watchdog: ReturnType<typeof setInterval> | null = null;
+  /** Paused (pause menu, hidden tab): the context stays suspended, whatever wakes it. */
+  private held = false;
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private lastPlayed = new Map<string, number>();
   private listeners = new Set<(muted: boolean) => void>();
   private _muted = loadMuted();
@@ -227,10 +230,34 @@ export class SoundEngine {
         this.ctx = new AC();
         this.build(this.ctx);
       }
-      if (this.ctx.state === 'suspended') void this.ctx.resume().catch(() => {});
+      if (this.ctx.state === 'suspended' && !this.held) void this.ctx.resume().catch(() => {});
     } catch {
       this.ctx = null;
     }
+  }
+
+  /**
+   * Stop all sound while the match is paused or the tab hidden: suspending the context stops the
+   * crowd bed, its murmur and the audio thread, rather than leaving a faint bed under the pause menu.
+   */
+  suspend(): void {
+    this.held = true;
+    if (this.ctx?.state === 'running') void this.ctx.suspend().catch(() => {});
+  }
+
+  /** Undo suspend(): play on. */
+  resume(): void {
+    this.held = false;
+    this.unlock();
+  }
+
+  /** Nothing to play (the match is over): once the crowd has faded out, suspend the context until the next match. */
+  idle(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (!this.crowdSrc && this.ctx?.state === 'running') void this.ctx.suspend().catch(() => {});
+    }, 1200);
   }
 
   private build(ctx: Ctx): void {
@@ -268,6 +295,9 @@ export class SoundEngine {
 
   /** Begin the crowd bed. Safe to call repeatedly. */
   startCrowd(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = null;
+    this.held = false;
     this.unlock();
     const ctx = this.ctx;
     if (!ctx || !this.master || !this.noise || this.crowdSrc) return;
@@ -298,7 +328,7 @@ export class SoundEngine {
     this.crowdFilter = band;
     // If the caller stops feeding levels (paused, tab hidden), fade out.
     this.watchdog = setInterval(() => {
-      if (performance.now() - this.lastCrowdPush > 500) this.applyCrowd(0);
+      if (performance.now() - this.lastCrowdPush > 500) this.applyCrowd(0, true);
     }, 250);
   }
 
@@ -309,14 +339,16 @@ export class SoundEngine {
     this.applyCrowd(level);
   }
 
-  private applyCrowd(level: number): void {
+  /** silent: no feed (paused, hidden): fade the bed right out, not to its quiet floor. */
+  private applyCrowd(level: number, silent = false): void {
     if (!this.ctx || !this.crowdGain || !this.crowdFilter) return;
-    if (performance.now() < this.roarUntil || Math.abs(level - this.crowdLevelNow) < 0.01) return;
-    this.crowdLevelNow = level;
+    const target = silent ? -1 : level;
+    if (performance.now() < this.roarUntil || Math.abs(target - this.crowdLevelNow) < 0.01) return;
+    this.crowdLevelNow = target;
     const t = this.ctx.currentTime;
     this.crowdGain.gain.cancelScheduledValues(t);
     this.crowdFilter.frequency.cancelScheduledValues(t);
-    this.crowdGain.gain.setTargetAtTime(0.02 + 0.11 * level, t, 0.4);
+    this.crowdGain.gain.setTargetAtTime(silent ? 0 : 0.02 + 0.11 * level, t, 0.4);
     this.crowdFilter.frequency.setTargetAtTime(420 + 700 * level, t, 0.4);
   }
 

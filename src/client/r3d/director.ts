@@ -50,9 +50,18 @@ export class AnimDirector {
     this.restartPrev = s.restart ? { kind: s.restart.kind, taker: s.restart.taker } : null;
   }
 
+  private out: DirectorOutput = { events: [], referee: [], goal: null, cards: [] };
+
   /** `time` is the animation clock, seconds. */
   update(s: MatchState, time: number): DirectorOutput {
-    const out: DirectorOutput = { events: s.players.map(() => []), referee: [], goal: null, cards: [] };
+    // One output, cleared and refilled each frame (callers use it within the frame), not 25 new arrays a frame.
+    const out = this.out;
+    while (out.events.length < s.players.length) out.events.push([]);
+    out.events.length = s.players.length;
+    for (const list of out.events) list.length = 0;
+    out.referee.length = 0;
+    out.cards.length = 0;
+    out.goal = null;
     const jump = s.tick - this.tick;
     if (this.state !== s || jump < 0 || jump > 45 || this.snaps.length !== s.players.length) {
       this.reset(s);
