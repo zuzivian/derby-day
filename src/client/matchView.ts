@@ -15,7 +15,7 @@ import { mountJuice } from './fx.ts';
 import { tickDue } from './ticks.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
-import { InputController } from './input.ts';
+import { freeKickSpot, InputController } from './input.ts';
 import { kickGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import type { RenderExtras } from './render.ts';
@@ -121,7 +121,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
       if (e.reason === 'advantage') return `Advantage brought back: ${e.restart === 'penalty' ? 'penalty' : 'free kick'} to ${team}`;
       if (e.reason === 'second-touch') return `Second touch: indirect free kick to ${team}`;
       if (e.restart === 'penalty') return `Penalty to ${team}`;
-      if (e.restart === 'freekick' && e.reason === 'foul') return `Free kick to ${team}`;
+      if (e.restart === 'freekick' && e.reason === 'foul') return `${e.direct ? 'Free kick' : 'Indirect free kick'} to ${team}`;
       if (e.restart === 'corner') return `Corner to ${team}`;
       return null;
     default:
@@ -212,6 +212,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[0] >= 0 && s.ball.owner === s.controlled[0], () => setPaused(!paused));
     if (o.controls) c.mode = o.controls;
     c.paused = () => paused;
+    c.setPiece = () => freeKickSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
     return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }

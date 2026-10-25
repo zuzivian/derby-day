@@ -1,8 +1,9 @@
 // three.js match renderer. Reads sim state only, like the 2D PitchRenderer,
 // and implements the same MatchRenderer interface (see ../renderer.ts).
 
-import { BOX_DEPTH, BOX_W, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
+import { BOX_DEPTH, BOX_W, GOAL_BOTTOM, GOAL_TOP, PENALTY_SPOT as PEN_SPOT } from '../../sim/constants.ts';
 import { attackDir, oppGoal } from '../../sim/field.ts';
+import { indirectPending } from '../../sim/rules.ts';
 import type { GoalEvent, MatchState, TeamSetup } from '../../sim/types.ts';
 import type { Vec } from '../../sim/vec.ts';
 import { grassClash } from '../kits.ts';
@@ -92,7 +93,7 @@ export interface ReplayShot {
  * the frame must show (the ball, a little behind it, and touchline to touchline out to LONG_PAST
  * beyond halfway), or null. Pure, for tests.
  */
-export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' } | null {
+export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; kind: 'long' | 'corner' | 'setpiece' } | null {
   if (!s.humans[me] || (s.humans[0] && s.humans[1])) return null;
   const dir = attackDir(s, me);
   const r = s.restart;
@@ -108,6 +109,33 @@ export function longView(s: MatchState, me: 0 | 1): { ball: Vec; points: Vec[]; 
       ball: { x: r.spot.x, y: r.spot.y },
       points: [{ x: r.spot.x, y: r.spot.y }, { x: gx, y: HALF_H - BOX_W / 2 }, { x: gx, y: HALF_H + BOX_W / 2 }, { x: inX, y: HALF_H - BOX_W / 2 }, { x: inX, y: HALF_H + BOX_W / 2 }, { x: pen + (gx === 0 ? 4 : -4), y: HALF_H }],
     };
+  }
+  // Free kicks in the taking side's attacking half, either side's: the taker and his run-up, the wall
+  // and the goal it is aimed at. (The broadcast view lost the goal from 24 m out wide, or 35 m out.)
+  // The wall is framed by its ends, 9.15 m out on the line to goal, not by the men walking into it,
+  // so the frame holds still while they do.
+  if (r && r.kind === 'freekick' && r.stage !== 'whistle') {
+    const g = oppGoal(s, r.team);
+    if (Math.abs(g.x - r.spot.x) < HALF_W) {
+      const dx = g.x - r.spot.x;
+      const dy = g.y - r.spot.y;
+      const l = Math.hypot(dx, dy) || 1;
+      const ux = dx / l;
+      const uy = dy / l;
+      const wall = Math.min(WALL_DIST, l - 1);
+      return {
+        kind: 'setpiece',
+        ball: { x: r.spot.x, y: r.spot.y },
+        points: [
+          { x: r.spot.x, y: r.spot.y },
+          { x: r.spot.x - ux * RUN_UP, y: r.spot.y - uy * RUN_UP },
+          { x: r.spot.x + ux * wall - uy * WALL_HALF, y: r.spot.y + uy * wall + ux * WALL_HALF },
+          { x: r.spot.x + ux * wall + uy * WALL_HALF, y: r.spot.y + uy * wall - ux * WALL_HALF },
+          { x: g.x, y: GOAL_TOP - 1 },
+          { x: g.x, y: GOAL_BOTTOM + 1 },
+        ],
+      };
+    }
   }
   let ball: Vec | null = null;
   if (r && r.team === me && r.stage !== 'whistle') {
@@ -141,6 +169,11 @@ function goalHeld(s: MatchState): GoalEvent | null {
 }
 /** And touchline to touchline, but for this strip along each (where nobody stands at a set piece). */
 export const LONG_TOUCH = 3;
+/** A free kick's set-piece view: the wall stands this far from the ball (Law 13), this far either side of the line to goal. */
+const WALL_DIST = 9.15;
+const WALL_HALF = 3;
+/** And the taker's run-up, this far behind the ball. */
+const RUN_UP = 2.5;
 
 /** Football with a panel pattern: dark pentagons round the 12 icosahedron vertices. */
 function ballGeometry(): IcosahedronGeometry {
@@ -480,7 +513,7 @@ export class Renderer3D implements MatchRenderer {
   /** Instant replays: the replay camera to use, or null for the normal match cameras. */
   replayShot: ReplayShot | null = null;
 
-  private longHold: { ball: Vec; points: Vec[]; kind: 'long' | 'corner'; until: number } | null = null;
+  private longHold: { ball: Vec; points: Vec[]; kind: 'long' | 'corner' | 'setpiece'; until: number } | null = null;
 
   /** Tooling: is the long view on this frame? */
   longViewOn = false;
@@ -698,6 +731,7 @@ export class Renderer3D implements MatchRenderer {
       c.holding = p.i === handsOf && !throwHold;
       c.hasBall = b.owner === p.i;
       c.wall = inWall(s, p);
+      c.armUp = false;
       c.reducedMotion = this.reduced;
       const runner = mob ? mob.runners.find((r) => r.i === p.i) : undefined;
       const body = !mob ? p : p.i === mob.scorer ? scorerBody(mob, mobT, this.mobBody) : runner ? mobBody(mob, runner, mobT, this.mobBody) : p;
@@ -744,6 +778,7 @@ export class Renderer3D implements MatchRenderer {
       c.lead = lead;
       c.keeperSet = 0;
       c.throwHold = c.holding = c.hasBall = c.wall = false;
+      c.armUp = indirectPending(s);
       c.reducedMotion = this.reduced;
       this.referee.update(dt, rb, dir.referee, c);
     } else if (this.referee) {
@@ -882,7 +917,7 @@ export class Renderer3D implements MatchRenderer {
     const celAt = cel && this.mob && this.mob.scorer === cel.i ? scorerAt(this.mob, (s.tick - this.mob.tick) / 60 + lead) : cel?.pos;
     f.close = cel && celAt && !this.replayShot ? { x: sx(celAt.x), z: sz(celAt.y) } : null;
     f.humanDir = attackDir(s, this.me) as 1 | -1;
-    f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind === 'corner' } : null;
+    f.long = lv ? { points: lv.points.map((p) => ({ x: sx(p.x), z: sz(p.y) })), corner: lv.kind !== 'long' } : null;
     f.replay = rs ? { kind: rs.kind, goalX: sx(rs.goalX) } : null;
     this.cam.update(
       dt,

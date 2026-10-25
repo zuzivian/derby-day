@@ -141,6 +141,23 @@ export function restartSpot(s: MatchState, kind: RestartKind, team: 0 | 1, at: V
 }
 
 /**
+ * An indirect free kick is being taken, or has been and no one else has touched it yet: a goal straight from it
+ * does not count (Law 13), and the referee keeps his arm up until then (Law 5). The view shows both.
+ */
+export function indirectPending(s: MatchState): boolean {
+  const r = s.restart;
+  if (r) return r.kind === 'freekick' && !r.direct && r.stage !== 'whistle';
+  return s.phase === 'play' && s.ball.setPiece === 'freekick' && !s.ball.setPieceDirect;
+}
+
+/** Any free-kick wall still standing (or in the air) breaks up: its men are back on the ground and play on. */
+export function clearWall(s: MatchState): void {
+  if (!s.wall) return;
+  for (const i of s.wall.players) s.players[i].air = 0;
+  s.wall = null;
+}
+
+/**
  * Stop play and set up a restart. `direct` matters for free kicks only (the
  * others follow their Law). Pending cards from an advantage are shown now.
  */
@@ -160,6 +177,7 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
   b.noHands = -1;
   s.offside = null;
   s.advantage = null;
+  clearWall(s);
   s.restart = { kind, team, spot, taker: -1, stage: 'whistle', ticks: 0, direct, reason, wait: 0 };
   s.phase = 'restart';
   const st = s.stats[team];
