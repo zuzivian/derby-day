@@ -3,7 +3,7 @@
 // and the new tab appears.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, goTab, readSave, startRanked, tabScreens, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
+const { reload, SEL, openApp, goTab, readSave, startRanked, tabScreens, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const SHORT = { halfSeconds: 3, controls: 'mouse', onboarded: true };
 
@@ -121,7 +121,7 @@ test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc 
   expect(save.unlocksSeen, 'dismissal saved').toContain('ladder');
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe(headerText(save.xp));
   // Reloading doesn't bring it back.
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.app + ' *');
   expect(await page.locator(SEL.levelUp).count(), 'no dialog after reload').toBe(0);
   const w2 = await pageWidths(page);

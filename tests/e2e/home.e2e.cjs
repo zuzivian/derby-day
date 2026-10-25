@@ -4,7 +4,7 @@
 // in both themes, and the keyboard reaches Kick off first after the skip link.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, PREFS_KEY, openApp, readSave, pageWidths, tabScreens } = require('./lib/helpers.cjs');
+const { reload, SEL, PREFS_KEY, openApp, readSave, pageWidths, tabScreens } = require('./lib/helpers.cjs');
 
 const SHORT = { halfSeconds: 3, controls: 'mouse', onboarded: true };
 
@@ -112,7 +112,7 @@ for (const width of [1280, 390]) {
 
 test('home: the keyboard reaches Kick off first after the skip link', async (t) => {
   const page = await openApp(t, { level: null });
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.kickOff);
   await page.evaluate(() => document.activeElement && document.activeElement.blur());
   await page.keyboard.press('Tab');

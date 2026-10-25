@@ -239,6 +239,29 @@ async function openSecondPage(page, { url = APP_URL, e2e = true } = {}) {
 /** The player's next visit, with the live-match hook (window.__e2e) on. */
 const nextVisit = (page) => openSecondPage(page);
 
+/**
+ * page.reload() for tests that check what a reload meets. Chromium now and then starts the reloaded page on storage that
+ * lacks what the page wrote just before (see openSecondPage), so what the page holds is copied first and put back before
+ * the page's own boot, once. A no-op when the browser delivered it. Every test that needs a reload goes through this.
+ */
+async function reload(page) {
+  const held = await page.evaluate(() => Object.entries(localStorage)).catch(() => []);
+  const nonce = Math.random().toString(36).slice(2);
+  await page.addInitScript(
+    ([entries, n]) => {
+      try {
+        if (sessionStorage.getItem('__reloaded:' + n)) return;
+        sessionStorage.setItem('__reloaded:' + n, '1');
+        for (const [k, v] of entries) if (localStorage.getItem(k) !== v) localStorage.setItem(k, v);
+      } catch {
+        /* storage unavailable: nothing to restore */
+      }
+    },
+    [held, nonce],
+  );
+  await page.reload();
+}
+
 async function goTab(page, screen) {
   await page.locator(SEL.tabFor(screen)).click();
   await page.waitForSelector(`${SEL.tabFor(screen)}[aria-current]`).catch(() => {});
@@ -261,4 +284,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { nextVisit, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { reload, nextVisit, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

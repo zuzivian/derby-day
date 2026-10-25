@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, nextVisit, goTab, readSave, skipOnboarding, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
+const { reload, APP_URL, SAVE_KEY, PREFS_KEY, SEL, openApp, nextVisit, goTab, readSave, skipOnboarding, startRanked, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const DIST = path.resolve(__dirname, '..', '..', 'dist');
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
@@ -39,7 +39,7 @@ async function openAppWith(t, init, before) {
     delete save.unlocksSeen;
     localStorage.setItem(k, JSON.stringify(save));
   }, [SAVE_KEY, totalXpForLevel(99)]);
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.app + ' *');
   await skipOnboarding(page);
   return page;
@@ -140,6 +140,38 @@ test('"Play here instead" moves the club to the new tab and parks the old one', 
   expect(problems, 'errors').toEqual([]);
 });
 
+// What the guard's own reload meets now and then: storage that is a moment behind what the owner left (here: no club at all for
+// the first 1.2 s of the page the reload opens, which would start a new club and write it over the real one).
+const STALE_AFTER_TAKEOVER = () => {
+  const isReload = performance.getEntriesByType('navigation')[0]?.type === 'reload'; // the guard's reload, not the first load
+  window.__saveWrites = [];
+  const t0 = performance.now();
+  const get = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (k) {
+    if (this === localStorage && /^derbyday\.(save|replays)\./.test(String(k)) && isReload && performance.now() - t0 < 1200) return null;
+    return get.call(this, k);
+  };
+  const set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) {
+    if (this === localStorage && /^derbyday\.save\.v1$/.test(String(k))) window.__saveWrites.push(performance.now() - t0 < 1200 ? 'early' : 'later');
+    return set.call(this, k, v);
+  };
+};
+
+test('taking the club over a stale read: the new tab waits for the club the old one left, and writes nothing before it has it', async (t) => {
+  const problems = [];
+  const a = await ownerClub(t);
+  const name = (await readSave(a)).club.name;
+  const b = await secondTab(a, problems, STALE_AFTER_TAKEOVER);
+  await b.waitForSelector('#guard-here');
+  await b.locator('#guard-here').click();
+  await b.waitForSelector(SEL.tab, { timeout: 15_000 });
+  await skipOnboarding(b);
+  expect((await readSave(b)).club.name, 'the real club, not a new one').toBe(name);
+  expect((await b.evaluate(() => window.__saveWrites)).filter((w) => w === 'early'), 'no write while storage was behind').toEqual([]);
+  expect(problems, 'errors').toEqual([]);
+});
+
 test('a match in progress is never taken away: the other tab waits, and the result is saved first', async (t) => {
   const problems = [];
   const a = await ownerClub(t, { halfSeconds: 3 });
@@ -226,23 +258,7 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect(await a.locator('#settings-dialog').count(), 'Esc closes').toBe(0);
 
   // A different club in another browser: a bad file is refused with a reason, a good one previews, then replaces.
-  // The restore ends in a page load, and Chromium now and then drops the write that the unloading page made (see helpers.cjs),
-  // so what the app wrote is read back from sessionStorage, where this script copies it, instead of from the storage that the
-  // next page may have started without.
-  const c = await openApp(t, {
-    level: 3,
-    init: () => {
-      const set = Storage.prototype.setItem;
-      Storage.prototype.setItem = function (k, v) {
-        if (this === localStorage && /^derbyday\.save\.v1(\.pre-import)?$/.test(k)) {
-          const log = JSON.parse(sessionStorage.getItem('__wrote:' + k) || '[]');
-          try { log.push(JSON.parse(v).club.name); } catch { log.push('?'); }
-          sessionStorage.setItem('__wrote:' + k, JSON.stringify(log));
-        }
-        return set.call(this, k, v);
-      };
-    },
-  });
+  const c = await openApp(t, { level: 3 });
   const nameC = (await readSave(c)).club.name;
   expect(nameC, 'different clubs').notToBe(nameA);
   await goTab(c, SEL.clubScreen);
@@ -257,12 +273,12 @@ test('back up the club to a file and a code, then restore it into a different cl
   expect(preview, 'preview shows the level').toMatch(/Level 99/);
   expect(await c.locator('#bk-preview').innerText(), 'says what is replaced').toContain(nameC);
   expect((await readSave(c)).club.name, 'nothing replaced before confirming').toBe(nameC);
-  await Promise.all([c.waitForNavigation(), c.locator('#bk-confirm').click()]);
-  await c.waitForSelector(SEL.tab);
-  // Every club the app wrote under each key, in order (the page that loads after the restore may write more, so it is "wrote", not "last").
-  const wrote = (k) => c.evaluate((key) => JSON.parse(sessionStorage.getItem('__wrote:' + key) || '[]'), k);
-  expect(await wrote(SAVE_KEY), 'club restored from the file').toContain(nameA);
-  expect(await wrote(SAVE_KEY + '.pre-import'), 'old club kept as a safety copy').toEqual([nameC]);
+  // The page reloads about 300 ms after the click: wait for the new document (the marker is gone), not for the old one's tabs.
+  await c.evaluate(() => (window.__beforeRestore = true));
+  await c.locator('#bk-confirm').click();
+  await c.waitForFunction((tab) => !window.__beforeRestore && document.querySelector(tab), SEL.tab, { timeout: 30_000 });
+  expect((await readSave(c)).club.name, 'club restored from the file').toBe(nameA);
+  expect(JSON.parse(await c.evaluate((k) => localStorage.getItem(k + '.pre-import'), SAVE_KEY)).club.name, 'old club kept as a safety copy').toBe(nameC);
 
   // The code works the same way.
   const d = await openApp(t, { level: 5 });
@@ -271,6 +287,46 @@ test('back up the club to a file and a code, then restore it into a different cl
   await d.locator('#bk-paste').fill(code);
   await d.waitForSelector('.bk-found');
   expect(await d.locator('.bk-found').innerText(), 'code preview').toContain(nameA);
+});
+
+// The browser loses the writes a page made just before it reloaded (a restore ends in a reload): here the page after the reload
+// reads no club until it writes one itself, which is what the restore check does when storage does not match.
+const LOST_RESTORE_WRITE = () => {
+  const isReload = performance.getEntriesByType('navigation')[0]?.type === 'reload'; // the restore's reload, not the first load
+  let lost = true;
+  const get = Storage.prototype.getItem;
+  Storage.prototype.getItem = function (k) {
+    if (lost && isReload && this === localStorage && /^derbyday\.save\.v1$/.test(String(k))) return null;
+    return get.call(this, k);
+  };
+  const set = Storage.prototype.setItem;
+  Storage.prototype.setItem = function (k, v) {
+    if (this === localStorage && /^derbyday\.save\.v1$/.test(String(k))) lost = false;
+    return set.call(this, k, v);
+  };
+};
+
+test('a restore whose write the browser lost is put back by the page after the reload', async (t) => {
+  const a = await openApp(t);
+  const nameA = (await readSave(a)).club.name;
+  await goTab(a, SEL.clubScreen);
+  await a.locator('[data-action="open-backup"]').click();
+  await a.waitForSelector('#settings-title');
+  const [download] = await Promise.all([a.waitForEvent('download'), a.locator('#bk-download').click()]);
+  const file = await download.path();
+
+  const c = await openApp(t, { level: 3, init: LOST_RESTORE_WRITE });
+  const nameC = (await readSave(c)).club.name;
+  await goTab(c, SEL.clubScreen);
+  await c.locator('[data-action="open-backup"]').click();
+  await c.locator('#bk-file').setInputFiles(file);
+  await c.waitForSelector('.bk-found');
+  // The page reloads about 300 ms after the click: wait for the new document (the marker is gone), not for the old one's tabs.
+  await c.evaluate(() => (window.__beforeRestore = true));
+  await c.locator('#bk-confirm').click();
+  await c.waitForFunction((tab) => !window.__beforeRestore && document.querySelector(tab), SEL.tab, { timeout: 30_000 });
+  expect((await readSave(c)).club.name, 'the restored club, not the old one').toBe(nameA);
+  expect(nameA, 'different clubs').notToBe(nameC);
 });
 
 test('crash panel: calm, shows once, copies details without personal data, and reload is a button not a loop', async (t) => {
@@ -419,7 +475,7 @@ test('offline: the page opens with no network after one visit, and a new deploy 
     await page.evaluate(() => navigator.serviceWorker.ready);
     // Online reload: always the latest page (network first), and the worker now controls the tab.
     state.marker = 'v2';
-    await page.reload();
+    await reload(page);
     await page.waitForSelector(SEL.tab);
     expect(await page.evaluate(() => !!navigator.serviceWorker.controller), 'worker controls the page').toBe(true);
     const marker = () => page.evaluate(() => [...document.body.childNodes].filter((n) => n.nodeType === 8).map((n) => n.data));
@@ -428,7 +484,7 @@ test('offline: the page opens with no network after one visit, and a new deploy 
     // Offline: the same club opens from the cache.
     const name = (await readSave(page)).club.name;
     await page.context().setOffline(true);
-    await page.reload();
+    await reload(page);
     await page.waitForSelector(SEL.tab);
     expect(await marker(), 'offline page is the last one that loaded').toContain('v2');
     expect((await readSave(page)).club.name, 'same club offline').toBe(name);
@@ -439,7 +495,7 @@ test('offline: the page opens with no network after one visit, and a new deploy 
     await page.goto(origin + '/');
     await page.waitForSelector(SEL.tab);
     await page.context().setOffline(true);
-    await page.reload();
+    await reload(page);
     await page.waitForSelector(SEL.tab);
     expect(await page.evaluate(() => document.contentType), 'offline reload is still the game, not an image').toBe('text/html');
     await page.context().setOffline(false);

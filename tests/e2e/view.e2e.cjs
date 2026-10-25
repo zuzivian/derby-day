@@ -3,7 +3,7 @@
 // tick it stopped at). Uses the e2e hook (window.__derbyMatch) to set scenes up.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, startRanked } = require('./lib/helpers.cjs');
+const { reload, SEL, openApp, startRanked } = require('./lib/helpers.cjs');
 
 const LONG = { halfSeconds: 600 };
 
@@ -61,7 +61,7 @@ test('3D view: the mouse wheel, + / - and the touch buttons zoom the camera, wit
   await page.keyboard.press('Minus');
   const kept = await zoom();
   expect(kept, '- zooms out').toBeGreaterThan(1);
-  await page.reload();
+  await reload(page);
   await page.waitForSelector(SEL.app + ' *');
   expect(await zoom(), 'remembered across reloads').toBe(kept);
 });
