@@ -1429,13 +1429,19 @@ function gkIntent(s: MatchState, p: MatchPlayer): Intent {
   const threatened = !plan.attacking;
   let depth = threatened ? clamp(0.8 + dB * 0.06, 1.1, 3) : clamp(1.5 + dB * 0.06, 1.5, 9);
   // One-on-one: carrier through with nobody between him and goal: come out to narrow the angle.
-  if (owner && owner.team !== p.team && dB < 18) {
+  if (owner && owner.team !== p.team && dB < 22) {
     let covered = false;
     for (const m of s.players) {
       if (m.team !== p.team || m.role === 'GK' || m.sentOff) continue;
       if (distToSegment(m.pos, owner.pos, own) < 1.5) covered = true;
     }
-    if (!covered) depth = clamp(dB * (0.25 + 0.15 * skill), depth, 6);
+    if (!covered) {
+      // Out to meet him, the better a keeper the further, and having come he holds his ground
+      // rather than backing off as the striker closes: at his feet the goal is all but hidden.
+      const g = p.attrs.goalkeeping;
+      const now = dot(sub(p.pos, own), norm(toBall));
+      depth = clamp(Math.max(dB * (0.45 + 0.3 * g), now), depth, Math.min(6 + 3 * g, dB - 1.2));
+    }
   }
   let target = add(own, scale(norm(dB > 0.1 ? toBall : { x: dir, y: 0 }), depth));
   // Weak keepers drift back toward the middle of the goal.
