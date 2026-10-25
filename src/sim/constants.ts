@@ -37,11 +37,17 @@
  *  15  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
  *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
  *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
- *  16  corners: a cross comes down where it was aimed, driven or floated by the hold and bent by a drag;
+ *  16  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
+ *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
+ *      CPU below skill 0 (AI_SKILL_MIN)
+ *  17  far-side width: the wide man on the far side holds the touchline for a switch until the
+ *      final third, and makes his run in behind down the line
+ *  18  corners: a cross comes down where it was aimed, driven or floated by the hold and bent by a drag;
  *      a man comes short; the box waits out of its zones and attacks them as it is struck; markers
  *      challenge in the air; a keeper comes for a floated ball into his six-yard box
  */
-export const SIM_VERSION = 16;
+export const SIM_VERSION = 18;
 
 export const TICK_HZ = 60;
 

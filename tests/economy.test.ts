@@ -114,7 +114,8 @@ describe('ranked rewards follow the opponent', () => {
     expect(rankedScale(s, club(xi - 10, s.club.elo)).xp).toBeLessThan(rankedScale(s, club(xi, s.club.elo)).xp);
     // A weak squad doesn't pay like a strong one just because your Elo has dropped below it (sandbagging).
     expect(rankedScale(s, club(xi - 10, s.club.elo + 400)).xp).toBeLessThan(rankedScale(s, club(xi + 10, s.club.elo)).xp);
-    expect(winChance(s, club(xi - 10, s.club.elo + 400))).toBeGreaterThan(0.6);
+    // And the chance shown doesn't move with Elo at all: it is the squads and the CPU you will really meet (game.ts winChance).
+    expect(winChance(s, club(xi - 10, s.club.elo + 400))).toBeCloseTo(winChance(s, club(xi - 10, s.club.elo)), 12);
     expect(rankedScale(s, s.ladder.find((c) => c.division === 1)!).money).toBeGreaterThan(2);
   });
   test('sandbagging: dropping Elo by forfeits buys weaker ranked opponents that pay less, and no easier league', () => {
