@@ -17,8 +17,11 @@
  *   5  nine formations and five mentalities that change how the CPU defends,
  *      presses and supports the ball (src/sim/ai.ts TACTICS); CPU shot selection and
  *      long-shot error; mentality changes from the pause menu (HumanInput.tactic)
+ *   6  final-third attack: runs in behind, through balls led along the run, one-twos,
+ *      box zones on a wide ball, wide men to the byline, cut-backs, and shot choice that
+ *      weighs the chance a pass or carry would make (src/sim/ai.ts attackRun, boxZone)
  */
-export const SIM_VERSION = 5;
+export const SIM_VERSION = 6;
 
 export const TICK_HZ = 60;
 
