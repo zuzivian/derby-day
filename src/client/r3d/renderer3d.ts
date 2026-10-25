@@ -13,7 +13,7 @@ import { AnimDirector, inWall, keeperSet } from './director.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperColors, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
-import { QualityGovernor, type GovernorStep } from './governor.ts';
+import { QualityGovernor, type GovernorState } from './governor.ts';
 import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
 import {
   ACESFilmicToneMapping,
@@ -825,8 +825,8 @@ export class Renderer3D implements MatchRenderer {
 
     // Frame stats, and the quality governor: slow machines step down (governor.ts).
     const ms = performance.now() - t0;
-    const step = this.governor?.sample(ms, dt * 1000, t0);
-    if (step) this.applyStep(step);
+    const level = this.governor?.sample(ms, dt * 1000, t0);
+    if (level) this.applyLevel(level);
     this.fpsFrames++;
     if (t0 - this.fpsAt > 1000) {
       this.fps = Math.round((this.fpsFrames * 1000) / (t0 - this.fpsAt || 1000));
@@ -839,17 +839,18 @@ export class Renderer3D implements MatchRenderer {
     }
   }
 
-  private applyStep(step: GovernorStep): void {
-    if (step.kind === 'shadows') {
-      this.shadowEvery = step.every;
-      this.gl.shadowMap.autoUpdate = false;
-    } else {
-      this.pixelCap = step.ratio;
-      this.pixelRatio = Math.min(this.pixelRatio, step.ratio);
-      this.gl.setPixelRatio(this.pixelRatio);
+  private applyLevel(st: GovernorState): void {
+    this.shadowEvery = st.shadowEvery;
+    this.gl.shadowMap.autoUpdate = st.shadowEvery === 1;
+    // Level 0 is no cap at all, so a devicePixelRatio change still picks the full ratio.
+    this.pixelCap = st.level === 0 ? Infinity : st.pixelRatio;
+    const ratio = Math.min(this.basePixelRatio(), this.pixelCap);
+    if (ratio !== this.pixelRatio) {
+      this.pixelRatio = ratio;
+      this.gl.setPixelRatio(ratio);
       this.resize();
     }
-    this.canvas.dataset.governor = String(this.governor!.level);
+    this.canvas.dataset.governor = String(st.level);
   }
 
   private disposed = false;
