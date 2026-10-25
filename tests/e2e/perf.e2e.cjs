@@ -282,6 +282,59 @@ test(
   { timeoutMs: 120_000 },
 );
 
+for (const quality of ['low', 'high']) test(
+  `Perf: the 3D view at ${quality} quality stays within its frame budget's draw calls and triangles, in open play and through a goal`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, query: `quality=${quality}&governor=off` });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    // The renderer publishes its counts once a second (budget.ts, renderer3d.ts): take a few seconds of each.
+    const read = () => page.evaluate(() => { const d = document.querySelector('#pitch').dataset; return { calls: +d.calls || 0, tris: +d.tris || 0, parts: d.parts || '', phase: window.__derbyMatch.phase }; });
+    const seen = [];
+    for (let i = 0; i < 4; i++) {
+      await page.waitForTimeout(1100);
+      seen.push(await read());
+    }
+    // A goal, staged as in the warm-up test above: net ripple, celebration, crowd, then the instant replay.
+    const goals = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const tryStage = () => {
+            const s = window.__derbyMatch;
+            if (s.phase !== 'play' || document.querySelector('#pitch').dataset.replay || s.ball.inHands) return requestAnimationFrame(tryStage);
+            const n = s.goals.length;
+            const b = s.ball;
+            b.owner = -1;
+            for (const k of s.players) if (k.team === 1 && k.role === 'GK') k.pos = { x: 100, y: 40 };
+            b.pos = { x: 95, y: 31.5 };
+            b.vel = { x: 26, y: 0 };
+            b.z = 0.3;
+            b.vz = 0.5;
+            b.lastTouch = s.controlled[0];
+            res(n);
+          };
+          tryStage();
+        }),
+    );
+    await page.waitForFunction((n) => window.__derbyMatch.goals.slice(n).some((g) => g.team === 0), goals, { timeout: 30_000 });
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(1100);
+      seen.push(await read());
+    }
+    const budget = await page.evaluate(() => { const d = document.querySelector('#pitch').dataset; return { calls: +d.budgetCalls, tris: +d.budgetTris }; });
+    const calls = Math.max(...seen.map((x) => x.calls));
+    const tris = Math.max(...seen.map((x) => x.tris));
+    console.log(`      ${quality}: max ${calls} calls (budget ${budget.calls}), ${tris} tris (budget ${budget.tris}); CPU ms by part, last: ${seen[seen.length - 1].parts}`);
+    expect(calls, 'some frames were counted').toBeGreaterThan(0);
+    expect(calls, `draw calls within the ${quality} budget`).toBeLessThanOrEqual(budget.calls);
+    expect(tris, `triangles within the ${quality} budget`).toBeLessThanOrEqual(budget.tris);
+  },
+  { timeoutMs: 120_000 },
+);
+
 for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']]) test(
   `Perf: the ${renderer} pitch's drawing buffer follows a devicePixelRatio change mid-match (new screen, browser zoom)`,
   async (t) => {
@@ -296,7 +349,9 @@ for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 2, mobile: false });
     await page.waitForFunction(() => devicePixelRatio === 2);
-    await page.waitForTimeout(1200);
+    // Wait for the resize rather than a fixed time: on SwiftShader at quality=high a frame can take ~650 ms, and the
+    // resize lands on a frame. The assertion below still says what was seen if it never comes.
+    await page.waitForFunction((w) => document.querySelector('#pitch').width > w * 1.9, one.w, { timeout: 10_000 }).catch(() => {});
     const two = await buf();
     expect(two.css, 'same CSS size').toBe(one.css);
     expect(two.w / one.w, `buffer ${one.w} → ${two.w} px doubles with the ratio`).toBeGreaterThan(1.9);
@@ -500,6 +555,66 @@ test(
     await page.waitForFunction((v) => Number(document.querySelector('#rv-scrub').value) !== v, s0, { timeout: 10_000 });
     await page.locator('[data-rp="close"]').click();
     await page.locator('[data-rp="close"]').waitFor({ state: 'detached' });
+  },
+  { timeoutMs: 150_000 },
+);
+
+for (const renderer of ['2d', '3d']) test(
+  `Perf: a pass click reaches the sim on the very next frame after the release (${renderer}): no frames of input lag before the tick that takes it`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 900 }, renderer, e2eHook: true });
+    // Every animation frame, from the pointerup (a pass is taken on release): the first frame that runs a sim tick
+    // takes the click (InputController.take, ticks.ts), and that frame draws it. How many ticks the sim then takes to
+    // kick is the game's own business (a ball not yet under control, a queued first-time kick), logged only.
+    await page.evaluate(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      window.__lat = { pending: null, toTick: [], toKick: [] };
+      window.addEventListener('pointerup', () => {
+        const s = window.__derbyMatch;
+        if (s) window.__lat.pending = { t: performance.now(), tick: s.tick, owner: s.ball.owner, n: 0, ticked: false };
+      }, true);
+      window.requestAnimationFrame = (cb) => raf((ts) => {
+        cb(ts);
+        const L = window.__lat;
+        const p = L.pending;
+        const s = window.__derbyMatch;
+        if (!p || !s) return;
+        p.n++;
+        if (!p.ticked && s.tick > p.tick) {
+          p.ticked = true;
+          L.toTick.push(p.n);
+        }
+        if (performance.now() - p.t > 1500) L.pending = null;
+        else if (s.ball.owner !== p.owner) {
+          if (s.ball.lastTouch === p.owner && s.players[p.owner].kickCd > 0) L.toKick.push(p.n);
+          L.pending = null;
+        }
+      });
+    });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    const box = await page.locator(SEL.pitch).boundingBox();
+    for (let i = 0; i < 10; i++) {
+      await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && !document.querySelector('#pitch').dataset.replay, null, { timeout: 30_000 });
+      // The ball at the human's feet, then a quick click (under the loft threshold) to pass.
+      await page.evaluate(() => {
+        const s = window.__derbyMatch;
+        const me = s.players[s.controlled[0]];
+        Object.assign(s.ball, { owner: me.i, pos: { x: me.pos.x, y: me.pos.y }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+      });
+      await page.waitForTimeout(250);
+      await page.mouse.move(box.x + box.width * (0.35 + 0.04 * i), box.y + box.height * 0.45);
+      await page.mouse.down();
+      await page.waitForTimeout(40);
+      await page.mouse.up();
+      await page.waitForFunction(() => !window.__lat.pending, null, { timeout: 10_000 });
+    }
+    const r = await page.evaluate(() => window.__lat);
+    console.log(`      frames from release to the tick that takes the click: ${r.toTick.join(', ')}; to the kick on screen: ${r.toKick.join(', ')}`);
+    expect(r.toTick.length, 'clicks measured').toBeGreaterThanOrEqual(8);
+    expect(Math.max(...r.toTick), 'the first frame after every release runs the tick that takes it').toBe(1);
   },
   { timeoutMs: 150_000 },
 );

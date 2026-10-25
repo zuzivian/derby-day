@@ -27,10 +27,25 @@
  *      added time; a side below seven abandons the match
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
  *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
- *  10  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
- *  11  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
+ *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
+ *      supporter) until the final third, and forwards on the shoulder follow the line
+ *  11  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
+ *  12  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
+ *  13  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
+ *  14  a back five forms: defenders leave a man 10 m upfield of their place to the midfield,
+ *      and one 8 m or more upfield of his place runs back instead of jogging
+ *  15  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
+ *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
+ *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
+ *  16  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
+ *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
+ *      CPU below skill 0 (AI_SKILL_MIN)
+ *  17  far-side width: the wide man on the far side holds the touchline for a switch until the
+ *      final third, and makes his run in behind down the line
+ *  18  one-on-one: the keeper comes out to meet the striker, the better a keeper the further, and holds his ground
  */
-export const SIM_VERSION = 11;
+export const SIM_VERSION = 18;
 
 export const TICK_HZ = 60;
 

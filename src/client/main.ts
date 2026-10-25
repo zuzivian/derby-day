@@ -1,8 +1,9 @@
-import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { autoLineup, generateSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { ensureSkill, learnSkill, opponentSetup } from '../meta/skill.ts';
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
-import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
+import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
@@ -21,6 +22,10 @@ import { avoidClash } from './kits.ts';
 import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
+import { ensureWorldFields } from '../meta/world.ts';
+import { ensureHistoryFields } from '../meta/history.ts';
+import { beginMatch, markCrashed, settleAbandoned, type PendingMatch } from '../meta/pending.ts';
+import { isBenign } from './errors.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
@@ -41,14 +46,22 @@ function freshSeed(): number {
   return (Date.now() ^ Math.floor(Math.random() * 2 ** 31)) | 0;
 }
 
+/** The match the last visit left unfinished, settled as a forfeit at boot: told once the page is up. */
+let abandoned: string | null = null;
+
 function boot(save: Save): App {
   ensureProgressionFields(save);
   ensureElevenASide(save); // six-a-side saves get a squad of 18 and an eleven-man lineup
+  ensureSkill(save); // saves from before the hidden skill estimate get one from their ranked record
   ensureLevelFields(save); // older saves get retro XP and keep what they already use
+  ensureWorldFields(save); // older saves join the four-division world
+  ensureHistoryFields(save); // lifetime records, and the match history capped
+  abandoned = settleAbandoned(save)?.message ?? null; // a reload or a closed tab mid-match counts as a forfeit
+  refreshMarketIfStale(save, Date.now());
   return {
     save,
     screen: 'home',
-    nextOpp: pickOpponent(save),
+    nextOpp: offeredOpponent(save), // fixed on the save, so reloading can't re-roll it
     trainee: null,
     marketRole: 'ALL',
     confirmSell: null,
@@ -89,7 +102,26 @@ function toast(text: string, ok = true) {
   showToast(text, ok);
 }
 
+// A crash mid-match (errors.ts draws its panel) marks the match, so the reload that follows voids it instead of
+// counting it as a forfeit (pending.ts, at most once in VOID_EVERY matches).
+const crashedMidMatch = (reason: unknown) => {
+  try {
+    if (!app?.save.pending || isBenign({ message: String((reason as Error)?.message ?? reason) })) return;
+    markCrashed(app.save);
+    writeSaveResult(app.save);
+  } catch {
+    /* never let this throw */
+  }
+};
+window.addEventListener('error', (e) => {
+  if (!e.error && !e.message) return; // a failed <img>/<script> load, not an exception (as in errors.ts)
+  crashedMidMatch(e.error ?? e.message);
+});
+window.addEventListener('unhandledrejection', (e) => crashedMidMatch(e.reason));
+
 function persist() {
+  // A rollover or a promotion clears the ranked offer; the next one is picked here so it is saved with the change.
+  app.nextOpp = offeredOpponent(app.save);
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
   if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
@@ -290,11 +322,17 @@ function playLive(
   label: string,
   onDone: (m: MatchState, forfeited: boolean, away: TeamSetup) => void,
   forfeitText?: string,
+  /** A ranked, cup or league match: marked on the save before kick-off, so leaving mid-match can't undo it (pending.ts). */
+  pending?: PendingMatch,
 ): boolean {
   const s = app.save;
   if (!lineupReady(s)) {
     toast('Pick a full XI first.', false);
     return false;
+  }
+  if (pending) {
+    beginMatch(s, pending);
+    persist();
   }
   const home = clubTeam(s, 0.6);
   const away = avoidClash(home, opponent);
@@ -327,6 +365,8 @@ function playLive(
     onEnd: (m, forfeited) => {
       unmount();
       takeover = false;
+      // Every match against the CPU teaches the hidden skill estimate (a forfeit is a 0–3 defeat).
+      learnSkill(s, home, away, forfeited ? 0 : m.score[0], forfeited ? Math.max(3, m.score[1]) : m.score[1]);
       telemetry.track({ name: 'match_end', kind: label, score: [m.score[0], m.score[1]], forfeit: forfeited });
       onDone(m, forfeited, away);
     },
@@ -352,8 +392,8 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
   let away: TeamSetup;
   let crest = opp?.crest ?? 'plain';
   if (opp) {
-    const squad = ladderSquad(opp);
-    away = cpuTeam(opp, squad);
+    // The ladder club's own squad and shape; how sharply its CPU plays comes from your skill estimate (skill.ts).
+    away = opponentSetup(app.save, opp, clubTeam(app.save, 0.6));
   } else {
     const lvl = practiceLevel!;
     const squad = generateSquad(makeRng(lvl.quality * 7919), lvl.quality);
@@ -362,7 +402,8 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
     away = toTeamSetup(id, squad, autoLineup(squad), lvl.aiSkill);
   }
   const practice = (practiceLevel?.id ?? 'normal') as PracticeLevel;
-  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest, practice));
+  const pending: PendingMatch | undefined = ranked && opp ? { kind: 'ranked', opponentId: opp.id, opponent: opp.name, label: 'Ranked' } : undefined;
+  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest, practice), undefined, pending);
 }
 
 /** Local 2P or Link two tabs (versus.ts): two humans, nothing recorded. */
@@ -412,7 +453,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     scorersFor,
     scorersAgainst,
   };
-  if (ranked) app.nextOpp = pickOpponent(s);
+  if (ranked) app.nextOpp = offeredOpponent(s);
   persist();
   app.screen = 'home';
   render();
@@ -712,3 +753,4 @@ if (loaded.restored) toast('Your save was damaged, so Derby Day restored your pr
 else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
 else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
 else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+else if (abandoned) toast(abandoned, false);

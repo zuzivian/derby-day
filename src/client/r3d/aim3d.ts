@@ -4,7 +4,8 @@
 
 import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
-import { humanPass, loftPlan, pointerPass } from '../../sim/kicks.ts';
+import { humanPass, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
+import { freeKickPlan } from '../../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
 import { GAUGE_COLORS, kickGauge } from '../power.ts';
 import type { RenderExtras } from '../render.ts';
@@ -150,26 +151,50 @@ function whiteTexture(): CanvasTexture {
   return t;
 }
 
+/** Name tag: orange on a dark pill, so it reads over grass, kits and the stands. The text is
+ *  NAME_FONT / 64 of the sprite's height (see NAME_MIN_PX). */
+const NAME_FONT = 40;
 function nameTexture(text: string): { tex: CanvasTexture; aspect: number } {
   const c = document.createElement('canvas');
   const g = c.getContext('2d')!;
-  const font = `italic 800 44px 'Barlow', 'Arial Narrow', Arial, sans-serif`;
+  const font = `italic 800 ${NAME_FONT}px 'Barlow', 'Arial Narrow', Arial, sans-serif`;
   g.font = font;
-  const w = Math.ceil(g.measureText(text).width) + 24;
+  const w = Math.ceil(g.measureText(text).width) + 36;
   c.width = w;
   c.height = 64;
+  g.fillStyle = 'rgba(8,12,11,.72)';
+  g.beginPath();
+  g.roundRect(3, 6, w - 6, 52, 12);
+  g.fill();
   g.font = font;
   g.textAlign = 'center';
   g.textBaseline = 'middle';
   g.lineJoin = 'round';
-  g.lineWidth = 8;
-  g.strokeStyle = 'rgba(0,0,0,.85)';
-  g.strokeText(text, w / 2, 34);
+  g.lineWidth = 4;
+  g.strokeStyle = 'rgba(0,0,0,.9)';
+  g.strokeText(text, w / 2, 33);
   g.fillStyle = ORANGE;
-  g.fillText(text, w / 2, 34);
+  g.fillText(text, w / 2, 33);
   const tex = new CanvasTexture(c);
   tex.colorSpace = SRGBColorSpace;
   return { tex, aspect: w / 64 };
+}
+
+/** The tag never draws smaller than this on screen (CSS px of sprite height: 13 px text). */
+const NAME_MIN_PX = Math.round((13 * 64) / NAME_FONT);
+const tagPos = new Vector3();
+/** Grow a name tag that the camera would draw too small to read (far zoom, a short canvas). */
+export function keepTagLegible(this: Sprite, r: { domElement: HTMLCanvasElement }, _s: unknown, cam: { fov?: number; matrixWorldInverse: Matrix4 }): void {
+  if (!cam.fov) return;
+  const depth = -this.getWorldPosition(tagPos).applyMatrix4(cam.matrixWorldInverse).z;
+  const h = r.domElement.clientHeight;
+  if (depth <= 0 || !h) return;
+  const px = (this.scale.y * h) / (2 * depth * Math.tan((cam.fov * Math.PI) / 360));
+  if (px >= NAME_MIN_PX) return;
+  const grow = NAME_MIN_PX / px;
+  this.scale.x *= grow;
+  this.scale.y *= grow;
+  this.updateMatrixWorld();
 }
 
 export interface AimFrame {
@@ -310,6 +335,7 @@ export class AimLayer {
       sp.scale.set(0.5 * aspect, 0.5, 1);
       sp.renderOrder = 21;
       sp.center.set(0.5, 0);
+      sp.onBeforeRender = keepTagLegible as Sprite['onBeforeRender'];
       this.names.set(p.i, sp);
       this.group.add(sp);
     }
@@ -387,6 +413,19 @@ export class AimLayer {
         ty = plan.landing.y;
         showRet = false;
         wedgeAlpha = 0.75;
+      } else if (armed?.kind === 'shot' && armed.at) {
+        // Over a free kick: the strike's real flight as dots (over the wall and dipping, bent by the drag),
+        // and the ring where it crosses the goal line. The wedge points the way it sets off.
+        const plan = freeKickPlan(s, ctrl, armed.at, armed.power, armed.curl ?? 0);
+        const pts = strikePath(plan.from, plan, this.chipDots.count - 1);
+        this.dotPath(pts);
+        const end = pts[pts.length - 1];
+        this.chipRing.visible = true;
+        this.chipRing.position.set(sx(end.x), 0.045, sz(end.y));
+        tx = plan.from.x + plan.dir.x * 6;
+        ty = plan.from.y + plan.dir.y * 6;
+        showRet = false;
+        wedgeAlpha = 0.85;
       } else if (armed?.kind === 'shot') {
         // Shot: a firmer wedge toward the pointer, filling with power, green to amber to red.
         wedgeAlpha = 0.85;
@@ -496,6 +535,17 @@ export class AimLayer {
       c.sprite.visible = f.time < c.until && !!head && !s.players[i]?.sentOff;
       if (head) c.sprite.position.set(head.x, head.y + 0.85, head.z);
     }
+  }
+
+  /** Dots along a path in the air (world metres, z up). */
+  private dotPath(pts: { x: number; y: number; z: number }[]): void {
+    const n = Math.min(this.chipDots.count, pts.length);
+    for (let i = 0; i < n; i++) {
+      this.m4.makeTranslation(sx(pts[i].x), Math.max(0.1, pts[i].z + 0.12), sz(pts[i].y));
+      this.chipDots.setMatrixAt(i, this.m4);
+    }
+    this.chipDots.instanceMatrix.needsUpdate = true;
+    this.chipDots.visible = true;
   }
 
   private chipArc(from: { x: number; y: number }, landing: { x: number; y: number }, speed: number, vz0: number): void {

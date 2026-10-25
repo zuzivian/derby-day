@@ -29,7 +29,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
-import { InputController } from './input.ts';
+import { freeKickSpot, InputController } from './input.ts';
 import { mountMatch } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
@@ -674,6 +674,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const makeInput = () => {
     const c = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
     c.mode = o.controls;
+    c.setPiece = () => freeKickSpot(s, me);
     return c;
   };
   let input = makeInput();
@@ -705,7 +706,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   renderer.resize();
   renderer.prepare(s);
   const juice = mountJuice(root, s);
-  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  // One player on this screen: only his own kick-off gets the prompt.
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s, (team) => (team === me ? 'Your kick-off: click or press Space' : null));
   let offCam = mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer);
   // WebGL context loss (gfxloss.ts): a lockstep match can't pause (the other tab plays on), so the note
   // covers the pitch while it runs; if the context doesn't come back, carry on in 2D.

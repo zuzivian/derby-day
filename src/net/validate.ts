@@ -160,6 +160,7 @@ export const INPUT_FIELDS: Record<keyof HumanInput, true> = {
   aim: true,
   moved: true,
   tactic: true,
+  curl: true,
 };
 
 /** One tick of input with every field finite and in range; anything else is dropped. Never null: junk becomes {}. */
@@ -184,6 +185,8 @@ export function cleanInput(v: unknown): HumanInput {
   if (v.moved === true) o.moved = true;
   // Quick tactics: a mentality step, 1 (Park the bus) to 5 (High press).
   if (typeof v.tactic === 'number' && Number.isInteger(v.tactic) && v.tactic >= 1 && v.tactic <= MENTALITY_IDS.length) o.tactic = v.tactic;
+  const curl = num(v.curl, -1, 1);
+  if (curl !== null && curl !== 0) o.curl = curl;
   return o;
 }
 

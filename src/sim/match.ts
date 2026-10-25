@@ -13,7 +13,7 @@
 //   restart   dead ball: rules.ts Restart (whistle -> setup -> ready -> taken)
 //   goal, halftime, fulltime
 
-import { aiIntent, passSpeed, penaltyDive, restartAction, restartIntent } from './ai.ts';
+import { aiIntent, humanAuto, passSpeed, penaltyDive, restartAction, restartIntent } from './ai.ts';
 import {
   AIR_DRAG,
   BALL_R,
@@ -52,6 +52,7 @@ import {
   PITCH_H,
   PITCH_W,
   PLAYER_R,
+  RETREAT,
   SLIDE_TRAVEL,
   STAND_REACH,
   TEAM_SIZE,
@@ -59,13 +60,14 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
+import { assistReceiver, chipPlan, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
 import {
   addedMinutes,
   awardRestart,
   ballOut,
   barredSecondTouch,
   chooseTaker,
+  clearWall,
   downgradeDogso,
   enforceRestartPositions,
   eventBase,
@@ -165,6 +167,8 @@ export function createMatch(o: MatchOptions): MatchState {
         holdTicks: 0,
         yellow: 0,
         sentOff: false,
+        // Set from the start, as on every player: an object that gains a field mid-match slows every function that reads it.
+        air: 0,
       });
     });
   });
@@ -191,6 +195,9 @@ export function createMatch(o: MatchOptions): MatchState {
       setPieceDirect: true,
       kickedBy: -1,
       inHands: false,
+      restartBy: -1,
+      noHands: -1,
+      spin: null,
     },
     score: [0, 0],
     phase: 'kickoff',
@@ -210,6 +217,7 @@ export function createMatch(o: MatchOptions): MatchState {
     referee: { pos: { x: PITCH_W / 2 - 6, y: PITCH_H / 2 + 12 }, vel: { x: 0, y: 0 }, facing: { x: 0, y: -1 } },
     offside: null,
     advantage: null,
+    wall: null,
     pendingCards: [],
     poss: -1,
     ctlHold: [false, false],
@@ -223,6 +231,7 @@ export function createMatch(o: MatchOptions): MatchState {
 function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): void {
   const r: Restart = { kind: 'kickoff', team, spot: { x: PITCH_W / 2, y: PITCH_H / 2 }, taker: -1, stage: 'ready', ticks: 0, direct: true, reason, wait: 0 };
   s.restart = r;
+  clearWall(s);
   const taker = chooseTaker(s, r);
   r.taker = taker;
   const partner = s.players.find((p) => p.team === team && !p.sentOff && p.i !== taker && p.role === 'FWD') ?? s.players.find((p) => p.team === team && !p.sentOff && p.i !== taker && p.role === 'MID');
@@ -312,6 +321,7 @@ function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigm
   b.vz = 0;
   b.setPiece = null;
   b.whiff = -1;
+  b.spin = null;
   b.redirectedAt = s.tick;
   p.kickCd = 18;
   // Law 11: offside positions are judged now.
@@ -614,6 +624,39 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
   return false;
 }
 
+/**
+ * How a shot from the free kick in progress would be struck (kicks.ts setPieceStrike): over the wall with dip, or
+ * bent round it, to where its line crosses the goal line (the pointer may be short of it, or past it). Pure, no
+ * rng: the renderers draw it as the aim while the human holds the button, and strikeFreeKick adds the error.
+ */
+export function freeKickPlan(s: MatchState, p: MatchPlayer, target: Vec, power: number, curl: number): StrikePlan & { from: Vec } {
+  const from = s.restart?.spot ?? s.ball.pos;
+  const goal = oppGoal(s, p.team);
+  const dx = target.x - from.x;
+  const toLine = goal.x - from.x;
+  const at = Math.abs(dx) > 1e-6 && Math.sign(dx) === Math.sign(toLine) ? add(from, scale(sub(target, from), toLine / dx)) : target;
+  const w = s.wall;
+  const wall = w && w.team !== p.team ? w.players.map((i) => s.players[i]).filter((m) => !m.sentOff && dist(m.pos, from) < RETREAT + 3).map((m) => m.pos) : [];
+  return { ...setPieceStrike(from, at, shotSpeed(power, p.attrs.shooting), curl, p.attrs.shooting, power, wall), from };
+}
+
+/**
+ * A shot from a free kick (human or CPU), as freeKickPlan has it, with the striker's error on top. A dead ball and
+ * nobody closing him down: less sideways error than in open play, and none for distance; the height still scatters
+ * with power.
+ */
+function strikeFreeKick(s: MatchState, p: MatchPlayer, a: Extract<Action, { kind: 'shoot' }>): void {
+  const b = s.ball;
+  const plan = freeKickPlan(s, p, a.target, a.power, a.curl ?? 0);
+  const skill = 1.3 - p.attrs.shooting;
+  kick(s, p, add(b.pos, plan.dir), plan.speed, (0.02 + 0.12 * a.power * a.power * skill) * 0.7, -1);
+  b.z = SHOT_Z0;
+  b.vz = Math.max(0, plan.vz + gauss(s.rng) * a.power * a.power * skill * 0.6);
+  b.spin = plan.side || plan.top ? { side: plan.side, top: plan.top, dir: plan.normal, by: p.i } : null;
+  b.passFrom = -1;
+  countShot(s, p.team, true);
+}
+
 /** A corner played along the ground: only this short (m), and only with nobody in its lane. */
 const CORNER_SHORT = 20;
 
@@ -658,6 +701,9 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     b.vz = (0.5 * GRAVITY * T * T - THROW_Z0) / T;
     b.passFrom = p.i;
     s.stats[p.team].passAttempts++;
+  } else if (r.kind === 'freekick' && action.kind === 'shoot') {
+    s.phase = 'play';
+    strikeFreeKick(s, p, action);
   } else {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
     if (r.kind === 'corner') action = cornerKick(s, p, action);
@@ -679,6 +725,11 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   b.restartBy = p.i;
   b.noHands = p.role === 'GK' ? p.i : -1;
   if (NO_OFFSIDE.has(r.kind)) s.offside = null;
+  // The wall jumps to a shot; anything else, and it breaks up at once.
+  if (s.wall) {
+    if (r.kind === 'freekick' && action.kind === 'shoot') s.wall.struck = s.tick;
+    else s.wall = null;
+  }
   pushEvent(s, { kind: 'restartTaken', ...eventBase(s, r.team, p.i), restart: r.kind, spot: { ...r.spot } });
   if (r.kind === 'penalty') {
     const gk = goalkeeper(s, r.team === 0 ? 1 : 0);
@@ -699,12 +750,17 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
       // Committed to the dive: it carries him across the goal whatever he wanted, he stays
       // stretched out on the floor for a moment, then he gets up.
       p.dive.ticks--;
-      p.vel = p.dive.travel > 0 ? scale(p.dive.dir, p.dive.speed) : { x: 0, y: 0 };
-      if (p.dive.travel > 0) p.dive.travel--;
-      p.pos = { x: p.pos.x + p.vel.x * DT, y: p.pos.y + p.vel.y * DT };
+      // In place, as below: the same arithmetic as scale() and add(), without two new objects a tick.
+      const travelling = p.dive.travel > 0;
+      p.vel.x = travelling ? p.dive.dir.x * p.dive.speed : 0;
+      p.vel.y = travelling ? p.dive.dir.y * p.dive.speed : 0;
+      if (travelling) p.dive.travel--;
+      p.pos.x = p.pos.x + p.vel.x * DT;
+      p.pos.y = p.pos.y + p.vel.y * DT;
       if (p.dive.ticks === 0) {
         p.stun = Math.max(p.stun, DIVE_DOWN);
-        p.vel = scale(p.vel, 0.25);
+        p.vel.x = p.vel.x * 0.25;
+        p.vel.y = p.vel.y * 0.25;
       }
       return;
     }
@@ -733,9 +789,17 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const ex = dx - p.vel.x;
   const ey = dy - p.vel.y;
   const dl = Math.sqrt(ex * ex + ey * ey);
-  if (dl <= accel) p.vel = { x: dx, y: dy };
-  else p.vel = { x: p.vel.x + (ex * accel) / dl, y: p.vel.y + (ey * accel) / dl };
-  p.pos = { x: p.pos.x + p.vel.x * DT, y: p.pos.y + p.vel.y * DT };
+  // pos and vel are updated in place: this runs for 22 players every tick, and a new object per
+  // write was the sim's largest source of garbage. Nothing keeps a reference to them across ticks.
+  if (dl <= accel) {
+    p.vel.x = dx;
+    p.vel.y = dy;
+  } else {
+    p.vel.x = p.vel.x + (ex * accel) / dl;
+    p.vel.y = p.vel.y + (ey * accel) / dl;
+  }
+  p.pos.x = p.pos.x + p.vel.x * DT;
+  p.pos.y = p.pos.y + p.vel.y * DT;
 
   const speed = Math.sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y);
   const effort = Math.min(1, speed / topSpeed);
@@ -751,8 +815,16 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
     // Research: turn slower at a sprint than at a jog.
     const turn = base * (human ? 1.7 : 1) * (p.sprinting ? 0.7 : 1) * DT;
     // A human's facing follows where they are steering, not where they have got to.
-    const want = steering ? intent.move : scale(p.vel, 1 / speed);
-    p.facing = norm(add(p.facing, scale(sub(want, p.facing), Math.min(1, turn))));
+    // norm(add(facing, scale(sub(want, facing), t))) written out, op for op, as one new object instead of five.
+    // facing stays a fresh object: an intent's move can be the old facing, and a renderer event can hold one.
+    const inv = 1 / speed;
+    const wx = steering ? intent.move.x : p.vel.x * inv;
+    const wy = steering ? intent.move.y : p.vel.y * inv;
+    const t = Math.min(1, turn);
+    const fx = p.facing.x + (wx - p.facing.x) * t;
+    const fy = p.facing.y + (wy - p.facing.y) * t;
+    const fl = Math.sqrt(fx * fx + fy * fy);
+    p.facing = fl > 1e-9 ? { x: fx / fl, y: fy / fl } : { x: 0, y: 0 };
   }
   p.pos.x = clamp(p.pos.x, -RUN_OFF, PITCH_W + RUN_OFF);
   p.pos.y = clamp(p.pos.y, -RUN_OFF, PITCH_H + RUN_OFF);
@@ -769,6 +841,15 @@ function separate(s: MatchState): void {
   // A keeper holding the ball does not get bundled about: he doesn't move for anyone.
   const b0 = s.ball;
   const holder = b0.owner >= 0 && b0.inHands && ps[b0.owner].role === 'GK' ? b0.owner : -1;
+  // Nor does a man standing in a free-kick wall (or in the air from it): the wall stands shoulder to shoulder,
+  // closer than anyone else is let stand, and nobody shoves it out of shape.
+  // 1: in the wall (they squeeze into line together), 2: in it and on his mark (nobody moves him).
+  let wall: Uint8Array | null = null;
+  if (s.wall) {
+    wall = new Uint8Array(ps.length);
+    for (const i of s.wall.players) wall[i] = 1;
+    for (const i of wallPlanted(s)) wall[i] = 2;
+  }
   for (let a = 0; a < ps.length; a++) {
     if (ps[a].sentOff) continue;
     for (let b = a + 1; b < ps.length; b++) {
@@ -776,10 +857,13 @@ function separate(s: MatchState): void {
       const dx = ps[b].pos.x - ps[a].pos.x;
       const dy = ps[b].pos.y - ps[a].pos.y;
       if (dx > PLAYER_R * 2 || dx < -PLAYER_R * 2 || dy > PLAYER_R * 2 || dy < -PLAYER_R * 2) continue;
+      const pa = !!wall && wall[a] === 2;
+      const pb = !!wall && wall[b] === 2;
+      if (wall && wall[a] && wall[b]) continue;
       const l = Math.sqrt(dx * dx + dy * dy);
       const overlap = PLAYER_R * 2 - l;
       if (overlap > 0 && l > 1e-6) {
-        const ka = a === holder ? 0 : b === holder ? 1 : 0.5;
+        const ka = a === holder || pa ? 0 : b === holder || pb ? 1 : 0.5;
         const kb = 1 - ka;
         ps[a].pos = { x: ps[a].pos.x - (dx * overlap * ka) / l, y: ps[a].pos.y - (dy * overlap * ka) / l };
         ps[b].pos = { x: ps[b].pos.x + (dx * overlap * kb) / l, y: ps[b].pos.y + (dy * overlap * kb) / l };
@@ -987,14 +1071,18 @@ function updateBall(s: MatchState, live: boolean): void {
     if (live) checkLines(s);
     return;
   }
+  // Spin lasts until anyone else touches it, or it lands.
+  if (b.spin && b.lastTouch !== b.spin.by) b.spin = null;
   const speed = len(b.vel);
   const prevZ = b.z;
   if (b.z > 0 || b.vz > 0) {
-    // In the air: gravity, light drag, damped bounce. z never goes below 0.
-    b.vz -= GRAVITY * DT;
+    // In the air: gravity, light drag, damped bounce. z never goes below 0. A struck set piece bends and dips (Ball.spin).
+    b.vz -= (GRAVITY + (b.spin?.top ?? 0)) * DT;
     b.z += b.vz * DT;
     b.vel = scale(b.vel, 1 - AIR_DRAG * DT);
+    if (b.spin) b.vel = add(b.vel, scale(b.spin.dir, b.spin.side * DT));
     if (b.z <= 0) {
+      b.spin = null;
       b.z = 0;
       if (b.vz < -1.5) {
         b.vz = -b.vz * BOUNCE_DAMP;
@@ -1205,6 +1293,7 @@ function contacts(s: MatchState, from: Vec): void {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
     // A CPU restart taker leaves it for someone else (a human who plays it again gives away a free kick).
     if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
+    if ((p.air ?? 0) > 0.05) continue; // in the air (a wall jumping): a header or his body, never his feet
     const d = approach(p.pos, from, b.pos);
     let reach: number;
     if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
@@ -1221,10 +1310,11 @@ function contacts(s: MatchState, from: Vec): void {
     return;
   }
 
-  if (z > CHEST_Z && z <= HEAD_Z && header(s)) return;
+  if (z > CHEST_Z && z <= HEAD_Z + WALL_JUMP_Z && header(s)) return;
 
   // Nobody played it: does it hit someone? Bodies are BODY_R wide up to BODY_TOP; a player on the floor only low down.
-  if (z > BODY_TOP) return;
+  // A man in the air (a wall jumping) is that much higher: his head reaches over, and a low ball can go under him.
+  if (z > BODY_TOP + WALL_JUMP_Z) return;
   let hit: MatchPlayer | null = null;
   let hitT = Infinity;
   let hitAt: Vec | null = null;
@@ -1244,6 +1334,8 @@ function contacts(s: MatchState, from: Vec): void {
       continue;
     }
     if (p.stun > 0) continue;
+    const air = p.air ?? 0;
+    if (z > BODY_TOP + air || z + BALL_R < air) continue;
     const c = closestOn(p.pos, from, b.pos);
     if (dist(c.pt, p.pos) < BODY_R + BALL_R && c.t < hitT) {
       hit = p;
@@ -1542,6 +1634,8 @@ function header(s: MatchState): boolean {
   for (const p of s.players) {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
     if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
+    const zr = b.z - (p.air ?? 0);
+    if (zr <= CHEST_Z || zr > HEAD_Z) continue;
     const attacking = p.team === lastTeam && inOwnBox(s, p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
@@ -1638,8 +1732,8 @@ export function teamInputs(s: MatchState, input: HumanInput | TeamInputs | undef
 const IDLE_INTENT: Intent = { move: { x: 0, y: 0 }, throttle: 0 };
 const isKick = (a: Action | undefined): a is Action => !!a && (a.kind === 'pass' || a.kind === 'chip' || a.kind === 'loft' || a.kind === 'shoot' || a.kind === 'punt');
 
-/** The human is holding a player still after an automatic switch (human.ts): the CPU positions him meanwhile. */
-const heldByCpu = (s: MatchState, p: MatchPlayer, input: HumanInput): boolean => !!s.ctlHold?.[p.team] && input.cursor !== undefined;
+/** The human is held after an automatic switch, or idle (ai.ts humanAuto): the CPU positions his player meanwhile. */
+const heldByCpu = (s: MatchState, p: MatchPlayer): boolean => humanAuto(s, p.team);
 
 /**
  * The intent of a player a human steers. A keeper who has held the ball for KEEPER_HOLD_TICKS
@@ -1670,6 +1764,30 @@ function queuedRestartKick(s: MatchState, p: MatchPlayer, q: { input: HumanInput
   }
   const it = humanIntent(s, p, q.input);
   return isKick(it.action) ? it.action : null;
+}
+
+/** The men of a free-kick wall who are on their marks, or in the air from it: separate() leaves them where they are. */
+function wallPlanted(s: MatchState): number[] {
+  const w = s.wall;
+  if (!w) return [];
+  if (w.struck >= 0) return w.players;
+  const t = s.aiRestart?.targets;
+  if (!s.restart || s.restart.stage === 'whistle' || !t) return [];
+  return w.players.filter((i) => !!t[i] && dist(s.players[i].pos, t[i]!) < WALL_FORMED);
+}
+
+/** A human taker this close to the ball at a free kick (m) may take it quickly, before the wall is formed. */
+const QUICK_FREE_KICK_R = 1.5;
+
+/** A wall's men are this close to their marks (m) when it counts as formed. */
+const WALL_FORMED = 0.3;
+
+/** The free-kick wall (if there is one) has formed: every man in it is on his mark, so the kick is ready. */
+function wallFormed(s: MatchState): boolean {
+  const w = s.wall;
+  const t = s.aiRestart?.targets;
+  if (!w || !t) return true;
+  return w.players.every((i) => s.players[i].sentOff || !t[i] || dist(s.players[i].pos, t[i]!) < WALL_FORMED);
 }
 
 function setupLength(s: MatchState, r: Restart): number {
@@ -1747,7 +1865,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   if (r.stage === 'whistle') {
     for (const p of s.players) {
       if (p.sentOff) continue;
-      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p, inputs[p.team]);
+      const humanCtl = isHumanControlled(s, p) && !heldByCpu(s, p);
       const it = humanCtl ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
       movePlayer(s, p, { move: it.move, throttle: Math.min(it.throttle, 0.7) });
     }
@@ -1765,6 +1883,7 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   fixControlled(s);
   const taker = s.players[r.taker];
   const spot = takerSpot(s, r);
+  const planted = wallPlanted(s);
   let kickAction: Action | null = null;
   for (const p of s.players) {
     if (p.sentOff) continue;
@@ -1774,11 +1893,15 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
         const d = sub(spot, p.pos);
         const l = len(d);
         movePlayer(s, p, l < 0.2 ? IDLE_INTENT : { move: norm(d), throttle: Math.min(1, l / 1.5), sprint: l > 12 });
-        // A human's click while he walks to the ball is kept and played the moment it is ready.
+        // A human's click while he walks to the ball is kept and played the moment it is ready. Already over a
+        // free kick, he may take it quickly (Law 13), before the wall is set: it is played now.
         if (humanCtl) {
           const input = inputs[p.team];
           const it = humanIntent(s, p, input);
-          if (isKick(it.action)) r.queued = { input: { ...input, cursor: input.cursor && { ...input.cursor }, aim: input.aim && { ...input.aim } }, receiver: it.action.kind === 'pass' ? (it.action.receiver ?? -1) : -1 };
+          if (isKick(it.action)) {
+            if (r.kind === 'freekick' && dist(p.pos, r.spot) < QUICK_FREE_KICK_R) kickAction = it.action;
+            else r.queued = { input: { ...input, cursor: input.cursor && { ...input.cursor }, aim: input.aim && { ...input.aim } }, receiver: it.action.kind === 'pass' ? (it.action.receiver ?? -1) : -1 };
+          }
         }
       } else {
         // Over the ball (or holding it): stays put until it is played.
@@ -1796,7 +1919,12 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
     }
     // Law 8: everyone stays where they lined up until the kick-off is taken.
     if (r.kind === 'kickoff') continue;
-    const it = humanCtl && !heldByCpu(s, p, inputs[p.team]) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
+    // A wall that has formed stands still until the kick.
+    if (r.stage === 'ready' && planted.includes(p.i)) {
+      p.vel = { x: 0, y: 0 };
+      continue;
+    }
+    const it = humanCtl && !heldByCpu(s, p) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
     movePlayer(s, p, { move: it.move, throttle: it.throttle, sprint: it.sprint });
   }
   separate(s);
@@ -1805,15 +1933,50 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   b.vel = { x: 0, y: 0 };
   b.z = restartBallZ(r);
 
+  if (r.stage === 'setup' && kickAction) {
+    // A quick free kick: from where the ball lies, the wall or no wall.
+    taker.pos = { ...spot };
+    taker.vel = { x: 0, y: 0 };
+    takeRestart(s, taker, kickAction);
+    fixControlled(s);
+    return;
+  }
   if (r.stage === 'setup') {
     const there = dist(taker.pos, spot) < 0.6;
-    if ((there && r.ticks >= setupLength(s, r)) || r.ticks >= RESTART_SETUP_MAX) beginReady(s, r);
+    if ((there && r.ticks >= setupLength(s, r) && wallFormed(s)) || r.ticks >= RESTART_SETUP_MAX) beginReady(s, r);
     return;
   }
   if (kickAction) {
     takeRestart(s, taker, kickAction);
     fixControlled(s);
   }
+}
+
+/** The wall leaves the ground this many ticks after the strike, is in the air this long, and its feet rise this high (m). */
+const WALL_JUMP_AFTER = 3;
+const WALL_JUMP_TICKS = 32;
+export const WALL_JUMP_Z = 0.45;
+
+/**
+ * A free-kick wall that has been shot at: its men stay where they stood and jump together as it is struck,
+ * feet up to WALL_JUMP_Z (MatchPlayer.air; contacts lift their heads and bodies with them, so a ball driven
+ * low can go under). Once they land the wall is gone and they play on.
+ */
+function wallJumps(s: MatchState, intents: Intent[]): void {
+  const w = s.wall;
+  if (!w || w.struck < 0) return;
+  const t = s.tick - w.struck - WALL_JUMP_AFTER;
+  const done = t >= WALL_JUMP_TICKS;
+  for (const i of w.players) {
+    const p = s.players[i];
+    if (p.sentOff) continue;
+    const u = clamp(t / WALL_JUMP_TICKS, 0, 1);
+    p.air = done ? 0 : 4 * WALL_JUMP_Z * u * (1 - u);
+    if (done) continue;
+    intents[i] = IDLE_INTENT;
+    p.vel = { x: 0, y: 0 };
+  }
+  if (done) s.wall = null;
 }
 
 /** Longest the whistle waits past added time for a shot in flight to finish (Law 7). */
@@ -1918,6 +2081,7 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   updateControl(s, 1, inputs[1]);
   fixControlled(s);
   const intents = s.players.map((p) => (p.sentOff ? IDLE_INTENT : isHumanControlled(s, p) ? humanOrTimeout(s, p, inputs[p.team]) : aiIntent(s, p)));
+  wallJumps(s, intents);
   for (let i = 0; i < s.players.length && s.phase === 'play'; i++) applyAction(s, s.players[i], intents[i]);
   if (s.phase === 'play') keeperDives(s);
   s.players.forEach((p, i) => movePlayer(s, p, intents[i]));

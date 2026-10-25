@@ -56,6 +56,12 @@ jobs:
       - name: Balance smoke test
         run: bun run balance 60 --assert
 
+      # A deterministic headless career to level 99 (about 15 s). --assert fails the job if the
+      # pacing to levels 5-99, the world's strength at the top, cup and league rewards against
+      # ranked, promotions or the save size leave their bands (scripts/career.ts).
+      - name: Career simulator
+        run: bun run career --assert
+
       # Keep the playable single-file build so reviewers can download and open it.
       - name: Upload build
         uses: actions/upload-artifact@v4
@@ -64,13 +70,35 @@ jobs:
           path: dist/index.html
           if-no-files-found: error
 
+  fairness:
+    name: Fair matches for every kind of player
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Get the code.
+      - uses: actions/checkout@v4
+
+      # Bun runs the headless fairness harness.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      # Scripted humans (passive to strong) play new-club careers through the real sim, with the
+      # CPU's skill from the hidden estimate. --assert fails the job when a target is missed: a
+      # passive human routed, a competent one far from an even chance, a strong one not winning
+      # most, or the win chance shown drifting from the one measured (scripts/fairness.ts).
+      - name: Fairness check
+        run: bun run fairness 12 --assert
+
   # The suite is about 20 minutes on one runner (3D under SwiftShader, and the perf tests play several matches back to back),
   # so it runs as three parallel jobs, each a third of the test files balanced by recorded time (tests/e2e/shard-weights.json,
   # tests/e2e/lib/shard.cjs; tests/shard.test.ts proves every file runs in exactly one shard).
   e2e:
     name: Browser end-to-end tests (shard ${{ matrix.shard }} of 3)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # 25, not 20: "Install Chromium" has taken 6-7 min on a slow apt mirror (the system packages, not the
+    # browser download), which once cut off a shard in the second its tests finished.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:

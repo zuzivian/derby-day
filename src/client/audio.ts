@@ -24,6 +24,10 @@ export interface Snapshot {
   by: number;
   vx: number;
   vy: number;
+  /** Ball height, m. */
+  bz: number;
+  /** Match events so far (fouls, cards, restarts...). */
+  events: number;
 }
 
 export type SfxEvent =
@@ -31,7 +35,12 @@ export type SfxEvent =
   | { type: 'knock'; kind: 'board' | 'post'; power: number }
   | { type: 'tackle'; won: boolean }
   | { type: 'goal'; team: 0 | 1 }
-  | { type: 'whistle'; kind: WhistleKind };
+  | { type: 'whistle'; kind: WhistleKind }
+  /** The crowd's "ooh": a shot just wide or over, or a hard shot saved. */
+  | { type: 'ooh'; power: number }
+  /** A keeper gathering the ball into his hands. */
+  | { type: 'catch'; power: number }
+  | { type: 'header'; power: number };
 
 /** 'foul': one short blast when the referee stops play for a foul, an offside, an advantage brought back or a second touch. */
 export type WhistleKind = 'kickoff' | 'halftime' | 'fulltime' | 'foul';
@@ -54,6 +63,8 @@ export function snapshot(s: MatchState): Snapshot {
     by: s.ball.pos.y,
     vx: s.ball.vel.x,
     vy: s.ball.vel.y,
+    bz: s.ball.z,
+    events: s.events.length,
   };
 }
 
@@ -94,10 +105,23 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
     else if (next.phase === 'fulltime') out.push({ type: 'whistle', kind: 'fulltime' });
     else if (next.phase === 'restart' && prev.phase === 'play' && stoppedForFoul(next)) out.push({ type: 'whistle', kind: 'foul' });
   }
+  const prevSpeed = speedOf(prev.vx, prev.vy);
+  // A shot that has just gone out for a goal kick or corner close to the posts gets an "ooh". (The
+  // referee's whistle for a stoppage is the phase change above.)
+  for (let i = prev.events; i < next.events.length; i++) {
+    const e = next.events[i];
+    if (e.kind === 'restart' && e.reason === 'out' && (e.restart === 'goalkick' || e.restart === 'corner') && nearMiss(prev, prevSpeed)) out.push({ type: 'ooh', power: clamp01((prevSpeed - 10) / 16) });
+  }
   if (prev.phase !== 'play' && prev.phase !== 'init') return out;
 
   const speed = speedOf(b.vel.x, b.vel.y);
-  const prevSpeed = speedOf(prev.vx, prev.vy);
+
+  // A keeper gathering the ball: a catch, and from a hard shot the crowd's "ooh" too.
+  if (prev.owner < 0 && b.owner >= 0 && b.inHands && prevSpeed > 6) {
+    out.push({ type: 'catch', power: clamp01((prevSpeed - 6) / 20) });
+    if (prevSpeed > 16) out.push({ type: 'ooh', power: clamp01((prevSpeed - 16) / 12) });
+    return out;
+  }
 
   // Tackles: a lunge starting, or the ball being won.
   const wonTackle = next.stats[0].tackles + next.stats[1].tackles > prev.tackles;
@@ -108,6 +132,12 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
   if (prev.owner >= 0 && b.owner < 0 && !wonTackle && speed > 5) {
     if (b.passFrom >= 0) out.push({ type: 'kick', kind: 'pass', power: clamp01((speed - 8) / 15) });
     else out.push({ type: 'kick', kind: 'shot', power: clamp01((speed - 12) / 19) });
+    return out;
+  }
+
+  // A header: a loose ball up at head height turned sharply, near a player.
+  if (prev.owner < 0 && b.owner < 0 && prev.bz > 1.3 && prevSpeed > SPEED_NOISE && turned(prev, b.vel.x, b.vel.y) && headed(next)) {
+    out.push({ type: 'header', power: clamp01(speed / 20) });
     return out;
   }
 
@@ -126,6 +156,22 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
     if (flipY || flipX) out.push({ type: 'knock', kind: 'board', power: clamp01(prevSpeed / 24) });
   }
   return out;
+}
+
+/** Was the ball, just before it went out, a shot going past within NEAR_MISS m of a post? */
+function nearMiss(prev: Snapshot, speed: number): boolean {
+  if (speed < 10) return false;
+  const nearLine = prev.bx < 6 || prev.bx > PITCH_W - 6;
+  const wide = Math.max(GOAL_TOP - prev.by, prev.by - GOAL_BOTTOM, 0);
+  return nearLine && wide < NEAR_MISS;
+}
+/** How far outside a post (m) a shot still draws an "ooh" (over the bar counts as 0 wide). */
+const NEAR_MISS = 4;
+
+/** Is any player close enough to the ball (in the plane) to have headed it? */
+function headed(s: MatchState): boolean {
+  for (const p of s.players) if (Math.hypot(p.pos.x - s.ball.pos.x, p.pos.y - s.ball.pos.y) < 1.4) return true;
+  return false;
 }
 
 function snapshotLunges(s: MatchState): number {
@@ -160,6 +206,7 @@ export function crowdLevel(s: MatchState): number {
 // Engine (browser)
 
 export const MUTE_KEY = 'derbyday.audio.muted.v1';
+export const VOLUME_KEY = 'derbyday.audio.volume.v1';
 const MASTER_GAIN = 0.55;
 
 export function loadMuted(): boolean {
@@ -167,6 +214,17 @@ export function loadMuted(): boolean {
     return localStorage.getItem(MUTE_KEY) === '1';
   } catch {
     return false;
+  }
+}
+
+/** The volume setting, 0..1 (default 1). */
+export function loadVolume(): number {
+  try {
+    const v = localStorage.getItem(VOLUME_KEY);
+    const n = v === null ? 1 : Number(v);
+    return Number.isFinite(n) ? clamp01(n) : 1;
+  } catch {
+    return 1;
   }
 }
 
@@ -198,9 +256,29 @@ export class SoundEngine {
   private lastPlayed = new Map<string, number>();
   private listeners = new Set<(muted: boolean) => void>();
   private _muted = loadMuted();
+  private _volume = loadVolume();
 
   get muted(): boolean {
     return this._muted;
+  }
+
+  /** 0..1, remembered in this browser. Volume 0 is silent, but not the same as muted. */
+  get volume(): number {
+    return this._volume;
+  }
+
+  setVolume(v: number): void {
+    this._volume = clamp01(v);
+    try {
+      localStorage.setItem(VOLUME_KEY, String(this._volume));
+    } catch {
+      /* private mode: the setting just won't persist */
+    }
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.gainNow(), this.ctx.currentTime, 0.03);
+  }
+
+  private gainNow(): number {
+    return this._muted ? 0 : MASTER_GAIN * this._volume;
   }
 
   onChange(fn: (muted: boolean) => void): () => void {
@@ -212,7 +290,7 @@ export class SoundEngine {
     this._muted = v;
     saveMuted(v);
     if (!v) this.unlock();
-    if (this.master && this.ctx) this.master.gain.setTargetAtTime(v ? 0 : MASTER_GAIN, this.ctx.currentTime, 0.03);
+    if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.gainNow(), this.ctx.currentTime, 0.03);
     for (const fn of this.listeners) fn(v);
   }
 
@@ -263,7 +341,7 @@ export class SoundEngine {
   private build(ctx: Ctx): void {
     // Master chain: gain into a gentle limiter so stacked sounds can't clip.
     const master = ctx.createGain();
-    master.gain.value = this._muted ? 0 : MASTER_GAIN;
+    master.gain.value = this.gainNow();
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -14;
     limiter.knee.value = 12;
@@ -415,6 +493,16 @@ export class SoundEngine {
         case 'whistle':
           this.whistle(r.ctx, r.out, ev.kind);
           break;
+        case 'ooh':
+          this.ooh(r.ctx, r.out, ev.power);
+          break;
+        case 'catch':
+          this.gather(r.ctx, r.out, ev.power);
+          break;
+        case 'header':
+          this.tone(r.ctx, r.out, r.ctx.currentTime, 'sine', 210 + 60 * ev.power, 90, 0.07, 0.22 + 0.2 * ev.power);
+          this.burst(r.ctx, r.out, r.ctx.currentTime, 0.04, 'lowpass', 900, 300, 0.7, 0.12);
+          break;
       }
     } catch {
       /* a failed sound must never break the match */
@@ -494,6 +582,33 @@ export class SoundEngine {
       this.burst(ctx, out, at, 0.16, 'bandpass', 3800 - i * 350, 1800, 1.4, 0.2 * Math.pow(0.72, i));
     }
     this.roar(1);
+  }
+
+  /** The crowd's "ooh": a vowel-like swell (noise through a falling formant) over the bed. */
+  private ooh(ctx: Ctx, out: AudioNode, power: number): void {
+    const t = ctx.currentTime;
+    const peak = 0.16 + 0.16 * power;
+    const dur = 1.1;
+    for (const [f0, f1, q, m] of [[620, 380, 3, 1], [1150, 820, 4, 0.45]] as const) {
+      const src = ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.Q.value = q;
+      f.frequency.setValueAtTime(f0, t);
+      f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      src.connect(f).connect(this.env(ctx, out, t, peak * m, 0.18, dur));
+      src.start(t, Math.random() * 1.5);
+      src.stop(t + dur + 0.25);
+    }
+  }
+
+  /** A keeper gathering the ball: a muffled thump into the gloves. */
+  private gather(ctx: Ctx, out: AudioNode, power: number): void {
+    const t = ctx.currentTime;
+    this.tone(ctx, out, t, 'sine', 150 + 40 * power, 70, 0.1, 0.3 + 0.25 * power);
+    this.burst(ctx, out, t, 0.06, 'lowpass', 700, 250, 0.7, 0.14 + 0.1 * power);
   }
 
   private whistle(ctx: Ctx, out: AudioNode, kind: WhistleKind): void {

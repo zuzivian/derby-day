@@ -21,7 +21,7 @@
 // Key scheme: WASD/arrows run, Space pass, F shoot, C loft, Space/tackle, E switch, Shift sprint.
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
-import { aiIntent } from './ai.ts';
+import { aiIntent, humanAuto, IDLE_TICKS } from './ai.ts';
 import { BOX_DEPTH, BOX_W, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, humanShotLift, passTo, pointerPass } from './kicks.ts';
@@ -85,12 +85,19 @@ const ON_CARRIER = 1.5;
 export const SELECT_R = 1.5;
 /** Half-angle of the cone searched for a teammate "in the direction of the click". */
 export const SELECT_CONE_COS = Math.cos((40 * Math.PI) / 180);
+/** Defending, a player upfield of the carrier counts as this many metres further away for the auto-switch. */
+export const SWITCH_BEHIND = 6;
+/** A click within this many metres of a teammate picks the one nearest it, before any cone search. */
+export const PICK_R = 4;
+/** Ticks an automatically switched-to player is kept before the auto-switch looks again. */
+const AUTO_KEEP = 45;
 /** Ticks a hand-picked player is kept before the auto-switch may take him away again. */
 export const SELECT_LOCK = 180;
 
 /**
  * Who a click at `point` picks for `team`, given the player now steered:
- *  1. an outfield teammate within SELECT_R of the point (the closest one);
+ *  1. an outfield teammate within PICK_R of the point (the closest one): a click a couple of
+ *     metres off a man means him, not whoever happens to lie nearer you in that direction;
  *  2. else the nearest outfield teammate inside a 40 degree cone around the
  *     direction from the steered player to the point;
  *  3. else -1 (stay as you are).
@@ -99,7 +106,7 @@ export const SELECT_LOCK = 180;
 export function pickTeammate(s: MatchState, team: 0 | 1, point: Vec): number {
   const cur = s.players[s.controlled[team]];
   let under = -1;
-  let underD = SELECT_R;
+  let underD = PICK_R;
   for (const m of s.players) {
     if (m.team !== team || m.role === 'GK') continue;
     const d = dist(m.pos, point);
@@ -187,6 +194,17 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
     return { move: norm(to), throttle: 1, sprint: v > 4 };
   }
   const onLine = add(b.pos, scale(dir, along));
+  // Played ahead of him as he runs its way (a ball into his path): keep running along its line
+  // and let it catch him, easing only to a pace it can still catch, rather than stopping on the
+  // line to wait for it.
+  const pace = dot(p.vel, dir);
+  if (pace > 2.5) {
+    // Slow enough that it closes the gap to him in about 0.6 s.
+    const keep = Math.max(0, Math.min(pace, v - along / 0.6));
+    const go = sub(add(onLine, scale(dir, Math.max(1.5, keep * 0.5))), p.pos);
+    const effort = clamp(keep / 6.5, 0.3, SPRINT_MULT);
+    return effort > 1 ? { move: norm(go), throttle: effort / SPRINT_MULT, sprint: true } : { move: norm(go), throttle: effort };
+  }
   const target = sub(onLine, scale(dir, Math.min(1, along * 0.15)));
   const to = sub(target, p.pos);
   const d = len(to);
@@ -195,6 +213,28 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   const need = d / Math.max(0.15, along / v - 0.1);
   const effort = clamp(need / 6.5, 0.3, SPRINT_MULT);
   return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
+}
+
+/** A carrier this close to a held or idle human's player is jockeyed rather than left to the CPU's shape. */
+export const JOCKEY_R = 6;
+/** How far off the carrier, goal-side, he jockeys. */
+export const JOCKEY_GAP = 2.2;
+
+/**
+ * Jockeying: an opponent with the ball within JOCKEY_R of the human's player, who is
+ * being positioned by the CPU. He backs off goal-side of the carrier at JOCKEY_GAP and
+ * shadows him, never diving in (a tackle is the human's to make). Null when nobody is close.
+ */
+export function jockey(s: MatchState, p: MatchPlayer): Intent | null {
+  const b = s.ball;
+  if (b.owner < 0 || b.inHands) return null;
+  const c = s.players[b.owner];
+  if (c.team === p.team || dist(c.pos, p.pos) > JOCKEY_R) return null;
+  const spot = add(add(c.pos, scale(c.vel, 0.25)), scale(norm(sub(ownGoal(s, p.team), c.pos)), JOCKEY_GAP));
+  const to = sub(spot, p.pos);
+  const d = len(to);
+  if (d < 0.3) return { move: norm(sub(c.pos, p.pos)), throttle: 0 };
+  return { move: scale(to, 1 / d), throttle: clamp(d / 2.5, 0.3, 1) };
 }
 
 /** The ball is loose with no receiver, and he is the nearest outfielder on his side to where it is going. */
@@ -224,7 +264,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
   const hasBall = s.ball.owner === p.i;
   const heading = add(p.pos, scale(throttle > 0 ? move : p.facing, 14));
   const team = p.team;
-  const held = !!s.ctlHold?.[team] && pointer;
+  // Held after an automatic switch, or idle: the CPU positions him (ai.ts humanAuto).
+  const held = humanAuto(s, team);
 
   // A pass is on its way to him: he goes to meet it, and a click now is played first time.
   if (passIncoming(s, p)) {
@@ -266,7 +307,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
       // The harder he hits it, the higher it rises (a click stays low).
       const power = clamp(input.shoot, 0, 1);
-      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting) } };
+      const curl = input.curl ? clamp(input.curl, -1, 1) : 0;
+      return { move, throttle, sprint, action: { kind: 'shoot', target, power, lift: humanShotLift(s.ball.pos, target, goal.x, power, p.attrs.shooting), ...(curl ? { curl } : {}) } };
     }
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.
@@ -291,8 +333,9 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     throttle = it.throttle;
     sprint = !!it.sprint;
   } else if (held) {
-    // Until the pointer moves, he plays like the CPU would (but takes no action of his own).
-    const it = aiIntent(s, p);
+    // Until the pointer moves, he plays like the CPU would (but takes no action of his own):
+    // his place in the shape and his man to mark, or jockeying a carrier who comes at him.
+    const it = jockey(s, p) ?? aiIntent(s, p);
     move = it.move;
     throttle = it.throttle;
     sprint = !!it.sprint;
@@ -345,8 +388,19 @@ function give(s: MatchState, team: 0 | 1, i: number, auto: boolean): void {
   if (s.queued?.[team] && s.queued[team]!.player !== i) s.queued[team] = null;
 }
 
+/**
+ * Is the human steering this tick? A pointer on the pitch is: a still mouse means "run there and
+ * stay", so it is never idle. So is the keyboard (the client always sends `dir` in key mode): no
+ * key down means "stand still". Idle is only no pointer and no keys at all, as when the mouse has
+ * never been moved over the pitch, with no button either.
+ */
+const active = (input: HumanInput): boolean =>
+  input.cursor !== undefined || input.dir !== undefined || !!input.pass || !!input.select || !!input.tackle || !!input.sprint || !!input.switchPlayer || input.shoot !== undefined || input.loft !== undefined;
+
 export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): void {
   if (!s.humans[team]) return;
+  if (!s.idleTicks) s.idleTicks = [0, 0];
+  s.idleTicks[team] = active(input) ? 0 : Math.min(s.idleTicks[team] + 1, IDLE_TICKS);
   // Really moving the pointer (HOLD_MOVES ticks of it, so a resting hand's nudge doesn't
   // count), or pressing a direction key, ends the hold after an automatic switch.
   if (s.ctlHold?.[team]) {
@@ -380,7 +434,17 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   }
   if (!outfield.length) return;
   const spot = add(ball.pos, scale(ball.vel, 0.3));
-  const byDist = [...outfield].sort((a, b) => dist(a.pos, spot) - dist(b.pos, spot));
+  // Defending a carrier, the right man is the one who can press him from goal-side (the man the
+  // CPU would send, ai.ts buildPlan), not one chasing back behind him: anyone upfield of the
+  // ball counts as SWITCH_BEHIND metres further away.
+  const theirs = owner && owner.team !== team;
+  const dir = attackDir(s, team);
+  const cost = (m: MatchPlayer): number => {
+    if (!theirs) return dist(m.pos, spot);
+    const press = add(spot, scale(norm(sub(ownGoal(s, team), spot)), 0.8));
+    return dist(m.pos, press) + ((m.pos.x - owner.pos.x) * dir > 1 ? SWITCH_BEHIND : 0);
+  };
+  const byDist = [...outfield].sort((a, b) => cost(a) - cost(b));
   if (input.switchPlayer) {
     const pick = byDist[0].i === s.controlled[team] ? byDist[1] ?? byDist[0] : byDist[0];
     give(s, team, pick.i, false);
@@ -395,5 +459,11 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   }
   if (--s.switchTimer[team] > 0) return;
   s.switchTimer[team] = 12;
-  if (!cur || dist(cur.pos, spot) - dist(byDist[0].pos, spot) > 5) give(s, team, byDist[0].i, true);
+  // Never off a man the ball is coming to and nearly at: he is about to play it.
+  if (cur && dist(cur.pos, ball.pos) < 3 && dot(sub(cur.pos, ball.pos), ball.vel) > 0) return;
+  if (!cur || cost(cur) - cost(byDist[0]) > 5) {
+    give(s, team, byDist[0].i, true);
+    // Then keep him a moment: not straight back to the last man as the ball runs on.
+    s.switchTimer[team] = AUTO_KEEP;
+  }
 }

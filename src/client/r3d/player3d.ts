@@ -9,7 +9,7 @@
 //
 // Local space: +z is forward, +y up, +x the player's left. Feet at y = 0.
 
-import { CLASH_DE, grassDiff, worstDiff } from '../kits.ts';
+import { grassDiff, worstDiff } from '../kits.ts';
 import type { MatchPlayer } from '../../sim/types.ts';
 import { angleDelta, clamp01, damp, smooth, sx, sz } from './space.ts';
 import { merge, type Part } from './geo.ts';
@@ -42,7 +42,7 @@ import {
 // Public types
 
 /** The subset of a sim player the model reads. A referee can supply the same shape. */
-export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role'>>;
+export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role' | 'air'>>;
 
 export type KickStyle = 'pass' | 'chip' | 'shot' | 'throw';
 
@@ -78,6 +78,8 @@ export interface PlayerContext {
   hasBall: boolean;
   /** Standing in a defensive wall at a free kick. */
   wall: boolean;
+  /** The referee's arm held straight up: an indirect free kick until someone else touches it (Law 5). */
+  armUp?: boolean;
   reducedMotion: boolean;
 }
 
@@ -345,13 +347,20 @@ function keys(t: number, k: number[]): number {
 // ---------------------------------------------------------------------------
 // Builder
 
+/**
+ * Players are drawn a little larger than life, as arcade football games do: with the camera pulled
+ * back to show 45-60 m of pitch (owner's ask 1) a true-size player is a thin 35 px figure at
+ * 1280x800, thinner than the Power Soccer references. The sim's sizes and collisions are unchanged.
+ */
+export const PLAYER_SCALE = 1.12;
+
 export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player3D {
   // One skinned mesh per player: every primitive is baked into a single
   // geometry with vertex colours and rigidly bound to its bone, so a player is
   // one draw call (two with the shirt number) and all players share one material.
   const root = new Group();
   root.name = 'player';
-  const h = look.height;
+  const h = look.height * PLAYER_SCALE;
   root.scale.setScalar(h);
   const bw = 1 + look.build * 0.06;
 
@@ -504,6 +513,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let holdW = 0;
   let dribbleW = 0;
   let wallW = 0;
+  let armUpW = 0;
+  let airW = 0;
   const idleSeed = Math.random() * 10;
   let last = 0;
 
@@ -529,7 +540,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     const gait = smooth(0.25, 3.6, speed);
     const sprint = smooth(5.2, 7.6, speed);
     // Stride length grows with speed, so cadence rises more slowly than speed.
-    const stride = 1.25 + 0.32 * speed;
+    const stride = (1.25 + 0.32 * speed) * PLAYER_SCALE; // longer legs, longer strides: the feet keep pace with the ground
     const back = fwdS < -0.6 && speed > 0.8 ? -1 : 1;
     phase += ((speed * dtSim) / stride) * Math.PI * 2 * back;
     const s = Math.sin(phase);
@@ -607,6 +618,19 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       stance.set('shL', -0.45, 0, -0.32).set('shR', -0.45, 0, 0.32).set('elL', -0.55).set('elR', -0.55);
       stance.set('spine', 0.08).set('head', 0.05);
       P.blend(stance, wallW * (1 - smooth(1, 3, speedS)));
+    }
+    if (airW > 0.01) {
+      // Jumping in the wall: knees drawn up, back straight, hands still guarding.
+      stance.copy(P);
+      stance.set('hipL', -0.55, 0, -0.03).set('hipR', -0.55, 0, 0.03).set('knL', 0.95).set('knR', 0.95);
+      stance.set('spine', -0.05).set('head', -0.12);
+      P.blend(stance, airW);
+    }
+    if (armUpW > 0.01) {
+      // Law 5, an indirect free kick: the right arm straight up, held.
+      stance.copy(P);
+      stance.set('shR', -3.05, 0, 0.05).set('elR', -0.05);
+      P.blend(stance, armUpW);
     }
     if (dribbleW > 0.01) {
       P.add('spine', 0.08 * dribbleW, 0, 0);
@@ -824,7 +848,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 
       // Root: position (extrapolated between ticks) and heading.
       const lead = ctx.lead;
-      root.position.set(sx(p.pos.x + p.vel.x * lead), 0, sz(p.pos.y + p.vel.y * lead));
+      // Off the ground in a jumping wall (MatchPlayer.air, metres).
+      root.position.set(sx(p.pos.x + p.vel.x * lead), p.air ?? 0, sz(p.pos.y + p.vel.y * lead));
       const target = Math.atan2(p.facing.x, p.facing.y);
       if (yaw === null) yaw = target;
       // Turn quickly, but never snap: max ~11 rad/s.
@@ -853,6 +878,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       holdW = damp(holdW, ctx.holding ? 1 : 0, 10, dt);
       dribbleW = damp(dribbleW, ctx.hasBall ? 1 : 0, 6, dt);
       wallW = damp(wallW, ctx.wall ? 1 : 0, 5, dt);
+      armUpW = damp(armUpW, ctx.armUp ? 1 : 0, 8, dt);
+      // In the air from a jumping wall: no smoothing, the sim's height is the pose.
+      airW = Math.min(1, (p.air ?? 0) / 0.3);
 
       locomotion(loco, ctx.time, ctx.dtSim, reduced);
       stances(loco);
@@ -925,38 +953,65 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 const SKINS = ['#f3d2b5', '#e8b98f', '#d9a479', '#c08657', '#a06a42', '#80522f', '#674026'];
 const HAIRS = ['#16110d', '#2b1c12', '#4a2f1b', '#73492a', '#a5733f', '#d7b56d', '#e8d9a8', '#3a3a3a', '#8a2d16'];
 
-/**
- * The keeper's kit: of these, the one that reads best against both sides' shirts and the grass,
- * for normal and red-green colour-blind vision alike (kits.ts worstDiff, grassDiff). `otherKeeper`
- * is the other side's keeper's shirt, when already chosen: of the kits that still read against the
- * shirts and the grass (CLASH_DE), the one furthest from his, so the two keepers differ too.
- */
-export function keeperColors(own: string, other: string, otherKeeper?: string): { shirt: string; shorts: string; socks: string; trim: string } {
-  const options = [
+type KeeperKit = { shirt: string; shorts: string; socks: string; trim: string };
+
+/** The keeper kits to pick from. */
+const KEEPER_KITS: KeeperKit[] = [
     { shirt: '#f4dc1c', shorts: '#1b1b1b', socks: '#f4dc1c', trim: '#1b1b1b' },
     { shirt: '#24b35a', shorts: '#0f3d22', socks: '#24b35a', trim: '#f5f5f5' },
     { shirt: '#ff7a1a', shorts: '#2a2a2a', socks: '#ff7a1a', trim: '#1b1b1b' },
     { shirt: '#7c3fe0', shorts: '#2a1a4a', socks: '#7c3fe0', trim: '#f5f5f5' },
     { shirt: '#2e2e2e', shorts: '#2e2e2e', socks: '#2e2e2e', trim: '#f4dc1c' },
     { shirt: '#1fc7c7', shorts: '#0d3a3a', socks: '#1fc7c7', trim: '#111111' },
-    // Teal, cream and navy: with these every ladder fixture has two keeper kits that read against
-    // both shirts and the grass and against each other (tests/dots.test.ts).
+    // Teal, cream, navy, sky blue and bottle green: with these every ladder fixture has two keeper
+    // kits that read against both shirts and the grass and against each other (tests/dots.test.ts).
     { shirt: '#2f8f8f', shorts: '#123838', socks: '#2f8f8f', trim: '#f5f5f5' },
     { shirt: '#efefcf', shorts: '#2a2a2a', socks: '#efefcf', trim: '#111111' },
     { shirt: '#0f0f4f', shorts: '#0a0a2a', socks: '#0f0f4f', trim: '#f5f5f5' },
-  ];
-  const reads = (o: { shirt: string }) => Math.min(worstDiff(o.shirt, own), worstDiff(o.shirt, other), grassDiff(o.shirt, 'low'), grassDiff(o.shirt, 'high'));
-  const score = (o: { shirt: string }) => {
-    const r = reads(o);
-    return otherKeeper && r >= CLASH_DE ? CLASH_DE + Math.min(r, worstDiff(o.shirt, otherKeeper)) : r;
-  };
-  let best = options[0];
+    { shirt: '#0f8fef', shorts: '#0a2a4a', socks: '#0f8fef', trim: '#f5f5f5' },
+    { shirt: '#0f2f0f', shorts: '#0a1a0a', socks: '#0f2f0f', trim: '#f4dc1c' },
+];
+
+/** How well a keeper's shirt reads against both sides' shirts and the grass, for every vision (kits.ts). */
+function keeperReads(shirt: string, own: string, other: string): number {
+  return Math.min(worstDiff(shirt, own), worstDiff(shirt, other), grassDiff(shirt, 'low'), grassDiff(shirt, 'high'));
+}
+
+/**
+ * The keeper's kit: of these, the one that reads best against both sides' shirts and the grass,
+ * for normal and red-green colour-blind vision alike (kits.ts worstDiff, grassDiff).
+ */
+export function keeperColors(own: string, other: string): KeeperKit {
+  let best = KEEPER_KITS[0];
   let bestD = -1;
-  for (const o of options) {
-    const d = score(o);
+  for (const o of KEEPER_KITS) {
+    const d = keeperReads(o.shirt, own, other);
     if (d > bestD) {
       bestD = d;
       best = o;
+    }
+  }
+  return best;
+}
+
+/**
+ * Both keepers' kits, chosen together: the pair where the worst of these reads best, each keeper
+ * against both shirts and the grass, and the two keepers against each other. (Picking the home
+ * keeper first and the away keeper after can leave no away kit far enough from his.)
+ */
+export function keeperPair(home: string, away: string): [KeeperKit, KeeperKit] {
+  let best: [KeeperKit, KeeperKit] = [keeperColors(home, away), keeperColors(away, home)];
+  let bestD = -1;
+  for (const h of KEEPER_KITS) {
+    const rh = keeperReads(h.shirt, home, away);
+    if (rh <= bestD) continue;
+    for (const a of KEEPER_KITS) {
+      if (a === h) continue;
+      const d = Math.min(rh, keeperReads(a.shirt, away, home), worstDiff(h.shirt, a.shirt));
+      if (d > bestD) {
+        bestD = d;
+        best = [h, a];
+      }
     }
   }
   return best;

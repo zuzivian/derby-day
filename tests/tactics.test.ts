@@ -8,10 +8,11 @@ import { autoLineup, clubFormation, clubMentality, cpuTeam, generateLadder, gene
 import { ensureElevenASide, newGame, setFormation, setMentality, clubTeam } from '../src/meta/game.ts';
 import { decodeReplay, encodeReplay, REPLAY_VERSION, ReplayRecorder, ReplaySeeker, type Replay } from '../src/meta/replay.ts';
 import { createMatch, step } from '../src/sim/match.ts';
-import { averageMetrics, measureMatch, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
+import { averageMetrics, measureMatch, mentalityLag, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
 import { FORMATION_IDS, FORMATIONS, MENTALITY_IDS, SIM_VERSION, TEAM_SIZE, type FormationId, type Mentality } from '../src/sim/constants.ts';
 import { TACTICS } from '../src/sim/ai.ts';
 import { makeRng } from '../src/sim/rng.ts';
+import { secondLastOpponentX, teamX } from '../src/sim/field.ts';
 
 describe('formations', () => {
   test('nine shapes, each a keeper and ten outfielders in slot order, on the pitch', () => {
@@ -147,9 +148,9 @@ describe('CPU clubs', () => {
 });
 
 describe('mentality changes how a side plays (fixed seeds, equal squads, each vs Balanced)', () => {
-  // Thirty-two matches a mentality at 90 s a half: sixteen left one step of the line within noise of
-  // its 2 m bar (it moved by 3 m when an unrelated physics change reshuffled the seeds).
-  const N = 32;
+  // Sixty-four matches a mentality at 90 s a half: sixteen left one step of the line within noise of
+  // its 2 m bar, and thirty-two left Defensive to Balanced's players forward within noise of its bar.
+  const N = 64;
   const HALF = 90;
   const id = (name: string, primary: string) => ({ id: name, name, short: name, primary, secondary: '#fff', crest: 'plain' as const });
   const metrics = new Map<Mentality, TeamMetrics>();
@@ -173,7 +174,10 @@ describe('mentality changes how a side plays (fixed seeds, equal squads, each vs
   test('the defensive line climbs, and more players commit forward, step by step from Park the bus to High press', () => {
     const lines = MENTALITY_IDS.map((m) => vsBalanced(m).line);
     const forward = MENTALITY_IDS.map((m) => vsBalanced(m).forward);
-    for (let i = 1; i < 3; i++) expect(forward[i]).toBeGreaterThan(forward[i - 1] + 0.3);
+    expect(forward[1]).toBeGreaterThan(forward[0] + 0.3);
+    // Defensive to Balanced is the smallest step in players forward (0.30-0.37 on these seeds as the
+    // sim changes); the line and the depth (the next test) are the visible differences between them.
+    expect(forward[2]).toBeGreaterThan(forward[1] + 0.2);
     expect(forward[4]).toBeGreaterThan(forward[2] + 0.3);
     for (let i = 1; i < lines.length; i++) expect(lines[i]).toBeGreaterThan(lines[i - 1] + 2);
     expect(lines[4] - lines[0]).toBeGreaterThan(12); // metres
@@ -187,6 +191,12 @@ describe('mentality changes how a side plays (fixed seeds, equal squads, each vs
     expect(park.width).toBeLessThan(bal.width - 3);
     expect(park.forward).toBeLessThan(bal.forward - 1);
     expect(park.depth).toBeLessThan(bal.depth - 4);
+  });
+
+  test('a compact block: Park the bus, Defensive and High press each stand 3 m tighter than Balanced', () => {
+    const bal = vsBalanced('balanced');
+    // Measured on these seeds: Balanced 41.8 m deep, Park 35.0, Defensive 35.1, High press 36.0.
+    for (const m of ['park', 'defensive', 'press'] as const) expect(vsBalanced(m).depth).toBeLessThan(bal.depth - 3);
   });
 
   test('High press: more men round the ball, wins it back higher, takes more risk on the ball', () => {
@@ -260,7 +270,7 @@ describe('replay format 6', () => {
   // match, seed 21, recorded 2026-10-25. It must still open, flagged as from another sim version.
   const FORMAT5 = 'DD1.BSrwLgEEClNlbG5lc3MgSUYDU05TAQ50kAH95oqwCQALCDEwN3g3YmQxCkouIEhhZXNlb2sBAMwIsAS0C9AF-AqACoAKB2gyNTYxajYNVC4gVGhvcm53b3J0aAMB6AyoBeAI4AjgCJwJwAIHenpkYjlzMwlILiBBbGRkZW4CAeAI4AOkCOQFoAuQCMgBCDFzM3ZyOXg0CVQuIE1hcnRvbgUBsAmUBcgGkAjsCZgM3AEIMWN1OGMyazUMQS4gQnJvb2t3ZWxsBAHsCbQG1AecCYAKuAgUB3hqcm1qcDkLQi4gUGVtd29ydGgIAsgLpAiMC9gJ_AfECZwECDE1cWZjZzI4C0EuIE11c2JhcmFuDwGICZgHsAn4CowLwAz8AggxcnY5M2w4YQpPLiBGZW5tb3JlCgK8CvQIgArgCPwHqArcAQd0eGV1bW5iCUouIEtpcmtieQcChAfIBpQK4AjAB4QMxAQHdGIwbzVjZglULiBEb2JpYWsJA-wJnAn8B_gKqAXECfABCDFxdjY4dDBjDEsuIEJyb29rd2VsbA4C5ArkCqgKpAjQBeAIyAERSGFsZGdyb3ZlIE9seW1waWMDSEdFAR0_jwH___-2BwELB2IzMjZ2dGoKSC4gV29sYm9uZwEAjAbMA-QKuAjcBqAL7AkIMWlhaTZndG4JUy4gRG9zZW9rBAHECeQFkAisB9AKsAl4CDF3ZnJvcGtvCk0uIEtheW9taW4DAYgJ0AXECcwIxAnQCvABB3dwaGlxbXEKSi4gSGFlYm9uZw8BpAigBvAGpAjIC_QI8AEHNjZqMDJwbQpILiBDaHVib25nBQH8B6QD2ASgBtwL4AjMAwgxcHd5a3lpdwhTLiBXb2xqdRECrAeMBowLvAq0BqgKoAEIMTM4a2MwbXMIWS4gV29sanUKAvQIrAe0C-AIiAnwBuADCDExdXphMDV2DkouIEhhZWFuZ3llb25nEALoB9QH-ArgCMgGmAc8B3h0c2o0M3UKSi4gWWVvaHl1bg4C9AioCuAInAmMBvALyAEIMWZ4dTQwOXgJUy4gT2Jpb3JlCQPIBqgKtAb0CCjUB8gBB3U3Nzl2enkNTS4gU2luYW5naHl1bgsD6AecCfgF4AjMA9AFFAdmaXh0dXJl8KLwxwYAAADisX9IrAexHecDAAHAOvAuAcVFuno93d1XJ2ETGAW7ukN-VmPsSCL_6oK1je7gqX8PKew2ka3Znt-fpm_nPF-5t8dx2PkOsYHXfwEb0gOzHKvmgJFrmqfFb5m2ikeURbrmhZRv-p6CasiXXou0ezclmtUMJX4ac0AnsvBuCqVgOJaOnT2gF2JWyW6UYh6Fa4LOBuA7ewxRrJZN9B7rTKVZW2mHOmzSehrhuWvLTiNLxN_66s8jjGnqf_g3pVQXFKtafBeUi-Py_mvx1C-ZLdQl-ZzkXTFWTo2L6FEh9TcMZ-ALrT7Xq-IwQlxu3gOUN_njjYdePndYYQUxy03NNSy1L81WhjxO8dVlnWn-kw1JfgCFpcg4wtkZ8ZfmoKOe77ROF_TAPr6eNOLFpvsLOwDwWCE0codVMyuY6vCzlvp0rVaoNEUxqhmodhcu6M1GTUAOjX2hqsYH4jPvyZJa2SBPeG9mn2DjD7AVgR_5ddfP08kBEJ5d8V4ZHCUSqlByRbewx2DK9JsI5MqYDS_feH0w6cuWMIe1Qi-EKkVBkLLxPD25VWJrG7HJcwb6gncEP63Y421HfcYwwvJP14fV2QyE-zr0ZAszwF9JwXcmrLyfualQ71AJsPTJMLhwzka9TqowayXAE0mjZvtOHu6xWppEgyCB_NQ';
 
-  test('codes are written as format 6', () => {
+  test('codes are written as format 7, and carry the mentality change format 6 added', () => {
     const [a, b] = generateLadder(11, 2);
     const sq = ladderSquad(a);
     const home = toTeamSetup(a, sq, autoLineup(sq), 0.6);
@@ -269,7 +279,7 @@ describe('replay format 6', () => {
     const s = createMatch({ seed: 2, home, away, halfSeconds: 4, humanTeam: 0 });
     for (let t = 0; s.phase !== 'fulltime'; t++) step(s, rec.push(t === 60 ? { tactic: 5 } : {}));
     const code = encodeReplay(rec.finish(s, 0));
-    expect(REPLAY_VERSION).toBe(6);
+    expect(REPLAY_VERSION).toBe(7);
     expect(decodeReplay(code).runs.some((r) => r.input.tactic === 5)).toBe(true);
   });
 
@@ -287,3 +297,96 @@ describe('replay format 6', () => {
   });
 });
 
+
+describe('off the ball: the front striker stays on the last line', () => {
+  /** One CPU match, a 4-3-3 at `m` against a Balanced 4-4-2: how far its striker stands from the last defender with the ball in midfield, and how often he is a short supporter. */
+  function striker(m: Mentality) {
+    const squad = generateSquad(makeRng(5100), 60);
+    const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
+    const home = toTeamSetup(id('Home'), squad, autoLineup(squad, '4-3-3'), 0.6, '4-3-3', m);
+    const away = toTeamSetup(id('Away'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced');
+    const s = createMatch({ seed: 7300, home, away, halfSeconds: 120, humans: [false, false] });
+    const st = s.players.find((p) => p.team === 0 && p.sub === 'ST')!;
+    let n = 0;
+    let gap = 0;
+    let supporting = 0;
+    while (s.phase !== 'fulltime') {
+      step(s);
+      const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+      if (s.phase !== 'play' || s.tick % 6 || !owner || owner.team !== 0 || owner === st || st.sentOff) continue;
+      const bx = teamX(s, 0, s.ball.pos.x);
+      if (bx < 1 / 3 || bx > 0.6) continue;
+      n++;
+      gap += (secondLastOpponentX(s, 0) - teamX(s, 0, st.pos.x)) * 105;
+      if (s.aiPlans?.[0]?.support?.includes(st.i)) supporting++;
+    }
+    return { n, gap: gap / n, supporting: supporting / n };
+  }
+
+  test('Balanced: never a short supporter in midfield, and nearer the line than when he was', () => {
+    const r = striker('balanced');
+    expect(r.n).toBeGreaterThan(100);
+    expect(r.supporting).toBe(0);
+    // Main before the change: 13.5 m behind the line on average (scripts/offball-probe.ts era).
+    expect(r.gap).toBeLessThan(10);
+  });
+
+  test('Park the bus keeps him close instead: he still comes short', () => {
+    expect(TACTICS.park.pin).toBe(false);
+    expect(TACTICS.defensive.pin).toBe(false);
+    expect(striker('park').supporting).toBeGreaterThan(0);
+  });
+});
+
+describe('off the ball: a back five forms when the ball is in our third', () => {
+  /** Four CPU matches, a 5-3-2 against a Balanced 4-4-2: how far its wing-backs stand ahead of its centre-backs while the opponents have the ball in its defensive third (m). */
+  function wingBackGap(): { n: number; gap: number } {
+    let n = 0;
+    let gap = 0;
+    for (const seed of [7400, 7401, 7402, 7403]) {
+      const squad = generateSquad(makeRng(seed), 60);
+      const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
+      const home = toTeamSetup(id('Home'), squad, autoLineup(squad, '5-3-2'), 0.6, '5-3-2', 'balanced');
+      const away = toTeamSetup(id('Away'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced');
+      const s = createMatch({ seed, home, away, halfSeconds: 150, humans: [false, false] });
+      while (s.phase !== 'fulltime') {
+        step(s);
+        const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+        if (s.phase !== 'play' || s.tick % 6 || !owner || owner.team !== 1 || teamX(s, 0, s.ball.pos.x) > 1 / 3) continue;
+        const mine = s.players.filter((p) => p.team === 0 && !p.sentOff);
+        const cbs = mine.filter((p) => p.sub === 'CB');
+        const wbs = mine.filter((p) => p.sub === 'WB');
+        if (!cbs.length || !wbs.length) continue;
+        const cb = cbs.reduce((t, p) => t + teamX(s, 0, p.pos.x), 0) / cbs.length;
+        for (const w of wbs) {
+          gap += (teamX(s, 0, w.pos.x) - cb) * 105;
+          n++;
+        }
+      }
+    }
+    return { n, gap: gap / n };
+  }
+
+  test('wing-backs drop in line with the centre-backs (11.4 m ahead on these seeds before: a back three)', () => {
+    const r = wingBackGap();
+    expect(r.n).toBeGreaterThan(100);
+    // 7.9 m on these seeds with the recovery run.
+    expect(r.gap).toBeLessThan(9.5);
+  });
+});
+
+describe('a mentality change shows within seconds', () => {
+  // Sixteen seeds, each played with and without a switch at 60 s (src/meta/tacticsProbe.ts). Five
+  // seconds after it, Park the bus has pulled the side 10 m deeper and High press pushed it 7 m
+  // higher on these seeds; 64 seeds (scripts/tactics-probe.ts --lag) give 8 and 7 m.
+  const squad = generateSquad(makeRng(5000), 60);
+  const id = (name: string) => ({ id: name, name, short: name.slice(0, 3).toUpperCase(), primary: '#c00', secondary: '#fff', crest: 'plain' as const });
+  const setup = { home: toTeamSetup(id('A'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced'), away: toTeamSetup(id('B'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced'), halfSeconds: 180 };
+  const seeds = Array.from({ length: 16 }, (_, i) => 7200 + i);
+  test('Park the bus drops the side 4 m or more within five seconds', () => {
+    expect(mentalityLag(setup, seeds, 'park').shift[4]).toBeLessThan(-4);
+  }, 30_000);
+  test('High press lifts the side 4 m or more within five seconds', () => {
+    expect(mentalityLag(setup, seeds, 'press').shift[4]).toBeGreaterThan(4);
+  }, 30_000);
+});
