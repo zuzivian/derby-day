@@ -166,7 +166,7 @@ system-font fallbacks without them.
 - **Back up your club** (Club tab → Back up or restore): downloads `derby-day-<club>-<date>.json`, or shows a
   copyable code (`DD1.` + gzip, base64url). Restore checks every field of the backup (players, lineup, ladder, colours, number ranges) and dry-runs the game's boot
   and every screen on it before offering the confirm button, previews the club's name, level and record, says what
-  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone from the same dialog ("Swap back to …"). If a club ever crashes the game right
+  it will replace, and keeps the old club under `derbyday.save.v1.pre-import` so a wrong restore can be undone from the same dialog ("Swap back to …"). After writing, it reads the club and the safety copy back; if either differs from what was written it shows an error and does not reload. A successful restore shows "Restoring…" and reloads after 300 ms, so the browser has time to flush storage before the next page opens (a reload straight after the write can open the old club). If a club ever crashes the game right
   at start-up, the crash panel offers "Restore my previous club" from that copy or the rolling backup. A full disk
   gives up the safety copies (unreadable-save copy, pre-import copy, rolling backup, in that order) before it gives up
   on the save.
