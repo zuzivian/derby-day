@@ -31,6 +31,7 @@ import {
   SRGBColorSpace,
   Skeleton,
   SkinnedMesh,
+  Sphere,
   SphereGeometry,
   Vector3,
   type BufferGeometry,
@@ -453,7 +454,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   geo.setAttribute('skinWeight', new BufferAttribute(sw, 4));
   const mesh = new SkinnedMesh(geo, kit.skinnedMat(!!look.rim));
   mesh.castShadow = true;
-  mesh.frustumCulled = false;
+  // A fixed sphere round the player, big enough for a full-length dive, so a player off-screen is
+  // culled: no draw call, no skeleton update and no bone-texture upload that frame. (The sphere a
+  // skinned mesh would compute itself is from one pose, and costly to compute.)
+  mesh.boundingSphere = new Sphere(new Vector3(0, 0.9, 0), 2.4);
   mesh.add(body);
   mesh.bind(new Skeleton(all));
   root.add(mesh);

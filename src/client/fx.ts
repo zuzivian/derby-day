@@ -11,6 +11,8 @@ import { crowdLevel, detectSfx, getSound, initialSnapshot, snapshot, type SfxEve
 export interface Juice {
   /** Call after every sim step with the live state. */
   tick(s: MatchState): void;
+  /** The match is paused (or the tab hidden): sound stops until unpaused. */
+  setPaused(paused: boolean): void;
   dispose(): void;
 }
 
@@ -272,12 +274,17 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
       prev = snapshot(state);
       if (state.tick % 6 === 0) sound.setCrowd(crowdLevel(state));
     },
+    setPaused(paused: boolean) {
+      if (paused) sound.suspend();
+      else sound.resume();
+    },
     dispose() {
       cleanup.forEach((c) => c());
       ro?.disconnect();
       cancelAnimationFrame(raf);
       for (const a of anims) a.cancel();
       sound.stopCrowd();
+      sound.idle();
       for (const el of [canvas, flash, label, btn]) el?.remove();
     },
   };
