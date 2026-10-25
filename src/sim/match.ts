@@ -58,7 +58,7 @@ import {
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamX } from './field.ts';
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
-import { assistReceiver, chipPlan, loftPlan, passTo, passToPoint, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
+import { assistReceiver, chipPlan, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, SHOT_Z0, shotSpeed } from './kicks.ts';
 import {
   awardRestart,
   ballOut,
@@ -597,6 +597,23 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
 }
 
 /** The taker plays a restart (a human's pass/chip/shot Action, or the CPU's restartAction). */
+/** A corner played along the ground: only this short (m), and only with nobody in its lane. */
+const CORNER_SHORT = 20;
+
+/**
+ * A corner "pass" to a team-mate that is long, or has an opponent in its lane, would be cut out in a
+ * crowded box: it is crossed instead, a lofted ball to him (with the lofted pass's receiver, so he goes
+ * to meet it). A short pass along a clear lane stays on the ground.
+ */
+function cornerKick(s: MatchState, p: MatchPlayer, action: Action): Action {
+  if (action.kind !== 'pass') return action;
+  const from = s.ball.pos;
+  const d = dist(from, action.target);
+  const blocked = s.players.some((o) => o.team !== p.team && !o.sentOff && distToSegment(o.pos, from, action.target) < 2);
+  if (d <= CORNER_SHORT && !blocked) return action;
+  return { kind: 'loft', target: action.target, power: clamp((d - LOFT_MIN_RANGE) / LOFT_RANGE_GAIN + 0.05, 0, 1) };
+}
+
 function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   const r = s.restart!;
   const b = s.ball;
@@ -625,6 +642,7 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
     s.stats[p.team].passAttempts++;
   } else {
     s.phase = 'play'; // applyAction reads the phase for tackles only; the restart is still set so a penalty knows it's a penalty
+    if (r.kind === 'corner') action = cornerKick(s, p, action);
     applyAction(s, p, { move: { x: 0, y: 0 }, throttle: 0, action });
     if (b.owner === p.i) {
       // Not a kick (a tackle input): ignore, stay ready.

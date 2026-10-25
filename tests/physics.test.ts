@@ -878,3 +878,43 @@ describe('determinism with the new physics and inputs', () => {
     expect(finalHash(replayTo(back, back.ticks))).toBe(r.fp);
   });
 });
+
+describe('a corner played to a team-mate', () => {
+  /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker. Who has it 4 s later? */
+  function cornerTo(at: Vec, by: 'flag' | 'taker', seed: number) {
+    const s = livePlay(seed + 10);
+    awardRestart(s, 'corner', 0, { ...at }, 'out');
+    let t = 0;
+    while (s.restart && s.restart.stage !== 'ready' && t++ < 900) step(s, { cursor: { x: 90, y: 34 } });
+    const taker = s.players[s.restart!.taker];
+    const ref = by === 'flag' ? s.restart!.spot : taker.pos;
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[0];
+    step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+    let high = 0;
+    for (let k = 0; k < 240 && s.ball.owner < 0 && s.phase === 'play'; k++) {
+      step(s, { cursor: { ...mate.pos } });
+      high = Math.max(high, s.ball.z);
+    }
+    const o = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    return { high, ours: !!o && o.team === 0, him: o === mate };
+  }
+
+  test('our nearest man is on the edge of the box, 40 m away: the click is crossed to him, and our side usually keeps it', () => {
+    let ours = 0;
+    let him = 0;
+    let n = 0;
+    for (const at of [{ x: 105, y: 0 }, { x: 105, y: 68 }])
+      for (const by of ['flag', 'taker'] as const)
+        for (let seed = 1; seed <= 6; seed++) {
+          const r = cornerTo(at, by, seed);
+          n++;
+          if (r.ours) ours++;
+          if (r.him) him++;
+          // A long pass from a corner goes in the air, over the box, not along the ground through it.
+          expect(r.high).toBeGreaterThan(1.5);
+        }
+    // Played along the ground through the box it was cut out: our side kept it 0 of these 24, him 0.
+    expect(ours / n).toBeGreaterThan(0.5);
+    expect(him / n).toBeGreaterThan(0.3);
+  }, 60_000);
+});
