@@ -8,7 +8,7 @@
 // (it carries both club names for screen readers).
 
 import type { CrestPattern } from '../meta/names.ts';
-import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
@@ -68,6 +68,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden role="status"></div>
       <div class="hud-fk" hidden aria-hidden="true"></div>
+      <div class="hud-prompt" hidden role="status"></div>
     </div>`;
 }
 
@@ -134,8 +135,27 @@ export function matchClock(s: MatchState): string {
   return inAddedTime(s) && s.added ? `${clock} +${s.added.minutes}` : clock;
 }
 
-export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
+/**
+ * A human's kick-off waiting to be taken (Law 8: it is a kick): the side, and the seconds left before the CPU takes it
+ * for them (RESTART_HUMAN_WAIT). Null otherwise, or when the CPU takes this one (its side has no human on the taker).
+ */
+export function kickoffWait(s: MatchState): { team: 0 | 1; secs: number } | null {
+  const r = s.restart;
+  if (s.phase !== 'restart' || !r || r.kind !== 'kickoff' || r.stage !== 'ready' || !s.humans[r.team] || s.controlled[r.team] !== r.taker) return null;
+  return { team: r.team, secs: Math.max(1, Math.ceil((RESTART_HUMAN_WAIT - r.ticks) / TICK_HZ)) };
+}
+
+/**
+ * What the kick-off prompt says for a side: who kicks off and how (e.g. "Player 2 kicks off: press Enter"), or null for none.
+ * Each view knows its players and keys (hot-seat has two on one keyboard; Link and Online one per screen).
+ */
+export type KickoffPrompt = (team: 0 | 1) => string | null;
+
+export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: KickoffPrompt | null = null): Hud {
   const q = <T extends HTMLElement>(sel: string) => wrap.querySelector<T>(sel)!;
+  // A human's kick-off waiting: who kicks off, with which key, and how long before the CPU takes it.
+  const prompt = q('.hud-prompt');
+  let lastPrompt = '';
   const banner = q('#banner');
   const clock = q('#sb-clock');
   const radar = q<HTMLCanvasElement>('.hud-radar');
@@ -254,6 +274,14 @@ export function mountHud(wrap: HTMLElement, s0: MatchState): Hud {
 
   const hud: Hud = {
     update(s, charge, gauge) {
+      const ko = kickoffPrompt ? kickoffWait(s) : null;
+      const say = ko ? kickoffPrompt!(ko.team) : null;
+      const pr = say && ko ? `${say} · the CPU takes it in ${ko.secs} s` : '';
+      if (pr !== lastPrompt) {
+        lastPrompt = pr;
+        prompt.hidden = !pr;
+        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>the CPU takes it in ${ko.secs} s</small>`;
+      }
       const c = matchClock(s);
       if (c !== lastClock) {
         clock.textContent = c;

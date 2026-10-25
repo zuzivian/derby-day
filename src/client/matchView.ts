@@ -127,8 +127,17 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
 }
 
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-/** The controls line on phones and tablets: no mouse or keys to talk about. */
-const TOUCH_HINT = `<b>Drag</b> to run · <b>Pass</b> (hold to loft) · <b>Shoot</b> (hold for power; tackles without the ball) · <b>tap</b> a player to pick him. Your player runs toward your finger, faster the further it is.`;
+/** The controls line: the essentials (always shown whole) and the detail behind "All controls" (hud.css). */
+const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
+/** On phones and tablets: no mouse or keys to talk about. */
+const TOUCH_HINT = hint(
+  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power, tackles off the ball · <b>tap</b> a man to pick him`,
+  `Your player runs toward your finger, faster the further it is.`,
+);
+const MOUSE_HINT = hint(
+  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`,
+);
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -163,7 +172,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot (hold for power) · without the ball <b>right click</b> tackles, <b>left click</b> picks a man · <b>Keys</b> WASD, Space, F, C, Shift, E. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Without the ball:</b> a far right click slides. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch.`)}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : MOUSE_HINT)}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
@@ -233,7 +242,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.resize();
   renderer.prepare(s);
   const juice = mountJuice(root, s);
-  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  // Who kicks off and with which key: hot-seat has both players on one keyboard (Player 2 passes with Enter).
+  const kickoffPrompt = (team: 0 | 1): string | null => {
+    if (s.humans[0] && s.humans[1]) return team === 0 ? 'Player 1 kicks off: press Space' : 'Player 2 kicks off: press Enter';
+    if (coarsePointer()) return 'Your kick-off: tap Pass';
+    return (input.mode?.() ?? o.controls ?? 'mouse') === 'keys' ? 'Your kick-off: press Space to pass' : 'Your kick-off: click to pass';
+  };
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s, kickoffPrompt);
   const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, mode: () => input.mode?.() ?? o.controls ?? 'mouse' }) : null;
   let offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
 
