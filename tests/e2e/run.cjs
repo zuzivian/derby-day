@@ -77,6 +77,27 @@ const TIMEOUT = Number(process.env.E2E_TIMEOUT_MS || 90_000);
 const CLOSE_TIMEOUT = Number(process.env.E2E_CLOSE_TIMEOUT_MS || 20_000);
 /** A context that took longer than this to close leaves the browser suspect: the next test gets a fresh one. */
 const RELAUNCH_AFTER_MS = 8000;
+/** Wedges (a context that would not close within CLOSE_TIMEOUT) recovered by killing and relaunching the browser; one more fails the run. */
+const MAX_WEDGES = 3;
+
+/**
+ * The process group of the browser this runner launched: Playwright starts it as our own child, detached, so it
+ * leads its own group. `seen` are groups already used (an old browser can linger as a zombie). 0 when not found.
+ */
+function browserGroup(seen) {
+  try {
+    const rows = require('node:child_process')
+      .execFileSync('ps', ['-A', '-o', 'pid=,ppid=,pgid=,args='], { encoding: 'utf8' })
+      .split('\n')
+      .map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/))
+      .filter(Boolean)
+      .map((m) => ({ pid: +m[1], ppid: +m[2], pgid: +m[3], args: m[4] }));
+    const mine = rows.filter((x) => x.ppid === process.pid && x.pid === x.pgid && /chrom/i.test(x.args) && !seen.has(x.pgid));
+    return mine.length ? mine[mine.length - 1].pgid : 0;
+  } catch {
+    return 0; // no ps
+  }
+}
 
 /** The close stalled: which page will not close, can the browser still make a context, and what are the Chrome processes doing? */
 async function probeStall(browser, contexts) {
@@ -167,10 +188,14 @@ async function main() {
   // game detects and renders at low quality. E2E_RENDERER=2d forces the 2D canvas fallback instead.
   const launch = () => chromium.launch({ executablePath: executablePath(), headless: !process.env.E2E_HEADED, args: BROWSER_ARGS });
   let browser = await launch();
+  const groups = new Set();
+  let group = browserGroup(groups);
+  groups.add(group);
   console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}${SHARD ? ` (shard ${SHARD}: ${FILES.join(', ')})` : ''}\n`);
 
   const results = [];
   let wedged = false;
+  let wedges = 0;
   for (const t of tests) {
     const started = Date.now();
     const contexts = [];
@@ -273,7 +298,24 @@ async function main() {
       ]);
       for (const line of stalledAt) diag.push(line);
       if (!closed) diag = diag.concat(await probeStall(browser, contexts));
-      if (!closed) {
+      if (!closed && group > 0) {
+        // Wedged. The test is judged on its own steps alone: kill this runner's browser (its process group, by the pid
+        // we launched, nothing else on the machine), start a fresh one and carry on with the next test.
+        diag = diag.concat(await diagnose(contexts));
+        wedges++;
+        try {
+          process.kill(-group, 'SIGKILL');
+        } catch {
+          /* already gone */
+        }
+        await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+        browser = await launch();
+        group = browserGroup(groups);
+        groups.add(group);
+        diag.push(`WEDGE ${wedges}: a context would not close within ${CLOSE_TIMEOUT / 1000} s; killed the browser and relaunched it (more than ${MAX_WEDGES} fails the run)`);
+        if (wedges > MAX_WEDGES) wedged = true;
+      } else if (!closed) {
+        // Without the browser's process group (no ps) it can't be killed safely: stop, as before.
         diag = diag.concat(await diagnose(contexts));
         error = new Error(`${error ? error.message + '\n      ' : ''}closing the test's browser contexts did not finish within ${CLOSE_TIMEOUT / 1000} s`);
         wedged = true;
@@ -281,6 +323,8 @@ async function main() {
         // It closed, but slowly enough that the browser (its GPU process above all) is not to be trusted with the next test.
         await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_TIMEOUT))]);
         browser = await launch();
+        group = browserGroup(groups);
+        groups.add(group);
         diag.push(`relaunched the browser after a ${slowest} ms close`);
       }
     }
@@ -291,8 +335,9 @@ async function main() {
     for (const line of diag) console.log(`      [page state] ${line}`);
     // A browser that would not close a context is not going to run the next test sensibly: stop with a clear message.
     if (wedged) {
-      console.log('\nThe browser is wedged (a context would not close); stopping here instead of hanging.');
-      results.push({ name: '(runner) browser wedged after the test above', ok: false, ms: 0, error: new Error('wedged') });
+      const why = wedges > MAX_WEDGES ? `wedged ${wedges} times (more than ${MAX_WEDGES})` : 'wedged (a context would not close)';
+      console.log(`\nThe browser ${why}; stopping here instead of hanging.`);
+      results.push({ name: `(runner) browser ${why} by the test above`, ok: false, ms: 0, error: new Error('wedged') });
       break;
     }
   }
@@ -310,6 +355,7 @@ async function main() {
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${results.length} total`);
+  if (wedges) console.log(`Browser wedges: ${wedges} (each recovered by killing and relaunching the browser; more than ${MAX_WEDGES} fails the run)`);
   if (failed.length) {
     console.log('\nFailures:');
     for (const f of failed) console.log(` - ${f.name}`);

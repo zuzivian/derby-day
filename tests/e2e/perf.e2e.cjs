@@ -282,6 +282,59 @@ test(
   { timeoutMs: 120_000 },
 );
 
+for (const quality of ['low', 'high']) test(
+  `Perf: the 3D view at ${quality} quality stays within its frame budget's draw calls and triangles, in open play and through a goal`,
+  async (t) => {
+    const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, query: `quality=${quality}&governor=off` });
+    await goTab(page, SEL.homeScreen);
+    await page.locator(SEL.playRanked).click();
+    await page.locator(SEL.pitch).waitFor();
+    if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    // The renderer publishes its counts once a second (budget.ts, renderer3d.ts): take a few seconds of each.
+    const read = () => page.evaluate(() => { const d = document.querySelector('#pitch').dataset; return { calls: +d.calls || 0, tris: +d.tris || 0, parts: d.parts || '', phase: window.__derbyMatch.phase }; });
+    const seen = [];
+    for (let i = 0; i < 4; i++) {
+      await page.waitForTimeout(1100);
+      seen.push(await read());
+    }
+    // A goal, staged as in the warm-up test above: net ripple, celebration, crowd, then the instant replay.
+    const goals = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const tryStage = () => {
+            const s = window.__derbyMatch;
+            if (s.phase !== 'play' || document.querySelector('#pitch').dataset.replay || s.ball.inHands) return requestAnimationFrame(tryStage);
+            const n = s.goals.length;
+            const b = s.ball;
+            b.owner = -1;
+            for (const k of s.players) if (k.team === 1 && k.role === 'GK') k.pos = { x: 100, y: 40 };
+            b.pos = { x: 95, y: 31.5 };
+            b.vel = { x: 26, y: 0 };
+            b.z = 0.3;
+            b.vz = 0.5;
+            b.lastTouch = s.controlled[0];
+            res(n);
+          };
+          tryStage();
+        }),
+    );
+    await page.waitForFunction((n) => window.__derbyMatch.goals.slice(n).some((g) => g.team === 0), goals, { timeout: 30_000 });
+    for (let i = 0; i < 6; i++) {
+      await page.waitForTimeout(1100);
+      seen.push(await read());
+    }
+    const budget = await page.evaluate(() => { const d = document.querySelector('#pitch').dataset; return { calls: +d.budgetCalls, tris: +d.budgetTris }; });
+    const calls = Math.max(...seen.map((x) => x.calls));
+    const tris = Math.max(...seen.map((x) => x.tris));
+    console.log(`      ${quality}: max ${calls} calls (budget ${budget.calls}), ${tris} tris (budget ${budget.tris}); CPU ms by part, last: ${seen[seen.length - 1].parts}`);
+    expect(calls, 'some frames were counted').toBeGreaterThan(0);
+    expect(calls, `draw calls within the ${quality} budget`).toBeLessThanOrEqual(budget.calls);
+    expect(tris, `triangles within the ${quality} budget`).toBeLessThanOrEqual(budget.tris);
+  },
+  { timeoutMs: 120_000 },
+);
+
 for (const [renderer, query] of [['3d', 'quality=high&governor=off'], ['2d', '']]) test(
   `Perf: the ${renderer} pitch's drawing buffer follows a devicePixelRatio change mid-match (new screen, browser zoom)`,
   async (t) => {

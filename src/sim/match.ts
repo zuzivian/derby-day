@@ -784,12 +784,17 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
       // Committed to the dive: it carries him across the goal whatever he wanted, he stays
       // stretched out on the floor for a moment, then he gets up.
       p.dive.ticks--;
-      p.vel = p.dive.travel > 0 ? scale(p.dive.dir, p.dive.speed) : { x: 0, y: 0 };
-      if (p.dive.travel > 0) p.dive.travel--;
-      p.pos = { x: p.pos.x + p.vel.x * DT, y: p.pos.y + p.vel.y * DT };
+      // In place, as below: the same arithmetic as scale() and add(), without two new objects a tick.
+      const travelling = p.dive.travel > 0;
+      p.vel.x = travelling ? p.dive.dir.x * p.dive.speed : 0;
+      p.vel.y = travelling ? p.dive.dir.y * p.dive.speed : 0;
+      if (travelling) p.dive.travel--;
+      p.pos.x = p.pos.x + p.vel.x * DT;
+      p.pos.y = p.pos.y + p.vel.y * DT;
       if (p.dive.ticks === 0) {
         p.stun = Math.max(p.stun, DIVE_DOWN);
-        p.vel = scale(p.vel, 0.25);
+        p.vel.x = p.vel.x * 0.25;
+        p.vel.y = p.vel.y * 0.25;
       }
       return;
     }
@@ -818,9 +823,17 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const ex = dx - p.vel.x;
   const ey = dy - p.vel.y;
   const dl = Math.sqrt(ex * ex + ey * ey);
-  if (dl <= accel) p.vel = { x: dx, y: dy };
-  else p.vel = { x: p.vel.x + (ex * accel) / dl, y: p.vel.y + (ey * accel) / dl };
-  p.pos = { x: p.pos.x + p.vel.x * DT, y: p.pos.y + p.vel.y * DT };
+  // pos and vel are updated in place: this runs for 22 players every tick, and a new object per
+  // write was the sim's largest source of garbage. Nothing keeps a reference to them across ticks.
+  if (dl <= accel) {
+    p.vel.x = dx;
+    p.vel.y = dy;
+  } else {
+    p.vel.x = p.vel.x + (ex * accel) / dl;
+    p.vel.y = p.vel.y + (ey * accel) / dl;
+  }
+  p.pos.x = p.pos.x + p.vel.x * DT;
+  p.pos.y = p.pos.y + p.vel.y * DT;
 
   const speed = Math.sqrt(p.vel.x * p.vel.x + p.vel.y * p.vel.y);
   const effort = Math.min(1, speed / topSpeed);
@@ -836,8 +849,16 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
     // Research: turn slower at a sprint than at a jog.
     const turn = base * (human ? 1.7 : 1) * (p.sprinting ? 0.7 : 1) * DT;
     // A human's facing follows where they are steering, not where they have got to.
-    const want = steering ? intent.move : scale(p.vel, 1 / speed);
-    p.facing = norm(add(p.facing, scale(sub(want, p.facing), Math.min(1, turn))));
+    // norm(add(facing, scale(sub(want, facing), t))) written out, op for op, as one new object instead of five.
+    // facing stays a fresh object: an intent's move can be the old facing, and a renderer event can hold one.
+    const inv = 1 / speed;
+    const wx = steering ? intent.move.x : p.vel.x * inv;
+    const wy = steering ? intent.move.y : p.vel.y * inv;
+    const t = Math.min(1, turn);
+    const fx = p.facing.x + (wx - p.facing.x) * t;
+    const fy = p.facing.y + (wy - p.facing.y) * t;
+    const fl = Math.sqrt(fx * fx + fy * fy);
+    p.facing = fl > 1e-9 ? { x: fx / fl, y: fy / fl } : { x: 0, y: 0 };
   }
   p.pos.x = clamp(p.pos.x, -RUN_OFF, PITCH_W + RUN_OFF);
   p.pos.y = clamp(p.pos.y, -RUN_OFF, PITCH_H + RUN_OFF);
