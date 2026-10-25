@@ -16,6 +16,7 @@ import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } fr
 import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
+import { kickOff } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -26,7 +27,7 @@ function teams(seed: number) {
 
 function livePlay(seed = 5, humanTeam: 0 | 1 | -1 = 0): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humanTeam });
-  while (s.phase !== 'play') step(s);
+  kickOff(s);
   return s;
 }
 
@@ -243,8 +244,9 @@ describe('quick click passes chain (ask 6)', () => {
     const got = { ...mate.pos };
     for (let k = 0; k < 30; k++) step(s, { cursor: stale });
     expect(dist(mate.pos, got)).toBeLessThan(0.6);
-    // Move the pointer and he goes.
-    for (let k = 0; k < 30; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
+    // Move the pointer and he goes: the hold ends after HOLD_MOVES ticks of real movement, then
+    // he is off (2.0-2.1 m in the first 30 ticks, depending on the seeded pass before).
+    for (let k = 0; k < 40; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
     expect(mate.pos.x).toBeGreaterThan(got.x + 2);
   });
 
@@ -301,7 +303,9 @@ describe('quick click passes chain (ask 6)', () => {
         const me = s.players[s.controlled[0]];
         const b = s.ball;
         const input: HumanInput = { cursor };
-        if (s.phase === 'play' && b.owner === me.i && me.role !== 'GK') {
+        // The kick-off is a real kick (Law 8): the script plays it like any other pass.
+        const kickoff = s.phase === 'restart' && s.restart?.kind === 'kickoff' && s.restart.stage === 'ready';
+        if ((s.phase === 'play' || kickoff) && b.owner === me.i && me.role !== 'GK') {
           if (wait === 0) wait = 12;
           if (--wait === 0) {
             const open = s.players
@@ -784,21 +788,23 @@ describe('match stats are meaningful', () => {
 
   test('a completed lofted pass counts as a pass, and attempts are counted too', () => {
     const { s, mate } = passScene({ x: 30, y: 30 }, { x: 52, y: 30 });
+    const before = { ...s.stats[0] }; // the kick-off pass
     step(s, { cursor: mate.pos, aim: mate.pos, loft: 0.6 });
-    expect(s.stats[0].passAttempts).toBe(1);
+    expect(s.stats[0].passAttempts - before.passAttempts).toBe(1);
     let t = 0;
     while (s.ball.owner !== mate.i && t++ < 300) step(s, { cursor: mate.pos });
     expect(s.ball.owner).toBe(mate.i);
-    expect(s.stats[0].passes).toBe(1);
-    expect(s.stats[0].shots).toBe(0);
+    expect(s.stats[0].passes - before.passes).toBe(1);
+    expect(s.stats[0].shots - before.shots).toBe(0);
   });
 
   test('a chip at goal is a shot, not a pass attempt', () => {
     const { s, me } = passScene({ x: PITCH_W - 18, y: PITCH_H / 2 }, { x: 40, y: 10 });
     void me;
+    const before = { ...s.stats[0] }; // the kick-off pass
     step(s, { cursor: { x: PITCH_W, y: PITCH_H / 2 }, aim: { x: PITCH_W, y: PITCH_H / 2 }, loft: 0.3 });
-    expect(s.stats[0].shots).toBe(1);
-    expect(s.stats[0].passAttempts).toBe(0);
+    expect(s.stats[0].shots - before.shots).toBe(1);
+    expect(s.stats[0].passAttempts - before.passAttempts).toBe(0);
   });
 
   test('CPU matches split possession and pass sensibly', () => {

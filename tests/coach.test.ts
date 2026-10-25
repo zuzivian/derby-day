@@ -9,6 +9,7 @@ import { pendingUnlocks, totalXpForLevel } from '../src/meta/levels.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { MatchState, Restart } from '../src/sim/types.ts';
+import { kickOff } from './helpers.ts';
 
 function match(): MatchState {
   const team = (seed: number) => {
@@ -21,7 +22,7 @@ function match(): MatchState {
 
 /** Run until the match is in open play. */
 function toPlay(s: MatchState) {
-  for (let i = 0; i < 60 * 40 && s.phase !== 'play'; i++) step(s, {});
+  kickOff(s);
   expect(s.phase).toBe('play');
 }
 

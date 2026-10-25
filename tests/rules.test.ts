@@ -10,6 +10,7 @@ import { createMatch, fingerprint, matchSeconds, simulate, step } from '../src/s
 import { awardRestart, issueCard, judgeFoul, noteBallPlayed, offsideOnTouch, OFF_PITCH } from '../src/sim/rules.ts';
 import type { HumanInput, MatchPlayer, MatchState, RestartKind } from '../src/sim/types.ts';
 import { dist } from '../src/sim/vec.ts';
+import { kickOff } from './helpers.ts';
 
 const MID = PITCH_H / 2;
 
@@ -21,7 +22,7 @@ function teams(seed: number) {
 /** A match in open play, home side human-steered unless `cpu`. */
 function live(seed = 5, cpu = false): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 120, humanTeam: cpu ? -1 : 0 });
-  while (s.phase !== 'play') step(s);
+  kickOff(s);
   return s;
 }
 

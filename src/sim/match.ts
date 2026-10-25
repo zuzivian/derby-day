@@ -7,7 +7,8 @@
 //
 // Eleven-a-side under the Laws of the Game: the ball goes out of play, and
 // restarts, offside, fouls and cards are applied by rules.ts. Phases:
-//   kickoff   players frozen in their halves, then 'play' with the taker on the ball
+//   kickoff   players frozen in their halves, then a 'restart' at stage 'ready': the
+//             taker kicks it like any other restart (Law 8)
 //   play      live ball
 //   restart   dead ball: rules.ts Restart (whistle -> setup -> ready -> taken)
 //   goal, halftime, fulltime
@@ -55,14 +56,18 @@ import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoa
 import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
 import { chipPlan, loftPlan, puntPlan, rollTravel } from './kicks.ts';
 import {
+  addedMinutes,
   awardRestart,
   ballOut,
+  barredSecondTouch,
   chooseTaker,
   downgradeDogso,
   enforceRestartPositions,
   eventBase,
   fixControlled,
   flushPendingCards,
+  goalBound,
+  handsBarred,
   judgeFoul,
   matchMinute,
   matchSeconds,
@@ -70,8 +75,10 @@ import {
   NO_OFFSIDE,
   noteBallPlayed,
   offsideOnTouch,
+  offsidePlayed,
   pushEvent,
   restartBallZ,
+  secondTouch,
   takerSpot,
   tickAdvantage,
 } from './rules.ts';
@@ -220,7 +227,7 @@ function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): vo
     let ny = slot.y;
     if (p.role === 'GK') nx = 0.02;
     if (p.i === taker) {
-      nx = 0.5 - 1.2 / PITCH_W;
+      nx = teamX(team, takerSpot(r).x);
       ny = 0.5;
     } else if (partner && p.i === partner.i) {
       nx = 0.5 - 1.5 / PITCH_W;
@@ -257,6 +264,8 @@ function resetKickoff(s: MatchState, team: 0 | 1, reason: Restart['reason']): vo
   b.kickedBy = -1;
   b.inHands = false;
   b.handTicks = 0;
+  b.restartBy = -1;
+  b.noHands = -1;
   for (const p of s.players) p.dive = null;
   s.offside = null;
   s.advantage = null;
@@ -279,6 +288,8 @@ function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigm
   // can't touch his throw, roll or punt until it is past them.
   if (b.inHands && b.owner === p.i) {
     for (const o of s.players) if (o.team !== p.team && dist(o.pos, p.pos) < RELEASE_CLEAR) b.noPickup[o.i] = Math.max(b.noPickup[o.i], RELEASE_CLEAR_TICKS);
+    // Law 12: once he has released it he may not handle it again until someone else touches it.
+    if (p.role === 'GK' && !s.restart) b.noHands = p.i;
   }
   const dir = rotate(norm(sub(target, b.pos)), gauss(s.rng) * errSigma);
   b.vel = scale(dir, speed);
@@ -375,7 +386,9 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
         if (victim && next(s.rng) < 0.5 * (1.3 - care(s, p))) {
           const sev = severityOf(0.42 + 0.3 * clamp((before - 4) / 4, 0, 1) + 0.25 * next(s.rng));
           const kept = b.receiver >= 0 && s.players[b.receiver].team === victim.team;
-          if (judgeFoul(s, { offender: p, victim, severity: sev, attempt: false, keptBall: kept })) return;
+          // He has already shot: the shot plays out and the challenge is dealt with after it.
+          const afterShot = b.receiver < 0 && b.kickedBy === victim.i && goalBound(s, victim.team);
+          if (judgeFoul(s, { offender: p, victim, severity: sev, attempt: false, keptBall: kept, afterShot })) return;
         }
       }
       p.stun = slide ? 30 : 10;
@@ -404,11 +417,13 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
       b.kickedBy = -1;
       b.receiver = -1;
       b.touch = 0;
+      touchedBy(b, p);
       b.noPickup[owner.i] = 24;
       owner.stun = 18;
       if (slide) p.stun = 14;
       s.stats[team].tackles++;
-      s.offside = null;
+      // Law 11: winning the ball is a deliberate play; his teammates' positions are judged from here.
+      noteBallPlayed(s, p);
     } else {
       p.stun = slide ? 40 : 26;
       p.tackleCd = slide ? 90 : 50;
@@ -466,6 +481,7 @@ function blockCross(s: MatchState, p: MatchPlayer): boolean {
     b.lastTouch = o.i;
     b.kickedBy = -1;
     b.noPickup[o.i] = 12;
+    touchedBy(b, o);
     return true;
   }
   return false;
@@ -512,7 +528,11 @@ function takeRestart(s: MatchState, p: MatchPlayer, action: Action): void {
   s.poss = r.team;
   b.setPiece = r.kind;
   b.setPieceDirect = r.direct;
-  b.noPickup[p.i] = 24; // no second touch before someone else plays it
+  b.noPickup[p.i] = 24;
+  // Laws 8, 13-17: he may not play it again until someone else has touched it (rules.ts
+  // secondTouch); a keeper may not pick up his own goal kick or free kick either (Law 12).
+  b.restartBy = p.i;
+  b.noHands = p.role === 'GK' ? p.i : -1;
   if (NO_OFFSIDE.has(r.kind)) s.offside = null;
   pushEvent(s, { kind: 'restartTaken', ...eventBase(s, r.team, p.i), restart: r.kind, spot: { ...r.spot } });
   if (r.kind === 'penalty') {
@@ -661,6 +681,7 @@ function scoreGoal(s: MatchState, team: 0 | 1): void {
   s.advantage = null;
   pushEvent(s, { kind: 'goal', ...eventBase(s, team, credited ? credited.i : -1), scorer, ownGoal: !!credited && credited.team !== team, from: straightFrom ?? 'play' });
   flushPendingCards(s);
+  if (s.abandoned) return;
   s.phase = 'goal';
   s.phaseTicks = GOAL_PAUSE;
   s.restart = null;
@@ -833,7 +854,7 @@ export { KEEPER_HOLD_TICKS };
 
 /** Law 12 (handling): a keeper may not pick up a ball a teammate deliberately kicked or threw to him. */
 function keeperHands(s: MatchState, p: MatchPlayer): boolean {
-  if (p.role !== 'GK' || !inOwnBox(p.team, p.pos)) return false;
+  if (p.role !== 'GK' || !inOwnBox(p.team, p.pos) || handsBarred(s, p)) return false;
   const k = s.ball.kickedBy;
   return !(k >= 0 && k !== p.i && s.players[k].team === p.team);
 }
@@ -899,6 +920,13 @@ function touched(s: MatchState, p: MatchPlayer): void {
   b.receiver = -1;
   b.touch = 0;
   b.kickedBy = -1;
+  touchedBy(b, p);
+}
+
+/** Someone touched the ball: a restart taker or a keeper who released it is free of it once anyone else has. */
+function touchedBy(b: MatchState['ball'], p: MatchPlayer): void {
+  if (b.restartBy !== undefined && b.restartBy !== p.i) b.restartBy = -1;
+  if (b.noHands !== undefined && b.noHands !== p.i) b.noHands = -1;
 }
 
 /**
@@ -961,6 +989,8 @@ function contacts(s: MatchState, from: Vec): void {
   let bestReach = 0;
   for (const p of s.players) {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
+    // A CPU restart taker leaves it for someone else (a human who plays it again gives away a free kick).
+    if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
     const d = approach(p.pos, from, b.pos);
     let reach: number;
     if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
@@ -1019,6 +1049,7 @@ function contacts(s: MatchState, from: Vec): void {
   const struck = hit.role === 'GK' && b.lastTouch >= 0 && s.players[b.lastTouch].team !== hit.team ? b.lastTouch : -1;
   bounceOff(s, hit, hitAt, awayFrom(s, hitAt), 0.35, 0.12);
   b.parriedFrom = struck;
+  offsidePlayed(s, hit, false);
 }
 
 /**
@@ -1034,11 +1065,16 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
   let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : 0);
   if (chest) limit *= 0.75;
   const takes = speed <= limit;
+  if (barredSecondTouch(s, p)) {
+    secondTouch(s, p);
+    return;
+  }
   if (offsideOnTouch(s, p, takes)) return;
 
   if (takes) {
     const from = b.passFrom >= 0 ? s.players[b.passFrom] : null;
     if (from && from.team === p.team && from.i !== p.i) s.stats[p.team].passes++;
+    touchedBy(b, p);
     b.owner = p.i;
     b.lastTouch = p.i;
     b.receiver = -1;
@@ -1074,6 +1110,7 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number): void 
   const blockNearGoal = !!owner && owner.team !== p.team && b.vel.x * attackDir(p.team) < -7 && teamX(p.team, p.pos.x) < 0.35;
   bounceOff(s, p, p.pos, awayFrom(s, p.pos), chest ? 0.3 : 0.45, blockNearGoal ? 0.6 : 0.3);
   b.noPickup[p.i] = 12;
+  offsidePlayed(s, p, false);
 }
 
 /** Keeper's hands reach the ball: he holds it if he can, else he parries it away from goal. */
@@ -1091,6 +1128,7 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
   else if (b.z < 0.3) limit *= 1.1;
   if (offsideOnTouch(s, p, false)) return;
   if (speed <= limit) {
+    touchedBy(b, p);
     b.owner = p.i;
     b.lastTouch = p.i;
     b.receiver = -1;
@@ -1257,6 +1295,7 @@ function header(s: MatchState): boolean {
   let bestD = Infinity;
   for (const p of s.players) {
     if (p.stun > 0 || b.noPickup[p.i] > 0 || p.sentOff || keeperHands(s, p) || b.whiff === p.i) continue;
+    if (barredSecondTouch(s, p) && !isHumanControlled(s, p)) continue;
     const attacking = p.team === lastTeam && inOwnBox(p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
@@ -1274,9 +1313,17 @@ function header(s: MatchState): boolean {
     return false;
   }
   const atGoal = p.team === lastTeam;
+  if (barredSecondTouch(s, p)) {
+    secondTouch(s, p);
+    return true;
+  }
   if (offsideOnTouch(s, p, !atGoal)) return true;
   touched(s, p);
-  b.kickedBy = p.i;
+  // Law 11: a header plays the ball, so his teammates' positions are judged again now.
+  offsidePlayed(s, p, !atGoal);
+  // Law 12: only a deliberate kick (or a throw-in) to the keeper stops him handling it, never a
+  // header. A header at goal still counts as the attacker's strike for the keeper's reactions.
+  b.kickedBy = atGoal ? p.i : -1;
   b.passFrom = -1;
   b.noPickup[p.i] = 16;
   b.redirectedAt = s.tick;
@@ -1390,6 +1437,12 @@ function beginSetup(s: MatchState, r: Restart): void {
   for (const p of s.players) p.stun = Math.min(p.stun, 10);
 }
 
+/** How long a CPU taker stands over the ball before playing it (seeded). */
+function restartWait(s: MatchState, r: Restart): number {
+  const skill = clamp(s.teams[r.team].aiSkill, 0, 1);
+  return r.kind === 'penalty' ? 45 : Math.round(14 + 22 * (1 - skill) + next(s.rng) * 14);
+}
+
 function beginReady(s: MatchState, r: Restart): void {
   r.stage = 'ready';
   r.ticks = 0;
@@ -1398,8 +1451,7 @@ function beginReady(s: MatchState, r: Restart): void {
   t.vel = { x: 0, y: 0 };
   const face = norm(r.kind === 'throwin' ? { x: 0, y: r.spot.y < PITCH_H / 2 ? 1 : -1 } : sub(oppGoal(r.team), r.spot));
   if (len(face) > 0) t.facing = face;
-  const skill = clamp(s.teams[r.team].aiSkill, 0, 1);
-  r.wait = r.kind === 'penalty' ? 45 : Math.round(14 + 22 * (1 - skill) + next(s.rng) * 14);
+  r.wait = restartWait(s, r);
   enforceRestartPositions(s);
   const b = s.ball;
   b.owner = r.taker;
@@ -1454,6 +1506,8 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
       }
       continue;
     }
+    // Law 8: everyone stays where they lined up until the kick-off is taken.
+    if (r.kind === 'kickoff') continue;
     const it = humanCtl && !heldByCpu(s, p, inputs[p.team]) ? humanIntent(s, p, inputs[p.team]) : restartIntent(s, p);
     movePlayer(s, p, { move: it.move, throttle: it.throttle, sprint: it.sprint });
   }
@@ -1474,16 +1528,40 @@ function stepRestart(s: MatchState, inputs: TeamInputs): void {
   }
 }
 
-/** The clock runs through dead balls, as in a real match; half-time waits for a penalty to be taken. */
+/** Longest the whistle waits past added time for a shot in flight to finish (Law 7). */
+const ADDED_HOLD_MAX = 4 * TICK_HZ;
+
+/**
+ * The clock runs through dead balls, as in a real match. At 45:00 and 90:00 the board goes
+ * up and the added time is played with the clock held (Law 7); then the whistle waits for a
+ * penalty to be taken, and for a shot already on its way to goal to finish.
+ */
 function runClock(s: MatchState): void {
-  s.clock++;
   if (s.phase !== 'play' && s.phase !== 'restart') return;
-  if (s.clock < s.halfTicks * s.half) return;
+  const a = s.added && s.added.half === s.half ? s.added : null;
+  if (!a) {
+    s.clock++;
+    if (s.clock < s.halfTicks * s.half) return;
+    const minutes = addedMinutes(s);
+    s.added = { half: s.half, minutes, ticks: Math.round((minutes * s.halfTicks) / 45), elapsed: 0, hold: 0 };
+    pushEvent(s, { kind: 'addedTime', ...eventBase(s, 0, -1), minutes });
+    return;
+  }
+  if (a.elapsed < a.ticks) {
+    a.elapsed++;
+    return;
+  }
   const penaltyPending = s.restart?.kind === 'penalty' || (s.phase === 'play' && s.ball.setPiece === 'penalty' && s.ball.owner < 0);
   if (penaltyPending) return;
+  // Not while a shot is on its way: the referee lets it finish (a goal, a save, or out).
+  if (s.phase === 'play' && a.hold < ADDED_HOLD_MAX && (goalBound(s, 0) || goalBound(s, 1) || !!s.advantage?.late)) {
+    a.hold++;
+    return;
+  }
   s.restart = null;
   s.advantage = null;
   flushPendingCards(s);
+  if (s.abandoned) return;
   s.ball.owner = -1;
   s.ball.inHands = false;
   if (s.half === 1) {
@@ -1511,11 +1589,13 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   if (s.phase === 'fulltime') return;
   moveReferee(s);
   if (s.phase === 'kickoff') {
-    if (--s.phaseTicks <= 0) {
-      s.phase = 'play';
+    // Lined up: then the referee's whistle, and the kick-off is a restart like any other (Law 8):
+    // the taker must kick it, the human taker included, and may not touch it again until someone else has.
+    if (--s.phaseTicks <= 0 && s.restart) {
+      s.phase = 'restart';
       const r = s.restart;
-      s.restart = null;
-      if (r) pushEvent(s, { kind: 'restartTaken', ...eventBase(s, r.team, r.taker), restart: 'kickoff', spot: { ...r.spot } });
+      r.ticks = 0;
+      r.wait = restartWait(s, r);
     }
     updateBall(s, false);
     return;
@@ -1535,8 +1615,10 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   const inputs = teamInputs(s, input);
   s.humanAim = [inputs[0].aim ?? inputs[0].cursor ?? null, inputs[1].aim ?? inputs[1].cursor ?? null];
   if (s.phase === 'restart') {
+    // The clock starts with the kick-off (Law 8), not with the line-up.
+    const kickoff = s.restart?.kind === 'kickoff';
     stepRestart(s, inputs);
-    runClock(s);
+    if (!kickoff) runClock(s);
     return;
   }
 

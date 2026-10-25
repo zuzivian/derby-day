@@ -6,6 +6,7 @@ import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGa
 import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
+import { scoreAwarded } from '../sim/rules.ts';
 import { int, makeRng } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
@@ -389,9 +390,10 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const s = app.save;
   let [gf, ga] = m.score;
   if (forfeited && ranked) [gf, ga] = [0, Math.max(3, ga)];
-  // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand.
-  const scorersFor = forfeited ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
-  const scorersAgainst = forfeited ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
+  // A forfeit is recorded as 0–3, so the goals actually scored before it don't stand; so is a
+  // match abandoned with a side down to six and awarded 3-0 (Law 3), the score in m.score.
+  const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
+  const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, warmup, forfeited, practice);

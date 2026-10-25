@@ -127,6 +127,12 @@ export class AnimDirector {
       // A second yellow comes with its red: the referee shows both, the red last.
       out.cards.push({ player: e.player, color: e.color });
       out.referee.push({ kind: 'card', t0: time, color: e.color });
+    } else if (e.kind === 'advantage') {
+      out.referee.push({ kind: 'signal', t0: time, style: 'advantage' });
+    } else if (e.kind === 'restart' && e.restart === 'freekick' && !s.cards.some((c) => c.tick === e.tick)) {
+      // A free kick (for a foul, an offside, an advantage brought back or a second touch): he
+      // points, unless he is showing a card for it.
+      out.referee.push({ kind: 'signal', t0: time + 0.2, style: 'point' });
     }
   }
 

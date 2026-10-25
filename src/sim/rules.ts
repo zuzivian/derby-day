@@ -1,7 +1,10 @@
 // The Laws of the Game as the sim applies them. Pure functions of the match
 // state plus the seeded rng, like the rest of src/sim.
 //
-//   Law 8   kick-off                      resetKickoff in match.ts
+//   Law 3   fewer than seven players      sendOff -> abandon
+//   Law 7   added time                    addedMinutes, runClock in match.ts
+//   Law 8   kick-off                      resetKickoff in match.ts, then a restart like any other
+//   Laws 8, 13-17  no second touch        barredSecondTouch / secondTouch
 //   Law 11  offside                       noteBallPlayed / offsideOnTouch
 //   Law 12  fouls and misconduct          judgeFoul, issueCard, sendOff
 //   Law 13  free kicks (direct/indirect)  awardRestart('freekick')
@@ -55,7 +58,28 @@ export type { RestartKind };
 // ---------------------------------------------------------------------------
 // Clock and events
 
+/** Law 7: the board is up and added time is being played (the clock holds at 45:00 or 90:00). */
+export function inAddedTime(s: MatchState): boolean {
+  return !!s.added && s.added.half === s.half && s.clock >= s.halfTicks * s.half;
+}
+
+/**
+ * Law 7: minutes of added time for the half just ending. A minute at least (two after the
+ * break), and half a minute for each goal, card and penalty in the half, at most six.
+ */
+export function addedMinutes(s: MatchState): number {
+  let from = 0;
+  if (s.half === 2) for (let i = s.events.length - 1; i >= 0; i--) if (s.events[i].kind === 'halftime') { from = i; break; }
+  let lost = 0;
+  for (let i = from; i < s.events.length; i++) {
+    const e = s.events[i];
+    if (e.kind === 'goal' || e.kind === 'card' || (e.kind === 'restart' && e.restart === 'penalty')) lost += 0.5;
+  }
+  return Math.min(6, (s.half === 1 ? 1 : 2) + Math.floor(lost));
+}
+
 export function matchMinute(s: MatchState): number {
+  if (inAddedTime(s)) return 45 * s.half;
   return Math.min(90, Math.floor((s.clock / (s.halfTicks * 2)) * 90) + 1);
 }
 
@@ -121,6 +145,7 @@ export function restartSpot(kind: RestartKind, team: 0 | 1, at: Vec, direct: boo
  * others follow their Law). Pending cards from an advantage are shown now.
  */
 export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: Vec, reason: Restart['reason'], direct = true): void {
+  if (s.abandoned) return;
   if (kind === 'throwin') direct = false;
   else if (kind !== 'freekick') direct = true;
   const spot = restartSpot(kind, team, at, direct);
@@ -131,6 +156,8 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
   b.inHands = false;
   b.setPiece = null;
   b.kickedBy = -1;
+  b.restartBy = -1;
+  b.noHands = -1;
   s.offside = null;
   s.advantage = null;
   s.restart = { kind, team, spot, taker: -1, stage: 'whistle', ticks: 0, direct, reason, wait: 0 };
@@ -147,6 +174,7 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
 
 /** The ball has wholly crossed a touchline or goal line (not into the goal). */
 export function ballOut(s: MatchState, at: Vec): void {
+  if (lateFoulOut(s)) return;
   const last = s.ball.lastTouch >= 0 ? s.players[s.ball.lastTouch] : null;
   const lastTeam: 0 | 1 = last ? last.team : 0;
   if (at.y < 0 || at.y > PITCH_H) {
@@ -159,6 +187,26 @@ export function ballOut(s: MatchState, at: Vec): void {
   else awardRestart(s, 'goalkick', defending, at, 'out');
 }
 
+/**
+ * Laws 8, 13-17: the taker of the last restart may not play the ball again until another
+ * player has touched it. True while that is still so for p.
+ */
+export function barredSecondTouch(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  return b.restartBy === p.i && b.lastTouch === p.i;
+}
+
+/** Law 12: a keeper may not handle his own goal kick, free kick or release until someone else has touched the ball. */
+export function handsBarred(s: MatchState, p: MatchPlayer): boolean {
+  const b = s.ball;
+  return b.noHands === p.i && b.lastTouch === p.i;
+}
+
+/** The taker played it a second time: an indirect free kick to the opponents where he did. */
+export function secondTouch(s: MatchState, p: MatchPlayer): void {
+  awardRestart(s, 'freekick', other(p.team), { ...p.pos }, 'second-touch', false);
+}
+
 /** Pick who takes it: the CPU's choice, used for human sides too (a human then steers the taker if it isn't the keeper). */
 export function chooseTaker(s: MatchState, r: Restart): number {
   const team = r.team;
@@ -166,6 +214,7 @@ export function chooseTaker(s: MatchState, r: Restart): number {
   const outfield = mates.filter((p) => p.role !== 'GK');
   const pool = outfield.length ? outfield : mates;
   const gk = goalkeeper(s, team);
+  if (!pool.length) return gk.i; // nobody left (the match is abandoned long before this)
   const best = (cost: (p: MatchPlayer) => number, from = pool) => from.reduce((a, b) => (cost(b) < cost(a) ? b : a)).i;
   switch (r.kind) {
     case 'goalkick':
@@ -315,6 +364,19 @@ export function offsideOnTouch(s: MatchState, p: MatchPlayer, deliberate: boolea
   return false;
 }
 
+/**
+ * Player p touched the ball and play goes on (a header, a deflection off him, a ball that
+ * came off his leg): Law 11 judges his teammates' positions at that moment, as for a pass.
+ * Only an opponent's deliberate play starts a new phase for the side that was watched; an
+ * opponent's deflection or save keeps the old judgement (offsideOnTouch already decided
+ * whether p himself was offside).
+ */
+export function offsidePlayed(s: MatchState, p: MatchPlayer, deliberate: boolean): void {
+  const w = s.offside;
+  if (w && w.team !== p.team && !deliberate) return;
+  noteBallPlayed(s, p);
+}
+
 // ---------------------------------------------------------------------------
 // Fouls and misconduct (Law 12)
 
@@ -326,6 +388,22 @@ export interface FoulContext {
   attempt: boolean;
   /** Does the victim's team still have the ball after the challenge? */
   keptBall: boolean;
+  /** A late challenge on a player who had already shot: no opportunity was denied, and the shot plays out. */
+  afterShot?: boolean;
+}
+
+/**
+ * The loose ball is on its way toward the goal `team` attacks: fast, from within 40 m, and
+ * crossing the line no more than 2 m wide of a post. A shot in flight, for the referee.
+ */
+export function goalBound(s: MatchState, team: 0 | 1): boolean {
+  const b = s.ball;
+  if (b.owner >= 0 || len(b.vel) < 6) return false;
+  const gx = oppGoal(team).x;
+  const gap = gx - b.pos.x;
+  if (Math.abs(gap) > 40 || Math.abs(b.vel.x) < 1e-6 || Math.sign(gap) !== Math.sign(b.vel.x)) return false;
+  const y = b.pos.y + (b.vel.y * gap) / b.vel.x;
+  return Math.abs(y - MID_Y) < GOAL_W / 2 + 2;
 }
 
 /** Denying an obvious goal-scoring opportunity: through on goal with no covering defender but the keeper. */
@@ -376,10 +454,12 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
   if (next(s.rng) >= whistleChance(s, at, severity)) return false;
   const victimTeam = victim.team;
   const penalty = inOwnBox(offender.team, at);
-  const dogso = isDogso(s, victim, offender);
-  const spa = !dogso && isSpa(s, victim, offender);
-  // Advantage: the fouled side kept the ball in a good attacking position. Never for a penalty.
-  const advantage = !penalty && f.keptBall && teamX(victimTeam, at.x) > 0.45 && severity !== 'excessive' && next(s.rng) < 0.8;
+  // After the shot has gone, the challenge denied no goal-scoring opportunity or attack.
+  const dogso = !f.afterShot && isDogso(s, victim, offender);
+  const spa = !f.afterShot && !dogso && isSpa(s, victim, offender);
+  // Advantage: the fouled side kept the ball in a good attacking position. Never for a penalty;
+  // always for a shot already on its way (the whistle waits to see where it goes).
+  const advantage = !!f.afterShot || (!penalty && f.keptBall && teamX(victimTeam, at.x) > 0.45 && severity !== 'excessive' && next(s.rng) < 0.8);
 
   s.stats[offender.team].fouls++;
   pushEvent(s, { kind: 'foul', ...eventBase(s, offender.team, offender.i), victim: victim.i, spot: at, severity, penalty, advantage });
@@ -401,7 +481,10 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
 
   if (advantage) {
     for (const c of cards) s.pendingCards.push({ player: offender.i, color: c.color, reason: c.reason });
-    s.advantage = { team: victimTeam, until: s.tick + ADVANTAGE_TICKS, spot: at, penalty: false };
+    const st = s.stats[victimTeam];
+    s.advantage = f.afterShot
+      ? { team: victimTeam, until: s.tick + 600, spot: at, penalty, late: true }
+      : { team: victimTeam, until: s.tick + ADVANTAGE_TICKS, spot: at, penalty: false, shots: st.shots, passes: st.passes };
     pushEvent(s, { kind: 'advantage', ...eventBase(s, victimTeam, victim.i), spot: at });
     return false;
   }
@@ -412,17 +495,49 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
   return true;
 }
 
-/** Each tick of play during an advantage: call it back if the fouled side lost the ball. */
+/**
+ * Each tick of play during an advantage. Called back (the free kick for the original foul,
+ * Restart reason 'advantage') if the fouled side loses the ball within ADVANTAGE_TICKS; once
+ * it has had a shot, completed a pass or carried it into the box the advantage has come to
+ * something and stands. A late challenge after a shot waits for the shot to finish instead.
+ */
 export function tickAdvantage(s: MatchState): void {
   const a = s.advantage;
   if (!a) return;
-  const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
-  if (owner && owner.team !== a.team) {
+  const b = s.ball;
+  const owner = b.owner >= 0 ? s.players[b.owner] : null;
+  if (a.late) {
+    // The shot is over once anyone has the ball or it has died: then the late challenge is given.
+    if (owner || len(b.vel) < 2 || s.tick >= a.until) callBack(s);
+    return;
+  }
+  const st = s.stats[a.team];
+  const ensued = st.shots > (a.shots ?? Infinity) || st.passes > (a.passes ?? Infinity) || (!!owner && owner.team === a.team && inOwnBox(other(a.team), owner.pos));
+  if (ensued) {
     s.advantage = null;
-    awardRestart(s, 'freekick', a.team, a.spot, 'foul', true);
+    return;
+  }
+  if (owner && owner.team !== a.team) {
+    callBack(s);
     return;
   }
   if (s.tick >= a.until) s.advantage = null;
+}
+
+/** The advantage came to nothing: back for the original foul. */
+export function callBack(s: MatchState): void {
+  const a = s.advantage;
+  if (!a) return;
+  s.advantage = null;
+  if (a.penalty) awardRestart(s, 'penalty', a.team, a.spot, 'advantage');
+  else awardRestart(s, 'freekick', a.team, a.spot, 'advantage', true);
+}
+
+/** A shot fouled late went in, wide or over: not a goal, so the late challenge is given now. True if it was. */
+export function lateFoulOut(s: MatchState): boolean {
+  if (!s.advantage?.late) return false;
+  callBack(s);
+  return true;
 }
 
 /** Show cards held back while advantage was played. Called at every stoppage. */
@@ -462,9 +577,13 @@ export function issueCard(s: MatchState, p: MatchPlayer, color: 'yellow' | 'red'
 /** Where a player who has been sent off is parked: well outside the pitch, out of every calculation. */
 export const OFF_PITCH: Vec = { x: PITCH_W / 2, y: -60 };
 
+/** Law 3: a match may not continue if either side has fewer than seven players. */
+export const MIN_PLAYERS = 7;
+
 export function sendOff(s: MatchState, p: MatchPlayer): void {
   p.sentOff = true;
   pushEvent(s, { kind: 'sentOff', ...eventBase(s, p.team, p.i), name: p.name });
+  if (!s.abandoned && s.players.filter((m) => m.team === p.team && !m.sentOff).length < MIN_PLAYERS) abandon(s, p.team);
   const b = s.ball;
   if (b.owner === p.i) {
     b.owner = -1;
@@ -486,6 +605,31 @@ export function sendOff(s: MatchState, p: MatchPlayer): void {
   }
   if (s.restart && s.restart.taker === p.i) s.restart.taker = chooseTaker(s, s.restart);
   fixControlled(s);
+}
+
+/** The match was abandoned and awarded 3-0: the goals actually scored don't stand. */
+export const scoreAwarded = (s: MatchState): boolean => !!s.abandoned && (s.abandoned.score[0] !== s.score[0] || s.abandoned.score[1] !== s.score[1]);
+
+/**
+ * Law 3: `team` is down to six. The referee abandons the match and it is awarded against
+ * that side, 3-0 (or the score, if the other side was already winning by more).
+ */
+export function abandon(s: MatchState, team: 0 | 1): void {
+  const opp = other(team);
+  s.abandoned = { team, score: [s.score[0], s.score[1]] };
+  if (s.score[opp] - s.score[team] < 3) {
+    s.score[team] = 0;
+    s.score[opp] = 3;
+  }
+  s.restart = null;
+  s.advantage = null;
+  s.offside = null;
+  s.ball.owner = -1;
+  s.ball.inHands = false;
+  s.ball.receiver = -1;
+  s.phase = 'fulltime';
+  pushEvent(s, { kind: 'abandoned', ...eventBase(s, team, -1) });
+  pushEvent(s, { kind: 'fulltime', ...eventBase(s, team, -1) });
 }
 
 /**

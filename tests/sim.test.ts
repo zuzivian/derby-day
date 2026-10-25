@@ -6,6 +6,7 @@ import { createMatch, fingerprint, simulate, step } from '../src/sim/match.ts';
 import { makeRng } from '../src/sim/rng.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
 import { dot, len, norm, sub } from '../src/sim/vec.ts';
+import { kickOff } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -62,7 +63,7 @@ describe('match sim', () => {
 
 function livePlay(seed = 5): MatchState {
   const s = createMatch({ seed, ...teams(7), halfSeconds: 60 });
-  while (s.phase !== 'play') step(s);
+  kickOff(s);
   return s;
 }
 
@@ -173,6 +174,7 @@ describe('chip and ball height', () => {
       s.ball.owner = -1;
       s.ball.receiver = -1;
       s.ball.noPickup.fill(0);
+      s.ball.whiff = -1; // a missed jump at the high ball must not carry over to the low one
       s.ball.pos = { ...opp.pos };
       s.ball.vel = { x: 0, y: 0 };
       s.ball.z = z;
