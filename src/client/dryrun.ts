@@ -3,7 +3,10 @@
 // would crash the game on every launch, so it never gets committed.
 
 import type { Save } from '../meta/game.ts';
-import { clubTeam, ensureElevenASide, lineupReady, pickOpponent } from '../meta/game.ts';
+import { clubTeam, ensureElevenASide, lineupReady, offeredOpponent } from '../meta/game.ts';
+import { ensureHistoryFields } from '../meta/history.ts';
+import { settleAbandoned } from '../meta/pending.ts';
+import { ensureWorldFields } from '../meta/world.ts';
 import { ensureLevelFields } from '../meta/levels.ts';
 import { ensureProgressionFields } from '../meta/progression.ts';
 import { competitionsScreen } from './competitions.ts';
@@ -18,7 +21,10 @@ export function dryRunBoot(input: Save): string | null {
     ensureProgressionFields(save);
     ensureElevenASide(save);
     ensureLevelFields(save);
-    const app: App = { save, screen: 'home', nextOpp: pickOpponent(save), trainee: null, marketRole: 'ALL', confirmSell: null, confirmReset: false, prefs: loadPrefs(), result: null };
+    ensureWorldFields(save);
+    ensureHistoryFields(save);
+    settleAbandoned(save);
+    const app: App = { save, screen: 'home', nextOpp: offeredOpponent(save), trainee: null, marketRole: 'ALL', confirmSell: null, confirmReset: false, prefs: loadPrefs(), result: null };
     if (lineupReady(save)) clubTeam(save, 0.6);
     const screens: Record<Screen, (a: App) => string> = {
       home: homeScreen,

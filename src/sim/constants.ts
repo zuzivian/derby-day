@@ -27,9 +27,12 @@
  *      added time; a side below seven abandons the match
  *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
  *   9  the ball is swept against the posts and the crossbar: a hard shot no longer passes through them
- *  10  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
+ *  10  off the ball: the front striker stays on the last defender's shoulder (not a short
+ *      supporter) until the final third, and forwards on the shoulder follow the line
+ *  11  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
+ *  12  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
  */
-export const SIM_VERSION = 10;
+export const SIM_VERSION = 12;
 
 export const TICK_HZ = 60;
 

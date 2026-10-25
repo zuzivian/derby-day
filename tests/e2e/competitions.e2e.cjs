@@ -1,5 +1,5 @@
 // Competitions: start the cup and the league, play a tie live, check the bracket,
-// the table and that ladder Elo does not move.
+// the table, and that the ladder record does not move (Elo does).
 
 const { test, expect } = require('./lib/harness.cjs');
 const { SEL, openApp, goTab, readSave } = require('./lib/helpers.cjs');
@@ -15,7 +15,7 @@ const C = {
   table: '.league-table',
 };
 
-test('cup: forfeiting a quarter-final knocks you out, the rest simulates, Elo is untouched', async (t) => {
+test('cup: forfeiting a quarter-final knocks you out, the rest simulates, Elo drops but not the ladder record', async (t) => {
   const page = await openApp(t);
   await goTab(page, 'competitions');
   await page.locator(C.startCup).click();
@@ -32,7 +32,7 @@ test('cup: forfeiting a quarter-final knocks you out, the rest simulates, Elo is
   expect(await page.locator(SEL.modal).innerText(), 'result names the round').toMatch(/quarter-final/i);
 
   const after = await readSave(page);
-  expect(after.club.elo, 'ladder Elo unchanged').toBe(before.club.elo);
+  expect(after.club.elo, 'a forfeit costs Elo, like a ranked one').toBeLessThan(before.club.elo);
   expect(after.club.played, 'ladder record unchanged').toBe(before.club.played);
   expect(after.history.at(-1).competition, 'history label').toBe('Cup quarter-final');
   expect(after.cup.round, 'cup moved on to the semis').toBe(1);

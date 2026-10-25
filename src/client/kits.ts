@@ -131,12 +131,16 @@ export type Quality = 'low' | 'high';
 
 /** The grass as the 3D view draws it: the dark and the light mowing stripe, per quality level. */
 export const GRASS: Record<Quality, [string, string]> = {
-  low: ['#2b972c', '#47ab3b'],
-  high: ['#2e982d', '#48ab3b'],
+  low: ['#84a147', '#92ae57'],
+  high: ['#85a148', '#92af57'],
 };
 
-/** Below this CIEDE2000 difference from a grass stripe, under any vision, a shirt needs the dark rim. */
-export const GRASS_DE = 20;
+/**
+ * Below this CIEDE2000 difference from a grass stripe, under any vision, a shirt gets the dark rim.
+ * Higher than the shirt-v-shirt CLASH_DE: a player is a small figure far away on a lot of grass, so
+ * white, grey, red and the lighter green (22 to 25 on the natural turf) get the outline too.
+ */
+export const GRASS_DE = 30;
 
 /** Light on a player's shirt, linear RGB before exposure (sun, sky and the green bounce off the grass), fitted per quality. */
 export const SHIRT_LIGHT: Record<Quality, RGB> = {

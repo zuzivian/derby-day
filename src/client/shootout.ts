@@ -31,6 +31,7 @@ import {
 } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { crestSvg } from './crest.ts';
+import { onPageGone } from './pagegone.ts';
 
 export interface ShootoutClub {
   name: string;
@@ -899,6 +900,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   setInfo('<b>Penalty shootout</b>', 'Press Start when you are ready.');
   raf = requestAnimationFrame(frame);
   $('so-start').focus();
+  // The tab is closing: stop the loop now rather than leave it to the browser's teardown.
+  cleanup.push(onPageGone(dispose));
 
   function dispose() {
     if (disposed) return;
