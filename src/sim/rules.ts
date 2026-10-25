@@ -175,6 +175,7 @@ export function awardRestart(s: MatchState, kind: RestartKind, team: 0 | 1, at: 
   b.kickedBy = -1;
   b.restartBy = -1;
   b.noHands = -1;
+  b.penalty = null;
   s.offside = null;
   s.advantage = null;
   clearWall(s);

@@ -37,8 +37,10 @@
  *  15  free kicks: a wall formed 9.15 m off before the kick, standing still and jumping as it is
  *      struck; strikes over it with dip and curl (HumanInput.curl), too much pace goes over; the
  *      kicking side keeps out of its shooting lane; a quick free kick before the wall is set
+ *  16  a penalty in a match is the shootout's kick (sim/penalty.ts resolveKick): the human's aim and power or the
+ *      CPU's choice against the keeper's dive decide it, and the ball and keeper play it out
  */
-export const SIM_VERSION = 15;
+export const SIM_VERSION = 16;
 
 export const TICK_HZ = 60;
 
