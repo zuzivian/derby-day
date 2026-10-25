@@ -31,12 +31,13 @@
  *      supporter) until the final third, and forwards on the shoulder follow the line
  *  11  a keeper claiming a high ball gets under it where it drops to catching height; a better keeper comes further for one
  *  12  a click up to 4 m off a team-mate picks him; an automatic switch keeps its man 0.75 s and never leaves a man the ball is coming to
- *  13  a human's teammates cover for him: a CPU presser when his man isn't going in, his
+ *  13  a click into the path of a running team-mate is a ball for him, timed to his run; he takes it in stride
+ *  14  a human's teammates cover for him: a CPU presser when his man isn't going in, his
  *      man held or idle marks and jockeys, his zone filled when he leaves it; the defending
  *      auto-switch picks the goal-side man (src/sim/ai.ts humanAuto, human.ts); a rookie
  *      CPU below skill 0 (AI_SKILL_MIN)
  */
-export const SIM_VERSION = 13;
+export const SIM_VERSION = 14;
 
 export const TICK_HZ = 60;
 
