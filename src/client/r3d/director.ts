@@ -4,7 +4,7 @@
 // card from s.cards. Reads state only.
 
 import { GOAL_BAR_H, PITCH_H, PITCH_W } from '../../sim/constants.ts';
-import { inOwnBox } from '../../sim/field.ts';
+import { attackDir, inOwnBox, ownGoal } from '../../sim/field.ts';
 import type { MatchEvent, MatchPlayer, MatchState, RestartKind } from '../../sim/types.ts';
 import type { AnimEvent } from './player3d.ts';
 import { hash01 } from './space.ts';
@@ -136,6 +136,12 @@ export class AnimDirector {
       // A second yellow comes with its red: the referee shows both, the red last.
       out.cards.push({ player: e.player, color: e.color });
       out.referee.push({ kind: 'card', t0: time, color: e.color });
+    } else if (e.kind === 'advantage') {
+      out.referee.push({ kind: 'signal', t0: time, style: 'advantage' });
+    } else if (e.kind === 'restart' && e.restart === 'freekick' && !s.cards.some((c) => c.tick === e.tick)) {
+      // A free kick (for a foul, an offside, an advantage brought back or a second touch): he
+      // points, unless he is showing a card for it.
+      out.referee.push({ kind: 'signal', t0: time + 0.2, style: 'point' });
     }
   }
 
@@ -147,7 +153,7 @@ export class AnimDirector {
     }
     // The sim's own dive (match.ts keeperDives), when there is one: the way he really went.
     if (p.dive && p.dive.ticks > 0 && time - sn.lastDive > 0.6) {
-      const fx = p.facing.x || (p.team === 0 ? 1 : -1);
+      const fx = p.facing.x || attackDir(s, p.team);
       const across = p.dive.dir.y * Math.sign(fx);
       sn.lastDive = time;
       ev.push({ kind: 'dive', t0: time - 0.05, side: across >= 0 ? 1 : -1, height: p.dive.z, reach: p.dive.speed * (p.dive.travel / 60) + 0.6 });
@@ -155,8 +161,8 @@ export class AnimDirector {
     }
     if (p.dive !== undefined) return; // this sim reports dives: no guessing
     if (b.owner >= 0 || s.phase !== 'play' || speed < 9 || time - sn.lastDive < 1.4) return;
-    if (!inOwnBox(p.team, p.pos)) return;
-    const towardOwn = p.team === 0 ? b.vel.x < 0 : b.vel.x > 0;
+    if (!inOwnBox(s, p.team, p.pos)) return;
+    const towardOwn = b.vel.x * attackDir(s, p.team) < 0;
     if (!towardOwn) return;
     const t = (p.pos.x - b.pos.x) / b.vel.x;
     if (t < 0.05 || t > 0.6) return;
@@ -166,7 +172,7 @@ export class AnimDirector {
     const off = yAt - p.pos.y;
     if (Math.abs(off) < 0.75 || Math.abs(off) > 5) return;
     // Side in the keeper's own frame: facing +x, a ball at +y is to his right.
-    const fx = p.facing.x || (p.team === 0 ? 1 : -1);
+    const fx = p.facing.x || attackDir(s, p.team);
     const right = fx > 0 ? off > 0 : off < 0;
     sn.lastDive = time;
     ev.push({ kind: 'dive', t0: time - 0.05, side: right ? 1 : -1, height: zAt, reach: Math.abs(off) - 0.3 });
@@ -192,7 +198,7 @@ export function keeperSet(s: MatchState, p: MatchPlayer): number {
 export function inWall(s: MatchState, p: MatchPlayer): boolean {
   const r = s.restart;
   if (!r || r.kind !== 'freekick' || p.team === r.team || p.role === 'GK' || p.sentOff) return false;
-  const gx = p.team === 0 ? 0 : PITCH_W;
+  const gx = ownGoal(s, p.team).x;
   const gy = PITCH_H / 2;
   const dx = gx - r.spot.x;
   const dy = gy - r.spot.y;

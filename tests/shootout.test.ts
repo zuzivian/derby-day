@@ -11,6 +11,7 @@ import {
   marks,
   nextTurn,
   penaltySide,
+  matchPenaltySides,
   planKick,
   playKick,
   recordKick,
@@ -22,6 +23,10 @@ import {
 } from '../src/meta/shootout.ts';
 import { recordCupMatch, startCup, yourTie, type QuickSim } from '../src/meta/competitions.ts';
 import { newGame } from '../src/meta/game.ts';
+import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
+import { shortName } from '../src/meta/player.ts';
+import { createMatch } from '../src/sim/match.ts';
+import { issueCard } from '../src/sim/rules.ts';
 import { makeRng } from '../src/sim/rng.ts';
 
 const side = (name: string, shooting: number, goalkeeping: number): PenaltySide => ({
@@ -234,9 +239,63 @@ describe('penaltySide', () => {
     const save = newGame(77);
     const side1 = penaltySide(save.club.name, save.squad, save.lineup);
     expect(side1.takers.length).toBeGreaterThanOrEqual(KICKS_PER_SIDE);
-    for (let i = 1; i < side1.takers.length; i++) expect(side1.takers[i - 1].shooting).toBeGreaterThanOrEqual(side1.takers[i].shooting);
     const gk = save.squad.find((p) => p.id === save.lineup[0])!;
+    // Outfield players best first, then the keeper: nobody kicks twice before all eleven have.
+    const outfield = side1.takers.slice(0, -1);
+    for (let i = 1; i < outfield.length; i++) expect(outfield[i - 1].shooting).toBeGreaterThanOrEqual(outfield[i].shooting);
+    expect(side1.takers.length).toBe(11);
+    expect(side1.takers[10].name).toBe(shortName(gk));
     expect(side1.keeper.goalkeeping).toBeCloseTo(gk.attrs.goalkeeping / 100);
+  });
+});
+
+describe('matchPenaltySides (Law 10)', () => {
+  const drawn = () => {
+    const [a, b] = generateLadder(9, 2);
+    return createMatch({ seed: 3, home: cpuTeam(a, ladderSquad(a)), away: cpuTeam(b, ladderSquad(b)), humanTeam: 0 });
+  };
+
+  test('everyone on the pitch kicks, outfield best first and the keeper last, before anyone kicks twice', () => {
+    const m = drawn();
+    const [home, away] = matchPenaltySides(m);
+    for (const [side, team] of [[home, 0], [away, 1]] as const) {
+      expect(side.takers.length).toBe(11);
+      const gk = m.players.find((p) => p.team === team && p.role === 'GK')!;
+      expect(side.takers[10].name).toBe(gk.name);
+      expect(side.keeper.name).toBe(gk.name);
+      expect(new Set(side.takers.map((t) => t.name)).size).toBe(11);
+      for (let i = 1; i < 10; i++) expect(side.takers[i - 1].shooting).toBeGreaterThanOrEqual(side.takers[i].shooting);
+    }
+    // Everyone scores, into sudden death: the first 11 kicks are 11 different players, then the order comes round again.
+    const s = createShootout(5, home, away);
+    const seen: string[] = [];
+    for (let k = 0; k < 44 && !s.done; k++) {
+      const turn = nextTurn(s)!;
+      if (turn.side === 0) seen.push(turn.taker.name);
+      recordKick(s, turn.side, turn.taker.name, 'goal');
+    }
+    expect(seen.length).toBe(22);
+    expect(new Set(seen.slice(0, 11)).size).toBe(11);
+    expect(seen.slice(11)).toEqual(seen.slice(0, 11));
+  });
+
+  test('a player sent off does not kick, the keeper at full time keeps goal, and the bigger side is cut to match', () => {
+    const m = drawn();
+    const off = m.players.find((p) => p.team === 0 && p.role === 'FWD')!;
+    const gk = m.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    issueCard(m, off, 'red', 'excessive');
+    issueCard(m, gk, 'red', 'excessive');
+    const [home, away] = matchPenaltySides(m);
+    expect(home.takers.length).toBe(9);
+    expect(away.takers.length).toBe(9);
+    expect(home.takers.some((t) => t.name === off.name || t.name === gk.name)).toBe(false);
+    const stand = m.players.find((p) => p.team === 0 && p.role === 'GK' && !p.sentOff)!;
+    expect(stand).toBeDefined();
+    expect(home.keeper.name).toBe(stand.name);
+    expect(home.takers[8].name).toBe(stand.name);
+    // The away side leaves out its two weakest outfield shooters, and keeps its keeper.
+    const awayOut = m.players.filter((p) => p.team === 1 && p.role !== 'GK').sort((x, y) => y.attrs.shooting - x.attrs.shooting);
+    expect(away.takers.slice(0, 8).map((t) => t.name)).toEqual(awayOut.slice(0, 8).map((p) => p.name));
   });
 });
 

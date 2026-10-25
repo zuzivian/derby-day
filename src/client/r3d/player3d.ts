@@ -57,7 +57,9 @@ export type AnimEvent =
   | { kind: 'celebrate'; t0: number; style: number }
   | { kind: 'cheer'; t0: number }
   | { kind: 'dejected'; t0: number }
-  | { kind: 'card'; t0: number; color: 'yellow' | 'red' };
+  | { kind: 'card'; t0: number; color: 'yellow' | 'red' }
+  /** The referee's signal: both arms out in front (advantage), or one arm out for a free kick. */
+  | { kind: 'signal'; t0: number; style: 'advantage' | 'point' };
 
 export interface PlayerContext {
   /** Animation clock in seconds. Follows sim time: it stops when the match or replay is paused. */
@@ -322,6 +324,7 @@ const DUR: Record<AnimEvent['kind'], number> = {
   cheer: 2.2,
   dejected: 2.4,
   card: 2.2,
+  signal: 1.6,
 };
 
 const ease = (t: number) => t * t * (3 - 2 * t);
@@ -784,6 +787,18 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         P.set('shR', -3.05 * w, 0, 0.05 * w).set('elR', -0.05 * w);
         P.set('shL', 0.1 * w, 0, 0.15 * w);
         P.set('spine', -0.08 * w).set('head', -0.15 * w);
+        break;
+      }
+      case 'signal': {
+        const w = smooth(0, 0.2, t) * (1 - smooth(a.dur - 0.3, a.dur, t));
+        if (a.ev.kind === 'signal' && a.ev.style === 'advantage') {
+          // Law 5: both arms swept out in front, a little apart.
+          P.set('shL', -1.65 * w, 0, 0.2 * w).set('shR', -1.65 * w, 0, -0.2 * w);
+          P.set('elL', -0.1 * w).set('elR', -0.1 * w);
+        } else {
+          // One arm out, a little above level, the way the free kick goes.
+          P.set('shR', -1.9 * w, 0, 0.05 * w).set('elR', -0.05 * w);
+        }
         break;
       }
     }
