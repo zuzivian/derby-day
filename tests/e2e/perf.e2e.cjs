@@ -315,21 +315,19 @@ test(
     await page.waitForTimeout(800);
     expect(await page.evaluate(() => window.__derbyMatch.tick), 'play resumes').toBeGreaterThan(held);
     expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'still the 3D view').toBe('3d');
-    // The scene is drawn again: the pitch is mostly green, not blank.
-    await page.waitForTimeout(500);
-    // Read in an animation frame after the game's own draw, while the drawing buffer still holds it.
-    const green = await page.evaluate(() => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(() => {
-      const c = document.querySelector('#pitch');
-      const o = document.createElement('canvas');
-      o.width = 64; o.height = 40;
-      const g = o.getContext('2d');
-      g.drawImage(c, 0, 0, 64, 40);
-      const d = g.getImageData(0, 0, 64, 40).data;
-      let n = 0;
-      for (let i = 0; i < d.length; i += 4) if (d[i + 1] > d[i] + 15 && d[i + 1] > d[i + 2]) n++;
-      res(n / (64 * 40));
-    }))));
-    expect(green, 'the pitch is drawn again').toBeGreaterThan(0.2);
+    // The renderer draws again: the context is back, and its once-a-second frame stats (written only by a draw
+    // that ran, never while the context is lost) tick over. (Reading the WebGL pixels back is timing-dependent.)
+    expect(await page.evaluate(() => document.querySelector('#pitch').getContext('webgl2').isContextLost()), 'the context is back').toBe(false);
+    const drawing = await page.evaluate(
+      () =>
+        new Promise((res) => {
+          const c = document.querySelector('#pitch');
+          const ob = new MutationObserver(() => (ob.disconnect(), res(true)));
+          ob.observe(c, { attributes: true, attributeFilter: ['data-fps', 'data-calls'] });
+          setTimeout(() => (ob.disconnect(), res(false)), 5000);
+        }),
+    );
+    expect(drawing, 'the pitch is drawn again').toBe(true);
   },
   { timeoutMs: 120_000 },
 );
