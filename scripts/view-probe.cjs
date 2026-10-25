@@ -69,8 +69,9 @@ async function waitFor(page, fn, arg, ms = 30_000) {
       s.ball.vel = { x: 0, y: 0 };
       s.ball.z = 1;
     });
-    // Software rendering runs at a few frames a second here, so the camera takes seconds to ease in.
-    await page.waitForTimeout(8000);
+    // Software rendering at high quality runs at a few frames a second here, so the camera takes
+    // seconds to ease in; at low quality play runs faster and the keeper would kick it long first.
+    await page.waitForTimeout(quality === 'high' ? 8000 : 3000);
     const cam = await page.evaluate(() => {
       const s = window.__derbyMatch;
       const k = s.players[s.controlled[s.humans[0] ? 0 : 1]];
