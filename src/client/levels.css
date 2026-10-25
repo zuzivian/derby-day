@@ -77,6 +77,8 @@
 }
 .xp-card-level { margin: 0; font-size: var(--fs-xs, 12px); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 @keyframes xp-fill { from { width: var(--xp-from); } }
+/* Everything in the card waits (held at its first frame) until screenFx.ts sees the card on screen. */
+.xp-card:not(.is-visible) *, .xp-card:not(.is-visible)::after, .xp-card:not(.is-visible) .level-badge { animation-play-state: paused; }
 .is-levelup .xp-card-fill { animation: xp-fill-up 1.7s .45s var(--ease-out, ease-out) both; }
 @keyframes xp-fill-up {
   0% { width: var(--xp-from); }
