@@ -145,6 +145,7 @@ test('Online: two browsers pair by invite link, stay in sync through a dropped s
 
     step('checks done');
     // Crash the guest's renderer: its socket dies with it, the relay tells the host, the host counts down.
+    t.expectCrash(guest);
     const cdp = await guest.context().newCDPSession(guest);
     // The crashed renderer never answers this command, so don't wait for it.
     cdp.send('Page.crash').catch(() => {});
