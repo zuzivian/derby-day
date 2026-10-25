@@ -14,6 +14,7 @@ import { keeperControllable } from '../src/sim/human.ts';
 import { assistRadius, groundPassPlan, pointerPass, PUNT_MIN_RANGE, receiverArrival, rollDistance } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
+import { next } from '../src/sim/rng.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
 import { openPlay } from './helpers.ts';
@@ -475,8 +476,10 @@ describe('the ball meets bodies by height (ask 4)', () => {
 
 describe('goalkeeping (ask 5)', () => {
   /** A shot at team 1's goal (x = PITCH_W) from 20 m out, keeper set in the middle. */
-  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2) {
+  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2, burn = 0) {
     const s = livePlay(4, -1);
+    // Advance the random stream: the same scene with different luck.
+    for (let k = 0; k < burn; k++) next(s.rng);
     const gk = goalkeeper(s, 1);
     const shooter = s.players.find((p) => p.team === 0 && p.role === 'FWD')!;
     isolate(s, gk, shooter);
@@ -559,18 +562,24 @@ describe('goalkeeping (ask 5)', () => {
     expect(r.goal).toBe(true);
   });
 
-  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar', () => {
+  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar, whatever the luck', () => {
+    // Twenty draws of the random stream before each shot: on one fixed seed a parry never went in,
+    // but with the stream advanced 5 of about 1100 did (a tip round the post aimed before the ball
+    // was moved clear of his hand, so it crossed just inside the post).
     let parried = 0;
-    for (const skill of [0.3, 0.6, 0.9])
-      for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
-        for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
-          const r = shot(PITCH_H / 2 + off, 24, z, vz, skill);
-          if (!r.touched || r.caught) continue;
-          parried++;
-          expect(r.goal).toBe(false);
-        }
-    expect(parried).toBeGreaterThan(20);
-  });
+    let goals = 0;
+    for (let burn = 0; burn < 20; burn++)
+      for (const skill of [0.3, 0.6, 0.9])
+        for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
+          for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
+            const r = shot(PITCH_H / 2 + off, 24, z, vz, skill, 20, PITCH_H / 2, burn);
+            if (!r.touched || r.caught) continue;
+            parried++;
+            if (r.goal) goals++;
+          }
+    expect(goals).toBe(0);
+    expect(parried).toBeGreaterThan(400);
+  }, 30_000);
 
   test('timing: he dives late, landing as the ball arrives: he is never down and out of it when a reachable shot passes', () => {
     let untouched = 0;
@@ -873,4 +882,44 @@ describe('determinism with the new physics and inputs', () => {
     expect(back.runs).toEqual(r.runs);
     expect(finalHash(replayTo(back, back.ticks))).toBe(r.fp);
   });
+});
+
+describe('a corner played to a team-mate', () => {
+  /** Our corner; once it is ready the human clicks (a ground pass) on our man nearest the flag or the taker. Who has it 4 s later? */
+  function cornerTo(at: Vec, by: 'flag' | 'taker', seed: number) {
+    const s = livePlay(seed + 10);
+    awardRestart(s, 'corner', 0, { ...at }, 'out');
+    let t = 0;
+    while (s.restart && s.restart.stage !== 'ready' && t++ < 900) step(s, { cursor: { x: 90, y: 34 } });
+    const taker = s.players[s.restart!.taker];
+    const ref = by === 'flag' ? s.restart!.spot : taker.pos;
+    const mate = s.players.filter((p) => p.team === 0 && p.i !== taker.i && p.role !== 'GK').sort((a, b) => dist(a.pos, ref) - dist(b.pos, ref))[0];
+    step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+    let high = 0;
+    for (let k = 0; k < 240 && s.ball.owner < 0 && s.phase === 'play'; k++) {
+      step(s, { cursor: { ...mate.pos } });
+      high = Math.max(high, s.ball.z);
+    }
+    const o = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    return { high, ours: !!o && o.team === 0, him: o === mate };
+  }
+
+  test('our nearest man is on the edge of the box, 40 m away: the click is crossed to him, and our side usually keeps it', () => {
+    let ours = 0;
+    let him = 0;
+    let n = 0;
+    for (const at of [{ x: 105, y: 0 }, { x: 105, y: 68 }])
+      for (const by of ['flag', 'taker'] as const)
+        for (let seed = 1; seed <= 6; seed++) {
+          const r = cornerTo(at, by, seed);
+          n++;
+          if (r.ours) ours++;
+          if (r.him) him++;
+          // A long pass from a corner goes in the air, over the box, not along the ground through it.
+          expect(r.high).toBeGreaterThan(1.5);
+        }
+    // Played along the ground through the box it was cut out: our side kept it 0 of these 24, him 0.
+    expect(ours / n).toBeGreaterThan(0.5);
+    expect(him / n).toBeGreaterThan(0.3);
+  }, 60_000);
 });

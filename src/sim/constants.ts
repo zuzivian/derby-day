@@ -25,8 +25,9 @@
  *      judged again on a teammate's header or deflection; a header to the keeper is no back-pass;
  *      a late challenge after a shot lets the shot play out; advantage stands once it ensued;
  *      added time; a side below seven abandons the match
+ *   8  a parry never goes in between the posts; a long or blocked corner pass is crossed
  */
-export const SIM_VERSION = 7;
+export const SIM_VERSION = 8;
 
 export const TICK_HZ = 60;
 
