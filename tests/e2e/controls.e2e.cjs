@@ -315,6 +315,9 @@ test('mouse without the ball: right click tackles toward the pointer, and slides
       me.attrs.defending = 1;
       Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
       s.switchTimer[0] = 1e9;
+      // He is the human's man now, not one handed over by the kick-off pass: no hold waiting for the
+      // pointer to move (MatchState.ctlHold), which under load can outlast the click.
+      s.ctlHold = [false, false];
       // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
       // 1000 headless), and a right click during the restart that follows is not a tackle.
       Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });
