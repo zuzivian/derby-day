@@ -37,9 +37,50 @@ const { registry } = require('./lib/harness.cjs');
 const { APP_URL } = require('./lib/helpers.cjs');
 
 // Test files: every *.e2e.cjs next to this runner, in name order.
-for (const f of fs.readdirSync(__dirname).filter((n) => n.endsWith('.e2e.cjs')).sort()) require(path.join(__dirname, f));
+const ALL_FILES = fs.readdirSync(__dirname).filter((n) => n.endsWith('.e2e.cjs')).sort();
 
-const filter = (process.argv[2] || '').toLowerCase();
+/**
+ * Sharding for CI: E2E_SHARD=k/n runs the k-th of n groups of test files (1-based). Files go to the group with the least
+ * work so far, heaviest first, by the seconds in tests/e2e/shard-weights.json (measured on a full run: the runner prints
+ * them at the end); a file missing from it counts as the median. Deterministic, so every job agrees on the split.
+ */
+function shardFiles(files, spec) {
+  const m = /^(\d+)\/(\d+)$/.exec(spec || '');
+  if (!m) return files;
+  const [k, n] = [Number(m[1]), Number(m[2])];
+  if (!(n >= 1 && k >= 1 && k <= n)) {
+    console.error(`E2E_SHARD must look like 2/3, got "${spec}".`);
+    process.exit(2);
+  }
+  let weights = {};
+  try {
+    weights = JSON.parse(fs.readFileSync(path.join(__dirname, 'shard-weights.json'), 'utf8'));
+  } catch {
+    /* no weights yet: equal */
+  }
+  const known = Object.values(weights).filter((v) => typeof v === 'number').sort((a, b) => a - b);
+  const median = known.length ? known[Math.floor(known.length / 2)] : 1;
+  const w = (f) => (typeof weights[f] === 'number' ? weights[f] : median);
+  const groups = Array.from({ length: n }, () => ({ load: 0, files: [] }));
+  for (const f of [...files].sort((a, b) => w(b) - w(a) || a.localeCompare(b))) {
+    const g = groups.reduce((best, cur) => (cur.load < best.load ? cur : best));
+    g.files.push(f);
+    g.load += w(f);
+  }
+  return groups[k - 1].files.sort();
+}
+
+const SHARD = process.env.E2E_SHARD || '';
+const FILES = shardFiles(ALL_FILES, SHARD);
+const fileOf = new Map(); // test name -> file, for the per-file timings
+for (const f of FILES) {
+  const before = registry.length;
+  require(path.join(__dirname, f));
+  for (const t of registry.slice(before)) fileOf.set(t, f);
+}
+
+const filter = String((process.argv[2] === '--list' ? process.argv[3] : process.argv[2]) || '').toLowerCase();
+const LIST_ONLY = process.argv[2] === '--list';
 const TIMEOUT = Number(process.env.E2E_TIMEOUT_MS || 90_000);
 /** How long closing a test's contexts (and the browser) may take before the runner gives up on it. */
 const CLOSE_TIMEOUT = Number(process.env.E2E_CLOSE_TIMEOUT_MS || 20_000);
@@ -81,6 +122,14 @@ async function diagnose(contexts) {
             appChildren: document.getElementById('app')?.children.length ?? null,
             pitch: !!document.getElementById('pitch'),
             note: document.getElementById('guard-note')?.textContent || null,
+            text: (document.getElementById('app')?.innerText || '').replace(/\s+/g, ' ').slice(0, 140),
+            storage: (() => {
+              try {
+                return Object.fromEntries(Object.keys(localStorage).filter((k) => k.startsWith('derbyday')).map((k) => [k.replace('derbyday.', ''), localStorage.getItem(k).length]));
+              } catch (e) {
+                return `unreadable: ${e.message}`;
+              }
+            })(),
             locks,
           };
         })
@@ -98,8 +147,11 @@ function executablePath() {
 }
 
 // Network noise we never want to fail on: web fonts are not reachable (or wanted) in CI sandboxes.
+const BROWSER_ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
 const FONT_HOST = /fonts\.(googleapis|gstatic)\.com/;
 // The page links /manifest.webmanifest and /icons/* by root-relative URL, which cannot resolve on file://.
+// The same links as they are named inside a message (a profile on disk reports the manifest as a CORS error, not a 404).
+const ROOT_ASSET_TEXT = /file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/;
 const ROOT_ASSET = /^file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/;
 
 async function main() {
@@ -113,14 +165,19 @@ async function main() {
     process.exit(2);
   }
 
+  if (LIST_ONLY) {
+    for (const t of tests) console.log(`${fileOf.get(t)}\t${t.name}`);
+    return;
+  }
+
   // WebGL for the 3D match view: headless Chromium falls back to SwiftShader (software), which the
   // game detects and renders at low quality. E2E_RENDERER=2d forces the 2D canvas fallback instead.
   const browser = await chromium.launch({
     executablePath: executablePath(),
     headless: !process.env.E2E_HEADED,
-    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    args: BROWSER_ARGS,
   });
-  console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}\n`);
+  console.log(`Derby Day e2e: ${tests.length} tests against ${APP_URL}${SHARD ? ` (shard ${SHARD}: ${FILES.join(', ')})` : ''}\n`);
 
   const results = [];
   let wedged = false;
@@ -155,7 +212,7 @@ async function main() {
           p.on('console', (m) => {
             if (m.type() !== 'error') return;
             const url = m.location().url || '';
-            if (FONT_HOST.test(url) || FONT_HOST.test(m.text()) || ROOT_ASSET.test(url)) return;
+            if (FONT_HOST.test(url) || FONT_HOST.test(m.text()) || ROOT_ASSET.test(url) || ROOT_ASSET_TEXT.test(m.text())) return;
             problems.push(`console.error: ${m.text()}`);
           });
         };
@@ -181,8 +238,8 @@ async function main() {
       if (problems.length) throw new Error(`page reported errors:\n      ${problems.join('\n      ')}`);
     } catch (e) {
       error = e;
-      // A timeout says nothing about *where*: look at every page now, before the contexts are closed.
-      if (/timed out/.test(String(e && e.message))) diag = await diagnose(contexts);
+      // A failure (a timeout above all) says nothing about *where*: look at every page now, before the contexts are closed.
+      diag = await diagnose(contexts);
     } finally {
       clearTimeout(timer);
       // Closing can itself stall (a wedged page, the GPU process): bound it, say so, and carry on with the next test.
@@ -226,6 +283,16 @@ async function main() {
     }
   }
   await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, CLOSE_TIMEOUT))]);
+
+  // Seconds per test file, as JSON for tests/e2e/shard-weights.json (only when asked: E2E_TIMINGS=1).
+  if (process.env.E2E_TIMINGS) {
+    const perFile = {};
+    tests.forEach((t, i) => {
+      if (results[i]) perFile[fileOf.get(t)] = (perFile[fileOf.get(t)] || 0) + results[i].ms;
+    });
+    for (const f of Object.keys(perFile)) perFile[f] = Math.round(perFile[f] / 1000);
+    console.log(`\nPer-file seconds: ${JSON.stringify(perFile)}`);
+  }
 
   const failed = results.filter((r) => !r.ok);
   console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${results.length} total`);
