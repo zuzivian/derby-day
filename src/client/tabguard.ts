@@ -109,7 +109,15 @@ function acquireLock(opts: { ifAvailable?: boolean; steal?: boolean; timeoutMs?:
       navigator.locks.request(LOCK, options, (lock) => {
         clearTimeout(timer);
         clearTimeout(deaf);
-        if (abandoned) return; // too late: nobody is waiting for this lock any more
+        if (abandoned) {
+          // Too late: nobody is waiting for this lock any more. A late steal is different: it has already knocked the old
+          // owner out, so keep the lock and own the club (the next take() sees owner and returns 'taken').
+          if (!opts.steal) return;
+          owner = true;
+          return new Promise<void>((end) => {
+            releaseLock = end;
+          });
+        }
         if (!lock) {
           done('busy');
           return;
@@ -359,6 +367,7 @@ function ask(): Promise<'yield' | 'busy' | 'none'> {
  * match; call again later, or use takeWhenFree().
  */
 export async function take(): Promise<TakeResult> {
+  if (owner) return 'taken'; // a steal that the lock manager answered late already made this tab the owner
   const answer = await ask();
   if (answer === 'busy') return 'busy';
   if (useLocks) {
