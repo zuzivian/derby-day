@@ -1291,7 +1291,36 @@ function keeperTouch(s: MatchState, p: MatchPlayer, pt: Vec, along: number, gap:
   b.redirectedAt = s.tick;
   const gapR = BODY_R + BALL_R + 0.02;
   if (dist(b.pos, pt) < gapR) b.pos = add(pt, scale(awayFrom(s, pt), gapR));
+  // Whatever the parry, from where the ball now is it must not cross the line between the posts
+  // under the bar: if it would, he has turned it back out instead.
+  if (parryGoesIn(b, g.x) && b.z > 1.5 && Math.abs(b.vel.x) > 0.5) {
+    // Up high: tipped a little higher, enough to clear the bar allowing for drag.
+    const t = Math.abs(g.x - b.pos.x) / Math.abs(b.vel.x);
+    const tLate = t * (1 + AIR_DRAG * t);
+    const vz = (GOAL_BAR_H + 0.4 - b.z + 0.5 * GRAVITY * tLate * tLate) / tLate;
+    if (vz < 9) b.vz = Math.max(b.vz, vz);
+  }
+  if (parryGoesIn(b, g.x)) {
+    b.vel = { x: out * Math.max(1.5, Math.abs(b.vel.x) * 0.4), y: b.vel.y };
+    b.vz = Math.max(b.vz, 0.3);
+  }
   b.noPickup[p.i] = 18;
+}
+
+/**
+ * Would a parried ball, as it now is, cross the goal line at `lineX` between the posts and under
+ * the bar? Judged on its straight path with gravity, with 0.3 m to spare outside each post and
+ * over the bar, and drag allowed for (it gets there later and lower than drag-free flight says).
+ */
+function parryGoesIn(b: MatchState['ball'], lineX: number): boolean {
+  const gap = lineX - b.pos.x;
+  if (Math.abs(b.vel.x) < 1e-6 || Math.sign(gap) !== Math.sign(b.vel.x)) return false;
+  const t = gap / b.vel.x;
+  const y = b.pos.y + b.vel.y * t;
+  if (Math.abs(y - PITCH_H / 2) > GOAL_W / 2 + 0.3) return false;
+  const tLate = t * (1 + AIR_DRAG * t);
+  const z = Math.min(b.z + b.vz * t - 0.5 * GRAVITY * t * t, b.z + b.vz * tLate - 0.5 * GRAVITY * tLate * tLate);
+  return z < GOAL_BAR_H + 0.3;
 }
 
 /** Seconds until the loose ball has gone `d` metres along its path: rolling friction on the floor, light drag in the air. */

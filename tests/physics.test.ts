@@ -14,6 +14,7 @@ import { keeperControllable } from '../src/sim/human.ts';
 import { assistRadius, groundPassPlan, pointerPass, PUNT_MIN_RANGE, receiverArrival, rollDistance } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, KEEPER_HOLD_TICKS, possessionShare, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
+import { next } from '../src/sim/rng.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, type Vec } from '../src/sim/vec.ts';
 
@@ -472,8 +473,10 @@ describe('the ball meets bodies by height (ask 4)', () => {
 
 describe('goalkeeping (ask 5)', () => {
   /** A shot at team 1's goal (x = PITCH_W) from 20 m out, keeper set in the middle. */
-  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2) {
+  function shot(yAim: number, speed: number, z = 0, vz = 0, gkSkill = 0.75, dist = 20, fromY = PITCH_H / 2, burn = 0) {
     const s = livePlay(4, -1);
+    // Advance the random stream: the same scene with different luck.
+    for (let k = 0; k < burn; k++) next(s.rng);
     const gk = goalkeeper(s, 1);
     const shooter = s.players.find((p) => p.team === 0 && p.role === 'FWD')!;
     isolate(s, gk, shooter);
@@ -556,18 +559,24 @@ describe('goalkeeping (ask 5)', () => {
     expect(r.goal).toBe(true);
   });
 
-  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar', () => {
+  test('a parry never sends the ball between the posts below the bar: palmed out, round the post or over the bar, whatever the luck', () => {
+    // Twenty draws of the random stream before each shot: on one fixed seed a parry never went in,
+    // but with the stream advanced 5 of about 1100 did (a tip round the post aimed before the ball
+    // was moved clear of his hand, so it crossed just inside the post).
     let parried = 0;
-    for (const skill of [0.3, 0.6, 0.9])
-      for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
-        for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
-          const r = shot(PITCH_H / 2 + off, 24, z, vz, skill);
-          if (!r.touched || r.caught) continue;
-          parried++;
-          expect(r.goal).toBe(false);
-        }
-    expect(parried).toBeGreaterThan(20);
-  });
+    let goals = 0;
+    for (let burn = 0; burn < 20; burn++)
+      for (const skill of [0.3, 0.6, 0.9])
+        for (const off of [1.2, 1.6, 1.8, 2.0, 2.2, 2.5, 3.0, -1.4, -1.7, -2.0, -2.3, -2.9])
+          for (const [z, vz] of [[0, 0], [0.2, 3], [0.2, 4.5]]) {
+            const r = shot(PITCH_H / 2 + off, 24, z, vz, skill, 20, PITCH_H / 2, burn);
+            if (!r.touched || r.caught) continue;
+            parried++;
+            if (r.goal) goals++;
+          }
+    expect(goals).toBe(0);
+    expect(parried).toBeGreaterThan(400);
+  }, 30_000);
 
   test('timing: he dives late, landing as the ball arrives: he is never down and out of it when a reachable shot passes', () => {
     let untouched = 0;
