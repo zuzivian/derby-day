@@ -191,13 +191,13 @@ export const salePrice = (p: Player): number => round5k(marketValue(p) * 0.8);
 /** Refresh the market if MARKET_REFRESH_MS has passed since the last refresh. `now` is the client's clock. Returns true if it refreshed. */
 export function refreshMarketIfStale(save: Save, now: number): boolean {
   if (!Number.isFinite(now)) return false;
-  if (save.marketAt !== undefined && now - save.marketAt < MARKET_REFRESH_MS && now >= save.marketAt) {
+  // The first stamp only starts the clock, and a clock that went backwards just restarts it.
+  if (save.marketAt === undefined || now < save.marketAt) {
+    save.marketAt = now;
     return false;
   }
-  const first = save.marketAt === undefined;
+  if (now - save.marketAt < MARKET_REFRESH_MS) return false;
   save.marketAt = now;
-  // The first stamp only starts the clock: a save gets its timed refresh 6 hours after this build first saw it.
-  if (first) return false;
   refreshMarket(save);
   return true;
 }
