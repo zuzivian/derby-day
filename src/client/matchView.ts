@@ -241,7 +241,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   renderer.resize();
   renderer.prepare(s);
   const juice = mountJuice(root, s);
-  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s);
+  // Who kicks off and with which key: hot-seat has both players on one keyboard (Player 2 passes with Enter).
+  const kickoffPrompt = (team: 0 | 1): string | null => {
+    if (s.humans[0] && s.humans[1]) return team === 0 ? 'Player 1 kicks off: press Space' : 'Player 2 kicks off: press Enter';
+    if (coarsePointer()) return 'Your kick-off: tap Pass';
+    return (input.mode?.() ?? o.controls ?? 'mouse') === 'keys' ? 'Your kick-off: press Space to pass' : 'Your kick-off: click to pass';
+  };
+  const hud = mountHud(root.querySelector<HTMLElement>('.pitch-wrap')!, s, kickoffPrompt);
   const coach = o.coach ? mountCoach(root.querySelector<HTMLElement>('.pitch-wrap')!, { ...o.coach, mode: () => input.mode?.() ?? o.controls ?? 'mouse' }) : null;
   let offCam = s.humans[0] && s.humans[1] ? () => {} : mountCameraToggle(root.querySelector<HTMLElement>('.hud-tr')!, renderer, canvas);
 

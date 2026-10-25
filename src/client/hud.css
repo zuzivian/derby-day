@@ -109,6 +109,15 @@
 }
 .hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
+/* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
+.hud-prompt {
+  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: 4px; padding: 4px 10px;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
+}
+.hud-prompt b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 15px; letter-spacing: .04em; }
+.hud-prompt small { font-weight: 600; font-size: 11px; opacity: .8; margin-left: 4px; }
+.hud-prompt[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
 .pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
@@ -143,6 +152,8 @@
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
+  .hud-prompt b { font-size: 13px; }
   .hud-tag b { font-size: 13px; }
   .hud-replay small { font-size: 10px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
