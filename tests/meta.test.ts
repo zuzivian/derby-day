@@ -34,7 +34,7 @@ describe('club loop', () => {
     expect(new Set(s.lineup).size).toBe(11);
     expect(s.squad.length).toBe(18);
     expect(s.market.length).toBe(10);
-    expect(s.ladder.length).toBe(15);
+    expect(s.ladder.length).toBe(31); // four divisions of eight, with you (src/meta/world.ts)
   });
 
   test('buying and selling move money and players', () => {

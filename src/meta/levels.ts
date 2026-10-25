@@ -263,9 +263,10 @@ export const XP = {
   cleanSheet: 20,
   practice: { easy: 30, normal: 40, hard: 60 } as Record<PracticeLevel, number>,
   trainingSession: 5,
-  cup: { winner: 500, runnerUp: 200, semiFinal: 100 },
-  /** League finishing bonus by position, 1st to 8th. */
-  league: [800, 400, 200, 200, 100, 100, 50, 50],
+  /** Cup finishing bonus, times your division's XP scale (DIVISION_XP in world.ts). */
+  cup: { winner: 160, runnerUp: 70, semiFinal: 35 },
+  /** League finishing bonus by position, 1st to 8th, times your division's XP scale. */
+  league: [500, 300, 150, 120, 80, 60, 40, 30],
 } as const;
 
 export type MilestoneId = 'first-match' | 'tutorial' | 'first-win' | 'first-signing' | 'first-trophy';
@@ -292,8 +293,18 @@ export interface XpGain {
 
 export type MatchKind = 'ranked' | 'competition' | 'practice';
 
-/** XP for one match. Ranked and competition: result + goals + clean sheet. Practice: a flat amount by difficulty. Forfeits: nothing. */
-export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = false, practice: PracticeLevel = 'normal'): XpPart[] {
+/** "×1.45" for a multiplier other than 1. */
+const times = (scale: number) => (scale === 1 ? '' : ` ×${Math.round(scale * 100) / 100}`);
+const scaled = (p: XpPart, scale: number): XpPart => ({ label: p.label, xp: Math.round(p.xp * scale) });
+
+/**
+ * XP for one match. Ranked and competition: result + goals + clean sheet,
+ * times `scale` (the opponent's division and strength for ranked, your
+ * division for the cup and league: rankedScale in game.ts, DIVISION_XP in
+ * world.ts), which the first part's label shows ("win ×1.45"). Practice: a
+ * flat amount by difficulty. Forfeits: nothing.
+ */
+export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = false, practice: PracticeLevel = 'normal', scale = 1): XpPart[] {
   if (forfeited) return [];
   if (kind === 'practice') {
     const name = practice[0].toUpperCase() + practice.slice(1);
@@ -302,21 +313,21 @@ export function matchXp(kind: MatchKind, gf: number, ga: number, forfeited = fal
   const parts: XpPart[] = [gf > ga ? { label: 'win', xp: XP.win } : gf === ga ? { label: 'draw', xp: XP.draw } : { label: 'loss', xp: XP.loss }];
   if (gf > 0) parts.push({ label: `${gf} goal${gf === 1 ? '' : 's'}`, xp: gf * XP.goal });
   if (ga === 0) parts.push({ label: 'clean sheet', xp: XP.cleanSheet });
-  return parts;
+  if (scale === 1) return parts;
+  return parts.map((p, i) => ({ ...scaled(p, scale), label: i ? p.label : p.label + times(scale) }));
 }
 
-/** Cup finishing bonus for the round you went out in (0 = quarter-final) or won the final in. */
-export function cupFinishXp(round: number, won: boolean): XpPart | null {
-  if (round === 2) return won ? { label: 'cup winners', xp: XP.cup.winner } : { label: 'cup runners-up', xp: XP.cup.runnerUp };
-  if (round === 1 && !won) return { label: 'cup semi-final', xp: XP.cup.semiFinal };
-  return null;
+/** Cup finishing bonus for the round you went out in (0 = quarter-final) or won the final in, times your division's XP scale. */
+export function cupFinishXp(round: number, won: boolean, scale = 1): XpPart | null {
+  const part = round === 2 ? (won ? { label: 'cup winners', xp: XP.cup.winner } : { label: 'cup runners-up', xp: XP.cup.runnerUp }) : round === 1 && !won ? { label: 'cup semi-final', xp: XP.cup.semiFinal } : null;
+  return part && scaled(part, scale);
 }
 
-export function leagueFinishXp(position: number): XpPart | null {
+export function leagueFinishXp(position: number, scale = 1): XpPart | null {
   const xp = XP.league[position - 1];
   if (!xp) return null;
   const labels = ['league champions', 'league runners-up'];
-  return { label: labels[position - 1] ?? `league ${position}${position === 3 ? 'rd' : 'th'} place`, xp };
+  return scaled({ label: labels[position - 1] ?? `league ${position}${position === 3 ? 'rd' : 'th'} place`, xp }, scale);
 }
 
 /** A gain that hasn't added anything yet, starting from the save's current level. */

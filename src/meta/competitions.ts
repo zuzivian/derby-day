@@ -2,15 +2,25 @@
 // season. Pure logic over the Save: data in, data out, seeded randomness only.
 //
 // Decisions (see also the README):
-//  - Your matches are played live; the rest are quick-simulated with the real
-//    headless sim (src/sim/match.ts) at QUICK_HALF_SECONDS a half. That costs
-//    about 80 ms a match, so a round of three CPU ties is ~250 ms, and results
-//    reflect the actual squads and CPU skill instead of a dice roll on Elo.
-//    The match seed is derived from the competition seed, so a round replays
-//    identically.
-//  - Competition matches do not change ladder Elo or the ladder record. They
-//    pay prize money, training sessions and player development, and are kept
-//    in match history labelled with the competition.
+//  - Your matches are played live; the rest get a full-length scoreline from
+//    the clubs' XIs (quickScore in world.ts, a Poisson model calibrated against
+//    the full-length sim), in microseconds. The match seed is derived from the
+//    competition seed, so a round replays identically. realQuickSim, the real
+//    headless sim at full length, stays for tests and probes (half a second a
+//    match).
+//  - Both are played within your division (src/meta/world.ts): the league is
+//    the division, the cup adds three clubs from the division above. Prize
+//    money and XP scale with the division, and a league finish promotes or
+//    relegates you (applyLeagueFinish).
+//  - Competition matches move Elo like ranked ones (yours and the opponent's)
+//    but not the ladder record. They pay prize money, training sessions and
+//    player development, and are kept in match history labelled with the
+//    competition.
+//  - A new cup can start only after CUP_WAIT ranked or league matches since
+//    the last one started (game.ts), so cups can't be chained or restarted.
+//  - Forfeits pay nothing: no match money, and a league season's prize money
+//    and finish XP are paid for the matchdays actually played. A season with
+//    more than MAX_SEASON_FORFEITS forfeits wins no trophy and no promotion.
 //  - A drawn cup tie goes to a penalty shootout. Between two CPU clubs it is
 //    settled by a seeded roll weighted by the takers' shooting and the
 //    keepers' goalkeeping; when you are in the tie it is played live
@@ -18,22 +28,31 @@
 //    passed to recordCupMatch.
 
 import { autoLineup, cpuTeam, ladderSquad, type ClubIdentity, type LadderClub } from './club.ts';
-import { applyResult, formatMoney, type ResultSummary, type Save } from './game.ts';
+import { applyResult, CUP_WAIT, formatMoney, type ResultSummary, type Save } from './game.ts';
+import { lifetimeMatches, noteDivision, noteYear } from './history.ts';
 import { award, claimMilestone, cupFinishXp, leagueFinishXp } from './levels.ts';
 import { overall, type Player } from './player.ts';
+import { applyLeagueFinish, cpuStrength, DIVISIONS, divisionClubs, divisionMoney, divisionName, divisionXp, ensureWorldFields, playerDivision, quickScore } from './world.ts';
 import { simulate } from '../sim/match.ts';
-import { TEAM_SIZE } from '../sim/constants.ts';
+import { HALF_SECONDS, TEAM_SIZE } from '../sim/constants.ts';
 import { chance, hashString, int, makeRng, type Rng } from '../sim/rng.ts';
 import type { CrestPattern } from './names.ts';
 
 export const COMP_SIZE = 8;
-export const QUICK_HALF_SECONDS = 60;
 export const CUP_ROUNDS = ['Quarter-final', 'Semi-final', 'Final'] as const;
+/** Clubs from the division above in each cup (the rest come from yours). */
+export const CUP_GUESTS = 3;
+/** Forfeited matchdays a league season can carry and still win a trophy or promotion. */
+export const MAX_SEASON_FORFEITS = 2;
 
-/** Money for reaching each stage of the cup: played a QF, reached the SF, reached the final, won it. */
+/** Money for reaching each stage of the cup in the bottom division: played a QF, reached the SF, reached the final, won it. Times DIVISION_MONEY. */
 export const CUP_PRIZES = [40_000, 90_000, 160_000, 320_000] as const;
-/** Season prize money by finishing position, 1st to 8th. */
+/** Season prize money by finishing position, 1st to 8th, in the bottom division. Times DIVISION_MONEY. */
 export const SEASON_PRIZES = [450_000, 300_000, 200_000, 140_000, 100_000, 70_000, 50_000, 30_000] as const;
+
+const round5k = (n: number) => Math.round(n / 5_000) * 5_000;
+/** A prize in your division. */
+export const prizeIn = (base: number, division: number): number => round5k(base * divisionMoney(division));
 
 export interface Tie {
   a: string;
@@ -58,6 +77,8 @@ export interface Cup {
   winner?: string;
   /** Prize money paid to you so far. */
   earned: number;
+  /** Your division when it started (prizes and XP are paid at its rates). Missing on older cups: the bottom division. */
+  division?: number;
 }
 
 export interface Fixture {
@@ -79,6 +100,12 @@ export interface Season {
   /** Your finishing position, 1-based, once done. */
   finish?: number;
   earned: number;
+  /** The division it is played in (yours when it started). Missing on older seasons: the bottom division. */
+  division?: number;
+  /** Matchdays you forfeited. */
+  forfeits?: number;
+  /** Where the finish took you, once done. */
+  moved?: 'up' | 'down' | null;
 }
 
 export interface Trophy {
@@ -111,11 +138,21 @@ export function clubById(save: Save, id: string): CompClub | null {
 
 const name = (save: Save, id: string): string => clubById(save, id)?.name ?? 'Unknown';
 
-/** You plus the seven ladder clubs nearest your Elo, best Elo first. */
-export function pickEntrants(save: Save): string[] {
-  const others = [...save.ladder]
-    .sort((x, y) => Math.abs(x.elo - save.club.elo) - Math.abs(y.elo - save.club.elo) || x.id.localeCompare(y.id))
-    .slice(0, COMP_SIZE - 1);
+/**
+ * The entrants, best Elo first, you included. A league is your division. A cup
+ * is your division's clubs nearest your Elo plus the CUP_GUESTS nearest it from
+ * the division above (in the top division, the whole division). Your Elo only
+ * picks among your division, so losing it on purpose can't buy an easier draw.
+ */
+export function pickEntrants(save: Save, kind: 'cup' | 'league' = 'league'): string[] {
+  ensureWorldFields(save);
+  const d = playerDivision(save);
+  const near = (cs: LadderClub[]) => [...cs].sort((x, y) => Math.abs(x.elo - save.club.elo) - Math.abs(y.elo - save.club.elo) || x.id.localeCompare(y.id));
+  const own = near(divisionClubs(save, d));
+  const guests = kind === 'cup' && d > 1 ? near(divisionClubs(save, d - 1)).slice(0, CUP_GUESTS) : [];
+  let others = [...guests, ...own.slice(0, COMP_SIZE - 1 - guests.length)];
+  // A division short of clubs (it never should be) borrows the nearest Elo from anywhere.
+  if (others.length < COMP_SIZE - 1) others = [...others, ...near(save.ladder.filter((c) => !others.includes(c))).slice(0, COMP_SIZE - 1 - others.length)];
   const all: { id: string; elo: number }[] = [...others, { id: save.club.id, elo: save.club.elo }];
   return all.sort((x, y) => y.elo - x.elo || x.id.localeCompare(y.id)).map((c) => c.id);
 }
@@ -131,10 +168,17 @@ export interface QuickResult {
 /** Plays CPU club a against CPU club b. Swappable so tests can stay fast. */
 export type QuickSim = (save: Save, a: LadderClub, b: LadderClub, seed: number) => QuickResult;
 
+/** The default: a full-length scoreline from the two XIs (quickScore in world.ts). */
+export const modelQuickSim: QuickSim = (_save, a, b, seed) => {
+  const [ga, gb] = quickScore(makeRng(seed), cpuStrength(a), cpuStrength(b));
+  return { ga, gb };
+};
+
+/** The real headless sim at full length (half a second a match), for tests and probes. */
 export const realQuickSim: QuickSim = (_save, a, b, seed) => {
   const sa = ladderSquad(a);
   const sb = ladderSquad(b);
-  const s = simulate({ seed, home: cpuTeam(a, sa), away: cpuTeam(b, sb), halfSeconds: QUICK_HALF_SECONDS });
+  const s = simulate({ seed, home: cpuTeam(a, sa), away: cpuTeam(b, sb), halfSeconds: HALF_SECONDS });
   return { ga: s.score[0], gb: s.score[1] };
 };
 
@@ -223,23 +267,31 @@ function settleTie(save: Save, cup: Cup, tie: Tie, round: number, index: number,
 // ---------------------------------------------------------------------------
 // Cup
 
-export function canStart(save: Save): { ok: boolean; message: string } {
+/** Ranked or league matches still to play before a new cup can start (0 when it can). */
+export const cupWaitLeft = (save: Save): number => Math.max(0, save.cupWait ?? 0);
+
+/** "Next cup after 3 more ranked or league matches." */
+export const cupWaitText = (n: number): string => `Next cup after ${n} more ranked or league match${n === 1 ? '' : 'es'}.`;
+
+export function canStart(save: Save, kind: 'cup' | 'league' = 'league'): { ok: boolean; message: string } {
   if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI first.' };
   if (save.ladder.length < COMP_SIZE - 1) return { ok: false, message: 'Not enough clubs on the ladder.' };
+  if (kind === 'cup' && cupWaitLeft(save) > 0) return { ok: false, message: cupWaitText(cupWaitLeft(save)) };
   return { ok: true, message: '' };
 }
 
 export function startCup(save: Save): Cup {
   ensureCompetitionFields(save);
-  const entrants = pickEntrants(save);
+  const entrants = pickEntrants(save, 'cup');
   // Seeds 1v8, 4v5, 2v7, 3v6, so the top two can only meet in the final.
   const order = [0, 7, 3, 4, 1, 6, 2, 5];
   const qf: Tie[] = [];
   for (let k = 0; k < order.length; k += 2) qf.push({ a: entrants[order[k]], b: entrants[order[k + 1]] });
   const edition = save.cupEditions! + 1;
   save.cupEditions = edition;
-  const cup: Cup = { kind: 'cup', edition, seed: int(save.rng, 1, 2 ** 31 - 1), entrants, rounds: [qf, [], []], round: 0, done: false, earned: 0 };
+  const cup: Cup = { kind: 'cup', edition, seed: int(save.rng, 1, 2 ** 31 - 1), entrants, rounds: [qf, [], []], round: 0, done: false, earned: 0, division: playerDivision(save) };
   save.cup = cup;
+  save.cupWait = CUP_WAIT;
   const opp = cupOpponent(save, cup);
   save.news.push(`Entered Cup ${edition}. Quarter-final against ${opp?.name ?? 'TBC'}.`);
   return cup;
@@ -300,7 +352,7 @@ function finishCupRound(save: Save, cup: Cup, sim: QuickSim): void {
  * final and you won, add the trophy. A drawn match is settled by `humanPens`
  * (the live shootout you played) when given, else by the seeded roll.
  */
-export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, forfeited = false, humanPens?: HumanPens): CompOutcome {
+export function recordCupMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = modelQuickSim, forfeited = false, humanPens?: HumanPens): CompOutcome {
   ensureCompetitionFields(save);
   const cup = save.cup;
   if (!cup) throw new Error('No cup in progress');
@@ -317,26 +369,28 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
   const stage = CUP_ROUNDS[round];
   const pens = tie.pens ? ` (${home ? tie.pens[0] : tie.pens[1]}–${home ? tie.pens[1] : tie.pens[0]} on penalties)` : '';
 
-  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `Cup ${stage.toLowerCase()}`, forfeited);
+  const division = cup.division ?? DIVISIONS;
+  const summary = applyResult(save, opp, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `Cup ${stage.toLowerCase()}`, forfeited, 'normal', 'cup');
   // A forfeit knocks you out but pays nothing, so walking off can't be farmed.
   if (!forfeited) {
     save.trainingPoints += 1;
     summary.trainingPoints += 1;
   }
 
-  let money = round === 0 && !forfeited ? CUP_PRIZES[0] : 0;
-  if (won) money += CUP_PRIZES[round + 1];
+  let money = round === 0 && !forfeited ? prizeIn(CUP_PRIZES[0], division) : 0;
+  if (won) money += prizeIn(CUP_PRIZES[round + 1], division);
   cup.earned += money;
   save.budget += money;
   summary.money = money;
 
   finishCupRound(save, cup, sim);
   // XP for how far you went (going out in the semis, the final, winning it). A forfeit earns nothing.
-  if (!forfeited) award(save, [cupFinishXp(round, won), won && round === CUP_ROUNDS.length - 1 ? claimMilestone(save, 'first-trophy') : null], summary.xp);
+  if (!forfeited) award(save, [cupFinishXp(round, won, divisionXp(division)), won && round === CUP_ROUNDS.length - 1 ? claimMilestone(save, 'first-trophy') : null], summary.xp);
+  if (!won || round === CUP_ROUNDS.length - 1) noteYear(save, `Cup ${cup.edition}: ${won ? 'winners' : round === 2 ? 'runners-up' : `out in the ${stage.toLowerCase()}`}`);
   let trophy: Trophy | null = null;
   let note: string;
   if (won && round === CUP_ROUNDS.length - 1) {
-    trophy = { kind: 'cup', title: `Cup ${cup.edition}`, edition: cup.edition, atMatch: save.history.length };
+    trophy = { kind: 'cup', title: `Cup ${cup.edition}`, edition: cup.edition, atMatch: lifetimeMatches(save) };
     save.trophies!.push(trophy);
     note = `Cup winners${pens}! +${formatMoney(money)}.`;
     save.news.push(`Won Cup ${cup.edition}, beating ${opp.name} in the final${pens}.`);
@@ -351,7 +405,7 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
 }
 
 /** After you're knocked out: play out the remaining rounds without you. */
-export function simulateRestOfCup(save: Save, sim: QuickSim = realQuickSim): void {
+export function simulateRestOfCup(save: Save, sim: QuickSim = modelQuickSim): void {
   const cup = save.cup;
   if (!cup || cup.done) return;
   for (let guard = 0; guard < CUP_ROUNDS.length && !cup.done; guard++) {
@@ -392,7 +446,7 @@ export function roundRobin(ids: string[]): Fixture[][] {
 
 export function startSeason(save: Save): Season {
   ensureCompetitionFields(save);
-  const entrants = pickEntrants(save);
+  const entrants = pickEntrants(save, 'league');
   const edition = save.seasonEditions! + 1;
   save.seasonEditions = edition;
   const seed = int(save.rng, 1, 2 ** 31 - 1);
@@ -403,9 +457,11 @@ export function startSeason(save: Save): Season {
     const j = int(r, 0, k);
     [order[k], order[j]] = [order[j], order[k]];
   }
-  const season: Season = { kind: 'season', edition, seed, entrants, matchdays: roundRobin(order), matchday: 0, done: false, earned: 0 };
+  const division = playerDivision(save);
+  const season: Season = { kind: 'season', edition, seed, entrants, matchdays: roundRobin(order), matchday: 0, done: false, earned: 0, division, forfeits: 0 };
   save.season = season;
-  save.news.push(`Season ${edition} kicks off: ${COMP_SIZE} clubs, ${COMP_SIZE - 1} matchdays.`);
+  // "League N" everywhere, so "Season N" only ever means the calendar year.
+  save.news.push(`League ${edition} kicks off in ${divisionName(division)}: ${COMP_SIZE} clubs, ${COMP_SIZE - 1} matchdays.`);
   return season;
 }
 
@@ -480,19 +536,25 @@ function tally(r: TableRow, gf: number, ga: number): void {
   } else r.lost++;
 }
 
-export function seasonVerdict(position: number): string {
-  if (position === 1) return 'Champions. Promoted as title winners.';
-  if (position === 2) return 'Runners-up. Promoted.';
-  if (position <= 4) return 'A top-half finish. Promotion play-off places next time.';
+/**
+ * One line on a finish in `division`. `moved` is where it took you
+ * (applyLeagueFinish); without it, the line says what the place normally means.
+ */
+export function seasonVerdict(position: number, division: number = DIVISIONS, moved?: 'up' | 'down' | null): string {
+  const up = moved === undefined ? position <= 2 && division > 1 : moved === 'up';
+  const down = moved === undefined ? position >= COMP_SIZE - 1 && division < DIVISIONS : moved === 'down';
+  if (position === 1) return division === 1 ? 'Champions of the top division.' : up ? `Champions. Promoted to ${divisionName(division - 1)}.` : 'Champions.';
+  if (position === 2) return up ? `Runners-up. Promoted to ${divisionName(division - 1)}.` : 'Runners-up.';
+  if (position <= 4) return 'A top-half finish.';
   if (position <= 6) return 'Mid-table. Safe, but the board wants more.';
-  return 'Bottom two. Relegation form: the board expects a response.';
+  return down ? `Bottom two. Relegated to ${divisionName(division + 1)}.` : 'Bottom two: the board expects a response.';
 }
 
 /**
  * Record your live league match, quick-simulate the rest of the matchday and,
  * after the last matchday, settle the table, prize money and any trophy.
  */
-export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = realQuickSim, forfeited = false): CompOutcome {
+export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: string[] = [], sim: QuickSim = modelQuickSim, forfeited = false): CompOutcome {
   ensureCompetitionFields(save);
   const season = save.season;
   if (!season) throw new Error('No season in progress');
@@ -503,8 +565,9 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   f.ag = home ? ga : gf;
   const opp = ladderClub(save, home ? f.away : f.home);
   const md = season.matchday;
-  const summary = applyResult(save, null, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `League matchday ${md + 1}`, forfeited);
-  if (!forfeited) {
+  const summary = applyResult(save, opp, { name: opp.name, short: opp.short }, gf, ga, false, scorers, `League matchday ${md + 1}`, forfeited, 'normal', 'league');
+  if (forfeited) season.forfeits = (season.forfeits ?? 0) + 1;
+  else {
     save.trainingPoints += 1;
     summary.trainingPoints += 1;
   }
@@ -524,19 +587,33 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   }
   season.done = true;
   season.finish = pos;
-  const money = SEASON_PRIZES[pos - 1] ?? 0;
+  const division = season.division ?? DIVISIONS;
+  // Prize money and the finish bonus are paid for the matchdays you played; a forfeited season earns nothing.
+  const days = season.matchdays.length;
+  const share = Math.max(0, days - (season.forfeits ?? 0)) / days;
+  const money = Math.round((prizeIn(SEASON_PRIZES[pos - 1] ?? 0, division) * share) / 5_000) * 5_000;
   season.earned += money;
   save.budget += money;
   summary.money = money;
+  // A title or promotion has to be played for. Relegation needs no such proof.
+  const honest = (season.forfeits ?? 0) <= MAX_SEASON_FORFEITS;
   let trophy: Trophy | null = null;
-  if (pos === 1) {
-    trophy = { kind: 'season', title: `League ${season.edition}`, edition: season.edition, atMatch: save.history.length };
+  if (pos === 1 && honest) {
+    trophy = { kind: 'season', title: `League ${season.edition}`, edition: season.edition, atMatch: lifetimeMatches(save) };
     save.trophies!.push(trophy);
   }
-  if (!forfeited) award(save, [leagueFinishXp(pos), pos === 1 ? claimMilestone(save, 'first-trophy') : null], summary.xp);
-  save.news.push(`Season ${season.edition} over: finished ${ordinal(pos)}. ${seasonVerdict(pos)} +${formatMoney(money)}.`);
+  const finish = leagueFinishXp(pos, divisionXp(division) * share);
+  award(save, [finish, trophy ? claimMilestone(save, 'first-trophy') : null], summary.xp);
+  // Promotion and relegation, from the division the season was played in.
+  const move = honest || pos > 2 ? applyLeagueFinish(save, pos) : { moved: null, division: playerDivision(save) };
+  season.moved = move.moved;
+  if (move.moved) noteDivision(save, move.division);
+  const verdict = seasonVerdict(pos, division, move.moved);
+  noteYear(save, `League ${season.edition}: ${ordinal(pos)} in ${divisionName(division)}${move.moved === 'up' ? ', promoted' : move.moved === 'down' ? ', relegated' : ''}`);
+  const swap = move.moved && 'swapped' in move && move.swapped ? ` ${move.swapped} go${move.moved === 'up' ? ' down' : ' up'} in your place.` : '';
+  save.news.push(`League ${season.edition} over: finished ${ordinal(pos)} in ${divisionName(division)}. ${verdict}${swap} +${formatMoney(money)}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
-  return { note: `Final table: ${ordinal(pos)}. ${seasonVerdict(pos)} +${formatMoney(money)}.`, money, trophy, summary };
+  return { note: `Final table: ${ordinal(pos)}. ${verdict} +${formatMoney(money)}.`, money, trophy, summary };
 }
 
 export function closeSeason(save: Save): void {

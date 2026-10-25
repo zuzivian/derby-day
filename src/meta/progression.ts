@@ -1,7 +1,7 @@
 // Long-term progression: the club calendar and the end-of-season rollover.
 //
-// Calendar. `save.week` counts ranked and competition matches (applyResult in
-// game.ts adds one per match; practice friendlies don't count), but only once
+// Calendar. `save.week` counts ranked and competition matches played (applyResult in
+// game.ts adds one per match; practice friendlies and forfeits don't count), but only once
 // the calendar is unlocked at club level 10 (src/meta/levels.ts): before that
 // no week passes and nothing rolls over. A "year" is
 // SEASON_WEEKS = 10 weeks, so it is the same length whichever mode you play,
@@ -18,12 +18,16 @@
 //  3. players 34+ may retire (never below MIN_SQUAD, never the last keeper)
 //  4. 2-3 academy prospects aged 16-17 arrive, if the squad has room; the rest
 //     are held as offers you can sign by releasing someone
-//  5. the CPU ladder drifts in Elo/quality and every club's squad is regenerated
-//     from its seed offset by `era`
+//  5. the CPU world has its season (developWorld in world.ts): CPU squads age,
+//     retire, take on youth and trade players, clubs develop toward their
+//     division, and the CPU tables send clubs up and down
+//  6. the year goes into the club history (closeYear in history.ts)
 // Wages are not modelled (kept simple on purpose).
 
-import { assignNumbers, autoLineup, qualityForElo } from './club.ts';
+import { assignNumbers, autoLineup } from './club.ts';
 import { MIN_SQUAD, type Outcome, type Save } from './game.ts';
+import { closeYear } from './history.ts';
+import { developWorld, playerDivision, type WorldReview } from './world.ts';
 import { scoutMatchesFor, squadCap } from './levels.ts';
 import { ATTR_KEYS, generatePlayer, overall, shortName, type AttrKey, type Player } from './player.ts';
 import { gauss, hashString, int, next, pick, type Rng } from '../sim/rng.ts';
@@ -104,6 +108,8 @@ export interface SeasonReview {
   expiredOffers: number;
   risers: LadderMove[];
   fallers: LadderMove[];
+  /** The CPU world's season: tables, promotions, transfers. Missing on reviews from before the world. */
+  world?: WorldReview;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +304,7 @@ function seasonRecord(save: Save, year: number): SeasonRecord {
   let first = -1;
   let last = -1;
   let firstRanked = true;
+  const base = save.historyBase ?? 0;
   save.history.forEach((m, i) => {
     if (m.week === undefined || m.week < from || m.week > to) return;
     if (first < 0) first = i;
@@ -315,26 +322,22 @@ function seasonRecord(save: Save, year: number): SeasonRecord {
     }
   });
   if (first >= 0) {
-    // A trophy's atMatch is the history length when it was won.
-    rec.trophies = (save.trophies ?? []).filter((t) => t.atMatch >= first + 1 && t.atMatch <= last + 1).map((t) => t.title);
+    // A trophy's atMatch is the lifetime match count when it was won (history.ts lifetimeMatches).
+    rec.trophies = (save.trophies ?? []).filter((t) => t.atMatch >= base + first + 1 && t.atMatch <= base + last + 1).map((t) => t.title);
   }
   return rec;
 }
 
-/** Let every CPU club drift, then bump its era so its squad regenerates from the offset seed. */
-function driftLadder(save: Save, r: Rng): { risers: LadderMove[]; fallers: LadderMove[] } {
-  const mean = save.ladder.reduce((s, c) => s + c.elo, 0) / Math.max(1, save.ladder.length);
-  const moves: LadderMove[] = save.ladder.map((c) => {
-    const before = c.elo;
-    c.elo = Math.round(Math.max(650, Math.min(1600, c.elo + gauss(r) * 50 + (mean - c.elo) * 0.1)));
-    c.quality = qualityForElo(c.elo);
-    c.era = (c.era ?? 0) + 1;
-    return { name: c.name, before, after: c.elo };
-  });
-  const byGain = [...moves].sort((a, b) => b.after - b.before - (a.after - a.before));
+/** The CPU world's season (developWorld), and the two biggest risers and fallers in squad quality. */
+function driftLadder(save: Save, r: Rng): { risers: LadderMove[]; fallers: LadderMove[]; world: WorldReview } {
+  const before = new Map(save.ladder.map((c) => [c.id, c.quality]));
+  const world = developWorld(save, r);
+  const moves: LadderMove[] = save.ladder.map((c) => ({ name: c.name, before: before.get(c.id) ?? c.quality, after: c.quality }));
+  const byGain = [...moves].sort((a, b) => b.after - b.before - (a.after - a.before) || a.name.localeCompare(b.name));
   return {
     risers: byGain.slice(0, 2).filter((m) => m.after > m.before),
     fallers: byGain.slice(-2).reverse().filter((m) => m.after < m.before),
+    world,
   };
 }
 
@@ -399,7 +402,8 @@ export function runRollover(save: Save): SeasonReview {
   }
 
   // 4. The CPU world moves on.
-  const { risers, fallers } = driftLadder(save, r);
+  const { risers, fallers, world } = driftLadder(save, r);
+  closeYear(save, { year, division: playerDivision(save), played: record.played, won: record.won, drawn: record.drawn, lost: record.lost, gf: record.gf, ga: record.ga, eloEnd: save.club.elo });
 
   const review: SeasonReview = {
     year,
@@ -414,6 +418,7 @@ export function runRollover(save: Save): SeasonReview {
     expiredOffers,
     risers,
     fallers,
+    world,
   };
   save.review = review;
   save.year = year + 1;

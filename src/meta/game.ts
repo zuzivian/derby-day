@@ -8,11 +8,10 @@ import type { TeamSetup } from '../sim/types.ts';
 import {
   assignNumbers,
   autoLineup,
+  eloForQuality,
   emptyRecord,
   generateIdentity,
-  generateLadder,
   generateSquad,
-  qualityForElo,
   toTeamSetup,
   type ClubIdentity,
   type ClubRecord,
@@ -21,7 +20,10 @@ import {
 import type { Cup, Season, Trophy } from './competitions.ts';
 import { eloDelta, expectedScore, START_ELO } from './elo.ts';
 import type { SeasonReview } from './progression.ts';
+import { pushHistory, type ClubRecords, type SeasonSummary } from './history.ts';
 import { award, claimMilestone, isUnlocked, marketSize, matchXp, squadCap, startGain, UNLOCKS_VERSION, winTrainingBonus, XP, type MilestoneId, type PracticeLevel, type UnlockId, type XpGain } from './levels.ts';
+import type { PendingMatch } from './pending.ts';
+import { divisionMoney, divisionXp, generateWorld, playerDivision, START_DIVISION, WORLD_CPU_CLUBS } from './world.ts';
 import { ATTR_KEYS, ATTR_NAME, generatePlayer, marketValue, overall, shortName, trainingGain, type AttrKey, type Player } from './player.ts';
 
 export const SAVE_VERSION = 1;
@@ -34,7 +36,12 @@ export const SAVE_VERSION = 1;
  */
 export const MAX_SQUAD = 24;
 export const MIN_SQUAD = TEAM_SIZE + 3;
-export const LADDER_SIZE = 15;
+/** CPU clubs in the world: four divisions of eight with you (src/meta/world.ts). */
+export const LADDER_SIZE = WORLD_CPU_CLUBS;
+/** Ranked or league matches to play after a cup before the next one can start. */
+export const CUP_WAIT = 4;
+/** The transfer market also refreshes when this long has passed (client clock), whatever you play. */
+export const MARKET_REFRESH_MS = 6 * 3600 * 1000;
 
 export interface MatchRecord {
   opponent: string;
@@ -49,6 +56,8 @@ export interface MatchRecord {
   competition?: string;
   /** Club-calendar week this match was played in (ranked and competition matches only). */
   week?: number;
+  /** Left early or abandoned: recorded as 0–3. */
+  forfeited?: boolean;
 }
 
 export interface Save {
@@ -96,6 +105,26 @@ export interface Save {
   legacyUnlocks?: boolean;
   /** The club's formation (FORMATIONS in sim/constants.ts). Default 4-4-2. The lineup is in its slot order. */
   formation?: FormationId;
+  // The world (src/meta/world.ts) and the economy around it. Optional so older
+  // saves still load; ensureWorldFields() and ensureHistoryFields() fill them.
+  /** Your division, 1 (top) to DIVISIONS. */
+  division?: number;
+  /** The ranked opponent on offer (a ladder club id). Fixed once offered, so a reload can't change it. */
+  nextOpp?: string | null;
+  /** A recorded match that kicked off and hasn't finished (src/meta/pending.ts). Settled as a forfeit on the next boot. */
+  pending?: PendingMatch | null;
+  /** Matches dropped off the front of `history` (HISTORY_CAP in history.ts). */
+  historyBase?: number;
+  /** Lifetime totals and records, which outlive the capped history. */
+  records?: ClubRecords;
+  /** One entry per finished calendar year. */
+  seasons?: SeasonSummary[];
+  /** Notes for this year's club history entry ("Cup 6: winners"). */
+  yearNotes?: string[];
+  /** Ranked or league matches still to play before another cup can start. */
+  cupWait?: number;
+  /** When the transfer market was last refreshed (client clock, ms). Only the timed refresh reads it. */
+  marketAt?: number;
 }
 
 export function newGame(seed: number): Save {
@@ -113,7 +142,14 @@ export function newGame(seed: number): Save {
     budget: 1_200_000,
     trainingPoints: 6,
     eloHistory: [START_ELO],
-    ladder: generateLadder(seed ^ 0x5eed, LADDER_SIZE),
+    ladder: generateWorld(seed ^ 0x5eed),
+    division: START_DIVISION,
+    nextOpp: null,
+    pending: null,
+    historyBase: 0,
+    seasons: [],
+    yearNotes: [],
+    cupWait: 0,
     market: [],
     history: [],
     week: 0,
@@ -151,6 +187,20 @@ export function formatMoney(n: number): string {
 const round5k = (n: number) => Math.round(n / 5_000) * 5_000;
 export const askingPrice = (p: Player): number => round5k(marketValue(p) * 1.1);
 export const salePrice = (p: Player): number => round5k(marketValue(p) * 0.8);
+
+/** Refresh the market if MARKET_REFRESH_MS has passed since the last refresh. `now` is the client's clock. Returns true if it refreshed. */
+export function refreshMarketIfStale(save: Save, now: number): boolean {
+  if (!Number.isFinite(now)) return false;
+  if (save.marketAt !== undefined && now - save.marketAt < MARKET_REFRESH_MS && now >= save.marketAt) {
+    return false;
+  }
+  const first = save.marketAt === undefined;
+  save.marketAt = now;
+  // The first stamp only starts the clock: a save gets its timed refresh 6 hours after this build first saw it.
+  if (first) return false;
+  refreshMarket(save);
+  return true;
+}
 
 export function refreshMarket(save: Save): void {
   const r = save.rng;
@@ -262,6 +312,31 @@ export function ensureElevenASide(save: Save): void {
   if (!ok) save.lineup = autoLineup(save.squad, save.formation);
 }
 
+/**
+ * The ranked opponent on offer. It is picked once (pickOpponent) and kept on
+ * the save until that match is played, so reloading can't re-roll it.
+ */
+export function offeredOpponent(save: Save): LadderClub {
+  const kept = save.nextOpp ? save.ladder.find((c) => c.id === save.nextOpp) : undefined;
+  if (kept) return kept;
+  const opp = pickOpponent(save);
+  save.nextOpp = opp.id;
+  return opp;
+}
+
+/**
+ * What a ranked match against `opp` pays, as a multiplier on the money and XP
+ * tables (cup and league matches use its XP side): the opponent's division (DIVISION_MONEY, DIVISION_XP), times 0.7 to
+ * 1.3 by how unlikely you were to win (expected score 1 to 0). Beating a weak
+ * club pays less than beating an equal one, so losing Elo on purpose to meet
+ * weaker clubs never pays.
+ */
+export function rankedScale(save: Save, opp: LadderClub): { xp: number; money: number } {
+  const odds = 0.7 + 0.6 * (1 - expectedScore(save.club.elo, opp.elo));
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  return { xp: r2(divisionXp(opp.division) * odds), money: r2(divisionMoney(opp.division) * odds) };
+}
+
 export function pickOpponent(save: Save): LadderClub {
   const last = save.history.at(-1)?.opponent;
   const pool = [...save.ladder]
@@ -280,6 +355,9 @@ export interface ResultSummary {
   xp: XpGain;
 }
 
+/** Ranked money by result, before rankedScale: a win, a draw, a defeat, and each goal scored. */
+export const RANKED_MONEY = { win: 120_000, draw: 50_000, loss: 20_000, goal: 5_000 } as const;
+
 export function applyResult(
   save: Save,
   opponent: LadderClub | null,
@@ -294,6 +372,8 @@ export function applyResult(
   forfeited = false,
   /** For a practice friendly: the difficulty, which sets its XP. */
   practice: PracticeLevel = 'normal',
+  /** For a cup or league match (src/meta/competitions.ts): which one. With `opponent` it moves Elo and pays XP like a ranked match (rankedScale); prize money is the competition's. */
+  comp?: 'cup' | 'league',
 ): ResultSummary {
   const c = save.club;
   const xp = startGain(save);
@@ -303,34 +383,48 @@ export function applyResult(
   let delta = 0;
   let money = 0;
   let tp = 1;
+  let xpScale = 1;
   const win = goalsFor > goalsAgainst;
-  if (ranked && opponent) {
+  // Ranked, cup and league matches all move Elo, both ways. Only ranked ones count in the ladder record.
+  const rated = !!opponent && (ranked || !!comp);
+  // Read before the Elo moves, so the stake is the one shown before kick-off. Cup and league matches pay XP the same way.
+  const scale = rated ? rankedScale(save, opponent) : null;
+  if (scale) xpScale = scale.xp;
+  if (rated) {
     delta = eloDelta(c.elo, opponent.elo, goalsFor, goalsAgainst, c.played);
     const oppDelta = eloDelta(opponent.elo, c.elo, goalsAgainst, goalsFor, opponent.played);
     c.elo += delta;
     opponent.elo += oppDelta;
+    save.eloHistory.push(c.elo);
+  }
+  if (ranked && opponent && scale) {
     tallyRecord(c, goalsFor, goalsAgainst);
     tallyRecord(opponent, goalsAgainst, goalsFor);
     const draw = goalsFor === goalsAgainst;
-    money = forfeited ? 0 : (win ? 120_000 : draw ? 50_000 : 20_000) + goalsFor * 5_000;
+    const base = (win ? RANKED_MONEY.win : draw ? RANKED_MONEY.draw : RANKED_MONEY.loss) + goalsFor * RANKED_MONEY.goal;
+    money = forfeited ? 0 : Math.round((base * scale.money) / 5_000) * 5_000;
     tp = win ? 3 : 2;
     save.budget += money;
-    save.eloHistory.push(c.elo);
     simulateLadderRound(save, opponent.id);
-    refreshMarket(save);
+    save.nextOpp = null; // the next offer is picked fresh
   }
   if ((ranked || competition) && win) tp += winTrainingBonus(save);
   if (forfeited) tp = 0;
   save.trainingPoints += tp;
+  // Every match you finish brings new names to the market (time does too: refreshMarketIfStale).
+  if (!forfeited) refreshMarket(save);
+  // A cup can start again once enough ranked or league matches have been played since the last one.
+  if (!forfeited && (ranked || comp === 'league') && (save.cupWait ?? 0) > 0) save.cupWait = save.cupWait! - 1;
 
   // Experience: the match itself, then a first ranked win. Forfeits earn nothing.
-  award(save, matchXp(ranked ? 'ranked' : competition ? 'competition' : 'practice', goalsFor, goalsAgainst, forfeited, practice), xp);
+  award(save, matchXp(ranked ? 'ranked' : competition ? 'competition' : 'practice', goalsFor, goalsAgainst, forfeited, practice, xpScale), xp);
   if (ranked && win && !forfeited) award(save, [claimMilestone(save, 'first-win')], xp);
 
-  // One week passes per ranked or competition match once the season calendar
-  // is unlocked (club level 10); friendlies never move it.
-  const counted = (ranked || !!competition) && calendarOn;
+  // One week passes per ranked or competition match played once the season
+  // calendar is unlocked (club level 10); friendlies and forfeits never move it.
+  const counted = (ranked || !!competition) && calendarOn && !forfeited;
   if (counted) save.week = (save.week ?? 0) + 1;
+  save.pending = null; // whatever kicked off has now been recorded
 
   // Match minutes develop players a little; the young ones more.
   const developments: string[] = [];
@@ -347,9 +441,9 @@ export function applyResult(
     }
   }
 
-  save.history.push({ opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}) });
+  pushHistory(save, { opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}), ...(forfeited ? { forfeited } : {}) });
   const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
-  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${ranked ? ` (Elo ${signed(delta)})` : ''}.`);
+  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${rated ? ` (Elo ${signed(delta)})` : ''}.`);
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { eloDelta: delta, money, trainingPoints: tp, developments, xp };
 }
@@ -363,13 +457,18 @@ function tallyRecord(r: ClubRecord, gf: number, ga: number): void {
   else r.lost++;
 }
 
-/** Other ladder clubs play each other too, so the table moves between your matches. */
+/**
+ * Other ladder clubs play each other too, so the table moves between your
+ * matches. The odds come from the clubs' squad quality (eloForQuality), not
+ * their Elo, so a club's Elo drifts toward what its squad is worth: beating a
+ * club takes its Elo, never its players.
+ */
 function simulateLadderRound(save: Save, skipId: string): void {
   const pool = save.ladder.filter((c) => c.id !== skipId);
   for (let i = 0; i < 3; i++) {
     const a = pick(save.rng, pool);
     const b = pick(save.rng, pool.filter((c) => c.id !== a.id));
-    const ea = expectedScore(a.elo, b.elo);
+    const ea = expectedScore(eloForQuality(a.quality), eloForQuality(b.quality));
     const roll = next(save.rng);
     const [ga, gb] = roll < ea * 0.8 ? [2, 1] : roll > 1 - (1 - ea) * 0.8 ? [1, 2] : [1, 1];
     const da = eloDelta(a.elo, b.elo, ga, gb, a.played);
@@ -378,13 +477,13 @@ function simulateLadderRound(save: Save, skipId: string): void {
     b.elo += db;
     tallyRecord(a, ga, gb);
     tallyRecord(b, gb, ga);
-    a.quality = qualityForElo(a.elo);
-    b.quality = qualityForElo(b.elo);
   }
 }
 
 export interface LadderRow {
   name: string;
+  /** Division, 1 (top) to DIVISIONS. */
+  division: number;
   short: string;
   elo: number;
   played: number;
@@ -398,13 +497,13 @@ export interface LadderRow {
 
 export function ladderTable(save: Save): LadderRow[] {
   const rows: LadderRow[] = [
-    ...save.ladder.map((c) => ({ ...pickRow(c), you: false })),
-    { ...pickRow(save.club), you: true },
+    ...save.ladder.map((c) => ({ ...pickRow(c), division: c.division ?? START_DIVISION, you: false })),
+    { ...pickRow(save.club), division: playerDivision(save), you: true },
   ];
   return rows.sort((a, b) => b.elo - a.elo);
 }
 
-function pickRow(c: ClubIdentity & ClubRecord & { elo: number }): Omit<LadderRow, 'you'> {
+function pickRow(c: ClubIdentity & ClubRecord & { elo: number }): Omit<LadderRow, 'you' | 'division'> {
   return { name: c.name, short: c.short, elo: c.elo, played: c.played, won: c.won, drawn: c.drawn, lost: c.lost, primary: c.primary, secondary: c.secondary };
 }
 
@@ -419,6 +518,10 @@ export function isSave(x: unknown): x is Save {
     // Club calendar fields (also optional).
     numOrUndef(s.week) && numOrUndef(s.year) && objOrNull(s.review) && (s.offers === undefined || Array.isArray(s.offers)) &&
     // Club level fields (also optional).
-    numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones))
+    numOrUndef(s.xp) && (s.unlocksSeen === undefined || Array.isArray(s.unlocksSeen)) && (s.milestones === undefined || Array.isArray(s.milestones)) &&
+    // World and history fields (also optional).
+    numOrUndef(s.division) && numOrUndef(s.historyBase) && numOrUndef(s.cupWait) && numOrUndef(s.marketAt) &&
+    (s.nextOpp === undefined || s.nextOpp === null || typeof s.nextOpp === 'string') && objOrNull(s.pending) && objOrNull(s.records) &&
+    (s.seasons === undefined || Array.isArray(s.seasons)) && (s.yearNotes === undefined || Array.isArray(s.yearNotes))
   );
 }
