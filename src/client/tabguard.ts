@@ -25,6 +25,13 @@ const ASK_MS = 1500;
 const PING_MS = 400;
 /** After the owner yields, how long a taker waits for the lock to come free before taking it by force. */
 const LOCK_WAIT_MS = 3000;
+/**
+ * A page that is reloading (or being handed the club by a reload) asks for the lock while the page it replaces may still be
+ * tearing down and holding it. Before concluding that another tab owns the club, wait this long for the lock to come free.
+ */
+const CLAIM_GRACE_MS = 800;
+/** If the browser's lock manager does not answer at all within this long, stop waiting for it and use the lease instead. */
+const LOCK_ANSWER_MS = 3000;
 
 type Msg = { type: 'ask' | 'yield' | 'busy' | 'claim' | 'ping' | 'alive'; from: string; to?: string };
 interface Lease {
@@ -74,9 +81,18 @@ const locksAvailable = (): boolean => {
 type Acquired = 'got' | 'busy' | 'timeout' | 'unsupported';
 
 /** Ask for the lock. While this tab owns the club the lock's callback never returns: releaseLock() ends it. */
-function acquireLock(opts: { ifAvailable?: boolean; steal?: boolean; timeoutMs?: number }): Promise<Acquired> {
+function acquireLock(opts: { ifAvailable?: boolean; steal?: boolean; timeoutMs?: number; answerWithinMs?: number }): Promise<Acquired> {
   return new Promise((resolve) => {
     let settled = false;
+    // The lock manager answered never: give up on it (the caller falls back to the lease), and if it ever does grant the
+    // lock, let it go again at once rather than hold a lock nobody knows about.
+    let abandoned = false;
+    const deaf = opts.answerWithinMs ? setTimeout(() => {
+      if (!settled) {
+        abandoned = true;
+        done('unsupported');
+      }
+    }, opts.answerWithinMs) : undefined;
     const done = (r: Acquired) => {
       if (!settled) {
         settled = true;
@@ -92,6 +108,16 @@ function acquireLock(opts: { ifAvailable?: boolean; steal?: boolean; timeoutMs?:
     try {
       navigator.locks.request(LOCK, options, (lock) => {
         clearTimeout(timer);
+        clearTimeout(deaf);
+        if (abandoned) {
+          // Too late: nobody is waiting for this lock any more. A late steal is different: it has already knocked the old
+          // owner out, so keep the lock and own the club (the next take() sees owner and returns 'taken').
+          if (!opts.steal) return;
+          owner = true;
+          return new Promise<void>((end) => {
+            releaseLock = end;
+          });
+        }
         if (!lock) {
           done('busy');
           return;
@@ -106,12 +132,14 @@ function acquireLock(opts: { ifAvailable?: boolean; steal?: boolean; timeoutMs?:
         },
         (e: unknown) => {
           clearTimeout(timer);
+          clearTimeout(deaf);
           if (!settled) done((e as { name?: string } | null)?.name === 'AbortError' ? 'timeout' : 'unsupported');
           else if (owner) stolen(); // another tab took the lock by force: this one stepped aside
         },
       );
     } catch {
       clearTimeout(timer);
+      clearTimeout(deaf);
       done('unsupported'); // e.g. an opaque-origin sandbox
     }
   });
@@ -293,7 +321,13 @@ export async function claim(h: GuardHooks): Promise<boolean> {
     if (owner && !useLocks && document.visibilityState === 'visible') writeLease();
   });
   if (locksAvailable()) {
-    const r = await acquireLock({ ifAvailable: true });
+    let r = await acquireLock({ ifAvailable: true, answerWithinMs: LOCK_ANSWER_MS });
+    if (r === 'busy') {
+      // Held right now. A reload (or the hand-over's reload) replaces a page that may still be letting go of it, so give the
+      // lock a moment to come free before deciding that another tab really owns the club.
+      r = await acquireLock({ timeoutMs: CLAIM_GRACE_MS });
+      if (r === 'timeout') r = 'busy';
+    }
     if (r === 'got') {
       useLocks = true;
       owner = true;
@@ -303,7 +337,7 @@ export async function claim(h: GuardHooks): Promise<boolean> {
       useLocks = true;
       return false;
     }
-    // 'unsupported': fall through to the lease
+    // 'unsupported' (no Web Locks here, or the lock manager did not answer): fall through to the lease
   }
   watchLease();
   const l = readLease();
@@ -333,12 +367,14 @@ function ask(): Promise<'yield' | 'busy' | 'none'> {
  * match; call again later, or use takeWhenFree().
  */
 export async function take(): Promise<TakeResult> {
+  if (owner) return 'taken'; // a steal that the lock manager answered late already made this tab the owner
   const answer = await ask();
   if (answer === 'busy') return 'busy';
   if (useLocks) {
-    // The owner let go (or never answered): wait briefly for the lock to come free, then take it by force.
-    let r: Acquired = answer === 'yield' ? await acquireLock({ timeoutMs: LOCK_WAIT_MS }) : 'timeout';
-    if (r !== 'got') r = await acquireLock({ steal: true });
+    // The owner let go, or did not answer in time (busy with a load, frozen, or gone: if it died, its lock is released at
+    // once). Either way wait for the lock to come free, and only then take it by force.
+    let r: Acquired = await acquireLock({ timeoutMs: LOCK_WAIT_MS });
+    if (r !== 'got') r = await acquireLock({ steal: true, answerWithinMs: LOCK_ANSWER_MS });
     if (r !== 'got') return 'busy';
     owner = true;
     return 'taken';

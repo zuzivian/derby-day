@@ -169,4 +169,6 @@ NODE_PATH="$(npm root -g)" bun run e2e
 
 The runner also falls back to the global npm root and `/opt/node22/lib/node_modules` on its own, so `NODE_PATH` is usually optional. Set `PLAYWRIGHT_CHROMIUM=/path/to/chrome` to use a specific browser (default: `/opt/pw-browsers/chromium` if it exists, otherwise Playwright's own). `node tests/e2e/run.cjs <text>` runs only tests whose name contains `<text>`; `E2E_HEADED=1` shows the browser.
 
+The runner never hangs silently: a test that times out prints each open page's state (what it shows, `navigator.locks.query()`), a page whose renderer crashes fails its test at once, and closing a test's browser contexts is bounded (CDP throttle sessions are detached and pages closed one by one first; otherwise `context.close()` stalled about one run in five under `E2E_CPU_THROTTLE`). `E2E_TIMEOUT_MS` and `E2E_CLOSE_TIMEOUT_MS` change the limits.
+
 All selectors live in `tests/e2e/lib/helpers.cjs` (`SEL`), including the best-effort onboarding skipper. When the UI changes, fix them there.
