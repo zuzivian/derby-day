@@ -9,6 +9,8 @@ import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overal
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
+import { DIVISIONS, divisionName, playerDivision } from '../meta/world.ts';
+import { historyPanel } from './history.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
 import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpCardHtml } from './levels.ts';
@@ -123,7 +125,7 @@ function statusStrip(s: Save): string {
     isUnlocked(s, 'ladder') ? `<div class="stat rank" title="Ladder position">${LADDER}<span class="stat-num" aria-hidden="true">#${rankOf(s)}</span><span class="sr-only">Ladder position ${rankOf(s)} of ${s.ladder.length + 1}</span></div>` : '',
     isUnlocked(s, 'calendar') ? `<div class="stat week" title="Season and week">${CAL}<span class="stat-num" aria-hidden="true">S${s.year ?? 1} · W${weekOfYear(s)}</span><span class="sr-only">Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</span></div>` : '',
   ].filter(Boolean);
-  const chip = `<div class="club-chip">${crestSvg(c, 30)}<div class="club-chip-text"><div class="club-name">${esc(c.name)}</div><div class="club-elo">Elo <b>${c.elo}</b></div></div></div>`;
+  const chip = `<div class="club-chip">${crestSvg(c, 30)}<div class="club-chip-text"><div class="club-name">${esc(c.name)}</div><div class="club-elo">Elo <b>${c.elo}</b>${isUnlocked(s, 'league') ? ` · ${divisionName(playerDivision(s))}` : ''}</div></div></div>`;
   return `${chip}<div class="status-strip" role="group" aria-label="Club status">${items.join('')}</div>`;
 }
 
@@ -222,6 +224,7 @@ export function clubScreen(app: App): string {
     </article>
 
     ${levelPanel(s)}
+    ${historyPanel(s)}
   </div>`;
 }
 
@@ -364,10 +367,10 @@ export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
   return `
   <article class="panel">
-    <h2 class="eyebrow">Ladder · ranked by Elo · CPU clubs also play each other between your matches</h2>
+    <h2 class="eyebrow">Ladder · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</h2>
     <div class="table-scroll"><table class="tbl ladder">
-      <thead><tr><th class="num">Pos</th><th>Club</th><th class="num opt-narrow">P</th><th class="num opt-narrow">W</th><th class="num opt-narrow">D</th><th class="num opt-narrow">L</th><th class="num">Elo</th></tr></thead>
-      <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num opt-narrow">${r.played}</td><td class="num opt-narrow">${r.won}</td><td class="num opt-narrow">${r.drawn}</td><td class="num opt-narrow">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
+      <thead><tr><th class="num">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num opt-narrow">P</th><th class="num opt-narrow">W</th><th class="num opt-narrow">D</th><th class="num opt-narrow">L</th><th class="num">Elo</th></tr></thead>
+      <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td><td class="num opt-narrow">${r.played}</td><td class="num opt-narrow">${r.won}</td><td class="num opt-narrow">${r.drawn}</td><td class="num opt-narrow">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
     </table></div>
   </article>`;
 }

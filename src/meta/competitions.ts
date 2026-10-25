@@ -30,7 +30,7 @@
 import { autoLineup, cpuTeam, ladderSquad, type ClubIdentity, type LadderClub } from './club.ts';
 import { applyResult, CUP_WAIT, formatMoney, type ResultSummary, type Save } from './game.ts';
 import { lifetimeMatches, noteDivision, noteYear } from './history.ts';
-import { award, claimMilestone, cupFinishXp, leagueFinishXp } from './levels.ts';
+import { award, claimMilestone, cupFinishXp, leagueFinishXp, prizeBonus } from './levels.ts';
 import { overall, type Player } from './player.ts';
 import { applyLeagueFinish, cpuStrength, DIVISIONS, divisionClubs, divisionMoney, divisionName, divisionXp, ensureWorldFields, playerDivision, quickScore } from './world.ts';
 import { simulate } from '../sim/match.ts';
@@ -377,8 +377,8 @@ export function recordCupMatch(save: Save, gf: number, ga: number, scorers: stri
     summary.trainingPoints += 1;
   }
 
-  let money = round === 0 && !forfeited ? prizeIn(CUP_PRIZES[0], division) : 0;
-  if (won) money += prizeIn(CUP_PRIZES[round + 1], division);
+  let money = round === 0 && !forfeited ? prizeIn(CUP_PRIZES[0] * prizeBonus(save), division) : 0;
+  if (won) money += prizeIn(CUP_PRIZES[round + 1] * prizeBonus(save), division);
   cup.earned += money;
   save.budget += money;
   summary.money = money;
@@ -591,7 +591,7 @@ export function recordSeasonMatch(save: Save, gf: number, ga: number, scorers: s
   // Prize money and the finish bonus are paid for the matchdays you played; a forfeited season earns nothing.
   const days = season.matchdays.length;
   const share = Math.max(0, days - (season.forfeits ?? 0)) / days;
-  const money = Math.round((prizeIn(SEASON_PRIZES[pos - 1] ?? 0, division) * share) / 5_000) * 5_000;
+  const money = Math.round((prizeIn((SEASON_PRIZES[pos - 1] ?? 0) * prizeBonus(save), division) * share) / 5_000) * 5_000;
   season.earned += money;
   save.budget += money;
   summary.money = money;

@@ -2,7 +2,7 @@ import { autoLineup, cpuTeam, generateSquad, ladderSquad, toTeamSetup, type Club
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
-import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, pickOpponent, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
+import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, setFormation, setLineupSlot, train, type Save } from '../meta/game.ts';
 import type { FormationId } from '../sim/constants.ts';
 import type { AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
@@ -20,6 +20,9 @@ import { avoidClash } from './kits.ts';
 import { mountMatch } from './matchView.ts';
 import { mountShootout, type ShootoutResult, type ShootoutViewOptions } from './shootout.ts';
 import { ensureProgressionFields, maybeRollover } from '../meta/progression.ts';
+import { ensureWorldFields } from '../meta/world.ts';
+import { ensureHistoryFields } from '../meta/history.ts';
+import { beginMatch, settleAbandoned, type PendingMatch } from '../meta/pending.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
@@ -40,14 +43,21 @@ function freshSeed(): number {
   return (Date.now() ^ Math.floor(Math.random() * 2 ** 31)) | 0;
 }
 
+/** The match the last visit left unfinished, settled as a forfeit at boot: told once the page is up. */
+let abandoned: string | null = null;
+
 function boot(save: Save): App {
   ensureProgressionFields(save);
   ensureElevenASide(save); // six-a-side saves get a squad of 18 and an eleven-man lineup
   ensureLevelFields(save); // older saves get retro XP and keep what they already use
+  ensureWorldFields(save); // older saves join the four-division world
+  ensureHistoryFields(save); // lifetime records, and the match history capped
+  abandoned = settleAbandoned(save)?.message ?? null; // a reload or a closed tab mid-match counts as a forfeit
+  refreshMarketIfStale(save, Date.now());
   return {
     save,
     screen: 'home',
-    nextOpp: pickOpponent(save),
+    nextOpp: offeredOpponent(save), // fixed on the save, so reloading can't re-roll it
     trainee: null,
     marketRole: 'ALL',
     confirmSell: null,
@@ -289,11 +299,17 @@ function playLive(
   label: string,
   onDone: (m: MatchState, forfeited: boolean, away: TeamSetup) => void,
   forfeitText?: string,
+  /** A ranked, cup or league match: marked on the save before kick-off, so leaving mid-match can't undo it (pending.ts). */
+  pending?: PendingMatch,
 ): boolean {
   const s = app.save;
   if (!lineupReady(s)) {
     toast('Pick a full XI first.', false);
     return false;
+  }
+  if (pending) {
+    beginMatch(s, pending);
+    persist();
   }
   const home = clubTeam(s, 0.6);
   const away = avoidClash(home, opponent);
@@ -361,7 +377,8 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
     away = toTeamSetup(id, squad, autoLineup(squad), lvl.aiSkill);
   }
   const practice = (practiceLevel?.id ?? 'normal') as PracticeLevel;
-  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest, practice));
+  const pending: PendingMatch | undefined = ranked && opp ? { kind: 'ranked', opponentId: opp.id, opponent: opp.name, label: 'Ranked' } : undefined;
+  playLive(away, crest, ranked ? 'Ranked' : 'Friendly', (m, forfeited, shown) => endMatch(m, forfeited, ranked, opp, shown, crest, practice), undefined, pending);
 }
 
 /** Local 2P or Link two tabs (versus.ts): two humans, nothing recorded. */
@@ -410,7 +427,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     scorersFor,
     scorersAgainst,
   };
-  if (ranked) app.nextOpp = pickOpponent(s);
+  if (ranked) app.nextOpp = offeredOpponent(s);
   persist();
   app.screen = 'home';
   render();
@@ -706,3 +723,4 @@ if (loaded.restored) toast('Your save was damaged, so Derby Day restored your pr
 else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
 else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
 else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+else if (abandoned) toast(abandoned, false);

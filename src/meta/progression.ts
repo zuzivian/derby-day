@@ -28,7 +28,7 @@ import { assignNumbers, autoLineup } from './club.ts';
 import { MIN_SQUAD, type Outcome, type Save } from './game.ts';
 import { closeYear } from './history.ts';
 import { developWorld, playerDivision, type WorldReview } from './world.ts';
-import { scoutMatchesFor, squadCap } from './levels.ts';
+import { academyIntake, academyPotentialBonus, scoutMatchesFor, squadCap } from './levels.ts';
 import { ATTR_KEYS, generatePlayer, overall, shortName, type AttrKey, type Player } from './player.ts';
 import { gauss, hashString, int, next, pick, type Rng } from '../sim/rng.ts';
 import type { Role } from '../sim/constants.ts';
@@ -315,7 +315,8 @@ function seasonRecord(save: Save, year: number): SeasonRecord {
     if (m.goalsFor > m.goalsAgainst) rec.won++;
     else if (m.goalsFor === m.goalsAgainst) rec.drawn++;
     else rec.lost++;
-    if (m.ranked) {
+    // Cup and league matches move Elo too, so every counted match marks the year's Elo.
+    {
       if (firstRanked) rec.eloStart = m.eloBefore;
       firstRanked = false;
       rec.eloEnd = m.eloAfter;
@@ -383,9 +384,10 @@ export function runRollover(save: Save): SeasonReview {
   const expiredOffers = save.offers!.length;
   save.offers = [];
   const intake: IntakeEntry[] = [];
-  const count = int(r, 2, 3);
+  const count = int(r, ...academyIntake(save));
   for (let k = 0; k < count; k++) {
     const p = generateProspect(r, year);
+    p.potential = Math.min(95, p.potential + academyPotentialBonus(save)); // the Youth coach perk
     p.scout = scoutMatchesFor(save, SCOUT_MATCHES); // one match fewer with the Sharper scouts perk
     const joined = save.squad.length < squadCap(save);
     const view = scoutedPotential(p);

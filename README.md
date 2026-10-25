@@ -73,12 +73,15 @@ Matches, hot-seat, linked matches and the replay viewer draw the match in 3D wit
 
 Every match is the same length: 2 × 3 minutes (`HALF_SECONDS` in `src/sim/constants.ts`). There is no length setting; `prefs.halfSeconds` in `src/client/store.ts` is only a hidden override the e2e tests use for short matches.
 
-- **Ranked** (Home, **Kick off**): one match against a ladder club near your Elo. Moves Elo.
-- **Practice** (Home, Practice card): Easy, Normal or Hard CPU. Nothing recorded but a training session.
-- **Cup** (Competitions tab): 8-club knockout, you plus the seven ladder clubs nearest your Elo, seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw you play goes to a live penalty shootout (best of five, then sudden death): as taker, aim with the mouse, hold the left button for power and release (too hard skies it, corners are riskier); as keeper, read the run-up and click left, middle or right to dive. Arrow keys and Space work too, and leaving counts as a loss. Ties between two CPU clubs use a seeded roll weighted by shooting and goalkeeping. Prize money for every round reached; a win goes in the trophy cabinet.
-- **League** (Competitions tab): the same 8 clubs, single round robin over 7 matchdays, 3/1/0 points, then goal difference, then goals scored. Prize money by finishing place; the top two are "promoted".
+- **Ranked** (Home, **Kick off**): one match against a ladder club near your Elo, from any division. Moves Elo. The opponent is fixed once offered (a reload shows the same club). Money and XP scale with the opponent: its division (×1 to ×3 money, ×1 to ×1.75 XP) and 0.7 to 1.3 by how unlikely a win was, so beating weak clubs pays less.
+- **Practice** (Home, Practice card): Easy, Normal or Hard CPU. No Elo, no money, no calendar week. It pays a flat 30, 40 or 60 XP and a training session, develops the players who play, refreshes the transfer market, and is written to the match history and news.
+- **Cup** (Competitions tab): 8-club knockout, you plus four clubs from your division and three from the division above (in the top division, the other seven), seeded 1v8, 4v5, 2v7, 3v6. Quarter-final, semi-final, final; a draw you play goes to a live penalty shootout (best of five, then sudden death): as taker, aim with the mouse, hold the left button for power and release (too hard skies it, corners are riskier); as keeper, read the run-up and click left, middle or right to dive. Arrow keys and Space work too, and leaving counts as a loss. Ties between two CPU clubs use a seeded roll weighted by shooting and goalkeeping. Prize money for every round reached; a win goes in the trophy cabinet.
+A new cup can start once you have played 4 ranked or league matches since the last one started.
+- **League** (Competitions tab): your division's 8 clubs, single round robin over 7 matchdays, 3/1/0 points, then goal difference, then goals scored. Prize money by finishing place and division, paid for the matchdays you play. The top two go up a division and the bottom two go down (a season with more than two forfeits can't win a title or promotion).
 
-You play your own cup ties and league fixtures live. The other matches in the round are played by the real headless sim at 60 s a half (about 130 ms each), so results follow the squads. Competition matches pay money, training and player development, but **do not change ladder Elo** or the ladder record. Forfeiting one counts as 0–3.
+**The world.** 32 clubs in four divisions of eight (`src/meta/world.ts`); you start in Division 4. CPU squads are the same players season after season: they age, retire, bring through academy youngsters and move up in a transfer window, and clubs develop toward their division's level. The top division rises with your XI, so the best clubs stay a match for you. At each season rollover the CPU divisions play a modelled season and two clubs go up and two down at each boundary; the season review lists the champions, moves, transfers and notable retirements.
+
+You play your own cup ties and league fixtures live. The other matches in the round get a full-length scoreline from the two XIs (a Poisson model, about 2.6 goals between equal sides; `quickScore` in world.ts), so results follow the squads. Competition matches pay money, training and player development and move Elo (yours and the opponent's), but not the ladder record. Forfeiting one counts as 0–3. A ranked, cup or league match left mid-way (a reload, a closed tab, a crash) is recorded as a 0–3 forfeit the next time the game opens, with a message that says so; friendlies record nothing.
 
 CPU difficulty is `TeamSetup.aiSkill` (0..1). It sets reaction time, decision noise, execution error and how well the team defends (marking zone, interceptions, a sweeper, the keeper's sweeping); see the header of `src/sim/ai.ts`.
 
@@ -152,6 +155,8 @@ bun run check      # typecheck + tests + build + page size budget
 bun run size       # fails if dist/index.html is over its size budget (scripts/size-budget.ts)
 bun run balance 50 # 50 CPU-vs-CPU eleven-a-side matches at full speed: goals, shots, fouls, cards, corners, offsides, upsets
 bun run balance 30 --assert  # same, but exits non-zero outside the sane bands (see scripts/balance.ts: goals 1.5-5, fouls 5-25, ...)
+bun run career 300           # a deterministic headless career: level, Elo, money, division, your XI against the world, unlocks over time
+bun run career --assert      # a career to level 99 with pacing, world and save-size bands (see scripts/career.ts)
 bun run scripts/ai-probe.ts 40 0.85 0.25  # 40 matches, identical squads, CPU skill 0.85 vs 0.25: W/D/L
 bun run e2e        # build, then drive the real page in headless Chromium (see below)
 ```

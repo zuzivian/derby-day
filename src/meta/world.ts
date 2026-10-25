@@ -42,8 +42,8 @@ import {
   type LadderClub,
   type Slot,
 } from './club.ts';
-import { formatMoney, type Save } from './game.ts';
-import { marketValue, overall, shortName, type Player } from './player.ts';
+import { averageOverall, formatMoney, type Save } from './game.ts';
+import { marketValue, shortName } from './player.ts';
 import { retireChance } from './progression.ts';
 import { STYLE_KEYS } from './names.ts';
 import { gauss, int, makeRng, next, pick, type Rng } from '../sim/rng.ts';
@@ -123,12 +123,6 @@ export function generateWorld(seed: number): LadderClub[] {
 // ---------------------------------------------------------------------------
 // Older saves
 
-/** Your XI's average overall (game.ts averageOverall, without importing its module graph twice). */
-function xiAverage(save: Save): number {
-  const xi = save.lineup.map((id) => save.squad.find((p) => p.id === id)).filter((p): p is Player => !!p);
-  return xi.reduce((t, p) => t + overall(p), 0) / Math.max(1, xi.length);
-}
-
 /**
  * Bring a save from before the world up to it. Safe to call on every load.
  *  - Your division is the one whose level is nearest your XI.
@@ -142,7 +136,7 @@ export function ensureWorldFields(save: Save): void {
   const complete = save.division !== undefined && save.ladder.every((c) => c.division !== undefined && c.slots?.length === SQUAD_ROLES.length);
   if (complete && save.ladder.length === WORLD_CPU_CLUBS) return;
   const r = makeRng((save.seed ^ 0x3011d) | 0);
-  const xi = xiAverage(save);
+  const xi = averageOverall(save);
   const nearest = (q: number) => [...Array(DIVISIONS).keys()].map((k) => k + 1).sort((a, b) => Math.abs(DIVISION_QUALITY[a - 1] - q) - Math.abs(DIVISION_QUALITY[b - 1] - q) || b - a);
   const you = save.division !== undefined ? clampDiv(save.division) : nearest(xi)[0];
   save.division = you;
@@ -319,7 +313,7 @@ export function developWorld(save: Save, r: Rng): WorldReview {
   transferWindow(r, save, transfers);
 
   // Clubs develop toward their division's level, plus their own ambition.
-  const lift = worldLift(xiAverage(save));
+  const lift = worldLift(averageOverall(save));
   for (const c of save.ladder) {
     const target = divisionCentre(clubDivision(c), lift) + (c.ambition ?? 0);
     c.quality = Math.round(Math.max(MIN_QUALITY, Math.min(MAX_QUALITY, c.quality + (target - c.quality) * 0.3 + gauss(r) * 1.5)));

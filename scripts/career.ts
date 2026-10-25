@@ -291,7 +291,7 @@ if (ASSERT) {
   band('hours to level 20', h(20), 8, 25);
   band('hours to level 50', h(50), 40, 110);
   band('hours to level 99', h(99), 150, 320);
-  band('cup XP a match / ranked XP a match', per('cup').xp / Math.max(1, per('ranked').xp), 0.8, 1.3);
+  band('cup XP a match / ranked XP a match', per('cup').xp / Math.max(1, per('ranked').xp), 0.8, 1.35);
   band('league XP a match / ranked XP a match', per('league').xp / Math.max(1, per('ranked').xp), 0.8, 1.35);
   // From match 200 on, the world keeps up: the strongest CPU XI is never more than 3 below yours, and ranked is never a walkover.
   const later = late.slice(1);

@@ -301,7 +301,7 @@ const MARKS: { screen: string; unlock: UnlockId; title: string; text: string }[]
   { screen: 'training', unlock: 'training', title: 'New: Training', text: 'Spend the sessions you earn on player attributes.' },
   { screen: 'competitions', unlock: 'cup', title: 'New: Competitions', text: 'The Cup is open: eight clubs, three rounds, a trophy.' },
   { screen: 'transfers', unlock: 'transfers', title: 'New: Transfers', text: 'Sign players from the market and sell to CPU clubs.' },
-  { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 16.' },
+  { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 32.' },
 ];
 
 /** The first revealed tab that has not been pointed out yet, or null. `marks` undefined means the player predates marks: none. */

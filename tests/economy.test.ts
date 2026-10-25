@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { canStart, closeCup, cupOpponent, cupWaitLeft, pickEntrants, recordCupMatch, recordSeasonMatch, seasonOpponent, simulateRestOfCup, startCup, startSeason, type QuickSim } from '../src/meta/competitions.ts';
 import { applyResult, CUP_WAIT, MARKET_REFRESH_MS, newGame as freshGame, offeredOpponent, rankedScale, refreshMarketIfStale, type Save } from '../src/meta/game.ts';
 import { HISTORY_CAP, lifetimeMatches } from '../src/meta/history.ts';
-import { totalXpForLevel } from '../src/meta/levels.ts';
+import { academyIntake, academyPotentialBonus, marketSize, prizeBonus, scoutMatchesFor, squadCap, totalXpForLevel, UNLOCKS, winTrainingBonus } from '../src/meta/levels.ts';
 import { beginMatch, settleAbandoned } from '../src/meta/pending.ts';
 import { maybeRollover, runRollover } from '../src/meta/progression.ts';
 import { playerDivision } from '../src/meta/world.ts';
@@ -255,5 +255,34 @@ describe('history', () => {
     const review = runRollover(s);
     expect(review.record.trophies).toEqual(['Cup 1']);
     expect(s.seasons![0].notes).toEqual(['Cup 1: winners']);
+  });
+});
+
+describe('late perks', () => {
+  test('no gap past level 22 is longer than five levels, and each perk does what it says', () => {
+    const levels = [...new Set(UNLOCKS.map((u) => u.level))].filter((l) => l >= 22);
+    for (let k = 1; k < levels.length; k++) expect(levels[k] - levels[k - 1]).toBeLessThanOrEqual(5);
+    const at = (level: number) => newGame(30, level);
+    expect(squadCap(at(94))).toBe(27);
+    expect(squadCap(at(95))).toBe(28);
+    expect(marketSize(at(90))).toBe(16);
+    expect(winTrainingBonus(at(84))).toBe(1);
+    expect(winTrainingBonus(at(85))).toBe(2);
+    expect(scoutMatchesFor(at(54), 6)).toBe(5);
+    expect(scoutMatchesFor(at(55), 6)).toBe(3);
+    expect(academyIntake(at(45))).toEqual([3, 4]);
+    expect(academyPotentialBonus(at(70))).toBe(3);
+    expect(prizeBonus(at(59))).toBe(1);
+    const s = at(60);
+    startSeason(s);
+    const before = s.budget;
+    for (let d = 0; d < 7; d++) recordSeasonMatch(s, 3, 0, [], homeWins);
+    expect(s.budget - before).toBe(495_000); // ƒ450k +10%
+  });
+  test('a rollover at level 45 brings three or four prospects', () => {
+    const s = newGame(31, 45);
+    s.squad = s.squad.slice(0, 18);
+    const review = runRollover(s);
+    expect(review.intake.length).toBeGreaterThanOrEqual(3);
   });
 });
