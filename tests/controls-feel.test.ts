@@ -4,6 +4,10 @@
 import { describe, expect, test } from 'bun:test';
 import { DOUBLE_CLICK_MS, InputController } from '../src/client/input.ts';
 import { PINCH_GAIN, wheelZoom } from '../src/client/renderer.ts';
+import { MatchCamera } from '../src/client/r3d/camera3d.ts';
+import { pickBody } from '../src/client/r3d/renderer3d.ts';
+import { sx, sz, wx, wy } from '../src/client/r3d/space.ts';
+import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
@@ -439,5 +443,40 @@ describe('trackpad pinch (ctrl+wheel) zooms the camera', () => {
     for (let i = 0; i < 15; i++) w = wheelZoom(w, { deltaY: -4, deltaMode: 0, ctrlKey: false });
     expect(w).toBeGreaterThan(0.9);
     expect(PINCH_GAIN).toBeGreaterThan(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Minor: 3D clicks pick a player by his body, not the grass behind him
+
+describe('3D: a click on a player\'s body picks him', () => {
+  test('clicking his head, chest or waist picks him, not the team-mate 4 m behind (up-screen); the grass still picks the grass', () => {
+    const W = 1040;
+    const H = 697;
+    const cam = new MatchCamera();
+    for (let i = 0; i < 240; i++) cam.update(1 / 60, { x: sx(52), z: sz(34), vx: 0, vz: 0, air: 0, attack: 1, phase: 'play', close: null, humanDir: 1 }, W / H, W, false);
+    const rc = new Raycaster();
+    const ground = new Plane(new Vector3(0, 1, 0), 0);
+    const hit = new Vector3();
+    // Him at (60, 34); a team-mate 4 m further from the camera (up-screen, smaller sim y).
+    const him = { x: 60, y: 34 };
+    const behind = { x: 60, y: 30 };
+    const bodies = [{ x: sx(behind.x), z: sz(behind.y) }, { x: sx(him.x), z: sz(him.y) }];
+    const rayAt = (x: number, y: number, h: number) => {
+      const v = new Vector3(sx(x), h, sz(y)).project(cam.camera);
+      rc.setFromCamera(new Vector2(v.x, v.y), cam.camera);
+      return rc.ray;
+    };
+    for (const h of [0.9, 1.3, 1.65]) {
+      const ray = rayAt(him.x, him.y, h);
+      ray.intersectPlane(ground, hit);
+      const grass = { x: wx(hit.x), y: wy(hit.z) };
+      // Main: the ground point, metres up-screen of his feet (toward the man behind for a head click).
+      expect(dist(grass, him)).toBeGreaterThan(0.9);
+      expect(pickBody(ray.origin, ray.direction, bodies)).toBe(1);
+    }
+    // Empty grass between and beside them picks no one.
+    const empty = rayAt(64, 32, 0);
+    expect(pickBody(empty.origin, empty.direction, bodies)).toBe(-1);
   });
 });

@@ -40,6 +40,8 @@ import type { Vec } from '../sim/vec.ts';
 export interface WorldPicker {
   /** Position in CSS pixels inside the canvas (the canvas's top-left is 0,0) to world metres. */
   toWorld(cssX: number, cssY: number): Vec;
+  /** A click on a player's body picks him (his feet, world metres), or null: the 3D view, where a head is metres up-screen of the feet. */
+  pickPlayer?(cssX: number, cssY: number): Vec | null;
   /** Keyboard direction in screen terms (x right, y down) to world terms; identity when absent (top-down view). */
   screenDir?(d: Vec): Vec;
   /**
@@ -212,7 +214,9 @@ export class InputController {
     const toWorld = (e: PointerEvent) => {
       const r = canvas.getBoundingClientRect();
       // A mouse press where the pointer already is keeps the latched point; anything else projects anew.
-      const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, () => picker.toWorld(e.clientX - r.left, e.clientY - r.top)) : picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      // A player's body under the pointer picks him; otherwise the grass under it.
+      const project = () => picker.pickPlayer?.(e.clientX - r.left, e.clientY - r.top) ?? picker.toWorld(e.clientX - r.left, e.clientY - r.top);
+      const w = e.pointerType === 'mouse' ? latchedPoint(this.cursor, this.client, e, project) : project();
       this.client = { x: e.clientX, y: e.clientY };
       return w;
     };
