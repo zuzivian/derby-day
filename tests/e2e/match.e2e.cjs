@@ -24,10 +24,17 @@ test('a short ranked match reaches the result modal, updates Elo, and closing re
   expect(after.club.played, 'played count').toBe(before.club.played + 1);
   expect(await headerElo(page), 'header Elo reflects the change').toBe(rec.eloAfter);
 
-  // The dialog title takes focus from code: it must not draw a focus ring (owner feedback 2026-10-24).
-  const title = await page.evaluate(() => ({ id: document.activeElement?.id, outline: getComputedStyle(document.activeElement).outlineStyle }));
-  expect(title.id, 'focus starts on the result title').toBe('result-title');
-  expect(title.outline, 'no focus ring on the programmatically focused title').toBe('none');
+  // Focus starts on the result's scrolling region (labelled by the title), taken from code: it must not draw a
+  // focus ring (owner feedback 2026-10-24), and Page Down scrolls it straight away.
+  const focus = await page.evaluate(() => {
+    const el = document.activeElement;
+    const cs = getComputedStyle(el);
+    return { region: el.classList.contains('rs-scroll'), label: el.getAttribute('aria-labelledby'), outline: cs.outlineStyle, shadow: cs.boxShadow };
+  });
+  expect(focus.region, 'focus starts on the result region').toBe(true);
+  expect(focus.label, 'the region is labelled by the title').toBe('result-title');
+  expect(focus.outline, 'no outline on the programmatically focused region').toBe('none');
+  expect(focus.shadow, 'no ring drawn as a shadow either').toBe('none');
   // The primary button stays in view without scrolling the dialog.
   const btn = await page.locator(SEL.modalClose).boundingBox();
   expect(btn && btn.y + btn.height <= 800, 'Back to the club is on screen').toBe(true);
@@ -93,4 +100,23 @@ test('keyboard only: Tab reaches "Kick off" and Enter starts a match', async (t)
   await page.keyboard.press('Enter');
   await page.waitForSelector(SEL.pitch);
   expect(await page.locator(SEL.pitch).isVisible(), 'match is on screen').toBe(true);
+});
+
+test('quick tactics: a mentality picked in the pause menu changes the side in the match, not the saved default', async (t) => {
+  const page = await openApp(t, { e2eHook: true, prefs: { halfSeconds: 60, onboarded: true } });
+  await startRanked(page);
+  const mentality = () => page.evaluate(() => window.__derbyMatch.teams[0].mentality ?? 'balanced');
+  expect(await mentality(), 'starts at the club default').toBe('balanced');
+  await page.keyboard.press('Escape');
+  await page.locator(SEL.pause).waitFor({ state: 'visible' });
+  expect(await page.locator('#quick-tactics input').count(), 'five steps').toBe(5);
+  await page.locator(SEL.quickMentality('attacking')).click();
+  // The pause menu keeps its arrow keys: the radios step along (the match does not take them).
+  await page.keyboard.press('ArrowRight');
+  expect(await page.locator('#quick-tactics input:checked').getAttribute('value'), 'arrow right steps to High press').toBe('press');
+  // Paused: nothing has changed yet; it goes to the sim with the first tick after resuming.
+  expect(await mentality(), 'not while paused').toBe('balanced');
+  await page.locator(SEL.resume).click();
+  await page.waitForFunction(() => window.__derbyMatch.teams[0].mentality === 'press', null, { timeout: 10_000 });
+  expect((await readSave(page)).mentality ?? 'balanced', 'the saved default is untouched').toBe('balanced');
 });

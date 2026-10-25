@@ -17,7 +17,8 @@ import type { Save } from '../meta/game.ts';
 import { isUnlocked, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
-import { HALF_SECONDS } from '../sim/constants.ts';
+import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
+import { clubFormation, clubMentality } from '../meta/club.ts';
 import { crestSvg } from './crest.ts';
 import { esc, PRACTICE, practiceUnlocked, type App } from './ui.ts';
 
@@ -148,6 +149,7 @@ function hero(app: App): string {
         ${crestSvg(opp, 84)}
         <div class="hero-name">${esc(opp.name)}</div>
         <div class="hero-elo">${ranked ? `<span>Elo <b>${app.nextOpp.elo}</b></span>` : '<span>Friendly</span>'}</div>
+        ${ranked ? `<div class="hero-tactic">${clubFormation(app.nextOpp)} · <b>${MENTALITY_LABEL[clubMentality(app.nextOpp)]}</b></div>` : ''}
       </div>
     </div>
     <p id="hero-desc" class="sr-only">${kind} against ${esc(opp.name)}, ${MATCH_LENGTH_SPOKEN}.${gaugeOn ? ` Win chance ${pct}%.` : ''}</p>

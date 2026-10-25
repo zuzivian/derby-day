@@ -7,7 +7,7 @@
 // fingerprint(), all in `newMatch` / `advance` / `finalHash` below.
 
 import { pack, unpack } from './pack.ts';
-import { FORMATION_IDS, HALF_SECONDS, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Role } from '../sim/constants.ts';
+import { FORMATION_IDS, HALF_SECONDS, MENTALITY_IDS, mentalityOf, SIM_VERSION, TEAM_SIZE, TICK_HZ, type Mentality, type Role } from '../sim/constants.ts';
 import { createMatch, fingerprint, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchState, PlayerSetup, SimAttrs, TeamSetup } from '../sim/types.ts';
 
@@ -77,6 +77,7 @@ export function quantiseInput(i: HumanInput): HumanInput {
   if (i.switchPlayer) o.switchPlayer = true;
   if (i.aim) o.aim = { x: q100(i.aim.x), y: q100(i.aim.y) };
   if (i.moved) o.moved = true;
+  if (i.tactic && i.tactic >= 1 && i.tactic <= MENTALITY_IDS.length) o.tactic = Math.round(i.tactic);
   return o;
 }
 
@@ -96,6 +97,7 @@ export function inputsEqual(a: HumanInput, b: HumanInput): boolean {
     a.aim?.x === b.aim?.x &&
     a.aim?.y === b.aim?.y &&
     a.moved === b.moved &&
+    a.tactic === b.tactic &&
     !a.cursor === !b.cursor &&
     !a.dir === !b.dir &&
     !a.aim === !b.aim
@@ -455,13 +457,20 @@ function readColour(r: Reader): string {
   return r.str();
 }
 
+/**
+ * The formation byte (format 3): the formation's index in FORMATION_IDS in the
+ * low four bits, the mentality in the high four, as its code here (0 is
+ * Balanced, so format-3 codes from before mentalities read as Balanced).
+ */
+const MENTALITY_CODES: Mentality[] = ['balanced', 'park', 'defensive', 'attacking', 'press'];
+
 function writeTeam(w: Writer, t: TeamSetup) {
   w.str(t.name);
   w.str(t.short);
   writeColour(w, t.primary);
   writeColour(w, t.secondary);
   w.num(t.aiSkill);
-  w.byte(Math.max(0, FORMATION_IDS.indexOf(t.formation ?? '4-4-2')));
+  w.byte(Math.max(0, FORMATION_IDS.indexOf(t.formation ?? '4-4-2')) | (MENTALITY_CODES.indexOf(mentalityOf(t.mentality)) << 4));
   w.uvar(t.players.length);
   for (const p of t.players) {
     w.str(p.id);
@@ -472,15 +481,18 @@ function writeTeam(w: Writer, t: TeamSetup) {
   }
 }
 
-/** `withFormation`: version 3 and later carry the formation; version 2 teams were six-a-side. */
-function readTeam(r: Reader, withFormation: boolean): TeamSetup {
+/** Version 3 and later carry the formation (version 2 teams were six-a-side); version 6 and later the mentality with it. */
+function readTeam(r: Reader, version: number): TeamSetup {
+  const withFormation = version >= 3;
   const name = r.str();
   const short = r.str();
   const primary = readColour(r);
   const secondary = readColour(r);
   const aiSkill = r.num();
-  const formation = withFormation ? FORMATION_IDS[r.byte()] : undefined;
-  if (withFormation && !formation) throw new Error('Replay code is damaged or cut short.');
+  const shape = withFormation ? r.byte() : 0;
+  const formation = withFormation ? FORMATION_IDS[version >= 6 ? shape & 15 : shape] : undefined;
+  const mentality = version >= 6 ? MENTALITY_CODES[shape >> 4] : 'balanced';
+  if ((withFormation && !formation) || !mentality) throw new Error('Replay code is damaged or cut short.');
   const count = r.uvar();
   if (count < 1 || count > TEAM_SIZE) throw new Error('Replay code has the wrong squad size.');
   const players: PlayerSetup[] = [];
@@ -494,7 +506,10 @@ function readTeam(r: Reader, withFormation: boolean): TeamSetup {
     for (const k of ATTRS) attrs[k] = r.num();
     players.push({ id, name: pname, number, role, attrs });
   }
-  return formation ? { name, short, primary, secondary, players, aiSkill, formation } : { name, short, primary, secondary, players, aiSkill };
+  const team: TeamSetup = formation ? { name, short, primary, secondary, players, aiSkill, formation } : { name, short, primary, secondary, players, aiSkill };
+  // Balanced is left off, as toTeamSetup does.
+  if (mentality !== 'balanced') team.mentality = mentality;
+  return team;
 }
 
 // Run flags. A tick that only moves the pointer is one flag byte plus two
@@ -520,6 +535,8 @@ const E_LOFT = 8;
 const E_SWITCH = 16;
 /** Format 4: an aim point follows the cursor and axes, delta-coded against the cursor. */
 const E_AIM = 32;
+/** Format 6: a mentality change (HumanInput.tactic) byte follows everything else in the run. */
+const E_TACTIC = 64;
 
 function writeRuns(w: Writer, runs: InputRun[]) {
   // Cursor and axes are delta-coded against the previous run's, in whole cm.
@@ -535,6 +552,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
     if (i.loft !== undefined) e |= E_LOFT;
     if (i.switchPlayer) e |= E_SWITCH;
     if (i.aim) e |= E_AIM;
+    if (i.tactic) e |= E_TACTIC;
     let f = 0;
     if (i.cursor) f |= F_CURSOR;
     if (i.dir) f |= F_DIR;
@@ -567,6 +585,7 @@ function writeRuns(w: Writer, runs: InputRun[]) {
       w.ivar(Math.round(i.aim.x * 100) - cx);
       w.ivar(Math.round(i.aim.y * 100) - cy);
     }
+    if (i.tactic) w.byte(i.tactic);
     if (n > 1) w.uvar(n);
   }
 }
@@ -606,6 +625,10 @@ function readRuns(r: Reader, ticks: number, version: number): InputRun[] {
     if (e & E_TACKLE) input.tackle = true;
     if (version >= 4 ? e & E_SWITCH : f & F_SWITCH_V3) input.switchPlayer = true;
     if (version >= 4 && f & F_MOVED) input.moved = true;
+    if (version >= 6 && e & E_TACTIC) {
+      input.tactic = r.byte();
+      if (input.tactic < 1 || input.tactic > MENTALITY_IDS.length) throw new Error('Replay code is damaged or cut short.');
+    }
     const n = f & F_MULTI ? r.uvar() : 1;
     if (n < 1 || total + n > ticks) throw new Error('Replay code is damaged or cut short.');
     runs.push({ n, input });
@@ -661,8 +684,12 @@ function checksum(b: Uint8Array): number {
  * bit (or, once those run out, make E bit 128 mean "a second extra byte follows"), write its value
  * after the existing fields, and read it only when `version >= 6`, so older codes decode as before.
  * Bump REPLAY_VERSION, and SIM_VERSION too if the field changes what the sim does.
+ * 6: inputs may carry `tactic` (a mentality change from the pause menu, E bit 64, a byte after
+ * the other fields), and a team's mentality rides in the high four bits of its formation byte
+ * (0 is Balanced, as every older code has). Version 5 and 4 codes still open, flagged as from
+ * another sim version.
  */
-export const REPLAY_VERSION = 5;
+export const REPLAY_VERSION = 6;
 
 export function encodeReplay(r: Replay): string {
   const w = new Writer();
@@ -735,8 +762,8 @@ function decodeBody(code: string): Replay {
   const humanTeam = (r.byte() - 1) as 0 | 1 | -1;
   if (halfSeconds < 1 || halfSeconds > 3600 || ![-1, 0, 1].includes(humanTeam)) throw new Error('Replay code is damaged or cut short.');
   const sim = version >= 3 ? r.uvar() : 1;
-  const home = readTeam(r, version >= 3);
-  const away = readTeam(r, version >= 3);
+  const home = readTeam(r, version);
+  const away = readTeam(r, version);
   const label = r.str();
   const at = r.uvar();
   const score: [number, number] = [r.uvar(), r.uvar()];
