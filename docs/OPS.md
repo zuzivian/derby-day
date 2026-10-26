@@ -81,7 +81,7 @@ Both endpoints receive `Content-Type: text/plain` (a "simple" request, so no COR
 A beacon ignores the response, so return `204` quickly.
 
 ```
-telemetry: {"v":1,"iid":"<random uuid>","events":[{"name":"match_end","t":1761300000000,"kind":"Ranked","score":[2,1],"forfeit":false}, ...]}
+telemetry: {"v":1,"iid":"<random uuid>","events":[{"name":"match_end","t":1761300000000,"kind":"Ranked","score":[2,1],"forfeit":false,"outcome":"completed","activeSeconds":365.2}, ...]}
 errors:    {"message":"...","stack":"...","source":"error|rejection","build":"30dc935","time":"2026-10-24T09:00:00.000Z","page":"https://derby.natwong.dev/","userAgent":"..."}
 ```
 
@@ -103,13 +103,34 @@ errors:    {"message":"...","stack":"...","source":"error|rejection","build":"30
 | `app_open` | none | the game booted in a tab that owns the club |
 | `first_match_start` | none | the first match this browser ever started |
 | `match_start` | `kind` (Ranked, Friendly, Cup, League…), `controls` (`mouse`/`keys`) | a live match kicked off |
-| `match_end` | `kind`, `score` `[us, them]`, `forfeit` | the match ended (full time or forfeit) |
+| `first_player_goal` | `kind`, `activeSeconds` | the player’s side scored its first goal in this match |
+| `match_end` | `kind`, `score` `[us, them]`, `forfeit`, `outcome` (`completed`/`forfeit`/`abandoned`), `activeSeconds` | full time, explicit forfeit, a rules abandonment, or leaving the page mid-match |
 | `second_session` | none | the first visit more than 30 minutes after the previous one |
 | `level_up` | `level` | the club level rose |
 | `control_mode` | `mode` | with every `match_start`: which control scheme this match used |
 
 This answers the roadmap's Phase 1 questions: matches started vs finished (`match_start` vs `match_end`),
-second-session rate, mouse vs keys, goals per match (`score`).
+second-session rate, mouse vs keys, goals per match (`score`), and time to the player's first goal
+(`first_player_goal.activeSeconds`). These match measurements cover CPU matches, including warm-ups and
+practice; local and online two-player matches do not contribute to this funnel.
+
+`activeSeconds` is elapsed live simulator ticks divided by 60, rounded to milliseconds. It includes
+simulated stoppages, goal celebrations and half-time, and excludes paused frames, instant-replay
+playback, loading and rendering delays. It is seconds of match simulation, not the accelerated 90-minute
+scoreboard clock or wall-clock time. The first-goal event fires once per match (never for an opponent's
+goal); it records a goal experienced even if the player later forfeits.
+
+For completion rates, count `match_end.outcome = completed`; keep `forfeit` separate from `abandoned`.
+The existing `forfeit` property is retained for older consumers. A rules abandonment (fewer than seven
+players) is `abandoned`, even though the match has an awarded score. Page exits use the score on the
+pitch when leaving. Leaving during the final full-time banner still counts as completed. Hiding the
+tab only pauses; entering the back-forward cache does not end a match that may resume.
+
+Page-close/navigation abandonment is best effort: its event is flushed immediately, but browsers can
+kill a tab without delivering `pagehide`, and beacons are not guaranteed delivery. Starts without an
+end remain an unknown outcome, not evidence of an explicit forfeit. No pending-match marker or extra
+identifier is stored for analytics, and opting out, DNT/GPC and guest-tab suppression apply to every new
+event just as they do to existing events.
 
 ## Privacy note (also fit to paste into a privacy page)
 

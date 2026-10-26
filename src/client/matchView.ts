@@ -35,6 +35,10 @@ export interface MatchViewOptions extends MatchOptions {
   /** Preferred control style; the input still follows whatever the player touches. */
   controls?: 'mouse' | 'keys';
   onEnd: (s: MatchState, forfeited: boolean) => void;
+  /** Live simulation only: never called for instant-replay ticks or paused frames. */
+  onTick?: (s: MatchState) => void;
+  /** Best-effort notification when a running match leaves the page without a result. */
+  onAbandon?: (s: MatchState) => void;
   /** Replaces the default mouse/keyboard controller, e.g. two keyboard pads for hot-seat (versus.ts). */
   inputSource?: (canvas: HTMLCanvasElement, renderer: MatchRenderer, s: MatchState, togglePause: () => void) => MatchInputSource;
   /** Replaces the controls line under the pitch (HTML). */
@@ -482,6 +486,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
           step(s, used);
+          o.onTick?.(s);
           juice.tick(s);
           buffer.push(used, s);
           for (const h of spotter.update(s)) consider(h);
@@ -572,7 +577,15 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.addEventListener('popstate', onPop);
   } catch { /* sandboxed viewer */ }
 
+  // Visibility changes only pause the match. A real navigation/close is an abandonment;
+  // a page entering the back-forward cache can resume and must not be counted as one.
+  const onPageHide = (e: PageTransitionEvent) => {
+    if (!done && !e.persisted) o.onAbandon?.(s);
+  };
+  window.addEventListener('pagehide', onPageHide);
+
   function dispose() {
+    window.removeEventListener('pagehide', onPageHide);
     gfx.dispose();
     input.dispose();
     juice.dispose();
@@ -596,6 +609,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     replay = null;
   }
   return () => {
+    if (!done) o.onAbandon?.(s);
     done = true;
     cancelAnimationFrame(raf);
     dispose();
