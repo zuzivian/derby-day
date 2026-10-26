@@ -7,11 +7,14 @@
 import { TELEMETRY_URL } from './build-config.ts';
 import { isSaveGuest } from './store.ts';
 
+export type MatchOutcome = 'completed' | 'forfeit' | 'abandoned';
+
 export type TelemetryEvent =
   | { name: 'app_open' }
   | { name: 'first_match_start' }
   | { name: 'match_start'; kind: string; controls: 'mouse' | 'keys' }
-  | { name: 'match_end'; kind: string; score: [number, number]; forfeit: boolean }
+  | { name: 'first_player_goal'; kind: string; activeSeconds: number }
+  | { name: 'match_end'; kind: string; score: [number, number]; forfeit: boolean; outcome: MatchOutcome; activeSeconds: number }
   | { name: 'second_session' }
   | { name: 'level_up'; level: number }
   | { name: 'control_mode'; mode: 'mouse' | 'keys' };

@@ -33,6 +33,7 @@ import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { openSettings } from './settings.ts';
 import { telemetry } from './telemetry.ts';
+import { createMatchTelemetry } from './matchTelemetry.ts';
 import { clubLevel } from '../meta/levels.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
@@ -340,7 +341,7 @@ function playLive(
   matchOrigin = captureFocus(root) ?? keyFor({ action: 'play-ranked' });
   takeover = true;
   hideToast();
-  telemetry.track({ name: 'match_start', kind: label, controls: app.prefs.controls });
+  const metrics = createMatchTelemetry(telemetry, label, app.prefs.controls, 0);
   const unmount = mountMatch(root, {
     seed,
     home,
@@ -351,6 +352,8 @@ function playLive(
     label,
     forfeitText,
     controls: app.prefs.controls,
+    onTick: metrics.observe,
+    onAbandon: metrics.abandon,
     // The input mode the player settled on becomes their preference (the first-run flow no longer asks).
     onControls: (mode) => {
       if (app.prefs.controls !== mode) {
@@ -367,7 +370,7 @@ function playLive(
       takeover = false;
       // Every match against the CPU teaches the hidden skill estimate (a forfeit is a 0–3 defeat).
       learnSkill(s, home, away, forfeited ? 0 : m.score[0], forfeited ? Math.max(3, m.score[1]) : m.score[1]);
-      telemetry.track({ name: 'match_end', kind: label, score: [m.score[0], m.score[1]], forfeit: forfeited });
+      metrics.finish(m, forfeited);
       onDone(m, forfeited, away);
     },
   });

@@ -516,7 +516,7 @@ describe('telemetry', () => {
     const s = make();
     s.t.track({ name: 'app_open' });
     s.t.track({ name: 'match_start', kind: 'Ranked', controls: 'keys' });
-    s.t.track({ name: 'match_end', kind: 'Ranked', score: [2, 1], forfeit: false });
+    s.t.track({ name: 'match_end', kind: 'Ranked', score: [2, 1], forfeit: false, outcome: 'completed', activeSeconds: 180 });
     expect(s.sent).toHaveLength(0);
     s.t.flush();
     s.t.track({ name: 'app_open' });
