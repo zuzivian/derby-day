@@ -183,8 +183,13 @@ describe('power gauge', () => {
     s.ball.owner = me.i;
     s.ball.vel = { x: 0, y: 0 };
     s.ball.z = 0;
-    const near = kickGauge(s, { cursor: { x: 58, y: 34 }, charge: 0, showCursor: true })!;
-    const far = kickGauge(s, { cursor: { x: 90, y: 34 }, charge: 0, showCursor: true })!;
+    // A click is always a pass to a teammate: one 8 m off, one 35 m off, the pointer on each.
+    const [a, b] = s.players.filter((p) => p.team === 0 && p.role !== 'GK' && p.i !== me.i);
+    a.pos = { x: 58, y: 34 };
+    b.pos = { x: 85, y: 34 };
+    a.vel = b.vel = { x: 0, y: 0 };
+    const near = kickGauge(s, { cursor: { ...a.pos }, charge: 0, showCursor: true })!;
+    const far = kickGauge(s, { cursor: { ...b.pos }, charge: 0, showCursor: true })!;
     expect(near.fill).toBeLessThan(far.fill);
     expect(near.band).toBe('green');
     const shot = kickGauge(s, { cursor: { x: 90, y: 34 }, charge: 0.9, showCursor: true, armed: { kind: 'shot', power: 0.98 } })!;

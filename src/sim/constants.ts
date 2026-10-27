@@ -61,8 +61,11 @@
  *      running into him; a click with nobody in the assist goes to the teammate nearest it; headers depend on
  *      skill and challenge; CPU defenders rarely tackle from behind, fewer fouls and cards
  *  24  a pass clicked within 4 m of the carrier goes to the teammate that way (kicks.ts closeClickReceiver)
+ *  25  playtest round: every click a firm pass to a teammate (arriving 11-15 m/s); an outfielder who receives runs
+ *      on toward the pointer; the steered man goes to a nearby loose ball and tackles a carrier close in front; queued
+ *      clicks aim headers and chain to the next man; a ball onto a man's middle is easier to control; slower sprint drain
  */
-export const SIM_VERSION = 24;
+export const SIM_VERSION = 25;
 
 export const TICK_HZ = 60;
 
@@ -129,7 +132,7 @@ export const THROW_Z0 = 2.0;
 
 export const SPRINT_MULT = 1.18;
 /** Energy per second burned while sprinting, scaled by stamina. */
-export const SPRINT_DRAIN = 0.055;
+export const SPRINT_DRAIN = 0.045;
 export const WINDED_BELOW = 0.44;
 export const WINDED_RECOVER = 0.58;
 

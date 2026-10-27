@@ -59,7 +59,7 @@ import {
   TICK_HZ,
 } from './constants.ts';
 import { attackDir, fromTeam, goalkeeper, inGoalMouth, inOwnBox, oppGoal, ownGoal, slotOf, teamAtEnd, teamX } from './field.ts';
-import { humanIntent, KEEPER_HOLD_TICKS, updateControl } from './human.ts';
+import { humanIntent, KEEPER_HOLD_TICKS, takeQueued, updateControl } from './human.ts';
 import { assistReceiver, chipPlan, deliveryPlan, humanShotHeight, LOFT_MIN_RANGE, LOFT_RANGE_GAIN, loftPlan, passTo, passToPoint, puntPlan, rollTravel, setPieceStrike, SHOT_Z0, shotSpeed, type StrikePlan } from './kicks.ts';
 import {
   addedMinutes,
@@ -847,8 +847,9 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const effort = Math.min(1, speed / topSpeed);
   let e = p.energy - effort * effort * DT * 0.0035 * (1.4 - p.attrs.stamina);
   if (p.sprinting) e -= SPRINT_DRAIN * DT * (1.5 - 0.8 * p.attrs.stamina);
-  else if (effort < 0.25) e += 0.04 * DT;
-  else if (effort < 0.7) e += 0.02 * DT;
+  // Breath comes back fastest at rest and fades as the pace rises: about 0.02/s at a jog, a trickle at a
+  // run (a winded man held at a run, as a pointer far off holds him, still comes round), nothing flat out.
+  else e += 0.04 * clamp((1 - effort) / 0.8, 0, 1) * DT;
   p.energy = clamp(e, 0.4, 1);
 
   const steering = human && intent.throttle > 0.15;
@@ -1232,6 +1233,8 @@ const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.9
 export const HUMAN_INTERCEPT_REACH = 1.1;
 /** ... and kills a ball this much faster (m/s) than he otherwise could: he read the pass, he is set for it. */
 export const HUMAN_INTERCEPT_LIMIT = 4;
+/** Pace (m/s) a ball that runs straight onto a man's middle adds to what he can kill (falling to nothing at the edge of his reach). */
+const CONTROL_SQUARE = 5;
 const interceptReach = (s: MatchState, p: MatchPlayer, reach: number, lastTeam: number): number =>
   lastTeam >= 0 && lastTeam !== p.team && isHumanControlled(s, p) ? Math.max(reach, HUMAN_INTERCEPT_REACH) : reach;
 /** Ticks after a kick before an opponent can stretch for the ball (about 0.2 s); until then only his body is in the way. */
@@ -1487,7 +1490,13 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   const chest = b.z > FOOT_Z;
   // The man a human steers onto one of theirs: see HUMAN_INTERCEPT_LIMIT.
   const steered = !receiver && b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team && isHumanControlled(s, p);
-  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
+  // A ball that runs onto his middle is easier to kill than one he stretches for: the nearer it
+  // passes to him, the more pace he takes out of it (a defender stood on the line of a firm pass).
+  // Not on a ball a human side has played, though: cut out more often, a human's passes went to feet
+  // less often (playtest asked for both; completion is the one that matters to the player).
+  const lastTeam = b.lastTouch >= 0 ? s.players[b.lastTouch].team : -1;
+  const square = lastTeam >= 0 && lastTeam !== p.team && s.humans[lastTeam as 0 | 1] ? 0 : 1 - clamp(d / reach, 0, 1);
+  let limit = 6 + 11 * p.attrs.dribbling + CONTROL_SQUARE * square + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
   if (chest && !receiver) limit *= 0.75;
   // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
   if (challenged) limit *= 0.6;
@@ -1796,6 +1805,19 @@ function headChance(s: MatchState, p: MatchPlayer, d: number): number {
 }
 
 /**
+ * The ball headed toward `to`: it comes down about there (a header is no pass, so it strays more the worse a header he
+ * is). `soft`: a knock-down to a teammate or a click close by is not a lob of 6 m or more.
+ */
+function headToward(s: MatchState, p: MatchPlayer, to: Vec, soft: boolean): void {
+  const b = s.ball;
+  const d = sub(to, b.pos);
+  const way = rotate(norm(d), gauss(s.rng) * (0.06 + 0.12 * (1 - headSkill(p))));
+  const T = soft && len(d) < 6.4 ? Math.max(0.45, len(d) / 7) : (2 * 4.5) / GRAVITY;
+  b.vel = scale(way, clamp(len(d) / T, soft ? 3 : 7, 17));
+  b.vz = (GRAVITY * T) / 2;
+}
+
+/**
  * A ball between CHEST_Z and HEAD_Z can be headed: by an opponent of whoever played
  * it (a clearance), or by an attacker in the opponents' box (at goal; a human aims it with
  * the pointer). Teammates elsewhere let it drop to the chest. Returns true if it was headed.
@@ -1843,13 +1865,21 @@ function header(s: MatchState): boolean {
   b.passFrom = -1;
   b.noPickup[p.i] = 16;
   b.redirectedAt = s.tick;
-  if (atGoal) {
+  // A click made before the ball came is his header's aim (human.ts takeQueued), not the pointer now.
+  const human = isHumanControlled(s, p);
+  const q = human ? takeQueued(s, p) : null;
+  const mate = q && q.kind === 'pass' && q.receiver >= 0 && !s.players[q.receiver].sentOff ? s.players[q.receiver] : null;
+  if (q && (q.kind === 'pass' || !atGoal)) {
+    // Headed on to the man the click picked (a knock-down: he is its receiver), or to where it was clicked.
+    headToward(s, p, mate ? add(mate.pos, scale(mate.vel, 0.6)) : q.target, true);
+    if (mate) b.receiver = mate.i;
+  } else if (atGoal) {
     const goal = oppGoal(s, p.team);
     const gk = goalkeeper(s, p.team === 0 ? 1 : 0);
-    const aim = s.humanAim?.[p.team];
+    const aim = q ? q.target : s.humanAim?.[p.team];
     // The human picks the corner by which side of the striker the pointer is (the same pointer
     // steers him, so it can't be out on the post): about 0.65 m either side is the corner.
-    const yAim = isHumanControlled(s, p) && aim ? clamp(goal.y + (aim.y - p.pos.y) * HEADER_AIM_GAIN, GOAL_TOP + 0.4, GOAL_BOTTOM - 0.4) : gk.pos.y > PITCH_H / 2 ? GOAL_TOP + 0.9 : GOAL_BOTTOM - 0.9;
+    const yAim = human && aim ? clamp(goal.y + (aim.y - p.pos.y) * HEADER_AIM_GAIN, GOAL_TOP + 0.4, GOAL_BOTTOM - 0.4) : gk.pos.y > PITCH_H / 2 ? GOAL_TOP + 0.9 : GOAL_BOTTOM - 0.9;
     const y = yAim;
     const dir = rotate(norm(sub({ x: goal.x, y }, b.pos)), gauss(s.rng) * (0.08 + 0.16 * (1 - p.attrs.shooting)));
     const sp = 10 + 6 * p.attrs.shooting;
@@ -1858,14 +1888,9 @@ function header(s: MatchState): boolean {
     // Down toward the line, bouncing in front of the keeper or under the bar.
     b.vz = clamp((0.6 - b.z) / Math.max(t, 0.2) + 0.5 * GRAVITY * t, -6, 3);
     countShot(s, p.team);
-  } else if (isHumanControlled(s, p) && s.humanAim?.[p.team] && dist(s.humanAim[p.team]!, p.pos) > HEADER_AIM_MIN) {
-    // The human heads it to the pointer: it comes down about there (a header is no pass, so it strays more the worse a header he is).
-    const to = sub(s.humanAim[p.team]!, b.pos);
-    const way = rotate(norm(to), gauss(s.rng) * (0.06 + 0.12 * (1 - headSkill(p))));
-    const vz = 4.5;
-    const sp = clamp(len(to) / ((2 * vz) / GRAVITY), 7, 17);
-    b.vel = scale(way, sp);
-    b.vz = vz;
+  } else if (human && s.humanAim?.[p.team] && dist(s.humanAim[p.team]!, p.pos) > HEADER_AIM_MIN) {
+    // The human heads it to the pointer.
+    headToward(s, p, s.humanAim[p.team]!, false);
   } else {
     // Head it away: upfield and wide of the goal. Under pressure near goal a glancing header can go behind.
     const nearGoal = inOwnBox(s, p.team, p.pos);
@@ -2379,6 +2404,8 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   if (s.phase === 'restart') {
     // The clock starts with the kick-off (Law 8), not with the line-up.
     const kickoff = s.restart?.kind === 'kickoff';
+    // A click queued for a ball that was on its way (human.ts) does not outlive the whistle.
+    if (s.queued) s.queued = [null, null];
     stepRestart(s, inputs);
     if (!kickoff) runClock(s);
     return;
@@ -2402,7 +2429,12 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
   if (owner && s.humans[owner.team] && s.controlled[owner.team] !== owner.i) {
     s.controlled[owner.team] = owner.i;
-    if (s.ctlHold) s.ctlHold[owner.team] = true;
+    // An outfielder who takes it runs on toward the pointer at once (playtest); a keeper who
+    // gathers it is held until the pointer moves.
+    if (s.ctlHold) s.ctlHold[owner.team] = owner.role === 'GK';
+  } else if (owner && s.phase === 'play' && s.humans[owner.team] && owner.role !== 'GK' && s.ctlHold?.[owner.team]) {
+    // Held since the pass was played to him (the switch came while it was on its way): his now.
+    s.ctlHold[owner.team] = false;
   }
 
   const b = s.ball;

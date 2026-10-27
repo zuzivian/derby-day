@@ -3,7 +3,7 @@
 
 import { resolvePassTarget } from './ai.ts';
 import { AIR_DRAG, CHIP_Z0, GRAVITY, ROLL_A, ROLL_B, ROLL_FAST_B, ROLL_FAST_V } from './constants.ts';
-import { clampToPitch } from './field.ts';
+import { clampToPitch, inOffsidePosition } from './field.ts';
 import type { MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, distToSegment, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
@@ -85,7 +85,7 @@ const PASS_MAX_SPEED = 28;
  * about 0.4-0.8 s; feedback/research-mouse-and-pace.md section 3 and 4). A receiver
  * controls up to 11 + 11 x dribbling m/s (match.ts), so every receiver can take it.
  */
-export const receiverArrival = (d: number): number => clamp(6 + 0.4 * d, 7, 12);
+export const receiverArrival = (d: number): number => clamp(9 + 0.4 * d, 10, 15);
 /** The fast regime as dv/dt = -(FAST_A + ROLL_FAST_B v), continuous with the slow one at ROLL_FAST_V. */
 const FAST_A = ROLL_A + (ROLL_B - ROLL_FAST_B) * ROLL_FAST_V;
 
@@ -199,11 +199,11 @@ function intoPath(m: MatchPlayer, aim: Vec): number {
 
 /** The teammate the assist gives a pass from `from` aimed at `aim`, or -1 (see PASS_ASSIST_R). */
 export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): number {
-  return assistPick(s, p, from, aim).receiver;
+  return assistPick(s, p, from, aim, false).receiver;
 }
 
 /** assistReceiver, and whether he was picked for a ball into his path (played to the pointer, timed for him) rather than to him. */
-function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { receiver: number; into: boolean } {
+function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec, always = true): { receiver: number; into: boolean } {
   let receiver = -1;
   let into = false;
   const toAim = sub(aim, from);
@@ -235,13 +235,14 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
     }
   }
   if (receiver >= 0) return { receiver, into };
-  // Nobody that close: a click is still meant for someone, the teammate nearest the point, to his
-  // feet. Only grass with nobody of ours about stays a ball into space.
+  // Nobody that close: a click is still a pass to someone (playtest), the teammate nearest the
+  // point (or where he is going), to his feet. One in an offside position only if nobody else is.
+  // A lofted ball or a throw only to a man about where it comes down (FALLBACK_R).
   let nearest = -1;
-  let nearestD = Math.max(FALLBACK_R, FALLBACK_SHARE * dAim);
+  let nearestD = always ? Infinity : Math.max(FALLBACK_R, FALLBACK_SHARE * dAim);
   for (const m of s.players) {
     if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
-    const d = dist(aim, m.pos);
+    const d = always ? Math.min(dist(aim, m.pos), dist(aim, leadPoint(from, m))) + (inOffsidePosition(s, m, from.x) ? OFFSIDE_COST : 0) : dist(aim, m.pos);
     if (d < nearestD) {
       nearest = m.i;
       nearestD = d;
@@ -250,9 +251,12 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
   return { receiver: nearest, into: false };
 }
 
-/** Failing the assist, a click this close to a teammate (or this share of the pass, if more) is a pass to his feet. */
+/** A lofted ball or throw with no one in the assist is for the teammate this close to where it comes down (or this share of its length, if more). */
 export const FALLBACK_R = 5;
 export const FALLBACK_SHARE = 0.3;
+/** A teammate in an offside position counts as this much further (m) from a click that isn't on him. */
+const OFFSIDE_COST = 25;
+
 
 /** The pace a ball rolled `d` metres should still have when it gets there, to arrive in about `t` seconds. */
 function timedArrival(d: number, t: number): number {
