@@ -586,8 +586,8 @@ export type Action =
   | { kind: 'pass'; target: Vec; receiver: number; through?: boolean; speed?: number }
   /** `lift`: optional initial vertical speed in m/s (a dipping free kick over the wall). Added for the CPU; humans leave it out. */
   | { kind: 'shoot'; target: Vec; power: number; lift?: number; curl?: number }
-  /** CPU chip: lofted, lands near `target` or as far as `power` allows. `chipPlan()` previews it. */
-  | { kind: 'chip'; target: Vec; power: number }
+  /** Chip: lofted, lands near `target` or as far as `power` allows. `chipPlan()` previews it. The CPU's, or a human's through ball over the defence (kicks.ts throughBall), meant for `receiver`. */
+  | { kind: 'chip'; target: Vec; power: number; receiver?: number }
   /**
    * Human lofted ball: lands on `target`, up to the range `power` allows, and
    * `power` (0..1) also sets how high it flies. `loftPlan()` previews it.

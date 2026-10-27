@@ -27,7 +27,7 @@ import { aiIntent, headSpot, humanAuto, IDLE_TICKS } from './ai.ts';
 import { BOX_DEPTH, BOX_W, DT, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, inOwnBox, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, humanShotLift, kickAim, passTo, pointerPass } from './kicks.ts';
-import type { HumanInput, Intent, MatchPlayer, MatchState, QueuedKick } from './types.ts';
+import type { Action, HumanInput, Intent, MatchPlayer, MatchState, QueuedKick } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
 // ---------------------------------------------------------------------------
@@ -377,6 +377,11 @@ function looseForHim(s: MatchState, p: MatchPlayer): boolean {
   return !s.players.some((m) => m.team === p.team && m.i !== p.i && m.role !== 'GK' && !m.sentOff && m.stun === 0 && dist(m.pos, at) < mine);
 }
 
+/** A click's pass as the action it is: along the ground, or a through ball clipped over the defence (kicks.ts throughBall). */
+function passAction(r: { target: Vec; receiver: number; speed: number; chip?: number }): Action {
+  return r.chip !== undefined ? { kind: 'chip', target: r.target, power: r.chip, receiver: r.receiver } : { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed };
+}
+
 export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
   let move: Vec = { x: 0, y: 0 };
   let throttle = 0;
@@ -427,7 +432,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       }
       const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
       const r = mate && !mate.sentOff ? passTo(s, mate) : pointerPass(s, p, q.target);
-      return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
+      return { move, throttle, sprint, action: passAction(r) };
     }
     const keeper = p.role === 'GK';
     if (input.shoot !== undefined) {
@@ -451,7 +456,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     if (input.pass) {
       if (pointer) {
         const r = pointerPass(s, p, aim!);
-        return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
+        return { move, throttle, sprint, action: passAction(r) };
       }
       const r = humanPass(s, p, heading);
       return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver } };

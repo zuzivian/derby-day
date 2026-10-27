@@ -64,8 +64,10 @@
  *  25  playtest round: every click a firm pass to a teammate (arriving 11-15 m/s); an outfielder who receives runs
  *      on toward the pointer; the steered man goes to a nearby loose ball and tackles a carrier close in front; queued
  *      clicks aim headers and chain to the next man; a ball onto a man's middle is easier to control; slower sprint drain
+ *  26  through balls (kicks.ts throughBall): the spot round the click where the runner beats the defenders, ground or
+ *      chipped, else a pass to him; a click past where a pass would meet a runner, or ahead of a standing forward, is one
  */
-export const SIM_VERSION = 25;
+export const SIM_VERSION = 26;
 
 export const TICK_HZ = 60;
 

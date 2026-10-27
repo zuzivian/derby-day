@@ -287,7 +287,7 @@ function decisionInterval(s: MatchState, p: MatchPlayer): number {
 }
 
 /** Top running speed, mirroring movePlayer in match.ts closely enough for planning. */
-const runSpeed = (p: MatchPlayer): number => (5 + 3.4 * p.attrs.pace) * (0.82 + 0.18 * p.energy);
+export const runSpeed = (p: MatchPlayer): number => (5 + 3.4 * p.attrs.pace) * (0.82 + 0.18 * p.energy);
 
 /**
  * Whether to sprint. Urgent moments (a contested loose ball, a run in behind,
