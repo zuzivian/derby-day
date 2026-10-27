@@ -52,8 +52,11 @@
  *      comes down where it was aimed (the set-piece delivery)
  *  21  a penalty in a match is the shootout's kick (sim/penalty.ts resolveKick): the human's aim and power or the
  *      CPU's choice against the keeper's dive decide it, and the ball and keeper play it out
+ *  22  a human's kick aimed within 2.5 m of the ball goes the way he faces (kicks.ts kickAim); a click a few metres
+ *      off the steered man switches that way, a click that switches nobody sets no lock, and the switch weighs a man
+ *      on the floor by the time he has left down
  */
-export const SIM_VERSION = 21;
+export const SIM_VERSION = 22;
 
 export const TICK_HZ = 60;
 
