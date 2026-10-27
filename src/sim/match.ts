@@ -318,6 +318,7 @@ function kick(s: MatchState, p: MatchPlayer, target: Vec, speed: number, errSigm
   b.kickedBy = p.i;
   b.inHands = false;
   b.receiver = receiver;
+  b.through = false;
   // Long enough that a pass played back across the kicker's own body gets past him.
   b.noPickup[p.i] = 22;
   b.touch = 0;
@@ -352,6 +353,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     const d = dist(b.pos, a.target);
     const err = (0.14 - 0.115 * p.attrs.passing) * (isHumanControlled(s, p) ? HUMAN_AIM : 1);
     kick(s, p, a.target, a.speed ?? passSpeed(d, p.attrs.passing) * (a.through ? 1.05 : 1), err, a.receiver);
+    if (a.through) b.through = true;
     b.passFrom = p.i;
     s.stats[team].passAttempts++;
     return;

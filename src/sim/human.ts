@@ -261,9 +261,12 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   // and let it catch him, easing only to a pace it can still catch, rather than stopping on the
   // line to wait for it.
   const pace = dot(p.vel, dir);
-  if (pace > 2.5) {
-    // Slow enough that it closes the gap to him in about 0.6 s.
-    const keep = Math.max(0, Math.min(pace, v - along / 0.6));
+  // Slow enough that it closes the gap to him in about CATCH_UP s. A ball into space ahead of him
+  // (a through ball) he takes in stride, running on at IN_STRIDE at least; any other pass, once
+  // that pace is down to a walk, he stops and meets (below). Holding his pace, he ran on away from
+  // a ball just behind him, for most of a second, in one pass to him in twelve (playtest).
+  const keep = clamp(v - along / CATCH_UP, b.through ? Math.min(pace, IN_STRIDE) : 0, pace);
+  if (pace > 2.5 && keep > 2.5) {
     const go = sub(add(onLine, scale(dir, Math.max(1.5, keep * 0.5))), p.pos);
     const effort = clamp(keep / 6.5, 0.3, SPRINT_MULT);
     return effort > 1 ? { move: norm(go), throttle: effort / SPRINT_MULT, sprint: true } : { move: norm(go), throttle: effort };
@@ -313,6 +316,11 @@ export function meetHeader(s: MatchState, p: MatchPlayer): Intent | null {
   if (d < HEAD_MEET_R) return { move: { x: 0, y: 0 }, throttle: 0 };
   return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
 }
+
+/** A ball played into the path of a man running its way is let catch him within about this many seconds ... */
+const CATCH_UP = 0.3;
+/** ... while he keeps running on at this pace (m/s) at least, to take it in stride. */
+const IN_STRIDE = 4.5;
 
 /** A carrier this close to a held or idle human's player is jockeyed rather than left to the CPU's shape. */
 export const JOCKEY_R = 6;
@@ -378,8 +386,9 @@ function looseForHim(s: MatchState, p: MatchPlayer): boolean {
 }
 
 /** A click's pass as the action it is: along the ground, or a through ball clipped over the defence (kicks.ts throughBall). */
-function passAction(r: { target: Vec; receiver: number; speed: number; chip?: number }): Action {
-  return r.chip !== undefined ? { kind: 'chip', target: r.target, power: r.chip, receiver: r.receiver } : { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed };
+function passAction(r: { target: Vec; receiver: number; speed: number; chip?: number; through?: boolean }): Action {
+  if (r.chip !== undefined) return { kind: 'chip', target: r.target, power: r.chip, receiver: r.receiver };
+  return { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed, ...(r.through ? { through: true } : {}) };
 }
 
 export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): Intent {
