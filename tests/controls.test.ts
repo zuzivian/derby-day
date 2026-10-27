@@ -6,7 +6,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
-import { assistRadius, CLOSE_CLICK, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
+import { assistRadius, CLOSE_CLICK, groundPassPlan, leadPoint, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { attackDir, oppGoal } from '../src/sim/field.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -323,6 +323,67 @@ describe('a click close to the carrier passes that way (playtest: mouse accuracy
     a.pos = { x: 30 + CLOSE_CLICK + 12, y: 34 }; // straight ahead, further
     b.pos = { x: 30 + CLOSE_CLICK + 3, y: 44 }; // off to the side, nearer the click
     expect(pointerPass(s, me, { x: 30 + CLOSE_CLICK + 3, y: 40 }).receiver).toBe(b.i);
+  });
+});
+
+describe('through balls (playtest)', () => {
+  /** Our carrier at x0 on y = 34 attacking +x or -x, our striker ahead of him; X maps "metres toward their goal". */
+  function scene() {
+    const { s, me } = carrier({ x: 40, y: 34 });
+    const dir = attackDir(s, 0);
+    const X = (m: number) => (dir > 0 ? m : 105 - m);
+    const st = s.players.find((p) => p.team === 0 && p.sub === 'ST' && p.i !== me.i)!;
+    st.stun = 0;
+    me.pos = { x: X(40), y: 34 };
+    me.facing = { x: dir, y: 0 };
+    s.ball.pos = { x: X(40) + 0.99 * dir, y: 34 };
+    st.pos = { x: X(58), y: 30 };
+    st.vel = { x: 0, y: 0 };
+    return { s, me, st, X, dir };
+  }
+
+  test('a click into the space ahead of a forward standing still is a ball for him to run onto, not a pass to his feet', () => {
+    const { s, me, st, X } = scene();
+    const aim = { x: X(67), y: 30 };
+    const r = pointerPass(s, me, aim);
+    expect(r.receiver).toBe(st.i);
+    expect(dist(r.target, aim)).toBeLessThan(6);
+    expect(dist(r.target, st.pos)).toBeGreaterThan(4);
+  });
+
+  test('a defender standing in the line: the ball goes round him, over him or to the runner, never through him into space', () => {
+    const { s, me, st, X } = scene();
+    st.vel = { x: 6 * attackDir(s, 0), y: 0 };
+    const aim = { x: X(70), y: 30 }; // 12 m ahead of him on his run: a ball into his path, not the cone's lead pass
+    const def = s.players.find((p) => p.team === 1 && p.role === 'DEF')!;
+    def.stun = 0;
+    def.vel = { x: 0, y: 0 };
+    // On the straight line from the ball to the click, half way.
+    def.pos = { x: (s.ball.pos.x + aim.x) / 2, y: (s.ball.pos.y + aim.y) / 2 };
+    const r = pointerPass(s, me, aim);
+    expect(r.receiver).toBe(st.i);
+    // With nothing into space on, a firm pass to him where he is going, as a click on him would be.
+    const toFeet = dist(r.target, leadPoint(s.ball.pos, st)) < 0.5;
+    if (r.chip === undefined && !toFeet) {
+      // Along the ground into space: its line passes him by more than he can reach.
+      const ab = { x: r.target.x - s.ball.pos.x, y: r.target.y - s.ball.pos.y };
+      const t = Math.max(0, Math.min(1, ((def.pos.x - s.ball.pos.x) * ab.x + (def.pos.y - s.ball.pos.y) * ab.y) / (ab.x * ab.x + ab.y * ab.y)));
+      expect(dist(def.pos, { x: s.ball.pos.x + ab.x * t, y: s.ball.pos.y + ab.y * t })).toBeGreaterThan(1.2);
+    }
+  });
+
+  test('with the defender off the line, a gap: it goes into the space for him, round the defender', () => {
+    const { s, me, st, X } = scene();
+    st.vel = { x: 6 * attackDir(s, 0), y: 0 };
+    const aim = { x: X(70), y: 30 };
+    const def = s.players.find((p) => p.team === 1 && p.role === 'DEF')!;
+    def.stun = 0;
+    def.vel = { x: 0, y: 0 };
+    def.pos = { x: X(50), y: 42 }; // off to the side and behind the runner: the space is his
+    const r = pointerPass(s, me, aim);
+    expect(r.receiver).toBe(st.i);
+    expect(dist(r.target, aim)).toBeLessThan(6);
+    expect(dist(r.target, leadPoint(s.ball.pos, st))).toBeGreaterThan(1);
   });
 });
 

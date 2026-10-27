@@ -365,7 +365,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
         : (0.015 + 0.04 * a.power * (1.3 - p.attrs.passing)) * (human ? HUMAN_AIM : 1);
     // A lofted pass is meant for the team-mate nearest where it comes down (the same assist as
     // a click), so he goes to meet it and takes it cleanly. A punt is for whoever wins it.
-    const receiver = a.kind === 'punt' ? -1 : assistReceiver(s, p, b.pos, plan.landing);
+    const receiver = a.kind === 'punt' ? -1 : a.kind === 'chip' && a.receiver !== undefined ? a.receiver : assistReceiver(s, p, b.pos, plan.landing);
     kick(s, p, plan.landing, plan.speed, err, receiver);
     b.z = CHIP_Z0;
     b.vz = plan.vz;
