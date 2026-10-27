@@ -242,6 +242,35 @@ export function jockey(s: MatchState, p: MatchPlayer): Intent | null {
   return { move: scale(to, 1 / d), throttle: clamp(d / 2.5, 0.3, 1) };
 }
 
+/** A loose ball whose path comes this close to the steered man is his to go and meet ... */
+export const MAGNET_R = 2.5;
+/** ... when the pointer is this close to the ball or its path, or he has stopped by the pointer: he is going there anyway. */
+export const MAGNET_POINTER_R = 5;
+/** Running at the carrier, this close (m, centre to centre) he goes in on him (a standing tackle reaches 2 m). */
+export const RUN_IN_R = 1.8;
+/** Chasing a carrier the pointer is on, he sprints while further off than this (m). */
+const CHASE_SPRINT = 4;
+
+/**
+ * A loose ball (not a pass to one of his own, not in the air above his chest) that will come
+ * within MAGNET_R of him, ahead along its path, with the pointer about there too.
+ */
+function looseNear(s: MatchState, p: MatchPlayer, cursor: Vec): boolean {
+  const b = s.ball;
+  if (b.owner >= 0 || s.phase !== 'play' || b.z > 1.5 || p.stun > 0) return false;
+  if (b.receiver >= 0 && s.players[b.receiver].team === p.team) return false;
+  const v = len(b.vel);
+  let near: Vec = b.pos;
+  if (v > 0.5) {
+    const dir = scale(b.vel, 1 / v);
+    const along = dot(sub(p.pos, b.pos), dir);
+    if (along < -0.5) return dist(p.pos, b.pos) < 1.5; // past him: only if it is right by him
+    near = add(b.pos, scale(dir, Math.max(0, along)));
+  }
+  if (dist(near, p.pos) > MAGNET_R) return false;
+  return dist(cursor, near) < MAGNET_POINTER_R || dist(cursor, b.pos) < MAGNET_POINTER_R || dist(cursor, p.pos) < 2;
+}
+
 /** The ball is loose with no receiver, and he is the nearest outfielder on his side to where it is going. */
 function looseForHim(s: MatchState, p: MatchPlayer): boolean {
   const b = s.ball;
@@ -348,6 +377,34 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     move = it.move;
     throttle = it.throttle;
     sprint = !!it.sprint;
+  }
+  if (!held && (throttle > 0 || pointer)) {
+    // Near a loose ball, roughly where the pointer is: he goes to meet it, so an imprecise
+    // pointer doesn't leave him a step off it as it runs past.
+    if (pointer && looseNear(s, p, input.cursor!)) {
+      const it = meetBall(s, p);
+      move = it.move;
+      throttle = Math.max(throttle, it.throttle);
+      sprint = sprint || !!it.sprint;
+    }
+    const c = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
+    if (c && c.team !== team && !s.ball.inHands && s.phase === 'play') {
+      const to = sub(c.pos, p.pos);
+      const d = len(to);
+      const at = d > 0 ? scale(to, 1 / d) : p.facing;
+      // The pointer on the man with the ball: chase him down at a run, not at the walk a pointer
+      // that close would ask for, to where he is going.
+      if (pointer && Math.min(dist(input.cursor!, c.pos), dist(input.cursor!, s.ball.pos)) < ON_CARRIER) {
+        move = norm(sub(add(c.pos, scale(c.vel, clamp(d / 8, 0, 0.4))), p.pos));
+        throttle = 1;
+        sprint = d > CHASE_SPRINT;
+      }
+      // Run into him from in front or the side and he goes in on it: a standing tackle without the
+      // right click. From behind it stays a right click, made on purpose.
+      if (p.tackleCd === 0 && p.kickCd === 0 && !input.tackle && d < RUN_IN_R && dot(move, at) > 0.5 && dot(at, c.facing) <= 0.5) {
+        return { move, throttle, sprint, action: { kind: 'tackle', target: { ...s.ball.pos } } };
+      }
+    }
   }
   // Not straight after his own kick: a second right click just after a shot is not a slide.
   if (input.tackle && p.kickCd === 0) {

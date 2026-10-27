@@ -1207,6 +1207,12 @@ const CHEST_REACH = 0.6;
 /** The intended receiver reaches this far for a ball at his feet; anyone else less, the faster it is. */
 export const RECEIVE_REACH = 1.23;
 const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.95);
+/** The man a human steers onto the line of a ball reaches this far for it (he has put himself there on purpose). */
+export const HUMAN_INTERCEPT_REACH = 1.1;
+/** ... and kills a ball this much faster (m/s) than he otherwise could: he read the pass, he is set for it. */
+export const HUMAN_INTERCEPT_LIMIT = 4;
+const interceptReach = (s: MatchState, p: MatchPlayer, reach: number, lastTeam: number): number =>
+  lastTeam >= 0 && lastTeam !== p.team && isHumanControlled(s, p) ? Math.max(reach, HUMAN_INTERCEPT_REACH) : reach;
 /** Ticks after a kick before an opponent can stretch for the ball (about 0.2 s); until then only his body is in the way. */
 const REACT_TICKS = 12;
 
@@ -1373,7 +1379,7 @@ function contacts(s: MatchState, from: Vec): void {
     if (z > FOOT_Z && keepersBall(s, p)) continue;
     const d = approach(p.pos, from, b.pos);
     let reach: number;
-    if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
+    if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : interceptReach(s, p, footReach(speed), lastTeam);
     else if (z <= (p.team === lastTeam ? CUSHION_Z : CHEST_Z)) reach = CHEST_REACH;
     else continue;
     if (d < reach && d < bestD) {
@@ -1458,7 +1464,9 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   // is set for it, so its fall counts for less (chest and thigh control of a lofted pass).
   const speed = len(b.vel) + Math.abs(b.vz) * (receiver ? 0.15 : 0.5);
   const chest = b.z > FOOT_Z;
-  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : 0);
+  // The man a human steers onto one of theirs: see HUMAN_INTERCEPT_LIMIT.
+  const steered = !receiver && b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team && isHumanControlled(s, p);
+  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
   if (chest && !receiver) limit *= 0.75;
   // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
   if (challenged) limit *= 0.6;
@@ -1496,7 +1504,8 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   const body = BODY_R + BALL_R;
   if (!receiver && d > body && reach > body) {
     // A sharper side reads the pass and gets a foot to it more often (TeamSetup.aiSkill).
-    const sharp = 0.2 + 0.7 * clamp(s.teams[p.team].aiSkill, 0, 1);
+    // The man a human steers reads it himself, whatever the CPU's skill on his side.
+    const sharp = steered ? 0.9 : 0.2 + 0.7 * clamp(s.teams[p.team].aiSkill, 0, 1);
     const touchChance = clamp((1 - (d - body) / (reach - body)) * (0.45 + 0.45 * p.attrs.defending) * sharp, 0, 1);
     if (next(s.rng) > touchChance) {
       // He can't get a foot to it this time; if it is coming at his body it will still hit him.
