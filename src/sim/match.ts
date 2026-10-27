@@ -847,8 +847,9 @@ function movePlayer(s: MatchState, p: MatchPlayer, intent: Intent): void {
   const effort = Math.min(1, speed / topSpeed);
   let e = p.energy - effort * effort * DT * 0.0035 * (1.4 - p.attrs.stamina);
   if (p.sprinting) e -= SPRINT_DRAIN * DT * (1.5 - 0.8 * p.attrs.stamina);
-  else if (effort < 0.25) e += 0.04 * DT;
-  else if (effort < 0.7) e += 0.02 * DT;
+  // Breath comes back fastest at rest and fades as the pace rises: about 0.02/s at a jog, a trickle at a
+  // run (a winded man held at a run, as a pointer far off holds him, still comes round), nothing flat out.
+  else e += 0.04 * clamp((1 - effort) / 0.8, 0, 1) * DT;
   p.energy = clamp(e, 0.4, 1);
 
   const steering = human && intent.throttle > 0.15;
@@ -1232,6 +1233,8 @@ const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.9
 export const HUMAN_INTERCEPT_REACH = 1.1;
 /** ... and kills a ball this much faster (m/s) than he otherwise could: he read the pass, he is set for it. */
 export const HUMAN_INTERCEPT_LIMIT = 4;
+/** Pace (m/s) a ball that runs straight onto a man's middle adds to what he can kill (falling to nothing at the edge of his reach). */
+const CONTROL_SQUARE = 5;
 const interceptReach = (s: MatchState, p: MatchPlayer, reach: number, lastTeam: number): number =>
   lastTeam >= 0 && lastTeam !== p.team && isHumanControlled(s, p) ? Math.max(reach, HUMAN_INTERCEPT_REACH) : reach;
 /** Ticks after a kick before an opponent can stretch for the ball (about 0.2 s); until then only his body is in the way. */
@@ -1487,7 +1490,10 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   const chest = b.z > FOOT_Z;
   // The man a human steers onto one of theirs: see HUMAN_INTERCEPT_LIMIT.
   const steered = !receiver && b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team && isHumanControlled(s, p);
-  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
+  // A ball that runs onto his middle is easier to kill than one he stretches for: the nearer it
+  // passes to him, the more pace he takes out of it (a defender stood on the line of a firm pass).
+  const square = 1 - clamp(d / reach, 0, 1);
+  let limit = 6 + 11 * p.attrs.dribbling + CONTROL_SQUARE * square + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
   if (chest && !receiver) limit *= 0.75;
   // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
   if (challenged) limit *= 0.6;

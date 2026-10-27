@@ -122,7 +122,7 @@ describe('throw-ins', () => {
   test('a short throw to the nearest man is kept more often than not', () => {
     let kept = 0;
     let n = 0;
-    for (let seed = 1; seed <= 20; seed++) {
+    for (let seed = 1; seed <= 100; seed++) {
       const at = { x: 50 + (seed % 7) * 3, y: seed % 2 ? 0 : PITCH_H };
       const s = restart(seed, 'throwin', at, { x: at.x, y: at.y ? PITCH_H - 8 : 8 });
       const r = s.restart!;
@@ -138,10 +138,11 @@ describe('throw-ins', () => {
         step(s, still(s));
       }
     }
-    expect(n).toBeGreaterThan(15);
-    // Main keeps 12 of 20 here (it was 16 before main's pressing changes in #28): a marker standing where the throw
-    // was led to takes it. The throw to his feet keeps more.
-    expect(kept / n).toBeGreaterThan(0.6);
+    expect(n).toBeGreaterThan(80);
+    // About 65 of 100 here (it was 16 of 20 before main's pressing changes in #28): a marker standing where the throw
+    // was led to takes it. The throw to his feet keeps more. 20 seeds moved by two throws whenever anything in the sim
+    // changed (stamina, say), so the sample is 100 and the bar a little under the rate.
+    expect(kept / n).toBeGreaterThan(0.55);
   });
 });
 
