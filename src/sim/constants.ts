@@ -71,8 +71,11 @@
  *  28  the clock stops while the ball is dead; a CPU throw-in is aimed 12 m or more short of the goal line it
  *      attacks; tackle penalties (a standing tackle 45 ticks before the next, a slide 60 after he is up, misses
  *      longer); a won slide leaves the ball at the slider's feet and him up first
+ *  29  in possession the shape is set for where the carrier is taking it; supporters lead him further, stand
+ *      further off a human and stay his supporters; wide men hold width; more runs in behind; a ball off
+ *      the top of the bar no longer sits on it
  */
-export const SIM_VERSION = 28;
+export const SIM_VERSION = 29;
 
 export const TICK_HZ = 60;
 

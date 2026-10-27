@@ -458,6 +458,13 @@ function keepsOut(s: MatchState, m: MatchPlayer): boolean {
   return !!w && w.team === m.team && w.players.includes(m.i) && s.ball.receiver !== m.i && offsideAware(s, m);
 }
 
+/** With the ball carried, the shape is set for where it will be this many seconds on (own carrier only). */
+const CARRY_LEAD = 0.8;
+/** A human's supporters stand this much further off than the tactic's supportR. */
+const HUMAN_SUPPORT_R = 1.2;
+/** A man already supporting the carrier stays one unless another is nearer by more than this (factor on squared distance). */
+const STICKY_SUPPORT = 0.5;
+
 /** Orderings of up to three supporters, for matching them to the angles they offer. */
 const PERMS: number[][][] = [[[]], [[0]], [[0, 1], [1, 0]], [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]];
 
@@ -531,8 +538,10 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   let pressured = false;
 
   if (owner) {
-    focus = clampToPitch(sub(owner.pos, scale(owner.vel, lag)), 0.5);
     attacking = owner.team === team;
+    // Our own carrier: the shape is set for where he is taking it (playtest: carried at pace, the ball
+    // left everyone behind it and they trailed after him). Theirs: where we last saw him.
+    focus = clampToPitch(attacking ? add(owner.pos, scale(owner.vel, CARRY_LEAD)) : sub(owner.pos, scale(owner.vel, lag)), 0.5);
     if (!attacking) {
       const goal = ownGoal(s, team);
       const press = add(focus, scale(norm(sub(goal, focus)), 0.8));
@@ -661,12 +670,16 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
   // going to) short passes at different angles, so there is always a triangle.
   const support: number[] = [];
   const supportAng: number[] = [];
+  let supportR = k.supportR;
+  let supportFor = -1;
   let pin = -1;
   if (attacking) {
     const center = owner && owner.team === team ? owner : b.receiver >= 0 && s.players[b.receiver].team === team ? s.players[b.receiver] : null;
     if (center) {
       const cpos = owner ? owner.pos : focus;
       const cx = teamX(s, team, cpos.x);
+      // A human on the ball carries it more than the CPU: his supporters stand a little further off.
+      if (center.i === human) supportR = k.supportR * HUMAN_SUPPORT_R;
       // The k.supporters nearest within 30 m, kept in order as they are found (this runs on every plan).
       const near: MatchPlayer[] = [];
       const nearD: number[] = [];
@@ -690,8 +703,11 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         if (m.i === center.i || m.i === steered || m.i === pin || (m.sub === 'CB' && cx > line + 0.3)) continue;
         const dx = m.pos.x - cpos.x;
         const dy = m.pos.y - cpos.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 >= 900 || (near.length === k.supporters && d2 >= nearD[near.length - 1]) || keepsOut(s, m)) continue;
+        const raw2 = dx * dx + dy * dy;
+        // Who supports changes slowly: a man already supporting the same carrier counts as nearer, so a
+        // carrier running past teammates doesn't pull each one off his job in turn (playtest).
+        const d2 = prev?.supportFor === center.i && prev.support?.includes(m.i) ? raw2 * STICKY_SUPPORT : raw2;
+        if (raw2 >= 900 || (near.length === k.supporters && d2 >= nearD[near.length - 1]) || keepsOut(s, m)) continue;
         let at = near.length;
         while (at > 0 && nearD[at - 1] > d2) at--;
         near.splice(at, 0, m);
@@ -703,7 +719,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
       }
       const angs = supportSlots(s, team, cpos, near.length);
       const fwd = { x: attackDir(s, team), y: 0 };
-      const spots = angs.map((a) => add(cpos, scale(rotate(fwd, a), k.supportR)));
+      const spots = angs.map((a) => add(cpos, scale(rotate(fwd, a), supportR)));
       let bestPerm = PERMS[near.length][0];
       let bestCost = Infinity;
       for (const perm of PERMS[near.length]) {
@@ -718,6 +734,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
         support.push(m.i);
         supportAng.push(angs[bestPerm[j]]);
       });
+      supportFor = center.i;
     }
   }
 
@@ -787,7 +804,7 @@ function buildPlan(s: MatchState, team: 0 | 1): AiTeamPlan {
     }
   }
   const possSince = attacking && prev && prev.attacking ? prev.possSince : s.tick;
-  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince, engage, pressers, pressLane, lostAt, support, supportAng, pin };
+  return { tick: s.tick, attacking, chaser, focus, icpt, bestUs, bestThem, mark, cover, line, oppLine, possSince, engage, pressers, pressLane, lostAt, support, supportAng, supportR, supportFor, pin };
 }
 
 /**
@@ -1537,6 +1554,17 @@ function laneShut(s: MatchState, team: 0 | 1, from: Vec, to: Vec): boolean {
 
 /** A supporter tries his angle and a little either side of it, short and a bit longer. */
 const SUPPORT_TURN = [-0.4, 0, 0.4];
+/** Seconds on from the carrier that a supporter's angle is measured from (it was 0.3: they trailed a man running with it). */
+const SUPPORT_LEAD = 0.8;
+/** Only a man within this of the ball (m) looks at the short options beside the carrier; the rest hold the shape. */
+const SHORT_NEAR = 18;
+/**
+ * Runs in behind: with the ball beyond RUN_FROM (team-x), from no more than RUN_START (team-x) short of the
+ * line he can stand on, while no opponent is within RUN_FREE m of the carrier (his head is up).
+ */
+const RUN_FROM = 0.35;
+const RUN_START = 0.1;
+const RUN_FREE = 2;
 const SUPPORT_REACH = [0.75, 1, 1.25];
 // Scratch for supportSpot (it never re-enters): opponents as x, y pairs, and teammates' spots.
 const SUPPORT_OPP: number[] = [];
@@ -1546,8 +1574,9 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   const team = p.team;
   const k = tacticOf(s, team);
   const skill = skillOf(s, team);
-  // Where the ball will be: the carrier a moment from now, or where the pass is going.
-  const c = carrier ? clampToPitch(add(carrier.pos, scale(carrier.vel, 0.3)), 0.5) : plan.focus;
+  // Where the ball will be: the carrier a moment from now (far enough on that the forward angles are
+  // ahead of a man running with it, not trailing him), or where the pass is going.
+  const c = carrier ? clampToPitch(add(carrier.pos, scale(carrier.vel, SUPPORT_LEAD)), 0.5) : plan.focus;
   const cx = teamX(s, team, c.x);
   const onsideX = Math.max(0.5, plan.oppLine - (-0.6 + 1.8 * skill) * M);
   const base = plan.supportAng![j];
@@ -1563,7 +1592,8 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
   // enough to the carrier to touch a lane or crowd a spot this short count.
   const mates = SUPPORT_MATES;
   mates.length = 0;
-  const near = k.supportR * SUPPORT_REACH[SUPPORT_REACH.length - 1] + 9;
+  const supportR = plan.supportR ?? k.supportR;
+  const near = supportR * SUPPORT_REACH[SUPPORT_REACH.length - 1] + 9;
   const near2 = near * near;
   for (const o of s.players) {
     if (o.sentOff) continue;
@@ -1585,7 +1615,7 @@ function supportSpot(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier: M
     const dx = fx * Math.cos(base + da);
     const dy = fx * Math.sin(base + da);
     for (const rf of SUPPORT_REACH) {
-      const r = k.supportR * rf;
+      const r = supportR * rf;
       let x = Math.min(PITCH_W - 2, Math.max(2, c.x + dx * r));
       const y = Math.min(PITCH_H - 2, Math.max(2, c.y + dy * r));
       if (toTeamX(x) > onsideX) x = fromTeamX(onsideX);
@@ -1659,19 +1689,27 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
   // Who commits forward is the mentality's call: a low block keeps everyone but the strikers back.
   const runner = runsIntoBox(k, sub_);
 
-  // The far-side wide man holds the width for a switch of play until the ball reaches the final
-  // third (then he may come in for the far post). Metres he is in from his touchline past 10 m cost him.
-  const holdWidth = (sub_ === 'W' || sub_ === 'WM') && fx < 0.7 && Math.abs(focus.y - MID_Y) > 10 && (anchor.y - MID_Y) * (focus.y - MID_Y) < 0;
+  // A wide man holds the width unless the ball is out on his own flank: on the far side for a switch
+  // of play until the ball reaches the final third (then he may come in for the far post), and with
+  // it in the middle until it is nearly at the box, so there is a man out wide to play it to and cross
+  // (playtest: the wide men came in to the carrier and nobody was wide). Metres he is in from his
+  // touchline past 10 m cost him.
+  const offCentre = Math.abs(focus.y - MID_Y);
+  const ownFlank = offCentre > 10 && (anchor.y - MID_Y) * (focus.y - MID_Y) > 0;
+  const holdWidth = (sub_ === 'W' || sub_ === 'WM') && !ownFlank && (fx < 0.7 || (offCentre <= 10 && fx < 0.8));
 
   // A run in behind: from onside, spin past the last defender while the
   // carrier has his head up. Timed right it beats the trap; late, it's offside.
-  if (carrier && runner && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'AM') && fx > 0.4 && fx < 0.82 && teamX(s, team, p.pos.x) > onsideX - 0.06) {
+  // A wide man goes down the line from his flank whatever the mentality's box runners (playtest:
+  // nobody ran in behind for a through ball).
+  const wideRun = (sub_ === 'W' || sub_ === 'WM') && (holdWidth || ownFlank);
+  if (carrier && (runner || wideRun) && (sub_ === 'ST' || sub_ === 'W' || sub_ === 'WM' || sub_ === 'AM') && fx > RUN_FROM && fx < 0.82 && teamX(s, team, p.pos.x) > onsideX - RUN_START) {
     let free = Infinity;
     for (const o of s.players) if (o.team !== team && !o.sentOff) free = Math.min(free, dist(o.pos, carrier.pos));
-    if (free > 3 && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
+    if (free > RUN_FREE && chance(s.rng, (0.45 + 0.3 * skill) * (sub_ === 'AM' ? 0.5 : 1))) {
       mem.retarget = Math.round(40 + 20 * next(s.rng));
       // In behind, angled in; down the line for a wide man holding the width.
-      const y = clamp(holdWidth ? p.pos.y + range(s.rng, -3, 3) : p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 4, PITCH_H - 4);
+      const y = clamp(holdWidth || wideRun ? p.pos.y + range(s.rng, -3, 3) : p.pos.y + (MID_Y - p.pos.y) * 0.3 + range(s.rng, -6, 6), 4, PITCH_H - 4);
       mem.target = fromTeam(s, team, Math.min(0.95, plan.oppLine + 0.13), y / PITCH_H);
       return mem.target;
     }
@@ -1695,8 +1733,10 @@ function supportTarget(s: MatchState, p: MatchPlayer, plan: AiTeamPlan, carrier:
     cands.push(fromTeam(s, team, Math.min(0.93, onsideX), (MID_Y - near * 4) / PITCH_H));
     cands.push(fromTeam(s, team, Math.min(0.89, onsideX), 0.5));
   }
-  // Short options either side of the carrier, and a safe ball behind.
-  if (sub_ !== 'CB') {
+  // Short options either side of the carrier, and a safe ball behind, for a man near him: the
+  // supporters are already there, and the rest keep the shape stretched (playtest: everyone came to
+  // the carrier and followed him about).
+  if (sub_ !== 'CB' && !holdWidth && dist(p.pos, focus) < SHORT_NEAR) {
     for (const side of [-1, 1]) {
       cands.push(add(focus, scale(rotate(fwd, side * 0.9), 9)));
       cands.push(add(focus, scale(rotate(fwd, side * 2.1), 8)));
