@@ -129,7 +129,7 @@ export const THROW_Z0 = 2.0;
 
 export const SPRINT_MULT = 1.18;
 /** Energy per second burned while sprinting, scaled by stamina. */
-export const SPRINT_DRAIN = 0.055;
+export const SPRINT_DRAIN = 0.045;
 export const WINDED_BELOW = 0.44;
 export const WINDED_RECOVER = 0.58;
 
