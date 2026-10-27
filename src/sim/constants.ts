@@ -56,8 +56,12 @@
  *      off the steered man switches that way, a click that switches nobody sets no lock, and the switch weighs a man
  *      on the floor by the time he has left down; a carried ball runs further ahead at a sprint (less for a good
  *      dribbler), and an opponent on his feet that it runs into can poke it away (match.ts pokeAway)
+ *  23  playtest round: the steered man reaches further for and better controls an opponent's pass, goes to meet
+ *      a loose ball near him and a dropping ball he can head, chases a carrier the pointer is on and tackles by
+ *      running into him; a click with nobody in the assist goes to the teammate nearest it; headers depend on
+ *      skill and challenge; CPU defenders rarely tackle from behind, fewer fouls and cards
  */
-export const SIM_VERSION = 22;
+export const SIM_VERSION = 23;
 
 export const TICK_HZ = 60;
 

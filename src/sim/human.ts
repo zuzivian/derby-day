@@ -425,7 +425,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
   if (!held && (throttle > 0 || pointer)) {
     // Near a loose ball, roughly where the pointer is: he goes to meet it, so an imprecise
     // pointer doesn't leave him a step off it as it runs past.
-    if (pointer && looseNear(s, p, input.cursor!)) {
+    if (pointer && !header && looseNear(s, p, input.cursor!)) {
       const it = meetBall(s, p);
       move = it.move;
       throttle = Math.max(throttle, it.throttle);
