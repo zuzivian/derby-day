@@ -199,11 +199,11 @@ function intoPath(m: MatchPlayer, aim: Vec): number {
 
 /** The teammate the assist gives a pass from `from` aimed at `aim`, or -1 (see PASS_ASSIST_R). */
 export function assistReceiver(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): number {
-  return assistPick(s, p, from, aim).receiver;
+  return assistPick(s, p, from, aim, false).receiver;
 }
 
 /** assistReceiver, and whether he was picked for a ball into his path (played to the pointer, timed for him) rather than to him. */
-function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { receiver: number; into: boolean } {
+function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec, always = true): { receiver: number; into: boolean } {
   let receiver = -1;
   let into = false;
   const toAim = sub(aim, from);
@@ -234,7 +234,7 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
       into = path < Infinity;
     }
   }
-  if (receiver >= 0) return { receiver, into };
+  if (receiver >= 0 || !always) return { receiver, into };
   // Nobody that close: a click is still a pass to someone (playtest), the teammate nearest the
   // point (or where he is going), to his feet. One in an offside position only if nobody else is.
   let nearest = -1;

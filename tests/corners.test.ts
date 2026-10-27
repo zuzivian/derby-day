@@ -187,7 +187,9 @@ describe('the defence at a corner', () => {
   test('the keeper comes for a floated ball into his six-yard box, not a driven one', () => {
     let floatedClaims = 0;
     let drivenClaims = 0;
-    for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+    // 24 seeds, not 8: about one floated ball in three is claimed, and 8 seeds moved between 1 and 3
+    // claims whenever anything in the sim changed (40 seeds: 12 here, 14 on main; driven 0 on both).
+    for (const seed of Array.from({ length: 24 }, (_, i) => i + 1)) {
       for (const [hold, count] of [
         [1, (n: number) => (floatedClaims += n)],
         [0.05, (n: number) => (drivenClaims += n)],
@@ -209,6 +211,6 @@ describe('the defence at a corner', () => {
       }
     }
     expect(floatedClaims).toBeGreaterThan(drivenClaims);
-    expect(floatedClaims).toBeGreaterThanOrEqual(2);
+    expect(floatedClaims).toBeGreaterThanOrEqual(4);
   });
 });
