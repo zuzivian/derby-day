@@ -129,6 +129,8 @@ export interface Ball {
   lastTouch: number;
   /** Intended receiver of the pass in flight, or -1. */
   receiver: number;
+  /** The pass in flight was played into space ahead of its receiver (a through ball): he takes it in stride. */
+  through?: boolean;
   passFrom: number;
   noPickup: number[];
   /** Height above the floor in metres. 0 while rolling or held. Never negative. */

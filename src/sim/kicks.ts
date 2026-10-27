@@ -178,8 +178,8 @@ export function leadPoint(from: Vec, m: MatchPlayer): Vec {
   return lead;
 }
 
-/** A click on the line to a running teammate this far (m) beyond where a pass would meet him is a ball into his path. */
-const THROUGH_BEYOND = 3;
+/** A click near or on the line to a running teammate this far (m) beyond where a pass would meet him is a ball into his path. */
+const THROUGH_BEYOND = 2;
 /** A click up to this far ahead of a running team-mate, along his run, is a ball into his path. */
 export const THROUGH_AHEAD = 14;
 
@@ -221,24 +221,20 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec, always =
     const lead = leadPoint(from, m);
     const near = Math.min(dist(aim, m.pos), dist(aim, lead));
     let err = Infinity;
-    let cone = false;
     if (near < radius) err = near / radius;
     else if (dAim > 1) {
       const toLead = sub(lead, from);
       const dLead = len(toLead);
       const cos = dLead > 1 ? (toAim.x * toLead.x + toAim.y * toLead.y) / (dAim * dLead) : -1;
-      if (cos > CONE_COS && dAim > 0.6 * dLead && dAim < 1.2 * dLead) {
-        err = 1 + (1 - cos) / (1 - CONE_COS);
-        cone = true;
-      }
+      if (cos > CONE_COS && dAim > 0.6 * dLead && dAim < 1.2 * dLead) err = 1 + (1 - cos) / (1 - CONE_COS);
     }
     // A keeper is only played to on purpose (pointer right on him).
     if (m.role === 'GK' && near > PASS_ASSIST_R) err = Infinity;
-    // Past all that, a click into the path of a man making a run is for him. So is one on the line to
-    // him but well beyond where a pass to him would meet him, along his run (playtest: the cone made
-    // that a pass to where he would be, never the ball into space it was meant as).
+    // Past all that, a click into the path of a man making a run is for him. So is one near him or on
+    // the line to him but well beyond where a pass to him would meet him, along his run (playtest: the
+    // assist made that a pass to where he would be, never the ball into space it was meant as).
     const v = len(m.vel);
-    const beyond = cone && v > 2.5 && dot(sub(aim, lead), scale(m.vel, 1 / v)) > THROUGH_BEYOND;
+    const beyond = err < Infinity && v > 2.5 && dot(sub(aim, lead), scale(m.vel, 1 / v)) > THROUGH_BEYOND;
     const path = (err === Infinity || beyond) && m.role !== 'GK' ? intoPath(s, m, aim) : Infinity;
     if (path < Infinity) err = beyond ? err : 2 + path;
     if (err < bestErr) {
@@ -372,7 +368,7 @@ function closestOn(p: Vec, a: Vec, b: Vec): { pt: Vec; t: number } {
  * ground, timed for him, if that one wins the race; else chipped over them, as the CPU plays a ball
  * in behind, if that wins; else, with no ball into space on, a firm pass to him where he is going.
  */
-export function throughBall(s: MatchState, p: MatchPlayer, m: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number; chip?: number } {
+export function throughBall(s: MatchState, p: MatchPlayer, m: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number; chip?: number; through?: boolean } {
   const ball = s.ball.pos;
   const v = len(m.vel);
   const run = v > 0.5 ? scale(m.vel, 1 / v) : norm(sub(aim, m.pos));
@@ -398,8 +394,8 @@ export function throughBall(s: MatchState, p: MatchPlayer, m: MatchPlayer, aim: 
       }
     }
   }
-  if (ground!.margin < THROUGH_SAFE && clip && clip.margin > ground!.margin + THROUGH_CLIP_BETTER && clip.margin > 0) return { target: clip.target, receiver: m.i, speed: clip.speed, chip: clip.power };
-  if (ground!.margin > THROUGH_SAFE) return { target: ground!.target, receiver: m.i, speed: ground!.speed };
+  if (ground!.margin < THROUGH_SAFE && clip && clip.margin > ground!.margin + THROUGH_CLIP_BETTER && clip.margin > 0) return { target: clip.target, receiver: m.i, speed: clip.speed, chip: clip.power, through: true };
+  if (ground!.margin > THROUGH_SAFE) return { target: ground!.target, receiver: m.i, speed: ground!.speed, through: true };
   // No ball into the space beats them: a firm pass to him, where he is going, as a click on him would be.
   return passTo(s, m);
 }
@@ -474,7 +470,7 @@ export function passToPoint(s: MatchState, m: MatchPlayer, at: Vec): { target: V
  * there quickly (receiverArrival). Otherwise it goes to the grass under the pointer and
  * slows to PASS_ARRIVAL_SPEED there (receiver -1): through balls into space.
  */
-export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number; chip?: number } {
+export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number; chip?: number; through?: boolean } {
   const ball = s.ball.pos;
   // A click close to him says which way, not where: he runs to the pointer, so it is rarely far
   // off him, and a pass to the grass there is a push of a couple of metres. To the teammate that

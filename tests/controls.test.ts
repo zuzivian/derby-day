@@ -241,6 +241,33 @@ describe('ground pass goes where the pointer is', () => {
     expect(got).toBe(mate.i);
   });
 
+  test('a pass to a teammate running away from it: he checks his run and meets it, not runs on with it chasing him', () => {
+    // Playtest: "the player runs away from the ball when trying to receive". He held his pace, letting it
+    // catch him in about 0.6 s; in scripted matches one pass to him in twelve had him running on away
+    // from it for a fifth of a second or more (now one in ninety), and he took fewer of them.
+    const { s, me } = carrier({ x: 30, y: 34 });
+    const mate = s.players.find((p) => p.team === 0 && p.role === 'MID')!;
+    for (const p of s.players) if (p !== me && p !== mate) p.pos = { x: 95 + (p.i % 5), y: 60 + (p.i % 3) };
+    mate.stun = 0;
+    mate.pos = { x: 36, y: 34 };
+    mate.vel = { x: 7, y: 0 };
+    mate.facing = { x: 1, y: 0 };
+    step(s, { cursor: { ...mate.pos }, aim: { ...mate.pos }, pass: true, moved: true });
+    expect(s.ball.receiver).toBe(mate.i);
+    expect(s.ball.through).toBe(false);
+    let away = 0;
+    let got = -1;
+    for (let t = 0; t < 240 && got < 0; t++) {
+      step(s, { cursor: { ...me.pos } });
+      const d = dist(mate.pos, s.ball.pos);
+      const radial = d > 0 ? ((mate.pos.x - s.ball.pos.x) * mate.vel.x + (mate.pos.y - s.ball.pos.y) * mate.vel.y) / d : 0;
+      if (d > 2 && radial > 1.5) away++;
+      if (s.ball.owner >= 0) got = s.ball.owner;
+    }
+    expect(got).toBe(mate.i);
+    expect(away).toBeLessThan(18); // under 0.3 s running away from it (he is at 7 m/s when it is played)
+  });
+
   test('a ball into a runner\'s path is timed for him and he takes it in stride', () => {
     // Before: the click left him off the pass (no receiver), so he stopped and came back for it,
     // or, picked, stopped on its line to wait: collected at 1-4 m/s.

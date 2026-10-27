@@ -66,8 +66,10 @@
  *      clicks aim headers and chain to the next man; a ball onto a man's middle is easier to control; slower sprint drain
  *  26  through balls (kicks.ts throughBall): the spot round the click where the runner beats the defenders, ground or
  *      chipped, else a pass to him; a click past where a pass would meet a runner, or ahead of a standing forward, is one
+ *  27  a man a pass is played to while he runs its way checks his run so it reaches him in about 0.3 s (a through ball
+ *      he still takes in stride); a click 2 m (was 3) beyond where a pass would meet a runner is a through ball
  */
-export const SIM_VERSION = 26;
+export const SIM_VERSION = 27;
 
 export const TICK_HZ = 60;
 
