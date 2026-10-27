@@ -85,7 +85,7 @@ const PASS_MAX_SPEED = 28;
  * about 0.4-0.8 s; feedback/research-mouse-and-pace.md section 3 and 4). A receiver
  * controls up to 11 + 11 x dribbling m/s (match.ts), so every receiver can take it.
  */
-export const receiverArrival = (d: number): number => clamp(6 + 0.4 * d, 7, 12);
+export const receiverArrival = (d: number): number => clamp(9 + 0.4 * d, 10, 15);
 /** The fast regime as dv/dt = -(FAST_A + ROLL_FAST_B v), continuous with the slow one at ROLL_FAST_V. */
 const FAST_A = ROLL_A + (ROLL_B - ROLL_FAST_B) * ROLL_FAST_V;
 

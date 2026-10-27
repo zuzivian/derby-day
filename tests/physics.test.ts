@@ -143,14 +143,16 @@ describe('pointer smoothing (ask 11)', () => {
 // Ask 3: weighted to reach the teammate quickly
 
 describe('a click pass is firm and arrives quickly at a controllable pace (ask 3)', () => {
-  test('to a teammate 5-25 m away: leaves at 9-20 m/s, arrives at 7-12 m/s, in under 1.7 s', () => {
+  test('to a teammate 5-25 m away: leaves at 12-22 m/s, arrives at 10-15 m/s, in under 1.7 s', () => {
+    // Firmer since playtesting (was 7-12 m/s at the feet): a scripted human clicking on the nearest
+    // open teammate completed 80% of passes, 89% now; nearly all the rest were cut out on the way.
     for (const d of [5, 8, 10, 15, 20, 25]) {
       const arrive = receiverArrival(d);
       const plan = groundPassPlan(d, arrive);
-      expect(arrive).toBeGreaterThanOrEqual(7);
-      expect(arrive).toBeLessThanOrEqual(12);
-      expect(plan.speed).toBeGreaterThan(8.5);
-      expect(plan.speed).toBeLessThan(21);
+      expect(arrive).toBeGreaterThanOrEqual(10);
+      expect(arrive).toBeLessThanOrEqual(15);
+      expect(plan.speed).toBeGreaterThan(12);
+      expect(plan.speed).toBeLessThan(22);
       expect(plan.flight).toBeLessThan(1.7);
       expect(rollDistance(plan.speed, arrive)).toBeCloseTo(d, 1);
       // Short passes (10 m) in under a second: research says about 0.4-0.8 s.
