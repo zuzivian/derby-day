@@ -234,14 +234,15 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec, always =
       into = path < Infinity;
     }
   }
-  if (receiver >= 0 || !always) return { receiver, into };
+  if (receiver >= 0) return { receiver, into };
   // Nobody that close: a click is still a pass to someone (playtest), the teammate nearest the
   // point (or where he is going), to his feet. One in an offside position only if nobody else is.
+  // A lofted ball or a throw only to a man about where it comes down (FALLBACK_R).
   let nearest = -1;
-  let nearestD = Infinity;
+  let nearestD = always ? Infinity : Math.max(FALLBACK_R, FALLBACK_SHARE * dAim);
   for (const m of s.players) {
     if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
-    const d = Math.min(dist(aim, m.pos), dist(aim, leadPoint(from, m))) + (inOffsidePosition(s, m, from.x) ? OFFSIDE_COST : 0);
+    const d = always ? Math.min(dist(aim, m.pos), dist(aim, leadPoint(from, m))) + (inOffsidePosition(s, m, from.x) ? OFFSIDE_COST : 0) : dist(aim, m.pos);
     if (d < nearestD) {
       nearest = m.i;
       nearestD = d;
@@ -250,6 +251,9 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec, always =
   return { receiver: nearest, into: false };
 }
 
+/** A lofted ball or throw with no one in the assist is for the teammate this close to where it comes down (or this share of its length, if more). */
+export const FALLBACK_R = 5;
+export const FALLBACK_SHARE = 0.3;
 /** A teammate in an offside position counts as this much further (m) from a click that isn't on him. */
 const OFFSIDE_COST = 25;
 

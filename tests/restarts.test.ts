@@ -62,10 +62,16 @@ describe('throw-ins', () => {
       const at = { x: gx - 14, y: 0 };
       const s = restart(seed, 'throwin', at, { x: gx - 14, y: 8 });
       const aim = { x: gx - 9, y: MID - 12 }; // a long throw to the edge of the box, about 22 m
+      // A man about where it comes down (where the first seeds happened to have one: on 20 seeds main
+      // had one in reach only 16 times), so the test is of who it is meant for, not of where play left them.
+      const taker = s.players[s.restart!.taker];
+      const ours = s.players.filter((m) => m.team === 0 && m.role !== 'GK' && m.i !== taker.i);
+      if (!ours.some((m) => dist(m.pos, aim) < 4)) ours.sort((a, b) => dist(a.pos, aim) - dist(b.pos, aim))[0].pos = { x: aim.x + 1.5, y: aim.y + 1 };
+      const nearest = ours.reduce((a, b) => (dist(a.pos, aim) < dist(b.pos, aim) ? a : b));
       const t = structuredClone(s);
       step(t, { cursor: aim, aim, loft: 0.6, moved: true });
       n++;
-      if (t.ball.receiver >= 0 && t.players[t.ball.receiver].team === 0) withReceiver++;
+      if (t.ball.receiver === nearest.i) withReceiver++;
       worst = Math.max(worst, dist(landing(s, { cursor: aim, aim, loft: 0.6, moved: true }), aim));
     }
     // On main a long throw had no receiver, and nobody went to meet it.
