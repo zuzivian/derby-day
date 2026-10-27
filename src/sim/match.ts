@@ -463,16 +463,21 @@ function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide:
   if (!slide) pWin *= 1 - 0.25 * clamp((dist(owner.pos, p.pos) - STAND_EDGE) / (STAND_REACH - STAND_EDGE), 0, 1);
   const won = next(s.rng) < pWin;
   const fast = slide ? commit : clamp((before - 6.5) / 2.5, 0, 1);
-  let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
+  // A standing tackle that misses is usually just a miss; a slide that misses takes the man.
+  let pFoul = slide
+    ? won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast
+    : won ? (fromBehind ? 0.12 : 0.02) : 0.08 + (fromBehind ? 0.3 : 0) + 0.1 * fast;
   pFoul *= 2.05 - 0.9 * care(s, p);
   // A booked CPU player goes in more carefully.
   if (p.yellow > 0 && !isHumanControlled(s, p)) pFoul *= 0.45;
+  // So does a CPU defender with a penalty to give away.
+  if (!isHumanControlled(s, p) && inOwnBox(s, team, owner.pos)) pFoul *= 0.6;
   // At full stretch a standing tackle is more a poke than a challenge through the man, and so
   // is a slide that meets him before it is fully committed.
   if (!slide && dist(owner.pos, p.pos) > STAND_EDGE) pFoul *= 0.5;
   if (slide) pFoul *= 0.5 + 0.5 * commit;
   if (next(s.rng) < pFoul) {
-    const sev = severityOf((fromBehind ? 0.3 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
+    const sev = severityOf((fromBehind ? 0.25 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
     if (judgeFoul(s, { offender: p, victim: owner, severity: sev, attempt: true, keptBall: !won })) return;
   }
   if (won) {

@@ -1738,7 +1738,13 @@ function tryTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, skill: num
   const range_ = 1.45 + 0.5 * (1 - skill) + k.reach;
   if (d < range_ && p.tackleCd === 0 && p.aiTimer <= 0 && !s.ball.inHands) {
     p.aiTimer = decisionInterval(s, p);
-    if (chance(s.rng, clamp((0.35 + 0.35 * p.attrs.defending + 0.15 * skill) * k.tackle, 0, 0.95))) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
+    // Coming through the back of the man rarely wins it and is nearly always a foul (resolveTackle):
+    // a sensible defender stays on his shoulder and waits for the touch, and only a desperate one
+    // (the carrier is through on goal) dives in anyway.
+    const behind = dot(norm(sub(owner.pos, p.pos)), owner.facing) > 0.5;
+    const desperate = teamX(s, p.team, owner.pos.x) < 0.3 && dist(owner.pos, ownGoal(s, p.team)) < 22;
+    const keen = behind ? (desperate ? 0.7 : 0.35 + 0.2 * (1 - skill)) : 1.15;
+    if (chance(s.rng, clamp((0.35 + 0.35 * p.attrs.defending + 0.15 * skill) * k.tackle * keen, 0, 0.95))) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
   }
   return null;
 }
