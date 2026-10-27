@@ -337,7 +337,7 @@ export function jockey(s: MatchState, p: MatchPlayer): Intent | null {
 }
 
 /** A loose ball whose path comes this close to the steered man is his to go and meet ... */
-export const MAGNET_R = 3.5;
+export const MAGNET_R = 3;
 /** ... unless the pointer sends him clearly the other way (the cosine between the two ways below this) from further off than this (m). */
 export const MAGNET_AWAY_COS = -0.3;
 export const MAGNET_POINTER_R = 6;
