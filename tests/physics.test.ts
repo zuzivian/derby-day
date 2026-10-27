@@ -1073,3 +1073,66 @@ describe('a keeper one-on-one', () => {
     expect(strong.goals).toBeLessThan(weak.goals - 0.2);
   }, 30_000);
 });
+
+describe('the carried ball is not part of the carrier', () => {
+  /** Our man sprinting along y = 34 with the ball, one opponent standing in his path who never tackles. */
+  function runInto(seed: number, dribbling: number, defending: number, path = 34): { lost: boolean; by: number } {
+    const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humans: [true, true] });
+    openPlay(s);
+    const me = s.players[s.controlled[0]];
+    const def = s.players[s.controlled[1]];
+    isolate(s, me, def);
+    s.switchTimer[0] = s.switchTimer[1] = 1e9;
+    me.attrs.dribbling = dribbling;
+    def.attrs.defending = defending;
+    me.pos = { x: 30, y: 34 };
+    me.vel = { x: 7, y: 0 };
+    me.facing = { x: 1, y: 0 };
+    Object.assign(s.ball, { owner: me.i, receiver: -1, touch: 0, pos: { x: 31, y: 34 }, vel: { x: 7, y: 0 }, z: 0, vz: 0 });
+    for (let t = 0; t < 120; t++) {
+      def.pos = { x: 38, y: path };
+      def.vel = { x: 0, y: 0 };
+      // The defender's side gives no input: he stands, and takes no action of his own.
+      step(s, [{ cursor: { x: 70, y: 34 }, moved: true }, {}]);
+      if (s.ball.owner !== me.i) return { lost: true, by: s.ball.lastTouch };
+    }
+    return { lost: false, by: -1 };
+  }
+
+  test('running the ball into a man on his feet can lose it, more often for a poor dribbler against a good defender', () => {
+    // Before: only a tackle could take it; a carrier ran the ball through a standing defender every time.
+    const rate = (dribbling: number, defending: number) => {
+      let lost = 0;
+      for (let seed = 1; seed <= 24; seed++) if (runInto(seed, dribbling, defending).lost) lost++;
+      return lost / 24;
+    };
+    const poor = rate(0.2, 0.9);
+    const good = rate(0.95, 0.3);
+    expect(poor).toBeGreaterThan(0.4);
+    expect(good).toBeLessThan(poor);
+  });
+
+  test('going round him keeps it: a defender a couple of metres off the line never touches it', () => {
+    for (let seed = 1; seed <= 8; seed++) expect(runInto(seed, 0.2, 0.9, 36.5).lost).toBe(false);
+  });
+
+  test('at a sprint the ball runs further ahead of a poor dribbler than of a good one', () => {
+    const ahead = (dribbling: number) => {
+      const s = livePlay();
+      const me = s.players[s.controlled[0]];
+      isolate(s, me);
+      s.switchTimer[0] = 1e9;
+      me.attrs.dribbling = dribbling;
+      me.pos = { x: 20, y: 34 };
+      me.facing = { x: 1, y: 0 };
+      Object.assign(s.ball, { owner: me.i, receiver: -1, touch: 0, pos: { x: 21, y: 34 }, vel: { x: 0, y: 0 } });
+      for (let t = 0; t < 90; t++) step(s, { cursor: { x: me.pos.x + 30, y: 34 }, moved: true });
+      expect(len(me.vel)).toBeGreaterThan(7);
+      return dist(me.pos, s.ball.pos);
+    };
+    const poor = ahead(0.1);
+    const good = ahead(0.95);
+    expect(poor).toBeGreaterThan(good + 0.25);
+    expect(good).toBeLessThan(1.25);
+  });
+});

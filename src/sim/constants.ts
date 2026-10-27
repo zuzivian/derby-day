@@ -54,7 +54,8 @@
  *      CPU's choice against the keeper's dive decide it, and the ball and keeper play it out
  *  22  a human's kick aimed within 2.5 m of the ball goes the way he faces (kicks.ts kickAim); a click a few metres
  *      off the steered man switches that way, a click that switches nobody sets no lock, and the switch weighs a man
- *      on the floor by the time he has left down
+ *      on the floor by the time he has left down; a carried ball runs further ahead at a sprint (less for a good
+ *      dribbler), and an opponent on his feet that it runs into can poke it away (match.ts pokeAway)
  */
 export const SIM_VERSION = 22;
 
