@@ -254,6 +254,18 @@ function timedArrival(d: number, t: number): number {
 /** A ball into a runner's path is never rolled faster than this as it reaches the pointer. */
 const THROUGH_MAX_ARRIVAL = 14;
 
+/** A pointer closer than this (m) to the ball gives a kick no direction. */
+export const KICK_NEAR = 2.5;
+
+/**
+ * Where a kick aimed at `aim` goes. A pointer by the ball gives no direction: he ran to it and
+ * stopped short, so it is usually just behind the ball, and a kick toward it would go back through
+ * his own legs. Then it goes `far` metres the way he faces (the way the ball sits from him).
+ */
+export function kickAim(ball: Vec, p: MatchPlayer, aim: Vec, far: number): Vec {
+  return dist(ball, aim) < KICK_NEAR ? add(ball, scale(p.facing, far)) : aim;
+}
+
 /** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
 /** `lead`: play it to where he will be if he is running (false: to his feet, e.g. a man who stops when a restart is ready). */
 export function passTo(s: MatchState, m: MatchPlayer, lead = true): { target: Vec; receiver: number; speed: number } {
@@ -285,8 +297,8 @@ export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: 
     const d = dist(ball, target);
     return { target, receiver, speed: groundPassPlan(d, timedArrival(d, dist(m.pos, target) / len(m.vel))).speed };
   }
-  let target = receiver >= 0 ? leadPoint(ball, s.players[receiver]) : clampToPitch(aim, 0.5);
-  // A pointer on top of the ball: play it a couple of metres the way the player faces.
+  let target = receiver >= 0 ? leadPoint(ball, s.players[receiver]) : clampToPitch(kickAim(ball, p, aim, 2), 0.5);
+  // A teammate right by the ball: play it a couple of metres his way.
   if (dist(ball, target) < 2) {
     const way = norm(sub(target, ball));
     target = clampToPitch(add(ball, scale(way.x === 0 && way.y === 0 ? p.facing : way, 2)), 0.5);

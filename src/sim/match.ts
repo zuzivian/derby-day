@@ -1080,6 +1080,43 @@ function checkLines(s: MatchState): boolean {
   return false;
 }
 
+/**
+ * How much further ahead (m) a carrier running at speed has the ball: at a sprint a poor dribbler
+ * knocks it on up to DRIBBLE_AHEAD, a perfect one keeps it a fifth of that.
+ */
+export const DRIBBLE_AHEAD = 0.6;
+const dribbleAhead = (o: MatchPlayer): number => clamp((len(o.vel) - 5) / 3, 0, 1) * DRIBBLE_AHEAD * (1 - 0.8 * o.attrs.dribbling);
+
+/** An opponent's body this close (m, centre to ball centre) to a carried ball can poke it away. */
+const POKE_R = PLAYER_R + BALL_R + 0.1;
+
+/**
+ * The carried ball is not part of the carrier: an opponent on his feet that it runs into (or who
+ * steps across it) gets a foot to it, more often the better he defends and the worse the carrier
+ * dribbles. Won, it comes off loose; missed, he can't try again until his tackle cooldown is over.
+ * No foul: he played the ball, not the man.
+ */
+function pokeAway(s: MatchState, o: MatchPlayer): void {
+  const b = s.ball;
+  for (const p of s.players) {
+    if (p.team === o.team || p.sentOff || p.stun > 0 || p.tackleCd > 0 || p.slide) continue;
+    if (dist(p.pos, b.pos) >= POKE_R) continue;
+    p.tackleCd = 36;
+    if (next(s.rng) >= clamp(0.3 + 0.5 * p.attrs.defending - 0.5 * o.attrs.dribbling, 0.08, 0.6)) continue;
+    b.owner = -1;
+    b.vel = add(scale(norm(sub(b.pos, p.pos)), 3), scale(o.vel, 0.4));
+    b.lastTouch = p.i;
+    b.kickedBy = -1;
+    b.receiver = -1;
+    b.touch = 0;
+    touchedBy(b, p);
+    b.noPickup[o.i] = 18;
+    s.stats[p.team].tackles++;
+    noteBallPlayed(s, p);
+    return;
+  }
+}
+
 function updateBall(s: MatchState, live: boolean): void {
   const b = s.ball;
   for (let i = 0; i < b.noPickup.length; i++) if (b.noPickup[i] > 0) b.noPickup[i]--;
@@ -1088,7 +1125,7 @@ function updateBall(s: MatchState, live: boolean): void {
     const o = s.players[b.owner];
     // A keeper holding the ball always faces upfield, so it can't drift over the line.
     if (o.role === 'GK' && inOwnBox(s, o.team, o.pos)) o.facing = { x: attackDir(s, o.team), y: 0 };
-    const spot = add(o.pos, scale(o.facing, PLAYER_R + BALL_R + 0.23));
+    const spot = add(o.pos, scale(o.facing, PLAYER_R + BALL_R + 0.23 + (b.inHands ? 0 : dribbleAhead(o))));
     b.vz = 0;
     if (b.touch > 0) {
       // First touch: the ball keeps some of its momentum and settles into the
@@ -1105,7 +1142,8 @@ function updateBall(s: MatchState, live: boolean): void {
       b.z = 0;
     }
     if (b.inHands) b.z = 1.1;
-    if (live) checkLines(s);
+    if (live && checkLines(s)) return;
+    if (live && s.phase === 'play' && !b.inHands && b.touch === 0) pokeAway(s, o);
     return;
   }
   // Spin lasts until anyone else touches it, or it lands.
