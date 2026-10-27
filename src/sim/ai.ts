@@ -388,6 +388,23 @@ function catchSpot(ball: MatchState['ball'], fallback: Vec): Vec {
   return fallback;
 }
 
+/**
+ * Where, and in how many seconds, a ball in the air comes down through height `z` (the middle of the head band):
+ * its path as it is now, with drag. Null when it is already below that, or never gets up to it.
+ */
+export function headSpot(ball: MatchState['ball'], z: number): { pt: Vec; t: number } | null {
+  if (ball.z <= z && ball.vz <= 0) return null;
+  const tr = trajectory(ball.pos, ball.vel, ball.z, ball.vz);
+  for (let k = 1; k < TRAJ_STEPS; k++) {
+    if (tr.z[k] >= tr.z[k - 1] || tr.z[k] > z || tr.z[k - 1] <= z) continue;
+    const f = (tr.z[k - 1] - z) / (tr.z[k - 1] - tr.z[k]);
+    const a = tr.pts[k - 1];
+    const b = tr.pts[k];
+    return { pt: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }, t: (k - 1 + f) * TRAJ_DT };
+  }
+  return null;
+}
+
 function interceptOn(s: MatchState, p: MatchPlayer, traj: Trajectory): AiInterception {
   const { pts, z, v0 } = traj;
   if (p.sentOff) return { t: 1e9, pt: pts[0] };

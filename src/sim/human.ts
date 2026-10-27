@@ -18,12 +18,14 @@
 // played first time the moment he has it. After control passes to a new player automatically, he
 // holds still with the ball (or plays like the CPU without it) until you move the pointer, so he
 // does not run back to where the pointer was left (MatchState.ctlHold).
+// A ball in the air he can head, dropping near him with nobody on his side nearer: he runs to meet it wherever the
+// pointer is (meetHeader), and the header goes to the pointer when it is some way off (match.ts header).
 // Key scheme: WASD/arrows run, Space pass, F shoot, C loft, Space/tackle, E switch, Shift sprint.
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
-import { aiIntent, humanAuto, IDLE_TICKS } from './ai.ts';
+import { aiIntent, headSpot, humanAuto, IDLE_TICKS } from './ai.ts';
 import { BOX_DEPTH, BOX_W, DT, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
-import { attackDir, oppGoal, ownGoal } from './field.ts';
+import { attackDir, inOwnBox, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, humanShotLift, kickAim, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
@@ -220,6 +222,42 @@ export function meetBall(s: MatchState, p: MatchPlayer): Intent {
   return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
 }
 
+// ---------------------------------------------------------------------------
+// Meeting a ball in the air
+
+/** A ball dropping to head height within this many metres of the man he is nearest to, he goes to meet with his head. */
+export const HEAD_ASSIST_R = 6;
+/** The height (m) he meets it at: the middle of the head band. */
+const HEAD_MEET_Z = 2.0;
+/** He is there once he is this close (m) to that point. */
+const HEAD_MEET_R = 0.6;
+
+/**
+ * A ball in the air that his head can play (an opponent's clearance or cross, or one he is an attacker in the box
+ * for) and is coming down within reach of him, and he is the nearest of his side to where it does: the CPU would
+ * run to that point, and so does he, as fast as it takes to be there as the ball is, so the pointer need not put him
+ * exactly under it. Null when it is not his ball to play, or he cannot get there. Only moves him: the header itself
+ * is match.ts's, aimed with the pointer (the pointer is where he heads it to, not where he runs to).
+ */
+export function meetHeader(s: MatchState, p: MatchPlayer): Intent | null {
+  const b = s.ball;
+  if (b.owner >= 0 || s.phase !== 'play' || p.role === 'GK' || (b.receiver >= 0 && b.receiver !== p.i)) return null;
+  const lastTeam = b.lastTouch >= 0 ? s.players[b.lastTouch].team : -1;
+  if (p.team === lastTeam && !inOwnBox(s, p.team === 0 ? 1 : 0, p.pos)) return null;
+  const at = headSpot(b, HEAD_MEET_Z);
+  if (!at) return null;
+  const to = sub(at.pt, p.pos);
+  const d = len(to);
+  if (d > HEAD_ASSIST_R) return null;
+  for (const m of s.players) if (m.team === p.team && m.i !== p.i && m.role !== 'GK' && !m.sentOff && m.stun === 0 && dist(m.pos, at.pt) < d) return null;
+  // Speed he needs to be there as it is (a run is about 6.5 m/s): not worth chasing if he cannot.
+  const effort = clamp(d / Math.max(0.2, at.t - 0.05) / 6.5, 0.3, SPRINT_MULT);
+  if (d / Math.max(0.2, at.t) / 6.5 > SPRINT_MULT) return null;
+  // Already within his head's reach of it: he stays put, as the pointer's aim for the header is measured from where he stands.
+  if (d < HEAD_MEET_R) return { move: { x: 0, y: 0 }, throttle: 0 };
+  return effort > 1 ? { move: scale(to, 1 / d), throttle: effort / SPRINT_MULT, sprint: true } : { move: scale(to, 1 / d), throttle: effort };
+}
+
 /** A carrier this close to a held or idle human's player is jockeyed rather than left to the CPU's shape. */
 export const JOCKEY_R = 6;
 /** How far off the carrier, goal-side, he jockeys. */
@@ -363,7 +401,13 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     }
     return { move, throttle, sprint };
   }
-  if (held && looseForHim(s, p)) {
+  const header = meetHeader(s, p);
+  if (header) {
+    // A ball he can head: he is there for it, wherever the pointer is (a click still tackles or kicks as usual).
+    move = header.move;
+    throttle = header.throttle;
+    sprint = !!header.sprint;
+  } else if (held && looseForHim(s, p)) {
     // A loose ball nobody is meant for, and he is our nearest: he goes for it (the CPU would
     // leave it to the man the human steers).
     const it = meetBall(s, p);

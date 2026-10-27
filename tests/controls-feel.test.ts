@@ -601,6 +601,7 @@ function headerAt(pointer: Vec, seed: number) {
   me.vel = { x: 0, y: 0 };
   me.facing = { x: 0, y: -1 };
   me.stun = 0;
+  me.attrs.shooting = 0.9; // a good header of the ball: it connects more often than not (match.ts headChance)
   gk.pos = { x: 104, y: 34 };
   gk.vel = { x: 0, y: 0 };
   gk.stun = 1000; // he watches: we measure where it is aimed, not the save
@@ -610,7 +611,8 @@ function headerAt(pointer: Vec, seed: number) {
   let headed = false;
   for (let k = 0; k < 120; k++) {
     step(s, { cursor: pointer });
-    if (!headed && s.ball.lastTouch === me.i) headed = true;
+    // A header leaves him hard; a miss that hits his body only bounces off it.
+    if (!headed && s.ball.lastTouch === me.i && len(s.ball.vel) > 9) headed = true;
     if (headed && s.ball.pos.x >= 105) break;
   }
   return { headed, y: s.ball.pos.y, moved: dist(me.pos, { x: 96, y: 34 }) };
@@ -623,7 +625,7 @@ describe('a human header at goal goes where the pointer says, relative to the st
     const top = seeds.map((sd) => headerAt({ x: 96, y: 33 }, sd));
     const bottom = seeds.map((sd) => headerAt({ x: 96, y: 35 }, sd));
     const mid = seeds.map((sd) => headerAt({ x: 96, y: 34 }, sd));
-    for (const rs of [top, bottom, mid]) expect(rs.filter((r) => r.headed).length).toBeGreaterThanOrEqual(7);
+    for (const rs of [top, bottom, mid]) expect(rs.filter((r) => r.headed).length).toBeGreaterThanOrEqual(6);
     const meanY = (rs: { headed: boolean; y: number }[]) => rs.filter((r) => r.headed).reduce((a, r) => a + r.y, 0) / rs.filter((r) => r.headed).length;
     // Main: the pointer's absolute y (33 or 35 m) aimed it barely off centre: means 33.8 and 34.1.
     expect(meanY(top)).toBeLessThan(32.4);
