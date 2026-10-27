@@ -521,10 +521,12 @@ describe('eleven-a-side balance', () => {
       const per = (v: number) => v / n;
       expect(per(tot.goals)).toBeGreaterThan(1);
       expect(per(tot.goals)).toBeLessThan(5.5);
-      expect(per(tot.fouls)).toBeGreaterThan(4);
-      expect(per(tot.fouls)).toBeLessThan(25);
-      expect(per(tot.yellows)).toBeGreaterThan(0.3);
-      expect(per(tot.yellows)).toBeLessThan(6);
+      // Six minutes of play, not ninety: about 3-5 fouls and under a yellow a match (a real 90 minutes
+      // is ~22 and ~3.5, so the CPU used to foul and book several times too often for the length).
+      expect(per(tot.fouls)).toBeGreaterThan(1.5);
+      expect(per(tot.fouls)).toBeLessThan(12);
+      expect(per(tot.yellows)).toBeGreaterThan(0.05);
+      expect(per(tot.yellows)).toBeLessThan(4);
       expect(per(tot.reds)).toBeLessThan(1);
       expect(per(tot.corners)).toBeGreaterThan(0.5);
       expect(per(tot.offsides)).toBeGreaterThan(0.2);

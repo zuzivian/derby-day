@@ -498,7 +498,7 @@ export function judgeFoul(s: MatchState, f: FoulContext): boolean {
   } else if (severity === 'reckless') {
     if (roll < 0.86) cards.push({ color: 'yellow', reason: 'reckless' });
   } else if (spa && !advantage && !(penalty && f.attempt)) {
-    if (roll < 0.75) cards.push({ color: 'yellow', reason: 'spa' });
+    if (roll < 0.55) cards.push({ color: 'yellow', reason: 'spa' });
   }
 
   if (advantage) {
