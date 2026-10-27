@@ -27,7 +27,7 @@ import { aiIntent, headSpot, humanAuto, IDLE_TICKS } from './ai.ts';
 import { BOX_DEPTH, BOX_W, DT, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, inOwnBox, oppGoal, ownGoal } from './field.ts';
 import { assistReceiver, humanPass, humanShotLift, kickAim, passTo, pointerPass } from './kicks.ts';
-import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
+import type { HumanInput, Intent, MatchPlayer, MatchState, QueuedKick } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
 // ---------------------------------------------------------------------------
@@ -153,6 +153,62 @@ const QUEUE_TICKS = 90;
 
 /** Is a pass on its way to this player (the ball loose, him the receiver)? */
 export const passIncoming = (s: MatchState, p: MatchPlayer): boolean => s.ball.owner < 0 && s.ball.receiver === p.i;
+
+/** A click this many ticks or fewer after the one before it re-aims that one (a double click), rather than being queued as another. */
+const DOUBLE_CLICK_TICKS = 18;
+/** A follow-up waiting for the next man to get the ball lapses this long after his predecessor played it (a headed ball can hang a second or two). */
+const WAIT_TICKS = 150;
+
+/**
+ * A click made while a ball is on its way to the human's man (or dropping to his head). It is his first-time kick,
+ * or the aim of his header. A second click made while the first is still waiting is for whoever on his side gets
+ * the ball next (the man the first play goes to): at most two per team. A click on the heels of the last one re-aims it.
+ */
+function queueClick(s: MatchState, p: MatchPlayer, kind: 'pass' | 'shoot', target: Vec, receiver: number): void {
+  const team = p.team;
+  if (!s.queued) s.queued = [null, null];
+  const q = s.queued[team];
+  if (q && q.player === p.i) {
+    if (s.tick - (q.next ? q.next.at : q.until - QUEUE_TICKS) <= DOUBLE_CLICK_TICKS) {
+      if (q.next) {
+        q.next.kind = kind;
+        q.next.target = { ...target };
+        q.next.at = s.tick;
+      } else {
+        q.kind = kind;
+        q.target = { ...target };
+        q.receiver = receiver;
+        q.until = s.tick + QUEUE_TICKS;
+      }
+    } else q.next = { kind, target: { ...target }, at: s.tick };
+    return;
+  }
+  s.queued[team] = { kind, target: { ...target }, player: p.i, receiver, until: s.tick + QUEUE_TICKS };
+}
+
+/** The click queued for this man, taken: his first-time kick or header is being played. A second click is left waiting for the next man. */
+export function takeQueued(s: MatchState, p: MatchPlayer): QueuedKick | null {
+  const q = s.queued?.[p.team];
+  if (!q || q.player !== p.i) return null;
+  const n = q.next;
+  s.queued![p.team] = n ? { kind: n.kind, target: n.target, player: -1, receiver: -1, until: s.tick + WAIT_TICKS, after: p.i } : null;
+  return q;
+}
+
+/** Control has passed to `i`: a follow-up waiting for the next man to get the ball is his now, for QUEUE_TICKS from here. */
+function promoteQueued(s: MatchState, team: 0 | 1, i: number): void {
+  const q = s.queued?.[team];
+  if (!q || q.player >= 0 || q.after === i || s.players[i].team !== team) return;
+  q.player = i;
+  q.until = s.tick + QUEUE_TICKS;
+}
+
+/** A click made while a ball drops to the head of the man he steers (not one on himself, which is no aim): a header he queues. */
+function clickedForHeader(p: MatchPlayer, input: HumanInput): boolean {
+  if (!input.select && !input.pass && !input.tackle) return false;
+  const aim = input.aim ?? input.cursor;
+  return !(aim && !input.tackle && dist(aim, p.pos) < TAKE_IT_R);
+}
 
 /** Keeper with the ball in his hands: he may move about his own area with it, not out of it. */
 function keepInBox(s: MatchState, p: MatchPlayer, move: Vec, throttle: number): { move: Vec; throttle: number } {
@@ -351,8 +407,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       const kind = input.tackle && pointer ? 'shoot' : 'pass';
       // Who the click picks is settled now, from where he will receive it.
       const receiver = kind === 'pass' && pointer ? assistReceiver(s, p, p.pos, target) : -1;
-      if (!s.queued) s.queued = [null, null];
-      s.queued[team] = { kind, target: { ...target }, player: p.i, receiver, until: s.tick + QUEUE_TICKS };
+      queueClick(s, p, kind, target, receiver);
     }
     return meetBall(s, p);
   }
@@ -364,9 +419,8 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
       sprint = false;
     }
     if (s.ball.inHands && p.role === 'GK') ({ move, throttle } = keepInBox(s, p, move, throttle));
-    const q = s.queued?.[team];
-    if (q && q.player === p.i && !s.ball.inHands) {
-      s.queued![team] = null;
+    const q = s.ball.inHands ? null : takeQueued(s, p);
+    if (q) {
       if (q.kind === 'shoot') {
         const target = kickAim(s.ball.pos, p, q.target, 20);
         return { move, throttle, sprint, action: { kind: 'shoot', target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, target, oppGoal(s, p.team).x, FIRST_TIME_SHOT, p.attrs.shooting) } };
@@ -405,8 +459,15 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     return { move, throttle, sprint };
   }
   const header = meetHeader(s, p);
+  // A click as the ball drops to his head is his header's aim, as a click before a pass arrives is his first-time kick.
+  const clicked = !!header && clickedForHeader(p, input);
+  if (clicked) {
+    const target = aim ?? heading;
+    const kind = input.tackle && pointer ? 'shoot' : 'pass';
+    queueClick(s, p, kind, target, kind === 'pass' && pointer ? assistReceiver(s, p, p.pos, target) : -1);
+  }
   if (header) {
-    // A ball he can head: he is there for it, wherever the pointer is (a click still tackles or kicks as usual).
+    // A ball he can head: he is there for it, wherever the pointer is.
     move = header.move;
     throttle = header.throttle;
     sprint = !!header.sprint;
@@ -454,7 +515,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     }
   }
   // Not straight after his own kick: a second right click just after a shot is not a slide.
-  if (input.tackle && p.kickCd === 0) {
+  if (input.tackle && p.kickCd === 0 && !clicked) {
     let target = aim ?? s.ball.pos;
     // A click on (or near) the man with the ball goes in on him: stand or slide by how far
     // he is, so the choice always matches what can reach.
@@ -498,6 +559,7 @@ function give(s: MatchState, team: 0 | 1, i: number, auto: boolean): void {
   s.controlled[team] = i;
   if (!s.ctlHold) s.ctlHold = [false, false];
   s.ctlHold[team] = auto;
+  promoteQueued(s, team, i);
   if (s.queued?.[team] && s.queued[team]!.player !== i) s.queued[team] = null;
 }
 
@@ -523,23 +585,34 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   }
   if (s.ctlHoldMoves && !s.ctlHold?.[team]) s.ctlHoldMoves[team] = 0;
   const q = s.queued?.[team];
-  if (q && s.tick > q.until && s.ball.owner !== q.player) s.queued![team] = null;
+  if (q) {
+    const b = s.ball;
+    // Gone with a restart or whistle, or once the other side has the ball (or has played it, for a follow-up waiting on our own man's play).
+    const lost = s.phase !== 'play' || (b.owner >= 0 && s.players[b.owner].team !== team) || (b.receiver >= 0 && s.players[b.receiver].team !== team) || (q.player < 0 && b.lastTouch >= 0 && s.players[b.lastTouch].team !== team);
+    // Lapses unless the ball is still on its way to him (a slow lofted ball may take longer than that).
+    if (lost || (s.tick > q.until && (q.player < 0 || (b.owner !== q.player && b.receiver !== q.player)))) s.queued![team] = null;
+  }
   const ball = s.ball;
   const outfield = s.players.filter((p) => p.team === team && p.role !== 'GK' && !p.sentOff);
   const owner = ball.owner >= 0 ? s.players[ball.owner] : null;
 
   // Whoever has the ball, or is about to get it, is who you steer: the keeper too.
   if (owner && owner.team === team) {
+    promoteQueued(s, team, owner.i);
     give(s, team, owner.i, owner.role === 'GK');
     // Taken by the man already steered (he met the pass while held): he is the pointer's again too.
     if (owner.role !== 'GK' && s.ctlHold) s.ctlHold[team] = false;
     return;
   }
   if (ball.receiver >= 0 && s.players[ball.receiver].team === team) {
+    promoteQueued(s, team, ball.receiver);
     give(s, team, ball.receiver, true);
     return;
   }
   if (input.select && input.cursor) {
+    // A ball dropping to the head of the man he steers: the click is his header's aim (humanIntent), not a switch.
+    const cur = s.players[s.controlled[team]];
+    if (cur && meetHeader(s, cur) && clickedForHeader(cur, input)) return;
     const pick = pickTeammate(s, team, input.aim ?? input.cursor);
     // Only a real switch is kept from the auto-switch: a click that leaves you as you are locks nothing.
     if (pick >= 0 && pick !== s.controlled[team]) {

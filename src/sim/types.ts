@@ -426,23 +426,35 @@ export interface MatchState {
    * input (key mode always sends `dir`), no button (human.ts). From IDLE_TICKS (ai.ts) his player is positioned by the CPU, as during ctlHold.
    */
   idleTicks?: [number, number];
-  /** Per team: a first-time kick queued while a pass was on its way to the human's player (human.ts). */
+  /** Per team: a first-time kick or header queued while a ball was on its way to the human's player, and a follow-up for the next man (human.ts). */
   queued?: [QueuedKick | null, QueuedKick | null];
   /** Per team: this tick's pointer aim of a human (headers at goal go toward it), or null. */
   humanAim?: [Vec | null, Vec | null];
 }
 
-/** A click made before the ball arrived: played the moment the receiver has it. */
+/** A click made before the ball arrived: played the moment the receiver has it (or headed, when he heads it). */
 export interface QueuedKick {
   kind: 'pass' | 'shoot';
   /** Where it goes (the pointer at the click). */
   target: Vec;
-  /** The player who will play it. */
+  /** The player who will play it, or -1 for a follow-up still waiting for whoever gets the ball next. */
   player: number;
   /** The teammate the click picked (the pass goes to him wherever he has got to), or -1. */
   receiver: number;
   /** Tick after which it lapses. */
   until: number;
+  /** A second click made while this one is still waiting: it is for the man who gets the ball after his play (human.ts queueClick). */
+  next?: QueuedNext | null;
+  /** A waiting follow-up (player -1): the man whose play it follows, who does not get it back. */
+  after?: number;
+}
+
+/** The second of two queued clicks (its receiver is picked when it is played, from where its man stands). */
+export interface QueuedNext {
+  kind: 'pass' | 'shoot';
+  target: Vec;
+  /** Tick it was clicked on (a click right on the heels of another just re-aims it). */
+  at: number;
 }
 
 export interface AiInterception {

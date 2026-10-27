@@ -7,11 +7,11 @@ import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from 
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
 import { assistRadius, CLOSE_CLICK, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
-import { attackDir } from '../src/sim/field.ts';
+import { attackDir, oppGoal } from '../src/sim/field.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
-import { dist, len, norm, sub, type Vec } from '../src/sim/vec.ts';
-import { kickOff } from './helpers.ts';
+import { add, dist, len, norm, sub, type Vec } from '../src/sim/vec.ts';
+import { kickOff, openPlay } from './helpers.ts';
 
 function teams(seed: number) {
   const [a, b] = generateLadder(seed, 2);
@@ -914,5 +914,252 @@ describe('determinism and replay with the new inputs', () => {
       return `${fingerprint(s)}#${s.rng.s}`;
     };
     expect(run()).toBe(run());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Queued actions: a click made while the ball is on its way is the aim of the man's header or first-time kick,
+// and a second one is for the man who gets it next.
+
+describe('queued actions chain: header, then a first-time shot by the next man', () => {
+  /** A lofted ball from `from` that first comes down on `to` (hang time `hang` s, aimed so, drag allowed for); it is `by`'s, the last to touch it. */
+  function loftTo(s: MatchState, from: Vec, to: Vec, hang: number, by: MatchPlayer, receiver: number): void {
+    const fire = (m: MatchState, at: Vec): void => {
+      const b = m.ball;
+      const d = sub(at, from);
+      const sp = (len(d) / hang) * 1.1;
+      b.owner = -1;
+      b.receiver = receiver;
+      b.passFrom = -1;
+      b.inHands = false;
+      b.pos = { ...from };
+      b.vel = { x: (d.x / len(d)) * sp, y: (d.y / len(d)) * sp };
+      b.z = 0.4;
+      b.vz = (9.8 * hang) / 2 - 0.4 / hang;
+      b.kickedBy = by.i;
+      b.lastTouch = by.i;
+      b.touch = 0;
+      b.noPickup.fill(0);
+    };
+    // Where does it first land? Run the flight with nobody about, and move the aim by the miss.
+    let aim = { ...to };
+    for (let k = 0; k < 3; k++) {
+      const probe = structuredClone(s);
+      for (const m of probe.players) m.pos = { x: -20, y: -20 };
+      fire(probe, aim);
+      for (let t = 0; t < 400 && probe.ball.z > 0; t++) step(probe);
+      aim = add(aim, sub(to, probe.ball.pos));
+    }
+    fire(s, aim);
+  }
+
+  /** Team 0 attacks one way: the human's man A and a teammate B in the opponents' box, the rest out of the way. */
+  function boxScene(seed: number) {
+    const s = createMatch({ seed, ...teams(7), halfSeconds: 60, humans: [true, false] });
+    openPlay(s);
+    const dir = attackDir(s, 0);
+    const goal = { x: oppGoal(s, 0).x, y: PITCH_H / 2 };
+    const [a, b, c] = s.players.filter((p) => p.team === 0 && p.role !== 'GK');
+    const opp = s.players.find((p) => p.team === 1 && p.role !== 'GK')!;
+    isolate(s, a, b, c);
+    a.pos = { x: goal.x - dir * 11, y: 30 };
+    b.pos = { x: goal.x - dir * 16, y: 38 };
+    c.pos = { x: goal.x - dir * 34, y: 5 };
+    opp.pos = { x: goal.x - dir * 40, y: 4 };
+    for (const p of [a, b, c, opp]) p.vel = { x: 0, y: 0 };
+    a.facing = b.facing = { x: dir, y: 0 };
+    s.controlled[0] = a.i;
+    s.switchTimer[0] = 1e9;
+    if (s.ctlHold) s.ctlHold = [false, false];
+    // A cross into the box with nobody picked to get it, his to head: he is the side's nearest to where it comes down.
+    loftTo(s, { x: goal.x - dir * 34, y: 34 }, a.pos, 1.5, c, -1);
+    return { s, a, b, c, opp, goal, dir };
+  }
+
+  /** Step until his queued click is used up by a header (the ball in the air and away from him), or `max` ticks. Did he head it? */
+  function untilHeaded(s: MatchState, a: MatchPlayer, input: HumanInput, max = 160): boolean {
+    for (let t = 0; t < max; t++) {
+      const waiting = s.queued![0]?.player === a.i;
+      step(s, input);
+      if (waiting && s.queued![0]?.player !== a.i) return s.ball.owner < 0 && s.ball.lastTouch === a.i && s.ball.redirectedAt >= s.tick - 1;
+    }
+    return false;
+  }
+
+  /** Click helpers: a left click on a spot (as a human without the ball makes it), and a right click. */
+  const left = (at: Vec): HumanInput => ({ cursor: { ...at }, aim: { ...at }, select: true, moved: true });
+  const right = (at: Vec): HumanInput => ({ cursor: { ...at }, aim: { ...at }, tackle: true, moved: true });
+
+  test('a click made as the ball comes aims the header of the man it is for: toward the team-mate it picked', () => {
+    let headed = 0;
+    for (let seed = 1; seed <= 12; seed++) {
+      const { s, a, b } = boxScene(seed);
+      step(s, left(b.pos));
+      expect(s.queued![0]).toMatchObject({ kind: 'pass', player: a.i, receiver: b.i });
+      if (!untilHeaded(s, a, { cursor: { ...b.pos } })) continue;
+      headed++;
+      // Not a header at goal: a knock-down to B, whom control passes to as it goes.
+      expect(s.ball.receiver).toBe(b.i);
+      const way = norm(s.ball.vel);
+      const want = norm(sub(b.pos, s.ball.pos));
+      expect(way.x * want.x + way.y * want.y).toBeGreaterThan(Math.cos(1));
+      expect(s.queued![0]).toBeNull();
+      step(s, { cursor: { ...b.pos } });
+      expect(s.controlled[0]).toBe(b.i);
+    }
+    expect(headed).toBeGreaterThan(2);
+  });
+
+  test('a right click as the ball comes aims the header at goal: the side of the striker the click was on picks the corner', () => {
+    const ys: Record<string, number[]> = { '-1': [], '1': [] };
+    for (const sign of [-1, 1]) {
+      for (let k = 0; k < 8; k++) {
+        const { s, a, goal } = boxScene(2 + k);
+        a.pos = { x: a.pos.x, y: PITCH_H / 2 };
+        const at = { x: goal.x, y: a.pos.y + sign * 3 };
+        step(s, right(at));
+        expect(s.queued![0]).toMatchObject({ kind: 'shoot', player: a.i });
+        if (untilHeaded(s, a, { cursor: { ...at } }) && len(s.ball.vel) > 8) ys[sign].push(s.ball.vel.y);
+      }
+    }
+    expect(ys['-1'].length).toBeGreaterThan(1);
+    expect(ys['1'].length).toBeGreaterThan(1);
+    const mean = (v: number[]) => v.reduce((x, y) => x + y, 0) / v.length;
+    expect(mean(ys['1'])).toBeGreaterThan(mean(ys['-1']) + 2);
+  });
+
+  test('a ball dropping to his head with nobody meant to get it: a click is his header toward the team-mate, not a switch', () => {
+    let headed = 0;
+    for (let seed = 1; seed <= 8; seed++) {
+      const { s, a, b, opp } = boxScene(seed);
+      // An opponent's clearance, upfield of him and coming down on him (nobody is its receiver).
+      loftTo(s, { x: a.pos.x, y: a.pos.y + 20 }, a.pos, 1.5, opp, -1);
+      step(s, left(b.pos));
+      expect(s.controlled[0]).toBe(a.i);
+      expect(s.queued![0]).toMatchObject({ kind: 'pass', player: a.i });
+      if (!untilHeaded(s, a, { cursor: { ...b.pos } })) continue;
+      headed++;
+      expect(s.ball.receiver).toBe(b.i);
+      const way = norm(s.ball.vel);
+      const want = norm(sub(b.pos, s.ball.pos));
+      expect(way.x * want.x + way.y * want.y).toBeGreaterThan(Math.cos(1));
+    }
+    expect(headed).toBeGreaterThan(2);
+  });
+
+  test('header, then a first-time shot: B shoots the headed ball first time when it reaches him', () => {
+    let chains = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      const { s, a, b, goal } = boxScene(seed);
+      step(s, left(b.pos));
+      for (let t = 0; t < 20; t++) step(s, { cursor: { ...b.pos } });
+      // The second click, while the first is waiting for the ball to reach him: for B.
+      step(s, right(goal));
+      expect(s.queued![0]).toMatchObject({ kind: 'pass', player: a.i, next: { kind: 'shoot' } });
+      const shots = s.stats[0].shots;
+      if (!untilHeaded(s, a, { cursor: { ...b.pos } })) continue; // a header that did not connect
+      // The follow-up waits for whoever gets the ball, B, to whom the header went.
+      expect(s.ball.receiver).toBe(b.i);
+      expect(s.queued![0]).toMatchObject({ kind: 'shoot' });
+      expect(s.queued![0]!.player < 0 || s.queued![0]!.player === b.i).toBe(true);
+      let shot = false;
+      for (let t = 0; t < 120 && !shot; t++) {
+        step(s, { cursor: { ...b.pos } });
+        shot = s.ball.kickedBy === b.i && s.ball.lastTouch === b.i && s.stats[0].shots > shots;
+      }
+      if (!shot) continue; // he mis-controlled it
+      chains++;
+      expect(s.queued![0] ?? null).toBeNull();
+      expect(s.controlled[0]).toBe(b.i);
+      expect(Math.sign(s.ball.vel.x)).toBe(Math.sign(goal.x - b.pos.x));
+    }
+    expect(chains).toBeGreaterThan(3);
+  });
+
+  test('a ground ball is the same: A plays it first time to B, and B shoots it first time', () => {
+    const { s, a, b, c, goal, dir } = boxScene(4);
+    a.pos = { x: goal.x - dir * 30, y: 34 };
+    b.pos = { x: goal.x - dir * 22, y: 40 };
+    c.pos = { x: goal.x - dir * 44, y: 34 };
+    s.ball.pos = { x: goal.x - dir * 41, y: 34 };
+    s.ball.vel = { x: dir * 11, y: 0 };
+    s.ball.z = 0;
+    s.ball.vz = 0;
+    s.ball.receiver = a.i;
+    s.ball.lastTouch = c.i;
+    s.ball.kickedBy = c.i;
+    step(s, left(b.pos));
+    for (let t = 0; t < 20; t++) step(s, { cursor: { ...b.pos } });
+    step(s, right(goal));
+    expect(s.queued![0]).toMatchObject({ kind: 'pass', player: a.i, next: { kind: 'shoot' } });
+    const shots = s.stats[0].shots;
+    let t = 0;
+    while (s.ball.kickedBy !== a.i && t++ < 200) step(s, { cursor: { ...b.pos } });
+    expect(s.ball.receiver).toBe(b.i);
+    // His click is spent; the second waits for the man he passed to, and is his as control moves.
+    step(s, { cursor: { ...b.pos } });
+    expect(s.controlled[0]).toBe(b.i);
+    expect(s.queued![0]).toMatchObject({ kind: 'shoot', player: b.i });
+    while (s.stats[0].shots === shots && t++ < 400) step(s, { cursor: { ...b.pos } });
+    expect(s.stats[0].shots).toBe(shots + 1);
+    expect(s.ball.kickedBy).toBe(b.i);
+    expect(s.queued![0] ?? null).toBeNull();
+  });
+
+  test('two clicks in quick succession are one click re-aimed, not a chain', () => {
+    const { s, a, b, goal } = boxScene(3);
+    step(s, left(b.pos));
+    step(s, right(goal));
+    expect(s.queued![0]).toMatchObject({ kind: 'shoot', player: a.i });
+    expect(s.queued![0]!.next ?? null).toBeNull();
+  });
+
+  test('a follow-up lapses when nobody gets the ball, and is dropped when the opponent does or play stops', () => {
+    for (const how of ['lapse', 'opponent', 'whistle'] as const) {
+      let tested = 0;
+      for (let seed = 1; seed <= 8 && !tested; seed++) {
+        const { s, a, b, goal, opp } = boxScene(seed);
+        step(s, left(b.pos));
+        for (let t = 0; t < 20; t++) step(s, { cursor: { ...b.pos } });
+        step(s, right(goal));
+        if (!untilHeaded(s, a, { cursor: { ...b.pos } })) continue;
+        const q = s.queued![0];
+        // Waiting for whoever gets it (a header that connected).
+        if (!q || q.player >= 0) continue;
+        tested++;
+        expect(q.after).toBe(a.i);
+        // Keep the ball from reaching anybody on his side.
+        s.ball.receiver = -1;
+        b.pos = { x: 5, y: 5 };
+        if (how === 'opponent') {
+          s.ball.owner = opp.i;
+          s.ball.lastTouch = opp.i;
+          s.ball.pos = { ...opp.pos };
+          s.ball.vel = { x: 0, y: 0 };
+          s.ball.z = 0;
+          s.ball.vz = 0;
+          step(s, { cursor: { ...goal } });
+          expect(s.queued![0]).toBeNull();
+        } else if (how === 'whistle') {
+          // Over the touchline: a throw-in, and play is stopped.
+          s.ball.pos = { x: 50, y: 0.2 };
+          s.ball.vel = { x: 0, y: -6 };
+          s.ball.vz = 0;
+          s.ball.z = 0;
+          for (let t = 0; t < 30 && s.phase === 'play'; t++) step(s, { cursor: { ...goal } });
+          expect(s.phase).not.toBe('play');
+          step(s, { cursor: { ...goal } });
+          expect(s.queued![0]).toBeNull();
+        } else {
+          s.ball.pos = { x: goal.x - 40 * Math.sign(goal.x - 52), y: 64 };
+          s.ball.vel = { x: 0, y: 0 };
+          s.ball.vz = 0;
+          s.ball.z = 0;
+          for (let t = 0; t < 160 && s.queued![0]; t++) step(s, { cursor: { ...goal } });
+          expect(s.queued![0]).toBeNull();
+        }
+      }
+      expect(tested).toBe(1);
+    }
   });
 });
