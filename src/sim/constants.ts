@@ -60,8 +60,9 @@
  *      a loose ball near him and a dropping ball he can head, chases a carrier the pointer is on and tackles by
  *      running into him; a click with nobody in the assist goes to the teammate nearest it; headers depend on
  *      skill and challenge; CPU defenders rarely tackle from behind, fewer fouls and cards
+ *  24  a pass clicked within 4 m of the carrier goes to the teammate that way (kicks.ts closeClickReceiver)
  */
-export const SIM_VERSION = 23;
+export const SIM_VERSION = 24;
 
 export const TICK_HZ = 60;
 

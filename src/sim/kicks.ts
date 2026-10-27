@@ -5,7 +5,7 @@ import { resolvePassTarget } from './ai.ts';
 import { AIR_DRAG, CHIP_Z0, GRAVITY, ROLL_A, ROLL_B, ROLL_FAST_B, ROLL_FAST_V } from './constants.ts';
 import { clampToPitch } from './field.ts';
 import type { MatchPlayer, MatchState } from './types.ts';
-import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
+import { add, clamp, dist, distToSegment, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
 export interface ChipPlan {
   /** Where the ball first touches down. */
@@ -283,6 +283,55 @@ export function kickAim(ball: Vec, p: MatchPlayer, aim: Vec, far: number): Vec {
   return dist(ball, aim) < KICK_NEAR ? add(ball, scale(p.facing, far)) : aim;
 }
 
+/** A pass clicked closer than this (m) to the carrier is aimed by its direction (closeClickReceiver). */
+export const CLOSE_CLICK = 4;
+/** Half-angle (cos) of the cone a close click looks in first, and the wider one if nobody is in it. */
+const CLOSE_CONE_COS = Math.cos((30 * Math.PI) / 180);
+const CLOSE_WIDE_COS = Math.cos((55 * Math.PI) / 180);
+/** A click closer than this (m) to him gives no direction of its own: the way he faces. */
+const CLOSE_NO_DIR = 1.2;
+
+/**
+ * Who a click close to the carrier is for: a teammate the click is right on, else the best one
+ * that way (the way he faces if it is right on him): nearer the line of the click, open (nobody
+ * across the lane or at his shoulder), not too far. A keeper only if the click is on him.
+ */
+export function closeClickReceiver(s: MatchState, p: MatchPlayer, aim: Vec): MatchPlayer | null {
+  let on: MatchPlayer | null = null;
+  for (const m of s.players) {
+    if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30) continue;
+    if (dist(aim, m.pos) < PASS_ASSIST_R && (!on || dist(aim, m.pos) < dist(aim, on.pos))) on = m;
+  }
+  if (on) return on;
+  const off = sub(aim, p.pos);
+  const way = len(off) < CLOSE_NO_DIR ? p.facing : norm(off);
+  for (const cone of [CLOSE_CONE_COS, CLOSE_WIDE_COS]) {
+    let best: MatchPlayer | null = null;
+    let bestScore = -Infinity;
+    for (const m of s.players) {
+      if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
+      const to = sub(m.pos, p.pos);
+      const d = len(to);
+      if (d < 3 || d > 40) continue;
+      const cos = dot(scale(to, 1 / d), way);
+      if (cos < cone) continue;
+      let blocked = 0;
+      for (const o of s.players) {
+        if (o.team === p.team || o.sentOff) continue;
+        if (distToSegment(o.pos, p.pos, m.pos) < 1.4) blocked++;
+        else if (dist(o.pos, m.pos) < 2) blocked += 0.5;
+      }
+      const score = 3 * cos - 1.2 * blocked - 0.02 * Math.abs(d - 14);
+      if (score > bestScore) {
+        bestScore = score;
+        best = m;
+      }
+    }
+    if (best) return best;
+  }
+  return null;
+}
+
 /** A firm pass to a teammate's feet, or to where he will be: what pointerPass does once the assist has picked him. */
 /** `lead`: play it to where he will be if he is running (false: to his feet, e.g. a man who stops when a restart is ready). */
 export function passTo(s: MatchState, m: MatchPlayer, lead = true): { target: Vec; receiver: number; speed: number } {
@@ -306,6 +355,13 @@ export function passToPoint(s: MatchState, m: MatchPlayer, at: Vec): { target: V
  */
 export function pointerPass(s: MatchState, p: MatchPlayer, aim: Vec): { target: Vec; receiver: number; speed: number } {
   const ball = s.ball.pos;
+  // A click close to him says which way, not where: he runs to the pointer, so it is rarely far
+  // off him, and a pass to the grass there is a push of a couple of metres. To the teammate that
+  // way instead (unless the click was on a teammate himself).
+  if (dist(aim, p.pos) < CLOSE_CLICK) {
+    const m = closeClickReceiver(s, p, aim);
+    if (m) return passTo(s, m);
+  }
   const { receiver, into } = assistPick(s, p, ball, aim);
   if (into) {
     // Into his path: to the pointer, timed to get there as he does at the pace he is running.
