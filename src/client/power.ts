@@ -13,7 +13,7 @@
 // distance to the pointer the hold reaches.
 
 import { passSpeed } from '../sim/ai.ts';
-import { humanPass, loftRange, pointerPass } from '../sim/kicks.ts';
+import { humanPass, kickAim, loftRange, pointerPass } from '../sim/kicks.ts';
 import type { MatchState } from '../sim/types.ts';
 import type { RenderExtras } from './render.ts';
 
@@ -79,7 +79,8 @@ export function kickGauge(s: MatchState, x: RenderExtras): Gauge | null {
   const a = x.armed;
   if (a?.kind === 'shot') return shotGauge(a.power);
   if (a?.kind === 'loft') {
-    const want = Math.hypot(aim.x - s.ball.pos.x, aim.y - s.ball.pos.y);
+    const to = pointer ? kickAim(s.ball.pos, p, pointer, 40) : aim;
+    const want = Math.hypot(to.x - s.ball.pos.x, to.y - s.ball.pos.y);
     return loftGauge(a.power, loftRange(a.power), want);
   }
   // The pace the sim will really kick it at: pointerPass's own speed (firm to a teammate, weighted

@@ -22,9 +22,9 @@
 // The client (src/client/input.ts) turns buttons and hold times into the fields of HumanInput.
 
 import { aiIntent, humanAuto, IDLE_TICKS } from './ai.ts';
-import { BOX_DEPTH, BOX_W, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
+import { BOX_DEPTH, BOX_W, DT, GRAVITY, PITCH_H, SLIDE_TRAVEL, SPRINT_MULT, STAND_REACH } from './constants.ts';
 import { attackDir, oppGoal, ownGoal } from './field.ts';
-import { assistReceiver, humanPass, humanShotLift, passTo, pointerPass } from './kicks.ts';
+import { assistReceiver, humanPass, humanShotLift, kickAim, passTo, pointerPass } from './kicks.ts';
 import type { HumanInput, Intent, MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
@@ -89,6 +89,8 @@ export const SELECT_CONE_COS = Math.cos((40 * Math.PI) / 180);
 export const SWITCH_BEHIND = 6;
 /** A click within this many metres of a teammate picks the one nearest it, before any cone search. */
 export const PICK_R = 4;
+/** Metres a man on the floor counts as further away, per second he has left down, for the switch: about a run's pace. */
+export const DOWN_COST = 6;
 /** Ticks an automatically switched-to player is kept before the auto-switch looks again. */
 const AUTO_KEEP = 45;
 /** Ticks a hand-picked player is kept before the auto-switch may take him away again. */
@@ -97,7 +99,9 @@ export const SELECT_LOCK = 180;
 /**
  * Who a click at `point` picks for `team`, given the player now steered:
  *  1. an outfield teammate within PICK_R of the point (the closest one): a click a couple of
- *     metres off a man means him, not whoever happens to lie nearer you in that direction;
+ *     metres off a man means him, not whoever happens to lie nearer you in that direction.
+ *     The steered player himself only within SELECT_R: the pointer usually rests a few metres
+ *     from him (he runs to it), so a click there means "that way", not "stay";
  *  2. else the nearest outfield teammate inside a 40 degree cone around the
  *     direction from the steered player to the point;
  *  3. else -1 (stay as you are).
@@ -110,6 +114,7 @@ export function pickTeammate(s: MatchState, team: 0 | 1, point: Vec): number {
   for (const m of s.players) {
     if (m.team !== team || m.role === 'GK') continue;
     const d = dist(m.pos, point);
+    if (m === cur && d >= SELECT_R) continue;
     if (d < underD) {
       under = m.i;
       underD = d;
@@ -292,7 +297,10 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     const q = s.queued?.[team];
     if (q && q.player === p.i && !s.ball.inHands) {
       s.queued![team] = null;
-      if (q.kind === 'shoot') return { move, throttle, sprint, action: { kind: 'shoot', target: q.target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, q.target, oppGoal(s, p.team).x, FIRST_TIME_SHOT, p.attrs.shooting) } };
+      if (q.kind === 'shoot') {
+        const target = kickAim(s.ball.pos, p, q.target, 20);
+        return { move, throttle, sprint, action: { kind: 'shoot', target, power: FIRST_TIME_SHOT, lift: humanShotLift(s.ball.pos, target, oppGoal(s, p.team).x, FIRST_TIME_SHOT, p.attrs.shooting) } };
+      }
       const mate = q.receiver >= 0 ? s.players[q.receiver] : null;
       const r = mate && !mate.sentOff ? passTo(s, mate) : pointerPass(s, p, q.target);
       return { move, throttle, sprint, action: { kind: 'pass', target: r.target, receiver: r.receiver, speed: r.speed } };
@@ -304,7 +312,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
         return { move, throttle, sprint, action: { kind: 'punt', target, power: clamp(input.shoot, 0, 1) } };
       }
       const goal = oppGoal(s, p.team);
-      const target = aim ?? { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
+      const target = aim ? kickAim(s.ball.pos, p, aim, 20) : { x: goal.x, y: goal.y + (input.dir?.y ?? 0) * 2.4 };
       // The harder he hits it, the higher it rises (a click stays low).
       const power = clamp(input.shoot, 0, 1);
       const curl = input.curl ? clamp(input.curl, -1, 1) : 0;
@@ -312,7 +320,7 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
     }
     if (input.loft !== undefined) {
       // With keys there is no point to aim at: send it as far as the hold allows, the way you are heading.
-      const target = aim ?? add(s.ball.pos, scale(norm(sub(heading, p.pos)), 40));
+      const target = aim ? kickAim(s.ball.pos, p, aim, 40) : add(s.ball.pos, scale(norm(sub(heading, p.pos)), 40));
       const curl = input.curl ? clamp(input.curl, -1, 1) : 0;
       return { move, throttle, sprint, action: { kind: 'loft', target, power: clamp(input.loft, 0, 1), ...(curl ? { curl } : {}) } };
     }
@@ -427,7 +435,8 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   }
   if (input.select && input.cursor) {
     const pick = pickTeammate(s, team, input.aim ?? input.cursor);
-    if (pick >= 0) {
+    // Only a real switch is kept from the auto-switch: a click that leaves you as you are locks nothing.
+    if (pick >= 0 && pick !== s.controlled[team]) {
       give(s, team, pick, false);
       s.switchTimer[team] = SELECT_LOCK;
     }
@@ -445,7 +454,9 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
     const press = add(spot, scale(norm(sub(ownGoal(s, team), spot)), 0.8));
     return dist(m.pos, press) + ((m.pos.x - owner.pos.x) * dir > 1 ? SWITCH_BEHIND : 0);
   };
-  const byDist = [...outfield].sort((a, b) => cost(a) - cost(b));
+  // A man on the floor (after a slide, a tackle or a foul) counts as the ground he could have covered meanwhile.
+  const ready = (m: MatchPlayer): number => cost(m) + m.stun * DT * DOWN_COST;
+  const byDist = [...outfield].sort((a, b) => ready(a) - ready(b));
   if (input.switchPlayer) {
     const pick = byDist[0].i === s.controlled[team] ? byDist[1] ?? byDist[0] : byDist[0];
     give(s, team, pick.i, false);
@@ -462,7 +473,7 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
   s.switchTimer[team] = 12;
   // Never off a man the ball is coming to and nearly at: he is about to play it.
   if (cur && dist(cur.pos, ball.pos) < 3 && dot(sub(cur.pos, ball.pos), ball.vel) > 0) return;
-  if (!cur || cost(cur) - cost(byDist[0]) > 5) {
+  if (!cur || ready(cur) - ready(byDist[0]) > 5) {
     give(s, team, byDist[0].i, true);
     // Then keep him a moment: not straight back to the last man as the ball runs on.
     s.switchTimer[team] = AUTO_KEEP;

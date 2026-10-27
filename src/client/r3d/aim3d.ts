@@ -4,7 +4,7 @@
 
 import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
 import { pickTeammate } from '../../sim/human.ts';
-import { humanPass, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
+import { humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
 import { freeKickPlan, setPieceDelivery } from '../../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
 import { GAUGE_COLORS, kickGauge } from '../power.ts';
@@ -418,7 +418,7 @@ export class AimLayer {
       } else if (armed?.kind === 'loft') {
         // Lofted ball: the real flight as dots in the air, and the landing ring. The wedge under it
         // runs to the landing spot, lit as far as the hold has charged.
-        const plan = loftPlan(s.ball.pos, aimAt, armed.power);
+        const plan = loftPlan(s.ball.pos, pointerOn ? kickAim(s.ball.pos, ctrl, aimAt, 40) : aimAt, armed.power);
         this.chipArc(s.ball.pos, plan.landing, plan.speed, plan.vz);
         tx = plan.landing.x;
         ty = plan.landing.y;
@@ -439,6 +439,7 @@ export class AimLayer {
         wedgeAlpha = 0.85;
       } else if (armed?.kind === 'shot') {
         // Shot: a firmer wedge toward the pointer, filling with power, green to amber to red.
+        if (pointerOn) ({ x: tx, y: ty } = kickAim(s.ball.pos, ctrl, aimAt, 20));
         wedgeAlpha = 0.85;
       } else {
         // A click (or Space) would pass here, at the pace the wedge shows.

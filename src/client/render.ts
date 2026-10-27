@@ -3,7 +3,7 @@
 import { watchPixelRatio, type PixelRatioWatch } from './dpr.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
-import { humanPass, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
+import { humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
 import { freeKickPlan, setPieceDelivery } from '../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
@@ -155,7 +155,7 @@ export class PitchRenderer {
         ring(plan.landing, 0.9, 'rgba(140,220,255,.95)');
       } else if (armed?.kind === 'loft') {
         // Lofted ball: landing ring plus the arc the ball will fly.
-        const plan = loftPlan(s.ball.pos, aimAt, armed.power);
+        const plan = loftPlan(s.ball.pos, x.cursor && x.showCursor ? kickAim(s.ball.pos, ctrl, aimAt, 40) : aimAt, armed.power);
         const a = s.ball.pos;
         ctx.save();
         ctx.setLineDash([0.35, 0.45]);
@@ -185,7 +185,7 @@ export class PitchRenderer {
         ctx.stroke();
         ctx.restore();
       } else if (armed?.kind === 'shot') {
-        dashed(s.ball.pos, aimAt, armed.power > 0.85 ? 'rgba(255,90,60,.9)' : 'rgba(255,214,10,.85)', 0.18);
+        dashed(s.ball.pos, x.cursor && x.showCursor ? kickAim(s.ball.pos, ctrl, aimAt, 20) : aimAt, armed.power > 0.85 ? 'rgba(255,90,60,.9)' : 'rgba(255,214,10,.85)', 0.18);
       } else if (x.cursor && x.showCursor) {
         // A click would pass here: the ball rolls to the point, to a teammate near it if there is one.
         const r = pointerPass(s, ctrl, x.cursor);

@@ -5,7 +5,7 @@ import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
-import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
+import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
 import { assistRadius, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -378,6 +378,33 @@ describe('right click shoots toward the pointer', () => {
     expect(w.s.stats[0].onTarget).toBe(0);
   });
 
+  test('a pointer by the ball (he ran to it and stopped short) plays it on the way he faces, never back through his legs', () => {
+    // Before: the pointer just behind the ball sent a click back at 4.5 m/s and a shot back at 22 m/s.
+    for (const at of [{ x: 40, y: 20 }, { x: 40.4, y: 20 }, { x: 41.3, y: 20.6 }, { x: 39.2, y: 19.5 }]) {
+      for (const kind of ['pass', 'shoot', 'loft'] as const) {
+        const { s, me } = carrier({ x: 40, y: 20 });
+        const input: HumanInput = { cursor: at, aim: at };
+        if (kind === 'pass') input.pass = true;
+        else if (kind === 'shoot') input.shoot = 0.6;
+        else input.loft = 0.5;
+        step(s, input);
+        me.stun = 100000;
+        expect(s.ball.owner).toBe(-1);
+        expect(norm(s.ball.vel).x).toBeGreaterThan(0.95);
+      }
+    }
+  });
+
+  test('a pointer well behind him still means behind: a back pass or a turn and shoot goes there', () => {
+    for (const kind of ['pass', 'shoot'] as const) {
+      const { s, me } = carrier({ x: 40, y: 20 });
+      const at = { x: 33, y: 20 };
+      step(s, kind === 'pass' ? { cursor: at, aim: at, pass: true } : { cursor: at, aim: at, shoot: 0.6 });
+      me.stun = 100000;
+      expect(norm(s.ball.vel).x).toBeLessThan(-0.95);
+    }
+  });
+
   test('without the ball a shot input does nothing', () => {
     const s = livePlay();
     const me = s.players[s.controlled[0]];
@@ -421,7 +448,9 @@ describe('left click without the ball picks a player', () => {
     expect(s.controlled[0]).toBe(south.i);
     expect(s.controlled[0]).not.toBe(cur.i);
     // A couple of metres off him is still him; past PICK_R, with nobody that way, you stay as you are.
+    s.controlled[0] = cur.i;
     expect(pickTeammate(s, 0, { x: south.pos.x, y: south.pos.y + SELECT_R + 0.3 })).toBe(south.i);
+    s.controlled[0] = south.i;
     expect(pickTeammate(s, 0, { x: south.pos.x, y: south.pos.y + PICK_R + 0.3 })).toBe(-1);
   });
 
@@ -481,6 +510,30 @@ describe('left click without the ball picks a player', () => {
     expect(s.controlled[0]).toBe(cur.i);
   });
 
+  test('a click a few metres off the man you steer means that way, not stay: only a click on him keeps him', () => {
+    // Before: the steered man counted within PICK_R, so the pointer resting 3 m from him (he runs
+    // to it) swallowed every click toward a teammate.
+    const { s, cur, east, west } = setup();
+    expect(pickTeammate(s, 0, { x: 33, y: 21 })).toBe(east.i);
+    expect(pickTeammate(s, 0, { x: 27, y: 20.5 })).toBe(west.i);
+    expect(pickTeammate(s, 0, { x: 30, y: 17 })).toBe(-1); // nobody north
+    expect(pickTeammate(s, 0, { x: 30.8, y: 20.6 })).toBe(cur.i);
+    step(s, { cursor: { x: 33, y: 21 }, select: true });
+    expect(s.controlled[0]).toBe(east.i);
+  });
+
+  test('a click that leaves you as you are does not lock out the auto-switch', () => {
+    const { s, cur } = setup();
+    s.switchTimer[0] = 0;
+    step(s, { cursor: { x: 30.5, y: 20 }, select: true });
+    expect(s.controlled[0]).toBe(cur.i);
+    expect(s.switchTimer[0]).toBeLessThan(SELECT_LOCK);
+    const t = setup();
+    t.s.switchTimer[0] = 0;
+    step(t.s, { cursor: { x: 30, y: 2 }, select: true });
+    expect(t.s.switchTimer[0]).toBeLessThan(SELECT_LOCK);
+  });
+
   test('a click a couple of metres off a man picks him, not someone nearer you in that direction', () => {
     // Before: past 1.5 m the click fell to the cone search, which took whoever in that direction
     // lay nearest the current player: northeast (10 m from cur) for a click 2.5 m off east.
@@ -520,6 +573,22 @@ describe('the automatic switch does not surprise', () => {
     b.pos = { x: 52, y: 30 };
     for (let t = 0; t < 40; t++) {
       step(s, { cursor: s.ball.pos });
+      expect(s.controlled[0]).toBe(b.i);
+    }
+  });
+
+  test('it does not hand you a man on the floor when a teammate on his feet is nearly as close', () => {
+    for (const how of ['auto', 'E'] as const) {
+      const { s, a, b } = loose({ x: 40, y: 30 }, { x: 0, y: 0 });
+      const far = s.players.filter((p) => p.team === 0 && p.role !== 'GK')[2];
+      far.stun = 0;
+      s.controlled[0] = far.i;
+      s.switchTimer[0] = 0;
+      a.pos = { x: 41, y: 30 };
+      a.stun = 40; // just slid in
+      b.pos = { x: 43.5, y: 30 };
+      b.stun = 0;
+      step(s, how === 'E' ? { dir: { x: 0, y: 0 }, switchPlayer: true } : { cursor: s.ball.pos });
       expect(s.controlled[0]).toBe(b.i);
     }
   });
