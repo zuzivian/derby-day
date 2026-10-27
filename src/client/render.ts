@@ -3,10 +3,12 @@
 import { watchPixelRatio, type PixelRatioWatch } from './dpr.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, CORNER_R, GOAL_BOTTOM, GOAL_DEPTH, GOAL_TOP, PENALTY_SPOT, PITCH_H, PITCH_W, RETREAT, SIX_DEPTH, SIX_W } from '../sim/constants.ts';
 import { pickTeammate } from '../sim/human.ts';
-import { humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
+import { oppGoal } from '../sim/field.ts';
+import { HUMAN_SHOT_MIN, humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../sim/kicks.ts';
 import { freeKickPlan, setPieceDelivery } from '../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
+import { GAUGE_COLORS, shotGauge, shotGoalCross } from './power.ts';
 
 export const MARGIN = 3.5;
 // Drawn larger than their physical size so players read at a glance.
@@ -197,6 +199,23 @@ export class PitchRenderer {
         const r = humanPass(s, ctrl, aimAt);
         dashed(s.ball.pos, r.target, 'rgba(255,255,255,.55)');
         if (r.receiver >= 0) ring(s.players[r.receiver].pos, PLAYER_R + 0.35, 'rgba(255,255,255,.7)');
+      }
+      // A right click would shoot along the line to the pointer: a crosshair where it crosses their goal line.
+      const c = x.cursor && x.showCursor && armed?.kind !== 'loft' && !armed?.at ? shotGoalCross(s, ctrl, x.cursor, armed?.kind === 'shot' ? armed.power : HUMAN_SHOT_MIN) : null;
+      if (c) {
+        const gx = oppGoal(s, ctrl.team).x;
+        const style = armed?.kind === 'shot' ? GAUGE_COLORS[shotGauge(armed.power).band] : 'rgba(255,255,255,.75)';
+        const gy = c.y - c.z * 0.3;
+        dashed(s.ball.pos, { x: gx, y: c.y }, 'rgba(255,255,255,.25)', 0.1);
+        ring({ x: gx, y: gy }, 0.55, style);
+        ctx.strokeStyle = style;
+        ctx.lineWidth = 0.1;
+        ctx.beginPath();
+        ctx.moveTo(gx - 0.9, gy);
+        ctx.lineTo(gx + 0.9, gy);
+        ctx.moveTo(gx, gy - 0.9);
+        ctx.lineTo(gx, gy + 0.9);
+        ctx.stroke();
       }
     } else if (ctrl && !hasBall && x.cursor && x.showCursor && s.phase === 'play') {
       // No ball: the player a left click would switch to.

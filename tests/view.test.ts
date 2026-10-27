@@ -4,11 +4,13 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { HighlightSpotter, ReplayBuffer, SNAP_EVERY, BUFFER_TICKS, cloneState, type Highlight } from '../src/client/highlights.ts';
-import { loftGauge, passGauge, shotGauge, kickGauge, SHOT_SWEET, SHOT_WILD } from '../src/client/power.ts';
+import { goalCross, loftGauge, passGauge, shotGauge, shotGoalCross, kickGauge, SHOT_SWEET, SHOT_WILD } from '../src/client/power.ts';
+import { WEDGE_MAX } from '../src/client/r3d/aim3d.ts';
 import { BROADCAST_WIDTH, MatchCamera, ZOOM_MAX, ZOOM_MIN, clampZoom } from '../src/client/r3d/camera3d.ts';
 import { longView, penaltyView } from '../src/client/r3d/renderer3d.ts';
 import { Plane, Raycaster, Vector2, Vector3 } from '../src/client/r3d/three.ts';
-import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { GOAL_W, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { HUMAN_SHOT_MIN } from '../src/sim/kicks.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchState } from '../src/sim/types.ts';
 import { kickOff } from './helpers.ts';
@@ -189,6 +191,66 @@ describe('power gauge', () => {
     expect(shot.band).toBe('red');
     s.ball.owner = -1;
     expect(kickGauge(s, { cursor: { x: 90, y: 34 }, charge: 0, showCursor: true })).toBe(null);
+  });
+});
+
+describe('shot crosshair on the goal face', () => {
+  const mid = PITCH_H / 2;
+  test('sits where the line from the ball through the pointer crosses the goal line', () => {
+    // Pointer on the grass 10 m short of the line, 2 m off centre: the line carries on to 5 m off centre.
+    const c = goalCross({ x: 80, y: mid }, { x: 90, y: mid + 2 }, PITCH_W, HUMAN_SHOT_MIN, 0.7)!;
+    expect(c.y).toBeCloseTo(mid + 5, 6);
+    expect(c.d).toBeCloseTo(Math.hypot(25, 5), 6);
+    // Wide of the post by 1.3 m: still drawn, but not in the mouth.
+    expect(c.inMouth).toBe(false);
+    const centre = goalCross({ x: 80, y: mid }, { x: 90, y: mid + 1 }, PITCH_W, HUMAN_SHOT_MIN, 0.7)!;
+    expect(centre.y).toBeCloseTo(mid + 2.5, 6);
+    expect(centre.inMouth).toBe(true);
+    // Their goal at x = 0 as well.
+    const left = goalCross({ x: 20, y: mid }, { x: 10, y: mid - 2 }, 0, HUMAN_SHOT_MIN, 0.7)!;
+    expect(left.y).toBeCloseTo(mid - 4, 6);
+  });
+
+  test('rises with the power, as the sim plans it', () => {
+    const from = { x: 90, y: mid };
+    const to = { x: 100, y: mid };
+    const click = goalCross(from, to, PITCH_W, HUMAN_SHOT_MIN, 0.7)!;
+    const full = goalCross(from, to, PITCH_W, 1, 0.7)!;
+    expect(click.z).toBeLessThan(0.7);
+    expect(full.z).toBeGreaterThan(1.4);
+    expect(full.z).toBeLessThan(2.3);
+  });
+
+  test('hidden when the line heads away, misses by a lot, or is too far', () => {
+    expect(goalCross({ x: 80, y: mid }, { x: 70, y: mid }, PITCH_W, 0.8, 0.7)).toBe(null);
+    expect(goalCross({ x: 80, y: mid }, { x: 90, y: mid + 5 }, PITCH_W, 0.8, 0.7)).toBe(null);
+    expect(goalCross({ x: 50, y: mid }, { x: 60, y: mid }, PITCH_W, 0.8, 0.7)).toBe(null);
+    // A line along the goal line never crosses it.
+    expect(goalCross({ x: 80, y: 10 }, { x: 80, y: 40 }, PITCH_W, 0.8, 0.7)).toBe(null);
+    expect(GOAL_W).toBeGreaterThan(7);
+  });
+
+  test('the live shot: open play only, not for the keeper, and kicks by the ball go the way he faces', () => {
+    const s = match(12);
+    for (let t = 0; t < 200; t++) step(s, {});
+    const me = s.players[s.controlled[0]];
+    me.pos = { x: 80, y: mid };
+    me.facing = { x: 1, y: 0 };
+    s.ball.pos = { x: 80.5, y: mid };
+    s.ball.owner = me.i;
+    s.ball.z = 0;
+    s.phase = 'play';
+    const c = shotGoalCross(s, me, { x: 95, y: mid }, 0.8)!;
+    expect(c.y).toBeCloseTo(mid, 6);
+    // A pointer by the ball has no direction: it goes the way he faces, 20 m on.
+    expect(shotGoalCross(s, me, { x: 80, y: mid + 1 }, 0.8)!.y).toBeCloseTo(mid, 6);
+    s.phase = 'restart';
+    expect(shotGoalCross(s, me, { x: 95, y: mid }, 0.8)).toBe(null);
+  });
+
+  test('the wedge is drawn short: a gauge, not a ruler', () => {
+    expect(WEDGE_MAX).toBeGreaterThanOrEqual(5);
+    expect(WEDGE_MAX).toBeLessThanOrEqual(8);
   });
 });
 

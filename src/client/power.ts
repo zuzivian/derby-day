@@ -13,8 +13,11 @@
 // distance to the pointer the hold reaches.
 
 import { passSpeed } from '../sim/ai.ts';
-import { humanPass, kickAim, loftRange, pointerPass } from '../sim/kicks.ts';
-import type { MatchState } from '../sim/types.ts';
+import { oppGoal } from '../sim/field.ts';
+import { AIR_DRAG, BOUNCE_DAMP, BOUNCE_KEEP, DT, GOAL_BAR_H, GOAL_W, GRAVITY, PITCH_H, rollDecel } from '../sim/constants.ts';
+import { humanPass, humanShotLift, kickAim, loftRange, pointerPass, SHOT_Z0, shotSpeed } from '../sim/kicks.ts';
+import type { MatchPlayer, MatchState } from '../sim/types.ts';
+import type { Vec } from '../sim/vec.ts';
 import type { RenderExtras } from './render.ts';
 
 export type PowerBand = 'green' | 'amber' | 'red';
@@ -88,4 +91,76 @@ export function kickGauge(s: MatchState, x: RenderExtras): Gauge | null {
   if (pointer) return passGauge(pointerPass(s, p, pointer).speed);
   const target = humanPass(s, p, aim).target;
   return passGauge(passSpeed(Math.hypot(target.x - s.ball.pos.x, target.y - s.ball.pos.y), p.attrs.passing));
+}
+
+/** Where a human's shot crosses the goal line: `y` across the pitch, `z` the height (m) it arrives at, `d` the metres of flight. */
+export interface GoalCross {
+  y: number;
+  z: number;
+  d: number;
+  /** Between the posts and under the bar. */
+  inMouth: boolean;
+}
+
+/** Past this (m) from the ball to the goal line no crosshair is drawn: it is not a shot. */
+export const GOAL_CROSS_RANGE = 45;
+/** A shot this far (m) outside a post, or this far (m) over the bar, is drawn; further is a plain miss and shows nothing. */
+export const GOAL_CROSS_SLACK = 4;
+
+/**
+ * The height (m) a ball struck at `speed` with initial vertical speed `vz` is at when it has gone `d` metres
+ * along the ground, flown tick by tick as match.ts does (drag, gravity, bounces, then the roll); null if it stops short.
+ */
+export function shotHeightAt(speed: number, vz: number, d: number): number | null {
+  let v = speed;
+  let z = SHOT_Z0;
+  let x = 0;
+  for (let i = 0; i < 900 && x < d; i++) {
+    if (z > 0 || vz > 0) {
+      vz -= GRAVITY * DT;
+      z += vz * DT;
+      v *= 1 - AIR_DRAG * DT;
+      if (z <= 0) {
+        z = 0;
+        if (vz < -1.5) {
+          vz = -vz * BOUNCE_DAMP;
+          v *= BOUNCE_KEEP;
+        } else vz = 0;
+      }
+    } else v = Math.max(0, v - rollDecel(v) * DT);
+    if (v < 0.5) return null;
+    x += v * DT;
+  }
+  return z;
+}
+
+/**
+ * Where the shot from `from` along the line to `target` (what kickAim gives, the pointer) crosses
+ * the line at `goalX`, and how high it comes in there at `power`: humanShotLift's own plan (the same
+ * lift and pace the sim kicks it with, flown as the sim flies it, so a long shot arrives lower than
+ * the plan's nominal height, and may bounce first). Null when the line does not head for that goal line, or
+ * the crossing is out of range or well wide or high of the goal. Pure.
+ */
+export function goalCross(from: Vec, target: Vec, goalX: number, power: number, shooting: number): GoalCross | null {
+  const dx = target.x - from.x;
+  const toLine = goalX - from.x;
+  if (Math.abs(dx) < 1e-6 || Math.sign(dx) !== Math.sign(toLine)) return null;
+  const f = toLine / dx;
+  const y = from.y + (target.y - from.y) * f;
+  const d = Math.hypot(dx, target.y - from.y) * f;
+  if (d > GOAL_CROSS_RANGE || Math.abs(y - PITCH_H / 2) > GOAL_W / 2 + GOAL_CROSS_SLACK) return null;
+  const z = shotHeightAt(shotSpeed(power, shooting), humanShotLift(from, target, goalX, power, shooting), d);
+  if (z === null) return null;
+  if (z > GOAL_BAR_H + GOAL_CROSS_SLACK) return null;
+  return { y, z, d, inMouth: Math.abs(y - PITCH_H / 2) <= GOAL_W / 2 && z <= GOAL_BAR_H };
+}
+
+/**
+ * The goal crossing of the shot `p` would take at the pointer `aim` in open play (humanIntent's shoot
+ * branch: kickAim, then the lift for `power`), or null for a keeper (he punts) or a line that is not
+ * a shot at their goal. `power` is the charge (x.armed) or SHOT_MIN for a plain click.
+ */
+export function shotGoalCross(s: MatchState, p: MatchPlayer, aim: Vec, power: number): GoalCross | null {
+  if (p.role === 'GK' || s.phase !== 'play') return null;
+  return goalCross(s.ball.pos, kickAim(s.ball.pos, p, aim, 20), oppGoal(s, p.team).x, power, p.attrs.shooting);
 }

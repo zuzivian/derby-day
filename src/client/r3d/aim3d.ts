@@ -3,14 +3,16 @@
 // and ground ring under the controlled player, stamina bars and name tags.
 
 import { AIR_DRAG, CHIP_Z0, GRAVITY, RETREAT } from '../../sim/constants.ts';
+import { oppGoal } from '../../sim/field.ts';
 import { pickTeammate } from '../../sim/human.ts';
-import { humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
+import { HUMAN_SHOT_MIN, humanPass, kickAim, loftPlan, pointerPass, strikePath } from '../../sim/kicks.ts';
 import { freeKickPlan, setPieceDelivery } from '../../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../../sim/types.ts';
-import { GAUGE_COLORS, kickGauge } from '../power.ts';
+import { GAUGE_COLORS, kickGauge, shotGoalCross, shotGauge } from '../power.ts';
 import type { RenderExtras } from '../render.ts';
 import { clamp01, sx, sz } from './space.ts';
 import {
+  BoxGeometry,
   BufferGeometry,
   CanvasTexture,
   Color,
@@ -48,6 +50,9 @@ const col = (hex: string): Color => {
 
 const TEAMS = [0, 1] as const;
 
+/** Longest the aim wedge is drawn (m at camera scale 1; times k as the camera pulls back). The power is its fill, not its length. */
+export const WEDGE_MAX = 6.5;
+
 const flat = (m: Object3D, y = 0.03) => {
   m.rotation.x = -Math.PI / 2;
   m.position.y = y;
@@ -66,6 +71,14 @@ function wedgeGeometry(): BufferGeometry {
   // x along the aim (0..1), z across; uv.x carries the fade.
   g.setAttribute('position', new Float32BufferAttribute([0, 0, -0.1, 1, 0, -0.45, 1, 0, 0.45, 0, 0, 0.1], 3));
   g.setAttribute('uv', new Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+  g.setIndex([0, 2, 1, 0, 3, 2]);
+  return g;
+}
+
+/** A flat strip from the origin along +x, 1 long and 1 wide (scaled), for the shot line on the grass. */
+function stripGeometry(): BufferGeometry {
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute([0, 0, -0.5, 1, 0, -0.5, 1, 0, 0.5, 0, 0, 0.5], 3));
   g.setIndex([0, 2, 1, 0, 3, 2]);
   return g;
 }
@@ -134,6 +147,35 @@ function triangleTexture(): CanvasTexture {
   g.stroke();
   g.fillStyle = '#ffffff';
   g.fill();
+  const t = new CanvasTexture(c);
+  t.colorSpace = SRGBColorSpace;
+  return t;
+}
+
+/** Crosshair for the goal face: a ring with four ticks through it and a dot, white with a dark rim (tinted by the sprite colour). */
+function sightTexture(): CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 96;
+  const g = c.getContext('2d')!;
+  g.lineCap = 'round';
+  const draw = (style: string, w: number) => {
+    g.strokeStyle = style;
+    g.fillStyle = style;
+    g.lineWidth = w;
+    g.beginPath();
+    g.arc(48, 48, 22, 0, Math.PI * 2);
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2;
+      g.moveTo(48 + Math.cos(a) * 14, 48 + Math.sin(a) * 14);
+      g.lineTo(48 + Math.cos(a) * 40, 48 + Math.sin(a) * 40);
+    }
+    g.stroke();
+    g.beginPath();
+    g.arc(48, 48, w > 6 ? 5 : 2.5, 0, Math.PI * 2);
+    g.fill();
+  };
+  draw('rgba(0,0,0,.8)', 9);
+  draw('#ffffff', 4);
   const t = new CanvasTexture(c);
   t.colorSpace = SRGBColorSpace;
   return t;
@@ -218,6 +260,12 @@ export class AimLayer {
   private reticle: Group;
   private wedge: Mesh;
   private wedgeMat: ShaderMaterial;
+  /** The shot's crosshair standing on the goal face, a post down to the grass under it, and the shot's line on the grass. */
+  private sight: Sprite;
+  private sightPost: Mesh;
+  private sightFoot: Mesh;
+  private sightLine: Mesh;
+  private sightTex = sightTexture();
   private recvRing: Mesh;
   private switchRing: Mesh;
   private retreat: Mesh;
@@ -280,6 +328,19 @@ export class AimLayer {
     this.wedge.position.y = 0.035;
     this.wedge.renderOrder = 4;
 
+    // Shot sight: a camera-facing crosshair at the point on the goal face the shot crosses the line at (a flat
+    // goal-plane quad would be edge-on to the side camera), a thin post down to the grass, a ring there and the line in.
+    this.sight = new Sprite(keepM(new SpriteMaterial({ map: this.sightTex, depthTest: false, transparent: true, toneMapped: false })));
+    this.sight.renderOrder = 23;
+    const sightMat = keepM(overlay('#ffffff', 0.5, false));
+    this.sightPost = new Mesh(keepG(new BoxGeometry(0.05, 1, 0.05)), sightMat);
+    this.sightPost.renderOrder = 22;
+    this.sightFoot = flat(new Mesh(keepG(new RingGeometry(0.22, 0.36, 24)), keepM(overlay('#ffffff', 0.8, false))), 0.05) as Mesh;
+    this.sightFoot.renderOrder = 22;
+    this.sightLine = new Mesh(keepG(stripGeometry()), keepM(overlay('#ffffff', 0.28)));
+    this.sightLine.position.y = 0.033;
+    this.sightLine.renderOrder = 3;
+
     this.recvRing = flat(new Mesh(keepG(new RingGeometry(0.85, 1.0, 40)), keepM(overlay('#ffffff', 0.75))), 0.04) as Mesh;
     // Pale blue, not white, so it doesn't read as a pitch marking.
     this.retreat = flat(new Mesh(keepG(new RingGeometry(RETREAT - 0.06, RETREAT + 0.06, 96)), keepM(overlay('#9fd4ff', 0.6))), 0.03) as Mesh;
@@ -321,7 +382,7 @@ export class AimLayer {
     this.bars.frustumCulled = false;
     this.bars.renderOrder = 19;
 
-    this.group.add(this.pointer, this.reticle, this.wedge, this.recvRing, this.switchRing, this.retreat, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
+    this.group.add(this.pointer, this.reticle, this.wedge, this.sightLine, this.sightPost, this.sightFoot, this.sight, this.recvRing, this.switchRing, this.retreat, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
   }
 
   private name(p: MatchPlayer): Sprite {
@@ -457,7 +518,9 @@ export class AimLayer {
         const oz = sz(ctrl.pos.y);
         const dx = sx(tx) - ox;
         const dz = sz(ty) - oz;
-        const L = Math.max(0.5, Math.hypot(dx, dz));
+        // The wedge is a gauge, not a ruler: it stops WEDGE_MAX short of a far target (the reticle, the
+        // landing ring and the goal crosshair say where it goes), and shrinks to meet a near one.
+        const L = Math.min(WEDGE_MAX * k, Math.max(0.5, Math.hypot(dx, dz)));
         this.wedge.position.set(ox, 0.035, oz);
         this.wedge.scale.set(L, 1, Math.min(2.4, 0.7 + L * 0.06) * Math.max(1, k * 0.9));
         this.wedge.rotation.y = -Math.atan2(dz, dx);
@@ -485,6 +548,7 @@ export class AimLayer {
     }
     this.wedge.visible = showWedge;
     this.reticle.visible = showRet;
+    this.shotSight(f, ctrl, hasBall && pointerOn && !!cursor && armed?.kind !== 'loft' && !armed?.at ? cursor : null, k);
 
     // Controlled players: marker over the head and a ring on the ground.
     for (const t of TEAMS) {
@@ -549,6 +613,44 @@ export class AimLayer {
     }
   }
 
+  /**
+   * Where a right click would send the ball in their goal: a crosshair on the goal face at the point (and
+   * height) the shot crosses the line, from power.ts shotGoalCross (the sim's own lift and pace). Faint
+   * while no shot is charging (a click is SHOT_MIN), tinted by the power band while one is.
+   */
+  private shotSight(f: AimFrame, ctrl: MatchPlayer | null, aim: { x: number; y: number } | null, k: number): void {
+    const { s, x } = f;
+    const charging = x.armed?.kind === 'shot';
+    const power = charging ? x.armed!.power : HUMAN_SHOT_MIN;
+    const c = ctrl && aim ? shotGoalCross(s, ctrl, aim, power) : null;
+    this.sight.visible = this.sightPost.visible = this.sightFoot.visible = this.sightLine.visible = !!c;
+    if (!c || !ctrl) return;
+    const gx = sx(oppGoal(s, ctrl.team).x);
+    const gz = sz(c.y);
+    const tint = col(charging ? GAUGE_COLORS[shotGauge(power).band] : '#ffffff');
+    const a = (charging ? 1 : 0.75) * (c.inMouth ? 1 : 0.7);
+    const m = this.sight.material;
+    m.color.copy(tint);
+    m.opacity = a;
+    this.sight.position.set(gx, c.z, gz);
+    this.sight.scale.setScalar(3.2 * k * (f.reduced || !charging ? 1 : 1 + Math.sin(f.time * 9) * 0.04));
+    this.sightPost.position.set(gx, c.z / 2, gz);
+    this.sightPost.scale.set(k, Math.max(0.01, c.z), k);
+    (this.sightPost.material as MeshBasicMaterial).opacity = 0.5 * a;
+    this.sightFoot.position.set(gx, 0.05, gz);
+    this.sightFoot.scale.setScalar(k);
+    (this.sightFoot.material as MeshBasicMaterial).opacity = 0.8 * a;
+    // The line in, from the ball to where it crosses.
+    const ox = f.ball.x;
+    const oz = f.ball.z;
+    const dx = gx - ox;
+    const dz = gz - oz;
+    this.sightLine.position.set(ox, 0.033, oz);
+    this.sightLine.scale.set(Math.max(0.1, Math.hypot(dx, dz)), 1, 0.1 * k);
+    this.sightLine.rotation.y = -Math.atan2(dz, dx);
+    (this.sightLine.material as MeshBasicMaterial).opacity = 0.28 * a;
+  }
+
   /** Dots along a path in the air (world metres, z up). */
   private dotPath(pts: { x: number; y: number; z: number }[]): void {
     const n = Math.min(this.chipDots.count, pts.length);
@@ -593,6 +695,7 @@ export class AimLayer {
     for (const g of this.geos) g.dispose();
     for (const t of this.nameTex) t.dispose();
     this.white.dispose();
+    this.sightTex.dispose();
     this.bars.dispose();
     this.chipDots.dispose();
     this.group.removeFromParent();
