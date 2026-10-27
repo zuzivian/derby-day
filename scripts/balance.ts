@@ -5,11 +5,13 @@
 // formation and mentality, drawn in turn from three ladders (seeds 2026-2028:
 // one ladder's mix of deep and attacking clubs swings goals by a goal a match). With --assert the process exits non-zero when the averages leave
 // the sane range, so CI catches a broken tuning change:
-//   goals 1.5-5, passes >= 80, fouls 5-25, yellows 0.5-6, reds <= 1,
+//   goals 1.5-5, passes >= 80, fouls 2-12, yellows 0.2-4, reds <= 1,
 //   offsides 0.3-6, corners >= 1, and well under a second per match.
-// The ranges are a little wider than the targets (about 2-4 goals, 8-20
-// fouls, 1-4 yellows, 1-5 offsides, reds rare) so that 30 matches of
-// sampling noise don't fail the build. Corners run below a real 90 minutes
+// The ranges are a little wider than the targets (about 2-4 goals, 3-5
+// fouls, 0.5-1 yellows, 1-5 offsides, reds rare) so that 30 matches of
+// sampling noise don't fail the build. Fouls and cards are per six minutes of
+// play, not 90: a real match has ~22 fouls and ~3.5 yellows, which is about
+// 1.5 and 0.25 in six minutes; the game runs a little above that on purpose. Corners run below a real 90 minutes
 // (about 2-3 a match): six real minutes of play rarely reach the byline as
 // often as a full match does.
 
@@ -71,8 +73,8 @@ if (assertMode) {
   };
   range('goals/match', goalsPer, 1.5, 5);
   range('passes/match', per('passes'), 80, Infinity);
-  range('fouls/match', per('fouls'), 5, 25);
-  range('yellows/match', per('yellows'), 0.5, 6);
+  range('fouls/match', per('fouls'), 2, 12);
+  range('yellows/match', per('yellows'), 0.2, 4);
   range('reds/match', per('reds'), 0, 1);
   range('offsides/match', per('offsides'), 0.3, 6);
   range('corners/match', per('corners'), 1, 15);

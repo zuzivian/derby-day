@@ -388,6 +388,23 @@ function catchSpot(ball: MatchState['ball'], fallback: Vec): Vec {
   return fallback;
 }
 
+/**
+ * Where, and in how many seconds, a ball in the air comes down through height `z` (the middle of the head band):
+ * its path as it is now, with drag. Null when it is already below that, or never gets up to it.
+ */
+export function headSpot(ball: MatchState['ball'], z: number): { pt: Vec; t: number } | null {
+  if (ball.z <= z && ball.vz <= 0) return null;
+  const tr = trajectory(ball.pos, ball.vel, ball.z, ball.vz);
+  for (let k = 1; k < TRAJ_STEPS; k++) {
+    if (tr.z[k] >= tr.z[k - 1] || tr.z[k] > z || tr.z[k - 1] <= z) continue;
+    const f = (tr.z[k - 1] - z) / (tr.z[k - 1] - tr.z[k]);
+    const a = tr.pts[k - 1];
+    const b = tr.pts[k];
+    return { pt: { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f }, t: (k - 1 + f) * TRAJ_DT };
+  }
+  return null;
+}
+
 function interceptOn(s: MatchState, p: MatchPlayer, traj: Trajectory): AiInterception {
   const { pts, z, v0 } = traj;
   if (p.sentOff) return { t: 1e9, pt: pts[0] };
@@ -1738,7 +1755,13 @@ function tryTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, skill: num
   const range_ = 1.45 + 0.5 * (1 - skill) + k.reach;
   if (d < range_ && p.tackleCd === 0 && p.aiTimer <= 0 && !s.ball.inHands) {
     p.aiTimer = decisionInterval(s, p);
-    if (chance(s.rng, clamp((0.35 + 0.35 * p.attrs.defending + 0.15 * skill) * k.tackle, 0, 0.95))) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
+    // Coming through the back of the man rarely wins it and is nearly always a foul (resolveTackle):
+    // a sensible defender stays on his shoulder and waits for the touch, and only a desperate one
+    // (the carrier is through on goal) dives in anyway.
+    const behind = dot(norm(sub(owner.pos, p.pos)), owner.facing) > 0.5;
+    const desperate = teamX(s, p.team, owner.pos.x) < 0.3 && dist(owner.pos, ownGoal(s, p.team)) < 22;
+    const keen = behind ? (desperate ? 0.7 : 0.35 + 0.2 * (1 - skill)) : 1.15;
+    if (chance(s.rng, clamp((0.35 + 0.35 * p.attrs.defending + 0.15 * skill) * k.tackle * keen, 0, 0.95))) return { move: norm(sub(owner.pos, p.pos)), throttle: 1, action: { kind: 'tackle', target: owner.pos } };
   }
   return null;
 }

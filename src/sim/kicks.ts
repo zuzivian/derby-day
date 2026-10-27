@@ -234,8 +234,25 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
       into = path < Infinity;
     }
   }
-  return { receiver, into };
+  if (receiver >= 0) return { receiver, into };
+  // Nobody that close: a click is still meant for someone, the teammate nearest the point, to his
+  // feet. Only grass with nobody of ours about stays a ball into space.
+  let nearest = -1;
+  let nearestD = Math.max(FALLBACK_R, FALLBACK_SHARE * dAim);
+  for (const m of s.players) {
+    if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
+    const d = dist(aim, m.pos);
+    if (d < nearestD) {
+      nearest = m.i;
+      nearestD = d;
+    }
+  }
+  return { receiver: nearest, into: false };
 }
+
+/** Failing the assist, a click this close to a teammate (or this share of the pass, if more) is a pass to his feet. */
+export const FALLBACK_R = 5;
+export const FALLBACK_SHARE = 0.3;
 
 /** The pace a ball rolled `d` metres should still have when it gets there, to arrive in about `t` seconds. */
 function timedArrival(d: number, t: number): number {

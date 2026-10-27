@@ -463,16 +463,21 @@ function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide:
   if (!slide) pWin *= 1 - 0.25 * clamp((dist(owner.pos, p.pos) - STAND_EDGE) / (STAND_REACH - STAND_EDGE), 0, 1);
   const won = next(s.rng) < pWin;
   const fast = slide ? commit : clamp((before - 6.5) / 2.5, 0, 1);
-  let pFoul = won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast;
+  // A standing tackle that misses is usually just a miss; a slide that misses takes the man.
+  let pFoul = slide
+    ? won ? (fromBehind ? 0.2 : 0.025) : 0.2 + (fromBehind ? 0.3 : 0) + 0.12 * fast
+    : won ? (fromBehind ? 0.12 : 0.02) : 0.08 + (fromBehind ? 0.3 : 0) + 0.1 * fast;
   pFoul *= 2.05 - 0.9 * care(s, p);
   // A booked CPU player goes in more carefully.
   if (p.yellow > 0 && !isHumanControlled(s, p)) pFoul *= 0.45;
+  // So does a CPU defender with a penalty to give away.
+  if (!isHumanControlled(s, p) && inOwnBox(s, team, owner.pos)) pFoul *= 0.6;
   // At full stretch a standing tackle is more a poke than a challenge through the man, and so
   // is a slide that meets him before it is fully committed.
   if (!slide && dist(owner.pos, p.pos) > STAND_EDGE) pFoul *= 0.5;
   if (slide) pFoul *= 0.5 + 0.5 * commit;
   if (next(s.rng) < pFoul) {
-    const sev = severityOf((fromBehind ? 0.3 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
+    const sev = severityOf((fromBehind ? 0.25 : 0) + 0.25 * fast + (won ? 0 : 0.1) + 0.32 * next(s.rng) + 0.15 * (1 - p.attrs.defending));
     if (judgeFoul(s, { offender: p, victim: owner, severity: sev, attempt: true, keptBall: !won })) return;
   }
   if (won) {
@@ -923,6 +928,8 @@ function separate(s: MatchState): void {
 
 /** A human's header at goal: metres across the goal per metre the pointer is to the side of the striker. */
 const HEADER_AIM_GAIN = 5;
+/** A human's header away goes where the pointer is when it is at least this far (m) from him; closer, he just clears it. */
+const HEADER_AIM_MIN = 4;
 
 function scoreGoal(s: MatchState, team: 0 | 1): void {
   const b = s.ball;
@@ -1201,12 +1208,32 @@ export const CUSHION_Z = 1.9;
 /** The body a ball bounces off: legs and torso as a cylinder this wide, this tall. */
 export const BODY_R = 0.3;
 export const BODY_TOP = 1.85;
-/** Horizontal reach of a header (a step and a jump), and of chest control. */
-const HEAD_REACH = 0.7;
+/**
+ * Horizontal reach of a header (a step and a jump): this much for a man who is no header of the ball, and a little
+ * more for each point of heading (headSkill). The man a human steers cannot time his own jump, so he reaches
+ * HUMAN_HEAD_REACH whatever he is. Chest control reaches CHEST_REACH.
+ */
+const HEAD_REACH = 0.5;
+const HEAD_REACH_SKILL = 0.35;
+const HUMAN_HEAD_REACH = 0.9;
 const CHEST_REACH = 0.6;
+/** A header's chance to connect: the base, per point of heading, less for a ball at the edge of his reach and for each opponent at his shoulder (within HEAD_JOSTLE). */
+const HEAD_BASE = 0.3;
+const HEAD_GAIN = 0.6;
+const HEAD_EDGE = 0.12;
+const HEAD_JOSTLE = 1.2;
+const HEAD_JOSTLE_COST = 0.06;
+/** The man a human steers is helped a little: he did not choose his run-up (src/sim/human.ts meetHeader brings him to the ball). */
+const HUMAN_HEAD_BONUS = 0.05;
 /** The intended receiver reaches this far for a ball at his feet; anyone else less, the faster it is. */
 export const RECEIVE_REACH = 1.23;
 const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.95);
+/** The man a human steers onto the line of a ball reaches this far for it (he has put himself there on purpose). */
+export const HUMAN_INTERCEPT_REACH = 1.1;
+/** ... and kills a ball this much faster (m/s) than he otherwise could: he read the pass, he is set for it. */
+export const HUMAN_INTERCEPT_LIMIT = 4;
+const interceptReach = (s: MatchState, p: MatchPlayer, reach: number, lastTeam: number): number =>
+  lastTeam >= 0 && lastTeam !== p.team && isHumanControlled(s, p) ? Math.max(reach, HUMAN_INTERCEPT_REACH) : reach;
 /** Ticks after a kick before an opponent can stretch for the ball (about 0.2 s); until then only his body is in the way. */
 const REACT_TICKS = 12;
 
@@ -1373,7 +1400,7 @@ function contacts(s: MatchState, from: Vec): void {
     if (z > FOOT_Z && keepersBall(s, p)) continue;
     const d = approach(p.pos, from, b.pos);
     let reach: number;
-    if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : footReach(speed);
+    if (z <= FOOT_Z) reach = b.receiver === p.i ? RECEIVE_REACH : fresh && kicker!.team !== p.team ? BODY_R + BALL_R : interceptReach(s, p, footReach(speed), lastTeam);
     else if (z <= (p.team === lastTeam ? CUSHION_Z : CHEST_Z)) reach = CHEST_REACH;
     else continue;
     if (d < reach && d < bestD) {
@@ -1458,7 +1485,9 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   // is set for it, so its fall counts for less (chest and thigh control of a lofted pass).
   const speed = len(b.vel) + Math.abs(b.vz) * (receiver ? 0.15 : 0.5);
   const chest = b.z > FOOT_Z;
-  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : 0);
+  // The man a human steers onto one of theirs: see HUMAN_INTERCEPT_LIMIT.
+  const steered = !receiver && b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team && isHumanControlled(s, p);
+  let limit = 6 + 11 * p.attrs.dribbling + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
   if (chest && !receiver) limit *= 0.75;
   // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
   if (challenged) limit *= 0.6;
@@ -1496,7 +1525,8 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   const body = BODY_R + BALL_R;
   if (!receiver && d > body && reach > body) {
     // A sharper side reads the pass and gets a foot to it more often (TeamSetup.aiSkill).
-    const sharp = 0.2 + 0.7 * clamp(s.teams[p.team].aiSkill, 0, 1);
+    // The man a human steers reads it himself, whatever the CPU's skill on his side.
+    const sharp = steered ? 0.9 : 0.2 + 0.7 * clamp(s.teams[p.team].aiSkill, 0, 1);
     const touchChance = clamp((1 - (d - body) / (reach - body)) * (0.45 + 0.45 * p.attrs.defending) * sharp, 0, 1);
     if (next(s.rng) > touchChance) {
       // He can't get a foot to it this time; if it is coming at his body it will still hit him.
@@ -1753,6 +1783,18 @@ function aerialDuel(s: MatchState, att: MatchPlayer): { rival: MatchPlayer | nul
   return next(s.rng) < win ? { rival: null, contested: true } : { rival, contested: true };
 }
 
+/** How good a header of the ball he is: a defender's defending, anyone else's shooting. */
+const headSkill = (p: MatchPlayer): number => (p.role === 'DEF' ? p.attrs.defending : p.attrs.shooting);
+const headReach = (s: MatchState, p: MatchPlayer): number => (isHumanControlled(s, p) ? HUMAN_HEAD_REACH : HEAD_REACH + HEAD_REACH_SKILL * headSkill(p));
+
+/** The chance his jump connects with a ball `d` m off his head: better headers more, the ball at the edge of his reach less, a marker at his shoulder less. */
+function headChance(s: MatchState, p: MatchPlayer, d: number): number {
+  let c = HEAD_BASE + HEAD_GAIN * headSkill(p) - (HEAD_EDGE * d) / headReach(s, p);
+  for (const o of s.players) if (o.team !== p.team && o.role !== 'GK' && !o.sentOff && o.stun === 0 && dist(o.pos, p.pos) < HEAD_JOSTLE) c -= HEAD_JOSTLE_COST;
+  if (isHumanControlled(s, p)) c += HUMAN_HEAD_BONUS;
+  return clamp(c, 0.15, 0.92);
+}
+
 /**
  * A ball between CHEST_Z and HEAD_Z can be headed: by an opponent of whoever played
  * it (a clearance), or by an attacker in the opponents' box (at goal; a human aims it with
@@ -1772,7 +1814,7 @@ function header(s: MatchState): boolean {
     const attacking = p.team === lastTeam && inOwnBox(s, p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
-    if (d < HEAD_REACH && d < bestD) {
+    if (d < headReach(s, p) && d < bestD) {
       best = p;
       bestD = d;
     }
@@ -1781,7 +1823,7 @@ function header(s: MatchState): boolean {
   // An attacker going up for it with a defender at his shoulder has to win it first.
   const p = (best.team === lastTeam && aerialDuel(s, best).rival) || best;
   // Not every jump connects: he misses it, and it may still hit him.
-  if (next(s.rng) > 0.62 + 0.25 * (p.role === 'DEF' ? p.attrs.defending : p.attrs.shooting)) {
+  if (next(s.rng) > headChance(s, p, p === best ? bestD : Math.min(dist(p.pos, b.pos), headReach(s, p)))) {
     // No second jump at this ball, but his body is still there for it to hit.
     b.whiff = p.i;
     return false;
@@ -1816,6 +1858,14 @@ function header(s: MatchState): boolean {
     // Down toward the line, bouncing in front of the keeper or under the bar.
     b.vz = clamp((0.6 - b.z) / Math.max(t, 0.2) + 0.5 * GRAVITY * t, -6, 3);
     countShot(s, p.team);
+  } else if (isHumanControlled(s, p) && s.humanAim?.[p.team] && dist(s.humanAim[p.team]!, p.pos) > HEADER_AIM_MIN) {
+    // The human heads it to the pointer: it comes down about there (a header is no pass, so it strays more the worse a header he is).
+    const to = sub(s.humanAim[p.team]!, b.pos);
+    const way = rotate(norm(to), gauss(s.rng) * (0.06 + 0.12 * (1 - headSkill(p))));
+    const vz = 4.5;
+    const sp = clamp(len(to) / ((2 * vz) / GRAVITY), 7, 17);
+    b.vel = scale(way, sp);
+    b.vz = vz;
   } else {
     // Head it away: upfield and wide of the goal. Under pressure near goal a glancing header can go behind.
     const nearGoal = inOwnBox(s, p.team, p.pos);

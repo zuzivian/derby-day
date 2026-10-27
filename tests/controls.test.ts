@@ -6,7 +6,8 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
-import { assistRadius, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
+import { assistRadius, FALLBACK_R, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
+import { attackDir } from '../src/sim/field.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
 import { dist, len, norm, sub, type Vec } from '../src/sim/vec.ts';
@@ -177,17 +178,23 @@ describe('ground pass goes where the pointer is', () => {
     }
   });
 
-  test('a pass does not snap to a teammate unless the pointer is within the assist radius of him or on the line to him', () => {
+  test('a click outside the assist radius still goes to the teammate nearest it; only grass far from everyone is a ball into space', () => {
     const { s, me } = carrier({ x: 30, y: 20 });
     const mate = s.players.find((p) => p.team === 0 && p.role === 'MID')!;
     mate.pos = { x: 40, y: 20 };
     mate.vel = { x: 0, y: 0 };
     mate.stun = 0;
-    // Well off to the side (outside the radius, outside the cone): into space.
+    // Off to the side, outside the radius and the cone: still meant for him, to his feet (playtest:
+    // a click should be a sensible pass to someone, not one that dies on the grass beside him).
     const off = { x: 40, y: 20 + assistRadius(10) + 1.5 };
     const r = pointerPass(s, me, off);
-    expect(r.receiver).toBe(-1);
-    expect(r.target).toEqual(off);
+    expect(r.receiver).toBe(mate.i);
+    expect(r.target).toEqual(mate.pos);
+    // Nobody of ours within FALLBACK_R of it: into space, exactly there.
+    const empty = { x: 40, y: 20 + FALLBACK_R + 2.5 };
+    const e = pointerPass(s, me, empty);
+    expect(e.receiver).toBe(-1);
+    expect(e.target).toEqual(empty);
     const near = pointerPass(s, me, { x: 40, y: 20 + assistRadius(10) - 0.3 });
     expect(near.receiver).toBe(mate.i);
     expect(near.target).toEqual(mate.pos);
@@ -694,6 +701,94 @@ describe('right click without the ball tackles', () => {
     const { s, me } = duel(4, 1.3);
     step(s, { dir: { x: 0, y: 0 }, tackle: true });
     expect(me.tackleCd).toBeGreaterThan(30);
+  });
+});
+
+describe('playtest: reaching the ball and the man with the mouse', () => {
+  /** Our steered man, two opponents, everyone else on the floor; the carrier's side attacks toward x = 52.5 - d * m. */
+  function scene(seed = 5) {
+    const s = livePlay(seed);
+    const me = s.players[s.controlled[0]];
+    const [a, b] = s.players.filter((p) => p.team === 1 && p.role === 'MID');
+    isolate(s, me, a, b);
+    s.switchTimer[0] = 1e9;
+    for (const p of [me, a, b]) p.vel = { x: 0, y: 0 };
+    return { s, me, a, b };
+  }
+
+  test("the man you steer cuts out an opponent's pass that runs a metre from him", () => {
+    // Before: 0 of 40 seeds (it came off him or past him); a CPU defender still reaches only footReach.
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const { s, me, a, b } = scene(seed);
+      me.pos = { x: 40, y: 35 };
+      a.pos = { x: 30, y: 34 };
+      b.pos = { x: 50, y: 34 };
+      Object.assign(s.ball, { owner: -1, receiver: b.i, lastTouch: a.i, kickedBy: a.i, passFrom: a.i, touch: 0, pos: { x: 31, y: 34 }, vel: { x: 12, y: 0 }, z: 0, vz: 0 });
+      let got = -1;
+      for (let t = 0; t < 120 && got < 0; t++) {
+        step(s, { cursor: { x: 40, y: 35 } });
+        got = s.ball.owner;
+      }
+      expect(got).toBe(me.i);
+    }
+  });
+
+  test('a loose ball running past a couple of metres off him is his: he goes to it, the pointer resting by him', () => {
+    const { s, me, a, b } = scene();
+    a.pos = { x: 10, y: 10 };
+    b.pos = { x: 12, y: 10 };
+    me.pos = { x: 40, y: 36 };
+    Object.assign(s.ball, { owner: -1, receiver: -1, lastTouch: -1, kickedBy: -1, touch: 0, pos: { x: 36, y: 34 }, vel: { x: 3, y: 0 }, z: 0, vz: 0 });
+    let got = -1;
+    for (let t = 0; t < 150 && got < 0; t++) {
+      step(s, { cursor: { x: 40, y: 36 } });
+      got = s.ball.owner;
+    }
+    expect(got).toBe(me.i);
+  });
+
+  test('but not when the pointer sends him somewhere else', () => {
+    const { s, me, a, b } = scene();
+    a.pos = { x: 10, y: 10 };
+    b.pos = { x: 12, y: 10 };
+    me.pos = { x: 40, y: 36 };
+    Object.assign(s.ball, { owner: -1, receiver: -1, lastTouch: -1, kickedBy: -1, touch: 0, pos: { x: 36, y: 34 }, vel: { x: 3, y: 0 }, z: 0, vz: 0 });
+    for (let t = 0; t < 60; t++) step(s, { cursor: { x: 40, y: 52 } });
+    expect(me.pos.y).toBeGreaterThan(38);
+  });
+
+  test('the pointer on the carrier: he chases him at a run and goes in when he gets there, no right click', () => {
+    // Before: a pointer that close asked for a walk, so he never got near, and only a right click tackled.
+    const { s, me, a, b } = scene();
+    const d = attackDir(s, 1);
+    const X = (m: number) => 52.5 - d * m;
+    b.pos = { x: X(30), y: 66 };
+    b.stun = 100000; // nobody to pass to: he runs at us with it
+    a.pos = { x: X(30), y: 34 };
+    a.vel = { x: 4 * d, y: 0 };
+    a.facing = { x: d, y: 0 };
+    me.pos = { x: X(20), y: 34.3 };
+    Object.assign(s.ball, { owner: a.i, receiver: -1, lastTouch: a.i, touch: 0, pos: { x: X(30) + d, y: 34 }, vel: { x: 4 * d, y: 0 }, z: 0, vz: 0 });
+    let fastest = 0;
+    let tried = false;
+    for (let t = 0; t < 120 && !tried; t++) {
+      step(s, { cursor: { ...a.pos } });
+      fastest = Math.max(fastest, len(me.vel));
+      tried = me.tackleCd > 0;
+    }
+    expect(fastest).toBeGreaterThan(5);
+    expect(tried).toBe(true);
+  });
+
+  test('coming from behind him it stays a right click', () => {
+    const { s, me, a, b } = scene();
+    b.pos = { x: 10, y: 66 };
+    a.pos = { x: 40, y: 34 };
+    a.facing = { x: 1, y: 0 };
+    me.pos = { x: 38.6, y: 34 };
+    Object.assign(s.ball, { owner: a.i, receiver: -1, lastTouch: a.i, touch: 0, pos: { x: 41, y: 34 }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
+    const it = humanIntent(s, me, { cursor: { ...a.pos } });
+    expect(it.action).toBeUndefined();
   });
 });
 
