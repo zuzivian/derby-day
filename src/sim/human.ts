@@ -281,9 +281,10 @@ export function jockey(s: MatchState, p: MatchPlayer): Intent | null {
 }
 
 /** A loose ball whose path comes this close to the steered man is his to go and meet ... */
-export const MAGNET_R = 2.5;
-/** ... when the pointer is this close to the ball or its path, or he has stopped by the pointer: he is going there anyway. */
-export const MAGNET_POINTER_R = 5;
+export const MAGNET_R = 3.5;
+/** ... unless the pointer sends him clearly the other way (the cosine between the two ways below this) from further off than this (m). */
+export const MAGNET_AWAY_COS = -0.3;
+export const MAGNET_POINTER_R = 6;
 /** Running at the carrier, this close (m, centre to centre) he goes in on him (a standing tackle reaches 2 m). */
 export const RUN_IN_R = 1.8;
 /** Chasing a carrier the pointer is on, he sprints while further off than this (m). */
@@ -291,7 +292,8 @@ const CHASE_SPRINT = 4;
 
 /**
  * A loose ball (not a pass to one of his own, not in the air above his chest) that will come
- * within MAGNET_R of him, ahead along its path, with the pointer about there too.
+ * within MAGNET_R of him, ahead along its path: he goes to meet it (playtest: the pointer is
+ * gently overridden near the ball), unless the pointer is well away and sending him the other way.
  */
 function looseNear(s: MatchState, p: MatchPlayer, cursor: Vec): boolean {
   const b = s.ball;
@@ -306,7 +308,8 @@ function looseNear(s: MatchState, p: MatchPlayer, cursor: Vec): boolean {
     near = add(b.pos, scale(dir, Math.max(0, along)));
   }
   if (dist(near, p.pos) > MAGNET_R) return false;
-  return dist(cursor, near) < MAGNET_POINTER_R || dist(cursor, b.pos) < MAGNET_POINTER_R || dist(cursor, p.pos) < 2;
+  if (dist(cursor, near) < MAGNET_POINTER_R || dist(cursor, b.pos) < MAGNET_POINTER_R || dist(cursor, p.pos) < 2) return true;
+  return dot(norm(sub(cursor, p.pos)), norm(sub(near, p.pos))) > MAGNET_AWAY_COS;
 }
 
 /** The ball is loose with no receiver, and he is the nearest outfielder on his side to where it is going. */
@@ -443,9 +446,9 @@ export function humanIntent(s: MatchState, p: MatchPlayer, input: HumanInput): I
         throttle = 1;
         sprint = d > CHASE_SPRINT;
       }
-      // Run into him from in front or the side and he goes in on it: a standing tackle without the
-      // right click. From behind it stays a right click, made on purpose.
-      if (p.tackleCd === 0 && p.kickCd === 0 && !input.tackle && d < RUN_IN_R && dot(move, at) > 0.5 && dot(at, c.facing) <= 0.5) {
+      // Close to him, in front or to the side, and he goes in on it: a standing tackle without the
+      // right click (playtest: whichever way the pointer is). From behind it stays a right click, made on purpose.
+      if (p.tackleCd === 0 && p.kickCd === 0 && !input.tackle && d < RUN_IN_R && dot(at, c.facing) <= 0.5) {
         return { move, throttle, sprint, action: { kind: 'tackle', target: { ...s.ball.pos } } };
       }
     }
@@ -527,7 +530,9 @@ export function updateControl(s: MatchState, team: 0 | 1, input: HumanInput): vo
 
   // Whoever has the ball, or is about to get it, is who you steer: the keeper too.
   if (owner && owner.team === team) {
-    give(s, team, owner.i, true);
+    give(s, team, owner.i, owner.role === 'GK');
+    // Taken by the man already steered (he met the pass while held): he is the pointer's again too.
+    if (owner.role !== 'GK' && s.ctlHold) s.ctlHold[team] = false;
     return;
   }
   if (ball.receiver >= 0 && s.players[ball.receiver].team === team) {

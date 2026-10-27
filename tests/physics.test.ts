@@ -189,7 +189,7 @@ describe('a click pass is firm and arrives quickly at a controllable pace (ask 3
     }
   });
 
-  test('the assist: near a teammate (distance-scaled radius) or on the line to him (12 degree cone) it goes to his feet; empty grass goes to the point', () => {
+  test('the assist: near a teammate (distance-scaled radius) or on the line to him (12 degree cone) it goes to his feet; anywhere else to the teammate nearest the click', () => {
     const { s, me, mate } = passScene({ x: 30, y: 30 }, { x: 50, y: 30 });
     expect(assistRadius(5)).toBeCloseTo(2, 5);
     expect(assistRadius(20)).toBeCloseTo(3.5, 5);
@@ -198,16 +198,20 @@ describe('a click pass is firm and arrives quickly at a controllable pace (ask 3
     expect(pointerPass(s, me, { x: 50, y: 33 }).receiver).toBe(mate.i);
     // Just short of him on the line (camera depth error): inside the cone.
     expect(pointerPass(s, me, { x: 45, y: 31 }).receiver).toBe(mate.i);
-    // Far beyond him on the same line: a ball into space, to the point.
-    const far = pointerPass(s, me, { x: 70, y: 30 });
-    expect(far.receiver).toBe(-1);
-    expect(far.target).toEqual({ x: 70, y: 30 });
-    // Off to the side, empty grass.
-    const side = pointerPass(s, me, { x: 40, y: 45 });
-    expect(side.receiver).toBe(-1);
-    expect(side.target).toEqual({ x: 40, y: 45 });
-    // Into space the ball slows to a stop near the point; to a teammate it arrives firmly.
-    expect(far.speed).toBeLessThan(groundPassPlan(40, receiverArrival(40)).speed);
+    // Far beyond him on the same line, or off to the side on empty grass: still a pass, firm, to him
+    // (playtest: a click is always a ground pass to someone; before, both rolled to the grass point).
+    for (const at of [{ x: 70, y: 30 }, { x: 40, y: 45 }]) {
+      const r = pointerPass(s, me, at);
+      expect(r.receiver).toBe(mate.i);
+      expect(r.target).toEqual(mate.pos);
+      const d = dist(s.ball.pos, mate.pos);
+      expect(r.speed).toBeCloseTo(groundPassPlan(d, receiverArrival(d)).speed, 5);
+    }
+    // With nobody of ours to play it to (everyone else down), the ball goes to the point.
+    mate.stun = 100000;
+    const none = pointerPass(s, me, { x: 70, y: 30 });
+    expect(none.receiver).toBe(-1);
+    expect(none.target).toEqual({ x: 70, y: 30 });
   });
 
   test('a runner is led: the ball goes to where he will be', () => {
@@ -234,33 +238,29 @@ describe('a click pass is firm and arrives quickly at a controllable pace (ask 3
 // Ask 6: tiki-taka
 
 describe('quick click passes chain (ask 6)', () => {
-  test('after receiving, a receiver whose pointer has not moved holds still: no running back to the stale pointer', () => {
+  test('after receiving, he runs on toward the pointer at once: no waiting for the mouse to move (playtest)', () => {
+    // Before: a receiver whose pointer had not moved held still until it did (ask 6); playtesting
+    // found that he should go where the pointer is the moment he has it.
     const { s, mate } = passScene({ x: 30, y: 30 }, { x: 44, y: 30 });
-    const stale = { x: 44, y: 30 };
-    step(s, { cursor: stale, aim: stale, pass: true });
-    // He meets the ball (moving toward the passer), so the pointer ends up behind him.
+    const ahead = { x: 60, y: 30 };
+    step(s, { cursor: { x: 44, y: 30 }, aim: { x: 44, y: 30 }, pass: true });
     let t = 0;
-    while (s.ball.owner !== mate.i && t++ < 120) step(s, { cursor: stale });
+    while (s.ball.owner !== mate.i && t++ < 120) step(s, { cursor: ahead });
     expect(s.ball.owner).toBe(mate.i);
+    expect(s.ctlHold?.[0]).toBe(false);
     const got = { ...mate.pos };
-    for (let k = 0; k < 30; k++) step(s, { cursor: stale });
-    expect(dist(mate.pos, got)).toBeLessThan(0.6);
-    // Move the pointer and he goes: a turn with the ball, then the run (0.6 s; at 0.5 s how far he
-    // has got depends on a few centimetres of where he met the pass).
-    for (let k = 0; k < 36; k++) step(s, { cursor: { x: 60, y: 30 }, moved: true });
+    for (let k = 0; k < 36; k++) step(s, { cursor: ahead });
     expect(mate.pos.x).toBeGreaterThan(got.x + 2);
   });
 
-  test('a resting hand that nudges the mouse now and then does not send him back to the stale pointer', () => {
-    const { s, mate } = passScene({ x: 30, y: 30 }, { x: 44, y: 30 });
-    const stale = { x: 30, y: 44 }; // well off to one side
-    step(s, { cursor: mate.pos, aim: mate.pos, pass: true });
+  test('a keeper who gathers the ball is still held until the pointer moves', () => {
+    const s = livePlay();
+    const gk = s.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    isolate(s, gk);
+    Object.assign(s.ball, { owner: -1, receiver: -1, lastTouch: -1, kickedBy: -1, pos: { x: gk.pos.x + 1.5, y: gk.pos.y }, vel: { x: -3, y: 0 }, z: 0.3, vz: 0 });
     let t = 0;
-    while (s.ball.owner !== mate.i && t++ < 120) step(s, { cursor: stale });
-    const got = { ...mate.pos };
-    // Two seconds with a one-tick nudge every 25 ticks (about 4% of ticks).
-    for (let k = 0; k < 120; k++) step(s, { cursor: stale, moved: k % 25 === 0 });
-    expect(dist(mate.pos, got)).toBeLessThan(0.6);
+    while (s.ball.owner !== gk.i && t++ < 60) step(s, { cursor: { x: 50, y: 34 } });
+    if (s.ball.owner === gk.i) expect(s.ctlHold?.[0]).toBe(true);
   });
 
   test('a click made while the pass is still coming is played first time the moment he has it', () => {

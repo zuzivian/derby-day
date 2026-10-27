@@ -6,7 +6,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
-import { assistRadius, CLOSE_CLICK, FALLBACK_R, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
+import { assistRadius, CLOSE_CLICK, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { attackDir } from '../src/sim/field.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -190,11 +190,8 @@ describe('ground pass goes where the pointer is', () => {
     const r = pointerPass(s, me, off);
     expect(r.receiver).toBe(mate.i);
     expect(r.target).toEqual(mate.pos);
-    // Nobody of ours within FALLBACK_R of it: into space, exactly there.
-    const empty = { x: 40, y: 20 + FALLBACK_R + 2.5 };
-    const e = pointerPass(s, me, empty);
-    expect(e.receiver).toBe(-1);
-    expect(e.target).toEqual(empty);
+    // Further off still: still him, the nearest of ours (playtest: a click is always a pass to someone).
+    expect(pointerPass(s, me, { x: 40, y: 32 }).receiver).toBe(mate.i);
     const near = pointerPass(s, me, { x: 40, y: 20 + assistRadius(10) - 0.3 });
     expect(near.receiver).toBe(mate.i);
     expect(near.target).toEqual(mate.pos);
@@ -215,9 +212,11 @@ describe('ground pass goes where the pointer is', () => {
     const through = pointerPass(s, me, ahead);
     expect(through.receiver).toBe(mate.i);
     expect(through.target).toEqual(ahead);
-    // Off his line (more than 2 m plus a quarter of the way ahead), it is a ball into space for nobody.
-    const wide = { x: 41, y: 21 };
-    expect(pointerPass(s, me, wide).receiver).toBe(-1);
+    // Off his line (more than 2 m plus a quarter of the way ahead): not into his path, but still a pass
+    // to him, the nearest of ours, to where he will be.
+    const wide = pointerPass(s, me, { x: 41, y: 21 });
+    expect(wide.receiver).toBe(mate.i);
+    expect(wide.target).not.toEqual({ x: 41, y: 21 });
   });
 
   test('a runner collects a ball played into space ahead of him', () => {
@@ -319,13 +318,11 @@ describe('a click close to the carrier passes that way (playtest: mouse accuracy
     expect(pointerPass(s, me, { x: 32.5, y: 34.5 }).receiver).toBe(b.i);
   });
 
-  test('a click further out than CLOSE_CLICK is still aimed where it is', () => {
-    const { s, me, a } = scene();
-    a.pos = { x: 30, y: 60 };
-    const spot = { x: 30 + CLOSE_CLICK + 4, y: 34 };
-    const r = pointerPass(s, me, spot);
-    expect(r.receiver).toBe(-1);
-    expect(r.target).toEqual(spot);
+  test('a click further out than CLOSE_CLICK picks by where it is, not by direction: the teammate nearest it', () => {
+    const { s, me, a, b } = scene();
+    a.pos = { x: 30 + CLOSE_CLICK + 12, y: 34 }; // straight ahead, further
+    b.pos = { x: 30 + CLOSE_CLICK + 3, y: 44 }; // off to the side, nearer the click
+    expect(pointerPass(s, me, { x: 30 + CLOSE_CLICK + 3, y: 40 }).receiver).toBe(b.i);
   });
 });
 

@@ -2402,7 +2402,12 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   const owner = s.ball.owner >= 0 ? s.players[s.ball.owner] : null;
   if (owner && s.humans[owner.team] && s.controlled[owner.team] !== owner.i) {
     s.controlled[owner.team] = owner.i;
-    if (s.ctlHold) s.ctlHold[owner.team] = true;
+    // An outfielder who takes it runs on toward the pointer at once (playtest); a keeper who
+    // gathers it is held until the pointer moves.
+    if (s.ctlHold) s.ctlHold[owner.team] = owner.role === 'GK';
+  } else if (owner && s.phase === 'play' && s.humans[owner.team] && owner.role !== 'GK' && s.ctlHold?.[owner.team]) {
+    // Held since the pass was played to him (the switch came while it was on its way): his now.
+    s.ctlHold[owner.team] = false;
   }
 
   const b = s.ball;

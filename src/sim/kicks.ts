@@ -3,7 +3,7 @@
 
 import { resolvePassTarget } from './ai.ts';
 import { AIR_DRAG, CHIP_Z0, GRAVITY, ROLL_A, ROLL_B, ROLL_FAST_B, ROLL_FAST_V } from './constants.ts';
-import { clampToPitch } from './field.ts';
+import { clampToPitch, inOffsidePosition } from './field.ts';
 import type { MatchPlayer, MatchState } from './types.ts';
 import { add, clamp, dist, distToSegment, dot, len, norm, scale, sub, type Vec } from './vec.ts';
 
@@ -235,13 +235,13 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
     }
   }
   if (receiver >= 0) return { receiver, into };
-  // Nobody that close: a click is still meant for someone, the teammate nearest the point, to his
-  // feet. Only grass with nobody of ours about stays a ball into space.
+  // Nobody that close: a click is still a pass to someone (playtest), the teammate nearest the
+  // point (or where he is going), to his feet. One in an offside position only if nobody else is.
   let nearest = -1;
-  let nearestD = Math.max(FALLBACK_R, FALLBACK_SHARE * dAim);
+  let nearestD = Infinity;
   for (const m of s.players) {
     if (m.team !== p.team || m.i === p.i || m.sentOff || m.stun > 30 || m.role === 'GK') continue;
-    const d = dist(aim, m.pos);
+    const d = Math.min(dist(aim, m.pos), dist(aim, leadPoint(from, m))) + (inOffsidePosition(s, m, from.x) ? OFFSIDE_COST : 0);
     if (d < nearestD) {
       nearest = m.i;
       nearestD = d;
@@ -250,9 +250,9 @@ function assistPick(s: MatchState, p: MatchPlayer, from: Vec, aim: Vec): { recei
   return { receiver: nearest, into: false };
 }
 
-/** Failing the assist, a click this close to a teammate (or this share of the pass, if more) is a pass to his feet. */
-export const FALLBACK_R = 5;
-export const FALLBACK_SHARE = 0.3;
+/** A teammate in an offside position counts as this much further (m) from a click that isn't on him. */
+const OFFSIDE_COST = 25;
+
 
 /** The pace a ball rolled `d` metres should still have when it gets there, to arrive in about `t` seconds. */
 function timedArrival(d: number, t: number): number {
