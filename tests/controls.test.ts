@@ -6,7 +6,7 @@ import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/met
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
 import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
-import { assistRadius, FALLBACK_R, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
+import { assistRadius, CLOSE_CLICK, FALLBACK_R, groundPassPlan, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { attackDir } from '../src/sim/field.ts';
 import { createMatch, fingerprint, step } from '../src/sim/match.ts';
 import type { HumanInput, MatchPlayer, MatchState } from '../src/sim/types.ts';
@@ -272,6 +272,60 @@ describe('ground pass goes where the pointer is', () => {
     step(s, { dir: { x: 1, y: 0 }, pass: true });
     expect(s.ball.receiver).toBe(mate.i);
     expect(me.i).toBe(s.ball.lastTouch);
+  });
+});
+
+describe('a click close to the carrier passes that way (playtest: mouse accuracy)', () => {
+  /** The human on the ball at (30, 34) facing +x; two teammates placed by the caller, an opponent optional. */
+  function scene() {
+    const { s, me } = carrier({ x: 30, y: 34 });
+    const [a, b] = s.players.filter((p) => p.team === 0 && p.role === 'MID' && p.i !== me.i);
+    for (const m of [a, b]) {
+      m.stun = 0;
+      m.vel = { x: 0, y: 0 };
+    }
+    return { s, me, a, b };
+  }
+
+  test('a click a couple of metres off him, roughly toward a teammate, is a firm pass to that teammate', () => {
+    // Before: rolled to the grass under the pointer (a 2-4 m push) or 2 m the way he faced. Scripted
+    // matches, clicks 1.5-3.5 m off him and up to 15 degrees out: 35% completed, now 79% (a click on the man: 80%).
+    const { s, me, a, b } = scene();
+    a.pos = { x: 44, y: 34 };
+    b.pos = { x: 30, y: 48 };
+    for (const [dx, dy] of [[2, 0.5], [3, -0.6], [1.6, 0.3]]) {
+      const r = pointerPass(s, me, { x: 30 + dx, y: 34 + dy });
+      expect(r.receiver).toBe(a.i);
+      expect(r.speed).toBeGreaterThan(10);
+    }
+    expect(pointerPass(s, me, { x: 30.4, y: 36.5 }).receiver).toBe(b.i);
+  });
+
+  test('right on him it goes the way he faces; on a teammate it is still that teammate', () => {
+    const { s, me, a, b } = scene();
+    a.pos = { x: 42, y: 36 };
+    b.pos = { x: 31, y: 35.5 }; // close by, behind his shoulder
+    expect(pointerPass(s, me, { x: 30.2, y: 34.1 }).receiver).toBe(a.i);
+    expect(pointerPass(s, me, { x: 31.3, y: 35.4 }).receiver).toBe(b.i);
+  });
+
+  test('of two teammates that way, the open one', () => {
+    const { s, me, a, b } = scene();
+    a.pos = { x: 42, y: 34 };
+    b.pos = { x: 41, y: 38 };
+    const opp = s.players.find((p) => p.team === 1 && p.role === 'MID')!;
+    opp.stun = 0;
+    opp.pos = { x: 36, y: 34.2 }; // across the lane to a
+    expect(pointerPass(s, me, { x: 32.5, y: 34.5 }).receiver).toBe(b.i);
+  });
+
+  test('a click further out than CLOSE_CLICK is still aimed where it is', () => {
+    const { s, me, a } = scene();
+    a.pos = { x: 30, y: 60 };
+    const spot = { x: 30 + CLOSE_CLICK + 4, y: 34 };
+    const r = pointerPass(s, me, spot);
+    expect(r.receiver).toBe(-1);
+    expect(r.target).toEqual(spot);
   });
 });
 
