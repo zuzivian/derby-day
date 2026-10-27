@@ -1492,7 +1492,10 @@ function control(s: MatchState, p: MatchPlayer, d: number, reach: number, challe
   const steered = !receiver && b.lastTouch >= 0 && s.players[b.lastTouch].team !== p.team && isHumanControlled(s, p);
   // A ball that runs onto his middle is easier to kill than one he stretches for: the nearer it
   // passes to him, the more pace he takes out of it (a defender stood on the line of a firm pass).
-  const square = 1 - clamp(d / reach, 0, 1);
+  // Not on a ball a human side has played, though: cut out more often, a human's passes went to feet
+  // less often (playtest asked for both; completion is the one that matters to the player).
+  const lastTeam = b.lastTouch >= 0 ? s.players[b.lastTouch].team : -1;
+  const square = lastTeam >= 0 && lastTeam !== p.team && s.humans[lastTeam as 0 | 1] ? 0 : 1 - clamp(d / reach, 0, 1);
   let limit = 6 + 11 * p.attrs.dribbling + CONTROL_SQUARE * square + (receiver ? 5 : steered ? HUMAN_INTERCEPT_LIMIT : 0);
   if (chest && !receiver) limit *= 0.75;
   // Won in a challenge (aerialDuel): taken with a man at his back, it often comes off him into a scramble.
