@@ -175,10 +175,11 @@ describe('Law 8: the teams change ends at half-time', () => {
         const before = [s.stats[0].shots, s.stats[1].shots];
         step(s);
         for (const t of [0, 1] as const) {
-          // A shot struck from right against a post can come straight back off it the same tick.
+          // A shot struck from right against a post can come straight back off it the same tick, and
+          // one struck into a defender's legs off him (nobody's kick then).
           const b = s.ball.pos;
           const atPost = [GOAL_TOP, GOAL_BOTTOM].some((y) => Math.hypot(Math.min(b.x, PITCH_W - b.x), b.y - y) < 0.5);
-          if (s.stats[t].shots > before[t] && !atPost) {
+          if (s.stats[t].shots > before[t] && !atPost && s.ball.kickedBy >= 0) {
             // The ball is heading for the goal this side attacks this half.
             expect(Math.sign(s.ball.vel.x)).toBe(attackDir(s, t));
             if (s.half === 1) shots1[t]++;

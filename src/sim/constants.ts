@@ -68,8 +68,11 @@
  *      chipped, else a pass to him; a click past where a pass would meet a runner, or ahead of a standing forward, is one
  *  27  a man a pass is played to while he runs its way checks his run so it reaches him in about 0.3 s (a through ball
  *      he still takes in stride); a click 2 m (was 3) beyond where a pass would meet a runner is a through ball
+ *  28  the clock stops while the ball is dead; a CPU throw-in is aimed 12 m or more short of the goal line it
+ *      attacks; tackle penalties (a standing tackle 45 ticks before the next, a slide 60 after he is up, misses
+ *      longer); a won slide leaves the ball at the slider's feet and him up first
  */
-export const SIM_VERSION = 27;
+export const SIM_VERSION = 28;
 
 export const TICK_HZ = 60;
 
@@ -315,3 +318,35 @@ export const AIR_DRAG = 0.12;
 export const STAND_REACH = 2;
 /** How far a slide tackle goes at most (m). */
 export const SLIDE_TRAVEL = 4;
+/** How long a slide lasts at most, and how long he is down after it (ticks). */
+export const SLIDE_TICKS = 30;
+export const SLIDE_DOWN = 16;
+/**
+ * Tackle penalties (ticks), so a tackle can't be spammed (playtest). The cooldowns run from when he
+ * is back on his feet: a standing tackle can't be tried again for STAND_CD (from the attempt), a
+ * slide for SLIDE_CD after he is up from it. A miss costs more: he is down (or off balance) for
+ * longer, then waits.
+ */
+export const STAND_CD = 45;
+export const STAND_WHIFF_DOWN = 15;
+export const STAND_MISS_DOWN = 26;
+export const STAND_MISS_CD = 40;
+export const SLIDE_CD = 60;
+export const SLIDE_MISS_DOWN = 50;
+export const SLIDE_MISS_CD = 90;
+/**
+ * A won slide (playtest: the slider's side never came away with it): the ball stays just ahead of
+ * his feet along the slide (m/s), he is up after SLIDE_WIN_DOWN, the man he beat is down for longer
+ * and can't touch it for SLIDE_BEATEN_NO_TOUCH.
+ */
+export const SLIDE_WIN_PUSH = 1.5;
+export const SLIDE_WIN_DOWN = 8;
+export const SLIDE_BEATEN_DOWN = 22;
+export const SLIDE_BEATEN_NO_TOUCH = 24;
+/** The cooldown a slide sets as it starts (it lasts SLIDE_TICKS, he is down SLIDE_DOWN, then SLIDE_CD). */
+export const SLIDE_START_CD = SLIDE_TICKS + SLIDE_DOWN + SLIDE_CD;
+/**
+ * Every cooldown a slide leaves is at least this, every standing tackle's (STAND_CD, or a miss's
+ * STAND_MISS_DOWN + STAND_MISS_CD) is under it: the 3D view tells them apart by it.
+ */
+export const SLIDE_CD_MIN = SLIDE_WIN_DOWN + SLIDE_CD;

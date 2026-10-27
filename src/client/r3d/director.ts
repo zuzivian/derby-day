@@ -3,7 +3,7 @@
 // shot is heading past the keeper, celebrations from s.goals, the referee's
 // card from s.cards. Reads state only.
 
-import { GOAL_BAR_H, PITCH_H, PITCH_W } from '../../sim/constants.ts';
+import { GOAL_BAR_H, PITCH_H, PITCH_W, SLIDE_CD_MIN, SLIDE_MISS_DOWN, SLIDE_START_CD, STAND_MISS_DOWN } from '../../sim/constants.ts';
 import { attackDir, inOwnBox, ownGoal } from '../../sim/field.ts';
 import type { MatchEvent, MatchPlayer, MatchState, RestartKind } from '../../sim/types.ts';
 import type { AnimEvent } from './player3d.ts';
@@ -36,6 +36,8 @@ export class AnimDirector {
   private state: MatchState | null = null;
   private nEvents = 0;
   private ownerPrev = -1;
+  /** Who had the ball in his hands on the last tick (a keeper), or -1. */
+  private handsPrev = -1;
   private ballSpeedPrev = 0;
   private restartPrev: { kind: RestartKind; taker: number } | null = null;
 
@@ -46,6 +48,7 @@ export class AnimDirector {
     this.snaps = s.players.map((p) => ({ kickCd: p.kickCd, tackleCd: p.tackleCd, stun: p.stun, lastJump: -99, lastDive: -99 }));
     this.nEvents = s.events.length;
     this.ownerPrev = s.ball.owner;
+    this.handsPrev = s.ball.inHands ? s.ball.owner : -1;
     this.ballSpeedPrev = Math.hypot(s.ball.vel.x, s.ball.vel.y);
     this.restartPrev = s.restart ? { kind: s.restart.kind, taker: s.restart.taker } : null;
   }
@@ -84,16 +87,21 @@ export class AnimDirector {
       if (p.kickCd > sn.kickCd) {
         const ago = (18 - p.kickCd) / 60;
         const thrown = this.restartPrev?.kind === 'throwin' && this.restartPrev.taker === p.i;
-        const style = thrown ? 'throw' : b.z > 0.3 || b.vz > 0.5 ? 'chip' : speed > 16 ? 'shot' : 'pass';
-        ev.push({ kind: 'kick', style, t0: time - ago - (thrown ? 0.2 : 0.12), dir: speed > 0.1 ? { x: b.vel.x / speed, y: b.vel.y / speed } : p.facing, power: Math.min(1, speed / 25) });
+        // A keeper letting go of it along the ground bowls it out by hand; lofted, he kicks it from his hands (the strike is the release).
+        const rolled = !thrown && this.handsPrev === p.i && b.z < 0.3 && b.vz < 0.5;
+        const style = thrown ? 'throw' : rolled ? 'roll' : b.z > 0.3 || b.vz > 0.5 ? 'chip' : speed > 16 ? 'shot' : 'pass';
+        ev.push({ kind: 'kick', style, t0: time - ago - (thrown || rolled ? 0.2 : this.handsPrev === p.i ? 0.17 : 0.12), dir: speed > 0.1 ? { x: b.vel.x / speed, y: b.vel.y / speed } : p.facing, power: Math.min(1, speed / 25) });
       }
       if (p.tackleCd > sn.tackleCd) {
-        // A slide sets a long cooldown (70+), a standing tackle a short one (36, 50 when it fails).
-        const slide = p.tackleCd >= 60;
-        const full = slide ? (p.tackleCd >= 85 ? 90 : 70) : p.tackleCd > 40 ? 50 : 36;
-        ev.push({ kind: 'tackle', t0: time - Math.max(0, full - p.tackleCd) / 60, failed: p.stun > (slide ? 30 : 15), slide });
-      } else if (p.stun > sn.stun + 3) {
-        // Tackled, or fouled (the victim of a foul is stunned while the whistle goes).
+        // The cooldown says which (constants.ts SLIDE_CD_MIN). A slide that misses after it has started
+        // raises it again: the same slide, failed now, as far into it as it has gone.
+        const slide = p.tackleCd >= SLIDE_CD_MIN;
+        const again = slide && sn.tackleCd >= SLIDE_CD_MIN;
+        const ago = again ? Math.max(0, SLIDE_START_CD - sn.tackleCd) / 60 : 0;
+        ev.push({ kind: 'tackle', t0: time - ago, failed: p.stun >= (slide ? SLIDE_MISS_DOWN : STAND_MISS_DOWN), slide });
+      } else if (p.stun > sn.stun + 3 && !p.dive) {
+        // Tackled, or fouled (the victim of a foul is stunned while the whistle goes). Not a keeper
+        // going down at the end of a dive: the sim stuns him for the time he lies there.
         ev.push({ kind: 'knockdown', t0: time - 1 / 60 });
       }
       // Headers: a high ball arriving at an outfield player's head.
@@ -115,6 +123,7 @@ export class AnimDirector {
     for (let i = this.nEvents; i < s.events.length; i++) this.event(s, s.events[i], out, time, speed);
     this.nEvents = s.events.length;
     this.ownerPrev = b.owner;
+    this.handsPrev = b.inHands ? b.owner : -1;
     this.ballSpeedPrev = speed;
     this.restartPrev = s.restart ? { kind: s.restart.kind, taker: s.restart.taker } : null;
     return out;
@@ -153,10 +162,12 @@ export class AnimDirector {
     }
     // The sim's own dive (match.ts keeperDives), when there is one: the way he really went.
     if (p.dive && p.dive.ticks > 0 && time - sn.lastDive > 0.6) {
-      const fx = p.facing.x || attackDir(s, p.team);
-      const across = p.dive.dir.y * Math.sign(fx);
+      // Side in the frame the model is drawn in (he watches the ball, keeperLook), not the sim's facing.
+      const look = keeperLook(s, p) ?? p.facing;
+      const across = p.dive.dir.x * -look.y + p.dive.dir.y * look.x;
       sn.lastDive = time;
-      ev.push({ kind: 'dive', t0: time - 0.05, side: across >= 0 ? 1 : -1, height: p.dive.z, reach: p.dive.speed * (p.dive.travel / 60) + 0.6 });
+      // The sim carries him along the dive itself (movePlayer): the pose adds no travel of its own.
+      ev.push({ kind: 'dive', t0: time - 0.05, side: across >= 0 ? 1 : -1, height: p.dive.z, reach: 0 });
       return;
     }
     if (p.dive !== undefined) return; // this sim reports dives: no guessing
@@ -171,17 +182,21 @@ export class AnimDirector {
     if (zAt > GOAL_BAR_H + 0.6) return;
     const off = yAt - p.pos.y;
     if (Math.abs(off) < 0.75 || Math.abs(off) > 5) return;
-    // Side in the keeper's own frame: facing +x, a ball at +y is to his right.
-    const fx = p.facing.x || attackDir(s, p.team);
+    // Side in the keeper's own frame: watching +x, a ball at +y is to his right.
+    const fx = keeperLook(s, p)?.x || attackDir(s, p.team);
     const right = fx > 0 ? off > 0 : off < 0;
     sn.lastDive = time;
     ev.push({ kind: 'dive', t0: time - 0.05, side: right ? 1 : -1, height: zAt, reach: Math.abs(off) - 0.3 });
   }
 }
 
-/** Keeper readiness: crouched when the ball is near and the other side has it or it's coming. */
+/** Keeper readiness: crouched when the ball is near and the other side has it or it's coming, and for a penalty against him. */
 export function keeperSet(s: MatchState, p: MatchPlayer): number {
-  if (p.role !== 'GK' || s.phase !== 'play') return 0;
+  if (p.role !== 'GK') return 0;
+  // Facing a penalty he is set on his line, not standing to attention, from the whistle until it is struck.
+  const r = s.restart;
+  if (r?.kind === 'penalty' && r.team !== p.team && r.stage !== 'whistle') return 1;
+  if (s.phase !== 'play') return 0;
   const b = s.ball;
   if (b.owner === p.i) return 0;
   const d = Math.hypot(b.pos.x - p.pos.x, b.pos.y - p.pos.y);
@@ -189,6 +204,19 @@ export function keeperSet(s: MatchState, p: MatchPlayer): number {
   const owner = b.owner >= 0 ? s.players[b.owner] : null;
   const threat = owner ? owner.team !== p.team : true;
   return threat ? Math.min(1, (24 - d) / 10) : 0;
+}
+
+/**
+ * Where a keeper in play looks: at the ball, or up the pitch when it is on top of him. The sim turns him
+ * to his velocity, so a keeper shuffling across his line would face the touchline; drawn, he keeps his
+ * eyes on play and side-steps. Null when he has the ball or play is stopped (his own facing then).
+ */
+export function keeperLook(s: MatchState, p: MatchPlayer): { x: number; y: number } | null {
+  if (p.role !== 'GK' || s.phase !== 'play' || s.ball.owner === p.i) return null;
+  const dx = s.ball.pos.x - p.pos.x;
+  const dy = s.ball.pos.y - p.pos.y;
+  const d = Math.hypot(dx, dy);
+  return d < 1.5 ? { x: attackDir(s, p.team), y: 0 } : { x: dx / d, y: dy / d };
 }
 
 /**

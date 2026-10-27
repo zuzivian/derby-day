@@ -42,9 +42,10 @@ import {
 // Public types
 
 /** The subset of a sim player the model reads. A referee can supply the same shape. */
-export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role' | 'air'>>;
+export type SimBody = Pick<MatchPlayer, 'pos' | 'vel' | 'facing'> & Partial<Pick<MatchPlayer, 'sprinting' | 'stun' | 'winded' | 'role' | 'air' | 'dive'>>;
 
-export type KickStyle = 'pass' | 'chip' | 'shot' | 'throw';
+/** 'roll' is a keeper bowling the ball out along the ground from his hands. */
+export type KickStyle = 'pass' | 'chip' | 'shot' | 'throw' | 'roll';
 
 /** One-shot animation triggers, detected by the renderer from sim state changes. */
 export type AnimEvent =
@@ -70,6 +71,8 @@ export interface PlayerContext {
   lead: number;
   /** 0..1: keeper crouched and set, ball threatening. */
   keeperSet: number;
+  /** Where the body faces instead of the sim's facing (a keeper watching the ball: director.ts keeperLook). */
+  look?: { x: number; y: number } | null;
   /** Holding the ball overhead for a throw-in. */
   throwHold: boolean;
   /** Keeper holding the ball in their hands. */
@@ -313,6 +316,8 @@ interface Action {
   ev: AnimEvent;
   dur: number;
   mirror: boolean;
+  /** Seconds the clock has been held back (a keeper stretched out on the floor while the sim still has him there). */
+  held: number;
 }
 
 const DUR: Record<AnimEvent['kind'], number> = {
@@ -502,6 +507,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   const lastOut = new Pose();
   let fromW = 0;
   let action: Action | null = null;
+  /** A reaction held back until the action in progress is over. */
+  let later: AnimEvent | null = null;
   let phase = Math.random() * Math.PI * 2;
   let yaw: number | null = null;
   let speedS = 0;
@@ -520,7 +527,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 
   function start(ev: AnimEvent, p: SimBody) {
     let mirror = false;
-    if (ev.kind === 'kick' && ev.style !== 'throw') {
+    if (ev.kind === 'kick' && ev.style !== 'throw' && ev.style !== 'roll') {
       // Kick with the foot on the side the ball goes from: a ball played to the left is struck with the right.
       const fx = p.facing.x;
       const fy = p.facing.y;
@@ -532,7 +539,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     from.copy(out);
     fromW = 1;
     const dur = ev.kind === 'tackle' ? (ev.slide ? DUR.tackle + (ev.failed ? 0.35 : 0) : 0.45) : DUR[ev.kind];
-    action = { ev, dur, mirror };
+    action = { ev, dur, mirror, held: 0 };
   }
 
   function locomotion(P: Pose, time: number, dtSim: number, reduced: boolean) {
@@ -547,7 +554,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     const c = Math.cos(phase);
     const sR = -s;
     const cR = -c;
-    const amp = (0.28 + 0.36 * gait + 0.32 * sprint) * gait;
+    // Moving sideways (a keeper shuffling along his line): a shorter swing of the legs, and the shoulders stay square.
+    const side = clamp01(Math.abs(sideS) / Math.max(0.5, speed)) * gait;
+    const amp = (0.28 + 0.36 * gait + 0.32 * sprint) * gait * (1 - 0.45 * side);
     const kAmp = (0.55 + 0.75 * sprint) * gait;
     P.reset();
     // Legs: thigh swing, knee folds during the forward swing, foot plants.
@@ -565,12 +574,11 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     P.set('elR', -(0.25 + 0.95 * gait + 0.25 * sprint) - Math.max(0, -sR) * 0.25 * gait);
     // Trunk: lean into the run, counter-rotate the shoulders, bob twice a cycle.
     const lean = 0.04 + 0.12 * gait + 0.16 * sprint;
-    P.set('spine', lean * back, -s * 0.14 * gait, -sideS * 0.12);
+    P.set('spine', lean * back, -s * 0.14 * gait * (1 - side), -sideS * 0.12);
     P.set('pelvis', 0, s * 0.1 * gait, 0);
     P.set('head', -lean * 0.6 * back, s * 0.06 * gait, 0);
     const bob = gait * (0.055 * Math.abs(s) - 0.035) - 0.01 * sprint;
     // Sidestep: shuffle with a little roll instead of a forward stride.
-    const side = clamp01(Math.abs(sideS) / Math.max(0.5, speed)) * gait;
     if (side > 0.05) {
       P.add('hipL', 0, 0, Math.max(0, s) * 0.3 * side * Math.sign(sideS));
       P.add('hipR', 0, 0, Math.max(0, -s) * 0.3 * side * Math.sign(sideS));
@@ -666,6 +674,17 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
           P.set('hipL', -0.3).set('knL', 0.2).set('hipR', 0.25).set('knR', 0.15);
           break;
         }
+        if (ev.style === 'roll') {
+          // Underarm: sink into a lunge, arms down and back, then bowl it out low and follow through.
+          const lunge = bump(u, 0, 1);
+          const arm = keys(u, [0, -1.05, 0.2, -0.15, 0.4, -1.1, 1, -0.45]);
+          P.set('shL', arm, 0, -0.12).set('shR', arm, 0, 0.12);
+          P.set('elL', keys(u, [0, -1.15, 0.2, -0.3, 0.4, -0.15, 1, -0.4])).set('elR', keys(u, [0, -1.15, 0.2, -0.3, 0.4, -0.15, 1, -0.4]));
+          P.set('spine', 0.4 * lunge).set('head', 0.1 * lunge);
+          P.set('hipR', -0.75 * lunge).set('knR', 0.7 * lunge).set('hipL', 0.15 * lunge).set('knL', 0.5 * lunge);
+          P.body(0, loco.a[BODY + 1] - 0.22 * lunge, 0.1 * lunge);
+          break;
+        }
         // Kicking leg is the right; mirror() gives the left.
         const big = ev.style === 'shot' ? 1 : ev.style === 'chip' ? 0.8 : 0.45 + 0.35 * ev.power;
         const strike = 0.34;
@@ -750,7 +769,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         P.set('hipR', 0.1 * fly, 0, -0.15 * fly).set('knR', 0.2 * fly);
         P.set('head', 0, 0, -0.2 * fly);
         const crouch = bump(t, 0, 0.16) * 0.15;
-        P.body(-reach * fly, loft - crouch - 0.5 * fly * smooth(0.45, 0.6, t) * (1 - loft), 0, 0, 0, 1.35 * fly);
+        // He rolls about his feet, so lying out along the dive his middle is a metre ahead of where the sim
+        // has him: bring it back (and keep him on the grass, not sunk into it).
+        const roll = 1.35 * fly;
+        P.body(-reach * fly + 0.75 * Math.sin(roll), loft - crouch, 0, 0, 0, roll);
         break;
       }
       case 'catch': {
@@ -843,15 +865,22 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     object: root,
 
     update(dt, p, events, ctx) {
-      for (const ev of events) start(ev, p);
+      for (const ev of events) {
+        // A keeper beaten while he lies where he dived stays down; his dejection comes when he is up.
+        if (action?.ev.kind === 'dive' && ev.kind === 'dejected') later = ev;
+        else start(ev, p);
+      }
       const reduced = ctx.reducedMotion;
 
       // Root: position (extrapolated between ticks) and heading.
       const lead = ctx.lead;
       // Off the ground in a jumping wall (MatchPlayer.air, metres).
       root.position.set(sx(p.pos.x + p.vel.x * lead), p.air ?? 0, sz(p.pos.y + p.vel.y * lead));
-      const target = Math.atan2(p.facing.x, p.facing.y);
+      const face = ctx.look ?? p.facing;
+      let target = Math.atan2(face.x, face.y);
       if (yaw === null) yaw = target;
+      // A dive is sideways to wherever he was facing: he doesn't swing round in the air.
+      if (action?.ev.kind === 'dive') target = yaw;
       // Turn quickly, but never snap: max ~11 rad/s.
       const d = angleDelta(yaw, target);
       const maxTurn = 11 * dt;
@@ -887,7 +916,12 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       out.copy(loco);
 
       if (action) {
-        const t = ctx.time - action.ev.t0;
+        let t = ctx.time - action.ev.t0 - action.held;
+        // He stays stretched out for as long as the sim's dive runs (it holds him out a while when he is early), and gets up after.
+        if (action.ev.kind === 'dive' && p.dive && p.dive.ticks > 0 && t > action.dur - 0.4) {
+          action.held += ctx.dtSim;
+          t = action.dur - 0.4;
+        }
         // Get up early if the sim already has them running again.
         const recover = (action.ev.kind === 'knockdown' || action.ev.kind === 'tackle') && t > 0.35 && speed > 3.5;
         if (t >= action.dur || t < -0.2 || recover) {
@@ -896,6 +930,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
             fromW = 1;
           }
           action = null;
+          if (later) {
+            start({ ...later, t0: Math.max(later.t0, ctx.time) }, p);
+            later = null;
+          }
         } else {
           actionPose(act, action, Math.max(0, t));
           out.blend(act, envelope(action, Math.max(0, t)));

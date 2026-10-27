@@ -8,8 +8,9 @@ import { createMatch, step } from '../src/sim/match.ts';
 import { matchSeconds } from '../src/sim/rules.ts';
 import type { MatchState } from '../src/sim/types.ts';
 import { matchClock, refereeWord } from '../src/client/hud.ts';
-import { AnimDirector, inWall, keeperSet } from '../src/client/r3d/director.ts';
-import type { AnimEvent } from '../src/client/r3d/player3d.ts';
+import { AnimDirector, inWall, keeperLook, keeperSet } from '../src/client/r3d/director.ts';
+import { PlayerKit, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type PlayerContext, type SimBody } from '../src/client/r3d/player3d.ts';
+import { Vector3 } from '../src/client/r3d/three.ts';
 
 function cpuMatch(seed: number, halfSeconds = 60): MatchState {
   const [a, b] = generateLadder(seed, 2);
@@ -78,6 +79,102 @@ describe('3D animation director', () => {
     expect(keeperSet(s, gk)).toBe(0);
   });
 
+  test('a keeper facing a penalty is set on his line; the taker is not', () => {
+    const s = cpuMatch(15);
+    const gk = s.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    const taker = s.players.find((p) => p.team === 1 && p.role === 'FWD')!;
+    s.phase = 'restart';
+    s.restart = { kind: 'penalty', team: 1, spot: { x: 11, y: 34 }, taker: taker.i, stage: 'ready', ticks: 0, direct: true, reason: 'foul', wait: 0 };
+    s.ball.pos = { ...s.restart.spot };
+    expect(keeperSet(s, gk)).toBe(1);
+    expect(keeperSet(s, taker)).toBe(0);
+    s.restart.stage = 'whistle';
+    expect(keeperSet(s, gk)).toBe(0);
+  });
+
+  test('a keeper in play watches the ball (up the pitch when it is on top of him), not the way he is running', () => {
+    const s = cpuMatch(15);
+    s.phase = 'play';
+    const gk = s.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    gk.pos = { x: 2, y: 34 };
+    gk.facing = { x: 0, y: 1 }; // the sim turns him to his velocity: shuffling along his line
+    s.ball.owner = -1;
+    s.ball.pos = { x: 22, y: 34 };
+    expect(keeperLook(s, gk)).toEqual({ x: 1, y: 0 });
+    s.ball.pos = { x: 2, y: 44 };
+    expect(keeperLook(s, gk)).toEqual({ x: 0, y: 1 });
+    s.ball.pos = { x: 2.5, y: 34.5 };
+    expect(keeperLook(s, gk)).toEqual({ x: 1, y: 0 });
+    // Not with the ball in his hands, in a dead ball, or for anyone else.
+    s.ball.pos = { x: 22, y: 34 };
+    s.ball.owner = gk.i;
+    expect(keeperLook(s, gk)).toBeNull();
+    s.ball.owner = -1;
+    s.phase = 'restart';
+    expect(keeperLook(s, gk)).toBeNull();
+    s.phase = 'play';
+    expect(keeperLook(s, s.players.find((p) => p.team === 0 && p.role === 'DEF')!)).toBeNull();
+  });
+
+  test('a keeper dive is drawn sideways to where he watches, carries no travel of its own, and his going down after it is not a knockdown', () => {
+    const s = cpuMatch(18);
+    s.phase = 'play';
+    const gk = s.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    gk.pos = { x: 2, y: 34 };
+    gk.facing = { x: 0, y: 1 };
+    s.ball.owner = -1;
+    s.ball.pos = { x: 22, y: 34 };
+    const d = new AnimDirector();
+    d.update(s, 0);
+    // He watches +x, so +y is on his right.
+    s.tick++;
+    gk.dive = { dir: { x: 0, y: 1 }, speed: 3, ticks: 30, travel: 22, z: 0.5 };
+    const dive = d.update(s, 1 / 60).events[gk.i].find((e) => e.kind === 'dive');
+    expect(dive).toMatchObject({ kind: 'dive', side: 1, reach: 0 });
+    // The sim stuns him for the time he lies there.
+    s.tick++;
+    gk.dive.ticks = 0;
+    gk.stun = 24;
+    expect(d.update(s, 2 / 60).events[gk.i].some((e) => e.kind === 'knockdown')).toBe(false);
+    // A dive the other way.
+    const t = new AnimDirector();
+    gk.dive = null;
+    gk.stun = 0;
+    t.update(s, 0);
+    s.tick++;
+    gk.dive = { dir: { x: 0, y: -1 }, speed: 3, ticks: 30, travel: 22, z: 0.5 };
+    expect(t.update(s, 1 / 60).events[gk.i].find((e) => e.kind === 'dive')).toMatchObject({ side: -1 });
+  });
+
+  test('a keeper letting the ball roll out of his hands bowls it, one who kicks it from his hands kicks, an outfielder passes', () => {
+    const s = cpuMatch(19);
+    s.phase = 'play';
+    const gk = s.players.find((p) => p.team === 0 && p.role === 'GK')!;
+    const def = s.players.find((p) => p.team === 0 && p.role === 'DEF')!;
+    const release = (who: typeof gk, hands: boolean, z: number, vz: number) => {
+      const d = new AnimDirector();
+      s.ball.owner = who.i;
+      s.ball.inHands = hands;
+      s.ball.z = 1;
+      s.ball.vel = { x: 0, y: 0 };
+      d.update(s, 0);
+      s.tick++;
+      s.ball.owner = -1;
+      s.ball.inHands = false;
+      s.ball.z = z;
+      s.ball.vz = vz;
+      s.ball.vel = { x: 12, y: 0 };
+      who.kickCd = 18;
+      const kick = d.update(s, 1 / 60).events[who.i].find((e) => e.kind === 'kick');
+      who.kickCd = 0;
+      return kick && kick.kind === 'kick' ? kick.style : null;
+    };
+    expect(release(gk, true, 0, 0)).toBe('roll');
+    expect(release(gk, true, 1.5, 9)).toBe('chip');
+    expect(release(gk, false, 0, 0)).toBe('pass');
+    expect(release(def, false, 0, 0)).toBe('pass');
+  });
+
   test('a defender between a free kick and his goal, 9 m out, is in the wall', () => {
     const s = cpuMatch(16);
     const def = s.players.find((p) => p.team === 0 && p.role === 'DEF')!;
@@ -86,6 +183,51 @@ describe('3D animation director', () => {
     expect(inWall(s, def)).toBe(true);
     def.pos = { x: 40, y: 34 };
     expect(inWall(s, def)).toBe(false);
+  });
+});
+
+describe('keeper model poses', () => {
+  const ctx = (time: number): PlayerContext => ({ time, dtSim: 1 / 60, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: true });
+
+  /** A keeper on the origin facing +x who dives to `side` (1 his right, -1 his left): where his head and hands are after `after` seconds. */
+  function dived(side: 1 | -1, after: number) {
+    const kit = new PlayerKit();
+    const [k] = keeperPair('#cc2222', '#2222cc');
+    const m = createProceduralPlayer(kit, lookFor('gk', k, null, true, () => 0.5));
+    const body: SimBody = { pos: { x: 60, y: 34 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } };
+    // The sim's dive carries him along it (here it has ended): the model adds no travel of its own.
+    const dive: AnimEvent = { kind: 'dive', t0: 0, side, height: 0.3, reach: 0 };
+    let time = 0;
+    m.update(1 / 60, body, [dive], ctx(time));
+    while (time < after) {
+      time += 1 / 60;
+      m.update(1 / 60, body, [], ctx(time));
+    }
+    const head = m.headTop(new Vector3());
+    const hands = m.handsWorld(new Vector3());
+    const root = m.object.position;
+    m.dispose();
+    kit.dispose();
+    // Sim y is scene z, and facing +x puts his right on +y.
+    return { across: (head.z - root.z) * side, headY: head.y, handsAcross: (hands.z - root.z) * side, root };
+  }
+
+  test('a diving keeper lies out along the dive on the grass, centred on where the sim has him, the right way round', () => {
+    for (const side of [1, -1] as const) {
+      const d = dived(side, 0.7);
+      // Stretched out to his side of the dive, low, not sunk into the pitch nor stood up.
+      expect(d.headY).toBeGreaterThan(0.1);
+      expect(d.headY).toBeLessThan(0.8);
+      expect(d.across).toBeGreaterThan(0.3);
+      expect(d.across).toBeLessThan(1.6);
+      expect(d.handsAcross).toBeGreaterThan(d.across * 0.8);
+    }
+  });
+
+  test('and he is on his feet again by the end of it', () => {
+    const d = dived(1, 1.4);
+    expect(d.headY).toBeGreaterThan(1.5);
+    expect(Math.abs(d.across)).toBeLessThan(0.5);
   });
 });
 

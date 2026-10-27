@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { encodeReplay, decodeReplay, finalHash, replayTo, ReplayRecorder } from '../src/meta/replay.ts';
-import { PITCH_H, PITCH_W, SPRINT_MULT } from '../src/sim/constants.ts';
+import { PITCH_H, PITCH_W, SLIDE_CD, SLIDE_CD_MIN, SLIDE_MISS_CD, SLIDE_MISS_DOWN, SLIDE_START_CD, SLIDE_WIN_DOWN, SPRINT_MULT, STAND_CD, STAND_MISS_CD, STAND_MISS_DOWN } from '../src/sim/constants.ts';
 import { humanIntent, pickTeammate, pointerEffort, pointerThrottle, POINTER_DEAD, POINTER_JOG, POINTER_JOG_AT, POINTER_RUN_AT, POINTER_SPRINT_AT, PICK_R, POINTER_WALK, SELECT_LOCK, SELECT_R, SLIDE_MAX, STAND_TACKLE_R } from '../src/sim/human.ts';
 import { assistRadius, CLOSE_CLICK, groundPassPlan, leadPoint, loftPlan, loftRange, pointerPass } from '../src/sim/kicks.ts';
 import { attackDir, oppGoal } from '../src/sim/field.ts';
@@ -793,21 +793,54 @@ describe('right click without the ball tackles', () => {
   test('close to the pointer it is a standing tackle: a lunge that wins the ball from a carrier in reach', () => {
     const r = winsOver(1.3, 1.5);
     expect(r.wins).toBeGreaterThan(14);
-    expect(r.cd).toBe(36);
+    expect(r.cd).toBe(STAND_CD);
   });
 
   test('a far pointer slides: it reaches a carrier a standing tackle cannot, and costs a longer recovery', () => {
     // 2.6 m is out of a standing tackle's 2 m reach, so a click on him (or the ball) there slides too.
     const onHim = winsOver(2.6, 2);
-    expect(onHim.cd).toBe(70);
+    expect(onHim.cd).toBe(SLIDE_START_CD);
     expect(onHim.wins).toBeGreaterThan(8);
     const slide = winsOver(2.6, 5);
     expect(slide.wins).toBeGreaterThan(8);
-    expect(slide.cd).toBe(70);
+    expect(slide.cd).toBe(SLIDE_START_CD);
     const { s, me } = duel(3, 2.6);
     step(s, { cursor: { x: me.pos.x + 5, y: me.pos.y }, tackle: true });
     expect(me.vel.x).toBeGreaterThan(8); // really goes in
     expect(me.stun).toBeGreaterThan(5); // and is on the floor a moment
+  });
+
+  test('a won slide leaves the ball at his feet and him up first: his side comes away with it', () => {
+    // Playtest: the man he took it from (or his support) always got it back.
+    let won = 0;
+    let ours = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      const { s, me } = duel(seed, 2.6);
+      const tk = s.stats[0].tackles;
+      const cursor = { x: me.pos.x + 5, y: me.pos.y };
+      step(s, { cursor, tackle: true });
+      for (let t = 0; t < 30 && s.phase === 'play' && s.stats[0].tackles === tk; t++) step(s, { cursor });
+      if (s.stats[0].tackles === tk || s.phase !== 'play') continue;
+      won++;
+      for (let t = 0; t < 90 && s.phase === 'play' && s.ball.owner < 0; t++) step(s, { cursor: { ...s.ball.pos } });
+      if (s.ball.owner >= 0 && s.players[s.ball.owner].team === 0) ours++;
+    }
+    expect(won).toBeGreaterThan(8);
+    expect(ours).toBeGreaterThanOrEqual(won - 1);
+  });
+
+  test('tackles can\'t be spammed: a slide waits longer after he is up than a standing tackle', () => {
+    const { s, me } = duel(1, 6);
+    step(s, { cursor: { x: me.pos.x + 1, y: me.pos.y }, tackle: true }); // nobody in reach: a standing whiff
+    const standGap = me.tackleCd - me.stun;
+    const t2 = duel(1, 9);
+    step(t2.s, { cursor: { x: t2.me.pos.x - 5, y: t2.me.pos.y }, tackle: true }); // a slide away from him: misses
+    const slideGap = t2.me.tackleCd - t2.me.stun;
+    expect(standGap).toBeGreaterThan(20);
+    expect(slideGap).toBeGreaterThan(standGap);
+    // The 3D view, the drills and the audio tell a slide from a standing tackle by its cooldown.
+    expect(Math.max(STAND_CD, STAND_MISS_DOWN + STAND_MISS_CD)).toBeLessThan(SLIDE_CD_MIN);
+    expect(Math.min(SLIDE_START_CD, SLIDE_WIN_DOWN + SLIDE_CD, SLIDE_MISS_DOWN + SLIDE_MISS_CD)).toBeGreaterThanOrEqual(SLIDE_CD_MIN);
   });
 
   test('a slide only counts toward where the pointer is: sliding the wrong way misses', () => {
