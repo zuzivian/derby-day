@@ -156,16 +156,20 @@ describe('restarts: out of play over each line', () => {
     expect(BOX_DEPTH).toBe(16.5);
   });
 
-  test('a human taker plays the restart with an ordinary pass, and the clock keeps running', () => {
+  test('a human taker plays the restart with an ordinary pass; the clock stops until the ball is in play', () => {
     const s = live(4);
     awardRestart(s, 'throwin', 0, { x: 50, y: -1 }, 'out');
+    const stopped = s.clock;
     toReady(s);
+    expect(s.clock).toBe(stopped);
     const r = s.restart!;
     expect(s.controlled[0]).toBe(r.taker);
     const mate = s.players.filter((p) => p.team === 0 && p.i !== r.taker && p.role !== 'GK').sort((a, b) => dist(a.pos, r.spot) - dist(b.pos, r.spot))[0];
     const clock = s.clock;
     step(s, { cursor: mate.pos, pass: true });
     expect(s.phase).toBe('play');
+    expect(s.clock).toBe(clock);
+    step(s, {});
     expect(s.clock).toBe(clock + 1);
     expect(s.ball.setPiece).toBe('throwin');
     expect(s.ball.z).toBeGreaterThan(1.5); // from the hands

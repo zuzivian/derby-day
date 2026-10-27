@@ -11,7 +11,7 @@ import type { MatchRenderer } from '../renderer.ts';
 import type { RenderExtras } from '../render.ts';
 import { AimLayer, type AimFrame } from './aim3d.ts';
 import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } from './camera3d.ts';
-import { AnimDirector, inWall, keeperSet } from './director.ts';
+import { AnimDirector, inWall, keeperLook, keeperSet } from './director.ts';
 import { mobBody, planMob, scorerAt, scorerBody, type MobPlan } from './celebration3d.ts';
 import { PlayerDots, playerPx } from './dots3d.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
@@ -736,6 +736,7 @@ export class Renderer3D implements MatchRenderer {
       c.dtSim = dtSim;
       c.lead = lead;
       c.keeperSet = keeperSet(s, p);
+      c.look = keeperLook(s, p);
       c.throwHold = throwHold;
       c.holding = p.i === handsOf && !throwHold;
       c.hasBall = b.owner === p.i;
@@ -786,6 +787,7 @@ export class Renderer3D implements MatchRenderer {
       c.dtSim = dtSim;
       c.lead = lead;
       c.keeperSet = 0;
+      c.look = null;
       c.throwHold = c.holding = c.hasBall = c.wall = false;
       c.armUp = indirectPending(s);
       c.reducedMotion = this.reduced;

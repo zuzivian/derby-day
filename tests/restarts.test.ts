@@ -7,6 +7,8 @@ import { describe, expect, test } from 'bun:test';
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
 import { PITCH_H, PITCH_W } from '../src/sim/constants.ts';
 import { oppGoal, ownGoal } from '../src/sim/field.ts';
+import { restartAction } from '../src/sim/ai.ts';
+import { makeRng } from '../src/sim/rng.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import { awardRestart } from '../src/sim/rules.ts';
 import type { HumanInput, MatchState, RestartKind } from '../src/sim/types.ts';
@@ -23,7 +25,7 @@ function teams(seed: number) {
 const still = (s: MatchState): HumanInput => ({ cursor: { ...s.players[s.controlled[0]].pos } });
 
 /** A restart to the human side at `at`, after both sides have gathered near `around` (as play left them). Returns at the start of `stage`. */
-function restart(seed: number, kind: RestartKind, at: Vec, around: Vec, stage: 'setup' | 'ready' = 'ready'): MatchState {
+function restart(seed: number, kind: RestartKind, at: Vec, around: Vec, stage: 'setup' | 'ready' = 'ready', team: 0 | 1 = 0): MatchState {
   const s = createMatch({ seed, ...teams(7 + (seed % 3) * 2), halfSeconds: 900, humanTeam: 0 });
   kickOff(s);
   const dx = 0.85 * (around.x - PITCH_W / 2);
@@ -35,7 +37,7 @@ function restart(seed: number, kind: RestartKind, at: Vec, around: Vec, stage: '
   Object.assign(s.ball, { owner: -1, receiver: -1, inHands: false, pos: { ...around }, vel: { x: 0, y: 0 }, z: 0, vz: 0 });
   s.ball.noPickup.fill(130);
   for (let t = 0; t < 120; t++) step(s, still(s));
-  awardRestart(s, kind, 0, at, 'out');
+  awardRestart(s, kind, team, at, 'out');
   for (let n = 0; n < 900 && s.restart && s.restart.stage !== stage; n++) step(s, still(s));
   return s;
 }
@@ -149,6 +151,27 @@ describe('throw-ins', () => {
     // was led to takes it. The throw to his feet keeps more. 20 seeds moved by two throws whenever anything in the sim
     // changed (stamina, say), so the sample is 100 and the bar a little under the rate.
     expect(kept / n).toBeGreaterThan(0.55);
+  });
+});
+
+describe('CPU throw-ins', () => {
+  test('near the goal line it attacks, a CPU throw thrown long (a chip) is aimed at least 12 m short of it', () => {
+    // Playtest: thrown long into the box from by the corner flag, it came down and rolled over the goal line.
+    let lofted = 0;
+    for (let seed = 1; seed <= 40; seed++) {
+      const at = { x: 3 + (seed % 8) * 1.5, y: seed % 2 ? 0 : PITCH_H };
+      const s = restart(seed, 'throwin', at, { x: at.x + 6, y: at.y ? PITCH_H - 8 : 8 }, 'ready', 1);
+      expect(ownGoal(s, 0).x).toBe(0); // the CPU side attacks the goal at x = 0 in the first half
+      for (let k = 0; k < 4; k++) {
+        const t = structuredClone(s);
+        t.rng = makeRng(seed * 7919 + k * 104729);
+        const a = restartAction(t, t.players[t.restart!.taker]);
+        if (a.kind !== 'chip') continue;
+        lofted++;
+        expect(a.target.x).toBeGreaterThanOrEqual(12 - 1e-9);
+      }
+    }
+    expect(lofted).toBeGreaterThan(20);
   });
 });
 

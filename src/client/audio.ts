@@ -7,7 +7,7 @@
 //   SoundEngine   browser only. Starts lazily after a user gesture, owns the
 //                 master gain, mute setting and the crowd bed.
 
-import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../sim/constants.ts';
 import type { MatchState, Phase } from '../sim/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -45,8 +45,8 @@ export type SfxEvent =
 /** 'foul': one short blast when the referee stops play for a foul, an offside, an advantage brought back or a second touch. */
 export type WhistleKind = 'kickoff' | 'halftime' | 'fulltime' | 'foul';
 
-/** A tackle sets tackleCd to 36 (win/neutral) or 50 (lost) on the tick it starts. */
-const LUNGE_CD = 36;
+/** A tackle sets tackleCd to at least STAND_CD on the tick it starts (more for a miss or a slide). */
+const LUNGE_CD = STAND_CD;
 const SPEED_NOISE = 2.5;
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));

@@ -2123,6 +2123,8 @@ export function restartIntent(s: MatchState, p: MatchPlayer): Intent {
 // Restarts: what the CPU taker does
 
 /** A lofted ball landing on `target`. */
+/** A CPU throw-in is aimed no nearer the goal line it attacks than this (m): it comes down and runs on. */
+const THROW_DEPTH = 12;
 const loft = (s: MatchState, target: Vec): Action => ({ kind: 'chip', target, power: chipPowerFor(dist(s.ball.pos, target)) });
 
 /**
@@ -2159,15 +2161,21 @@ export function restartAction(s: MatchState, p: MatchPlayer): Action {
     }
     case 'throwin': {
       const o = passOpt(22);
+      // A thrown ball comes down and runs on: aimed near the goal line it ran out over it for a goal
+      // kick with nobody touching it (playtest). Never deeper than THROW_DEPTH from the line it attacks.
+      const lineX = dir > 0 ? PITCH_W - THROW_DEPTH : THROW_DEPTH;
+      const keepIn = (t: Vec): Vec => ({ x: dir > 0 ? Math.min(t.x, lineX) : Math.max(t.x, lineX), y: t.y });
       // A long throw into the box from close to the corner.
       if (ax > 0.82 && chance(s.rng, 0.3 + 0.2 * p.attrs.passing)) {
         const c = bestCross(s, p, noise);
-        if (c && dist(c.target, r.spot) < 28) return loft(s, c.target);
+        if (c && dist(c.target, r.spot) < 28) return loft(s, keepIn(c.target));
       }
       if (o && o.score > -1) return toPass(o);
-      // Nothing short: down the line.
+      // Nothing short: down the line, or more infield when the line runs out first.
       const inward = r.spot.y < MID_Y ? 1 : -1;
-      return loft(s, clampToPitch({ x: r.spot.x + dir * 18, y: r.spot.y + inward * 6 }, 2));
+      const along = r.spot.x + dir * 18;
+      const short = (along - lineX) * dir > 0;
+      return loft(s, clampToPitch(keepIn({ x: along, y: r.spot.y + inward * (short ? 14 : 6) }), 2));
     }
     case 'goalkick': {
       const o = passOpt(30);

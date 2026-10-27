@@ -53,8 +53,22 @@ import {
   PITCH_W,
   PLAYER_R,
   RETREAT,
+  SLIDE_BEATEN_DOWN,
+  SLIDE_BEATEN_NO_TOUCH,
+  SLIDE_CD,
+  SLIDE_DOWN,
+  SLIDE_MISS_CD,
+  SLIDE_MISS_DOWN,
+  SLIDE_START_CD,
+  SLIDE_TICKS,
   SLIDE_TRAVEL,
+  SLIDE_WIN_DOWN,
+  SLIDE_WIN_PUSH,
+  STAND_CD,
+  STAND_MISS_CD,
+  STAND_MISS_DOWN,
   STAND_REACH,
+  STAND_WHIFF_DOWN,
   TEAM_SIZE,
   TICK_HZ,
 } from './constants.ts';
@@ -404,7 +418,7 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
     if (a.slide) {
       // A slide is a committed lunge along the ground toward the target. It is judged each tick
       // of the slide (slideTackles), when his feet reach the ball or he meets the man.
-      p.tackleCd = 70;
+      p.tackleCd = SLIDE_START_CD;
       const len0 = clamp(dist(a.target, p.pos), 1, SLIDE_TRAVEL);
       p.slide = { dir: lunge, left: len0, len: len0, ticks: 0 };
       p.stun = SLIDE_TICKS + SLIDE_DOWN;
@@ -412,12 +426,12 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
       slideContact(s, p, before);
       return;
     }
-    p.tackleCd = 36;
+    p.tackleCd = STAND_CD;
     p.vel = add(p.vel, scale(lunge, 3));
     const owner = b.owner >= 0 ? s.players[b.owner] : null;
     if (!owner || owner.team === team || dist(owner.pos, p.pos) > STAND_REACH || b.inHands) {
       if (!owner) lateChallenge(s, p, before);
-      p.stun = 10;
+      p.stun = STAND_WHIFF_DOWN;
       return;
     }
     resolveTackle(s, p, owner, false, before);
@@ -426,10 +440,8 @@ function applyAction(s: MatchState, p: MatchPlayer, intent: Intent): void {
 
 /** Beyond this a standing tackle is at full stretch (out to STAND_REACH): less sure, and half as likely to foul. */
 const STAND_EDGE = 1.7;
-/** A slide (SLIDE_TRAVEL at most): how fast it starts, how long it lasts, how long he is down after. */
+/** A slide (SLIDE_TRAVEL at most): how fast it starts (constants.ts SLIDE_TICKS, SLIDE_DOWN: how long it lasts, how long he is down after). */
 const SLIDE_SPEED = 11;
-const SLIDE_TICKS = 30;
-const SLIDE_DOWN = 16;
 /** A slide that has gone this far (m) when it meets the man is fully committed (resolveTackle's `commit`). */
 const SLIDE_COMMITTED = 2.5;
 /** Where his feet are ahead of him while sliding, and how close to the ball they must come. */
@@ -485,21 +497,26 @@ function resolveTackle(s: MatchState, p: MatchPlayer, owner: MatchPlayer, slide:
   if (won) {
     b.owner = -1;
     b.inHands = false;
-    b.vel = add(scale(norm(sub(b.pos, p.pos)), 3.5), scale(p.vel, 0.3));
+    // A won slide leaves the ball just ahead of him along the slide, and him up before the man he took it from.
+    const sl = slide ? p.slide : null;
+    b.vel = sl ? scale(sl.dir, SLIDE_WIN_PUSH) : add(scale(norm(sub(b.pos, p.pos)), 3.5), scale(p.vel, 0.3));
     b.lastTouch = p.i;
     b.kickedBy = -1;
     b.receiver = -1;
     b.touch = 0;
     touchedBy(b, p);
-    b.noPickup[owner.i] = 24;
-    owner.stun = 18;
-    if (slide) p.stun = 14;
+    b.noPickup[owner.i] = slide ? SLIDE_BEATEN_NO_TOUCH : 24;
+    owner.stun = slide ? SLIDE_BEATEN_DOWN : 18;
+    if (slide) {
+      p.stun = SLIDE_WIN_DOWN;
+      p.tackleCd = SLIDE_WIN_DOWN + SLIDE_CD;
+    }
     s.stats[team].tackles++;
     // Law 11: winning the ball is a deliberate play; his teammates' positions are judged from here.
     noteBallPlayed(s, p);
   } else {
-    p.stun = slide ? 40 : 26;
-    p.tackleCd = slide ? 90 : 50;
+    p.stun = slide ? SLIDE_MISS_DOWN : STAND_MISS_DOWN;
+    p.tackleCd = p.stun + (slide ? SLIDE_MISS_CD : STAND_MISS_CD);
   }
 }
 
@@ -1111,7 +1128,7 @@ function pokeAway(s: MatchState, o: MatchPlayer): void {
   for (const p of s.players) {
     if (p.team === o.team || p.sentOff || p.stun > 0 || p.tackleCd > 0 || p.slide) continue;
     if (dist(p.pos, b.pos) >= POKE_R) continue;
-    p.tackleCd = 36;
+    p.tackleCd = STAND_CD;
     if (next(s.rng) >= clamp(0.3 + 0.5 * p.attrs.defending - 0.5 * o.attrs.dribbling, 0.08, 0.6)) continue;
     b.owner = -1;
     b.vel = add(scale(norm(sub(b.pos, p.pos)), 3), scale(o.vel, 0.4));
@@ -2317,12 +2334,12 @@ function wallJumps(s: MatchState, intents: Intent[]): void {
 const ADDED_HOLD_MAX = 4 * TICK_HZ;
 
 /**
- * The clock runs through dead balls, as in a real match. At 45:00 and 90:00 the board goes
+ * The clock runs only while the ball is in play (step() leaves it out of restarts). At 45:00 and 90:00 the board goes
  * up and the added time is played with the clock held (Law 7); then the whistle waits for a
  * penalty to be taken, and for a shot already on its way to goal to finish.
  */
 function runClock(s: MatchState): void {
-  if (s.phase !== 'play' && s.phase !== 'restart') return;
+  if (s.phase !== 'play') return;
   const a = s.added && s.added.half === s.half ? s.added : null;
   if (!a) {
     s.clock++;
@@ -2404,12 +2421,11 @@ export function step(s: MatchState, input?: HumanInput | TeamInputs): void {
   const inputs = teamInputs(s, input);
   s.humanAim = [inputs[0].aim ?? inputs[0].cursor ?? null, inputs[1].aim ?? inputs[1].cursor ?? null];
   if (s.phase === 'restart') {
-    // The clock starts with the kick-off (Law 8), not with the line-up.
-    const kickoff = s.restart?.kind === 'kickoff';
+    // The clock stops while the ball is dead (playtest): throw-ins, goal kicks, corners, free kicks,
+    // penalties and the kick-off all wait for it, so the match time is time the ball was in play.
     // A click queued for a ball that was on its way (human.ts) does not outlive the whistle.
     if (s.queued) s.queued = [null, null];
     stepRestart(s, inputs);
-    if (!kickoff) runClock(s);
     return;
   }
 

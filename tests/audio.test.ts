@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { crowdLevel, detectSfx, initialSnapshot, snapshot, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
-import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W } from '../src/sim/constants.ts';
+import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
 import type { MatchEvent, MatchState } from '../src/sim/types.ts';
 
@@ -130,7 +130,7 @@ describe('detectSfx', () => {
   test('tackle lunge and won tackle', () => {
     const s = liveMatch();
     const before = snapshot(s);
-    s.players[2].tackleCd = 36;
+    s.players[2].tackleCd = STAND_CD;
     expect(detectSfx(before, s)).toEqual([{ type: 'tackle', won: false }]);
     s.stats[0].tackles++;
     expect(detectSfx(before, s)).toEqual([{ type: 'tackle', won: true }]);

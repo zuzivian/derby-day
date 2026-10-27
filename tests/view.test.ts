@@ -498,6 +498,8 @@ describe('camera', () => {
     const s = match(13);
     kickOff(s);
     for (let t = 0; t < 250; t++) step(s, {});
+    // In open play (a restart from those 250 ticks played out first).
+    for (let t = 0; t < 1200 && s.phase !== 'play'; t++) step(s, {});
     expect(longView(s, 0)).toBe(null);
     // The ball goes out over the human's goal line off an opponent: a goal kick.
     const away = s.players.find((p) => p.team === 1 && p.role !== 'GK')!;

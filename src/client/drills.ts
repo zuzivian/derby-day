@@ -3,7 +3,7 @@
 // drill only places players, holds some of them still ("mannequins"), and
 // filters which actions the human may use yet.
 
-import { FORMATION, PITCH_H, PITCH_W } from '../sim/constants.ts';
+import { FORMATION, PITCH_H, PITCH_W, SLIDE_CD_MIN } from '../sim/constants.ts';
 import { createMatch } from '../sim/match.ts';
 import type { HumanInput, MatchState, SimAttrs, TeamSetup } from '../sim/types.ts';
 import { add, dist, scale, type Vec } from '../sim/vec.ts';
@@ -250,8 +250,8 @@ export function checkDrill(s: MatchState, d: Drill): DrillStatus {
     case 'tackle': {
       const h = s.players[HUMAN];
       const tried = h.tackleCd > d.lastTackleCd;
-      // A slide leaves a much longer cooldown than a standing tackle, so a jump that big was a slide.
-      const slid = h.tackleCd - d.lastTackleCd > 50;
+      // A slide leaves a longer cooldown than any standing tackle (constants.ts SLIDE_CD_MIN).
+      const slid = tried && h.tackleCd >= SLIDE_CD_MIN;
       d.lastTackleCd = h.tackleCd;
       if (s.stats[0].tackles > d.base.tackles || b.owner === HUMAN) return { done: true };
       if (theirGoal) return { done: false, retry: 'conceded' };
