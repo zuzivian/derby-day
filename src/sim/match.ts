@@ -923,6 +923,8 @@ function separate(s: MatchState): void {
 
 /** A human's header at goal: metres across the goal per metre the pointer is to the side of the striker. */
 const HEADER_AIM_GAIN = 5;
+/** A human's header away goes where the pointer is when it is at least this far (m) from him; closer, he just clears it. */
+const HEADER_AIM_MIN = 4;
 
 function scoreGoal(s: MatchState, team: 0 | 1): void {
   const b = s.ball;
@@ -1201,9 +1203,23 @@ export const CUSHION_Z = 1.9;
 /** The body a ball bounces off: legs and torso as a cylinder this wide, this tall. */
 export const BODY_R = 0.3;
 export const BODY_TOP = 1.85;
-/** Horizontal reach of a header (a step and a jump), and of chest control. */
-const HEAD_REACH = 0.7;
+/**
+ * Horizontal reach of a header (a step and a jump): this much for a man who is no header of the ball, and a little
+ * more for each point of heading (headSkill). The man a human steers cannot time his own jump, so he reaches
+ * HUMAN_HEAD_REACH whatever he is. Chest control reaches CHEST_REACH.
+ */
+const HEAD_REACH = 0.5;
+const HEAD_REACH_SKILL = 0.35;
+const HUMAN_HEAD_REACH = 0.9;
 const CHEST_REACH = 0.6;
+/** A header's chance to connect: the base, per point of heading, less for a ball at the edge of his reach and for each opponent at his shoulder (within HEAD_JOSTLE). */
+const HEAD_BASE = 0.3;
+const HEAD_GAIN = 0.6;
+const HEAD_EDGE = 0.12;
+const HEAD_JOSTLE = 1.2;
+const HEAD_JOSTLE_COST = 0.06;
+/** The man a human steers is helped a little: he did not choose his run-up (src/sim/human.ts meetHeader brings him to the ball). */
+const HUMAN_HEAD_BONUS = 0.05;
 /** The intended receiver reaches this far for a ball at his feet; anyone else less, the faster it is. */
 export const RECEIVE_REACH = 1.23;
 const footReach = (speed: number): number => clamp(1.0 - 0.02 * speed, 0.65, 0.95);
@@ -1753,6 +1769,18 @@ function aerialDuel(s: MatchState, att: MatchPlayer): { rival: MatchPlayer | nul
   return next(s.rng) < win ? { rival: null, contested: true } : { rival, contested: true };
 }
 
+/** How good a header of the ball he is: a defender's defending, anyone else's shooting. */
+const headSkill = (p: MatchPlayer): number => (p.role === 'DEF' ? p.attrs.defending : p.attrs.shooting);
+const headReach = (s: MatchState, p: MatchPlayer): number => (isHumanControlled(s, p) ? HUMAN_HEAD_REACH : HEAD_REACH + HEAD_REACH_SKILL * headSkill(p));
+
+/** The chance his jump connects with a ball `d` m off his head: better headers more, the ball at the edge of his reach less, a marker at his shoulder less. */
+function headChance(s: MatchState, p: MatchPlayer, d: number): number {
+  let c = HEAD_BASE + HEAD_GAIN * headSkill(p) - (HEAD_EDGE * d) / headReach(s, p);
+  for (const o of s.players) if (o.team !== p.team && o.role !== 'GK' && !o.sentOff && o.stun === 0 && dist(o.pos, p.pos) < HEAD_JOSTLE) c -= HEAD_JOSTLE_COST;
+  if (isHumanControlled(s, p)) c += HUMAN_HEAD_BONUS;
+  return clamp(c, 0.15, 0.92);
+}
+
 /**
  * A ball between CHEST_Z and HEAD_Z can be headed: by an opponent of whoever played
  * it (a clearance), or by an attacker in the opponents' box (at goal; a human aims it with
@@ -1772,7 +1800,7 @@ function header(s: MatchState): boolean {
     const attacking = p.team === lastTeam && inOwnBox(s, p.team === 0 ? 1 : 0, p.pos);
     if (p.team === lastTeam && !attacking) continue;
     const d = dist(p.pos, b.pos);
-    if (d < HEAD_REACH && d < bestD) {
+    if (d < headReach(s, p) && d < bestD) {
       best = p;
       bestD = d;
     }
@@ -1781,7 +1809,7 @@ function header(s: MatchState): boolean {
   // An attacker going up for it with a defender at his shoulder has to win it first.
   const p = (best.team === lastTeam && aerialDuel(s, best).rival) || best;
   // Not every jump connects: he misses it, and it may still hit him.
-  if (next(s.rng) > 0.62 + 0.25 * (p.role === 'DEF' ? p.attrs.defending : p.attrs.shooting)) {
+  if (next(s.rng) > headChance(s, p, p === best ? bestD : Math.min(dist(p.pos, b.pos), headReach(s, p)))) {
     // No second jump at this ball, but his body is still there for it to hit.
     b.whiff = p.i;
     return false;
@@ -1816,6 +1844,14 @@ function header(s: MatchState): boolean {
     // Down toward the line, bouncing in front of the keeper or under the bar.
     b.vz = clamp((0.6 - b.z) / Math.max(t, 0.2) + 0.5 * GRAVITY * t, -6, 3);
     countShot(s, p.team);
+  } else if (isHumanControlled(s, p) && s.humanAim?.[p.team] && dist(s.humanAim[p.team]!, p.pos) > HEADER_AIM_MIN) {
+    // The human heads it to the pointer: it comes down about there (a header is no pass, so it strays more the worse a header he is).
+    const to = sub(s.humanAim[p.team]!, b.pos);
+    const way = rotate(norm(to), gauss(s.rng) * (0.06 + 0.12 * (1 - headSkill(p))));
+    const vz = 4.5;
+    const sp = clamp(len(to) / ((2 * vz) / GRAVITY), 7, 17);
+    b.vel = scale(way, sp);
+    b.vz = vz;
   } else {
     // Head it away: upfield and wide of the goal. Under pressure near goal a glancing header can go behind.
     const nearGoal = inOwnBox(s, p.team, p.pos);
