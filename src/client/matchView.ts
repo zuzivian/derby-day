@@ -148,6 +148,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   const s = createMatch(o);
   // End-to-end tests set window.__e2e before the page loads to get at the live state (to set a scene up and read it back).
   if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: MatchState }).__derbyMatch = s;
+  // End-to-end tests that only need a match played out set window.__e2eSpeed (2 to 16) to run the sim that many times
+  // faster than real time. The ticks and their inputs are the same, so the match, its result and its replay are too; only
+  // the wait is shorter. Nothing else sets it.
+  const e2eSpeed = (globalThis as { __e2eSpeed?: unknown }).__e2eSpeed;
+  const speed = typeof e2eSpeed === 'number' && e2eSpeed >= 2 && e2eSpeed <= 16 ? e2eSpeed : 1;
   // Replays record one human's input; two-human matches (hot-seat) aren't recorded.
   const rec = o.humans?.[0] && o.humans?.[1] ? null : new ReplayRecorder(o, o.label);
   const [home, away] = s.teams;
@@ -464,17 +469,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
     if (replay && !paused && !gfx.lost) {
-      if (!stepReplay(elapsed)) endReplay();
+      if (!stepReplay(elapsed * speed)) endReplay();
     }
     if (replay) {
       renderer.draw(replay.state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: replay.acc });
       hud.update(replay.state, 0, null);
     } else {
       if (!paused && !gfx.lost) {
-        acc += elapsed;
+        acc += elapsed * speed;
         let steps = 0;
         // A waiting click or key takes its tick now, not a frame or two later on a fast screen (ticks.ts).
-        while (steps < 12 && tickDue(acc, steps, input.waiting?.() ?? false)) {
+        while (steps < 12 * speed && tickDue(acc, steps, input.waiting?.() ?? false)) {
           let raw = input.take();
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };

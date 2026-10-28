@@ -3,14 +3,15 @@
 // match stays pending until it is played to the end, and existing saves keep what they had.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SEL, PREFS_KEY, nextVisit, openApp, readSave, tabScreens, waitForHome } = require('./lib/helpers.cjs');
+const { APP_URL, SEL, PREFS_KEY, fastMatches, nextVisit, openApp, readSave, tabScreens, waitForHome } = require('./lib/helpers.cjs');
 
 const KICK = '#ob-kickoff';
 const TIP = '.coach-tip:not([hidden])';
 
-/** A brand-new visitor: no save, no prefs but the short-match override, the e2e hook to read the live match. */
-async function freshVisit(t, { halfSeconds = null, width = 1280, height = 800 } = {}) {
+/** A brand-new visitor: no save, no prefs but the short-match override, the e2e hook to read the live match. fast: see fastMatches. */
+async function freshVisit(t, { halfSeconds = null, width = 1280, height = 800, fast = false } = {}) {
   const page = await t.newPage({ viewport: { width, height } });
+  if (fast) await fastMatches(page.context());
   await page.addInitScript(
     ([key, half]) => {
       window.__e2e = true;
@@ -274,7 +275,7 @@ test('onboarding: tip wording follows the live input, and the settled input beco
 });
 
 test('onboarding: the first match ends in a celebration with XP that names what opens, then an optional naming step', async (t) => {
-  const page = await freshVisit(t, { halfSeconds: 3 });
+  const page = await freshVisit(t, { halfSeconds: 3, fast: true });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   const text = await page.locator('.ob-celebrate').innerText();
@@ -310,7 +311,7 @@ test('onboarding: the first match ends in a celebration with XP that names what 
 });
 
 test('onboarding: the naming step can be skipped', async (t) => {
-  const page = await freshVisit(t, { halfSeconds: 3 });
+  const page = await freshVisit(t, { halfSeconds: 3, fast: true });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   const name = (await readSave(page)).club.name;
@@ -320,7 +321,7 @@ test('onboarding: the naming step can be skipped', async (t) => {
 });
 
 test('onboarding: coming back while the celebration is up does not replay the welcome', async (t) => {
-  const page = await freshVisit(t, { halfSeconds: 3 });
+  const page = await freshVisit(t, { halfSeconds: 3, fast: true });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   // What is stored when the celebration shows: the match is recorded, the milestone claimed, and setup is over.
@@ -344,7 +345,7 @@ test('onboarding: coming back while the celebration is up does not replay the we
 });
 
 test('onboarding: until level 3 Kick off is a warm-up friendly that earns XP and leaves Elo alone; at 3 it is ranked', async (t) => {
-  const page = await openApp(t, { xp: 120, prefs: { halfSeconds: 3, controls: 'mouse', onboarded: true } });
+  const page = await openApp(t, { xp: 120, prefs: { halfSeconds: 3, controls: 'mouse', onboarded: true }, fast: true });
   expect((await page.locator(`${SEL.hero} .hero-tag`).innerText()).trim(), 'warm-up').toMatch(/^warm-up friendly$/i);
   await page.locator(SEL.kickOff).click();
   await page.waitForSelector(SEL.pitch);
@@ -364,7 +365,7 @@ test('onboarding: until level 3 Kick off is a warm-up friendly that earns XP and
 test('onboarding: level 1 shows only Home; a level-up reveals the next tab with a coach mark, once', async (t) => {
   const prefs = { halfSeconds: 3, controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home', 'squad'] };
   // 10 XP short of level 3: any warm-up tips it over (a win pays 120, even a loss 50).
-  const page = await openApp(t, { xp: totalXp(3) - 10, prefs, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
+  const page = await openApp(t, { xp: totalXp(3) - 10, prefs, fast: true, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
   expect(await tabScreens(page), 'level 2: Home and Squad').toEqual(['home', 'squad']);
   expect(await page.locator('.tab-mark').count(), 'no mark yet').toBe(0);
   await page.locator(SEL.kickOff).click();

@@ -157,9 +157,11 @@ const totalXpForLevel = (level) => 50 * level * (level - 1);
  *   hasTouch     emulate a touch phone (pointer: coarse).
  *   renderer     '2d' or '3d': pin the match renderer (?renderer=). Tests that map world metres to
  *                pixels with the fixed top-down 2D projection use '2d'; the 3D camera moves.
+ *   fast         play matches FAST times faster than real time (see fastMatches), for a test that only needs one
+ *                played out: what happens after it, or what it records.
  */
 async function openApp(t, opts = {}) {
-  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query, init, hasTouch = false } = opts;
+  const { colorScheme = 'light', width = 1280, height = 800, prefs, mutateSave: userMutate, level = 99, xp, e2eHook = false, renderer, query, init, hasTouch = false, fast = false } = opts;
   const setXp = xp !== undefined ? xp : level === null ? null : totalXpForLevel(level);
   // Runs in the page, so it can only use its arguments.
   const levelMutate = setXp === null ? null : `save.xp = ${Number(setXp)}; delete save.unlocksSeen;`;
@@ -172,6 +174,7 @@ async function openApp(t, opts = {}) {
   // hasTouch is a context option, so the seeded second page (same context) is a touch page too.
   const first = await t.newPage({ colorScheme, viewport: { width, height }, ...(hasTouch ? { hasTouch: true, isMobile: true } : {}) });
   if (init) await first.context().addInitScript(init);
+  if (fast) await fastMatches(first.context());
   // e2eHook: expose the live match as window.__derbyMatch (see matchView.ts) so a test can set a scene up.
   if (e2eHook) await first.addInitScript(() => { window.__e2e = true; });
   await first.goto(url);
@@ -299,6 +302,22 @@ async function tabScreens(page) {
   return page.$$eval(SEL.tab, (els) => [...new Set(els.map((e) => e.getAttribute('data-screen')))]);
 }
 
+/** How many times faster than real time a `fast` test's matches play. */
+const FAST = 8;
+
+/**
+ * Every page of this context (pages opened later too) plays its live matches FAST times faster than real time
+ * (window.__e2eSpeed, matchView.ts): the same ticks and inputs, so the same match, result and replay, in an eighth of the
+ * wait. For tests that need a match played out with no input, to check what comes after it: the result, XP, levels,
+ * the season, the replay it recorded. A test about the match itself, its timing or its controls plays it at real speed,
+ * and match.e2e.cjs keeps one short match at real speed through to the result.
+ */
+async function fastMatches(context) {
+  await context.addInitScript((speed) => {
+    window.__e2eSpeed = speed;
+  }, FAST);
+}
+
 /** Start a ranked match with the home screen's Kick off, then wait for the pitch. */
 async function startRanked(page) {
   await goTab(page, SEL.homeScreen);
@@ -312,4 +331,4 @@ const pageWidths = (page) =>
     return { scrollWidth: Math.max(de.scrollWidth, document.body.scrollWidth), innerWidth: window.innerWidth };
   });
 
-module.exports = { reload, nextVisit, waitForHome, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };
+module.exports = { fastMatches, FAST, reload, nextVisit, waitForHome, openSecondPage, APP_URL, SAVE_KEY, PREFS_KEY, SEL, headerElo, skipOnboarding, readSave, openApp, goTab, tabScreens, startRanked, pageWidths, totalXpForLevel };

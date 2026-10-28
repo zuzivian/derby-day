@@ -4,7 +4,7 @@
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { test, expect } = require('./lib/harness.cjs');
-const { reload, SEL, openApp, goTab, skipOnboarding, startRanked, pageWidths } = require('./lib/helpers.cjs');
+const { fastMatches, reload, SEL, openApp, goTab, skipOnboarding, startRanked, pageWidths } = require('./lib/helpers.cjs');
 
 const REPLAYS_KEY = 'derbyday.replays.v1';
 const SHORT = { halfSeconds: 3 };
@@ -69,7 +69,7 @@ const setScrub = (page, v) =>
 const title = (page) => page.locator('#rv-title').innerText();
 
 test('replay: a played match is recorded, listed under Recent, and the viewer draws, scrubs, steps and closes', async (t) => {
-  const page = await openApp(t, { prefs: SHORT });
+  const page = await openApp(t, { prefs: SHORT, fast: true });
   await startRanked(page);
   await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
 
@@ -232,6 +232,7 @@ test('replay: copy a code, paste it back, and a bad code is refused politely', a
 
 test('replay: when the clipboard is refused, the code is offered in a selected textarea and Esc leaves the result dialog alone', async (t) => {
   const page = await t.newPage({ viewport: { width: 1280, height: 800 } });
+  await fastMatches(page.context());
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: () => Promise.reject(new Error('denied')) }, configurable: true });
     document.execCommand = () => false;

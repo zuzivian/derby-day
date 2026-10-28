@@ -6,7 +6,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('./lib/harness.cjs');
-const { APP_URL, SEL, PREFS_KEY, openApp, readSave, totalXpForLevel } = require('./lib/helpers.cjs');
+const { APP_URL, SEL, PREFS_KEY, fastMatches, openApp, readSave, totalXpForLevel } = require('./lib/helpers.cjs');
 
 const KICK = '#ob-kickoff';
 const TIP = '.coach-tip:not([hidden])';
@@ -23,8 +23,10 @@ const shot = async (page, name, settle = 600) => {
   await page.screenshot({ path: path.join(dir, `${name}.png`) });
 };
 
-async function fresh(t, { width, height, touch, colorScheme = 'light', halfSeconds = null }) {
+/** A brand-new visitor at this size. fast: play the first match fast (see fastMatches), for tests about what follows it. */
+async function fresh(t, { width, height, touch, colorScheme = 'light', halfSeconds = null, fast = false }) {
   const page = await t.newPage({ colorScheme, viewport: { width, height }, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
+  if (fast) await fastMatches(page.context());
   await page.addInitScript(
     ([key, half]) => {
       window.__e2e = true;
@@ -72,7 +74,7 @@ for (const v of VIEWS) {
   }
 
   test(`first session: "Go to the club" keeps a typed name, and a bad one keeps the step open (${v.name})`, async (t) => {
-    const page = await fresh(t, { ...v, halfSeconds: 3 });
+    const page = await fresh(t, { ...v, halfSeconds: 3, fast: true });
     await page.locator(KICK).click();
     await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
     await page.locator('[data-ob="next"]').click();
@@ -126,7 +128,7 @@ for (const v of VIEWS) {
   });
 
   test(`first session: the first match's celebration has a level-up moment and the Home that follows grows a card at a time (${v.name})`, async (t) => {
-    const page = await fresh(t, { ...v, halfSeconds: 3 });
+    const page = await fresh(t, { ...v, halfSeconds: 3, fast: true });
     await page.locator(KICK).click();
     await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
     expect(await page.locator('.ob-celebrate .xp-card.is-levelup').count(), 'the XP card shows the level-up').toBe(1);
@@ -196,7 +198,7 @@ for (const v of TIP_VIEWS) {
 }
 
 test('first session: a typed name does not beat the name just rolled', async (t) => {
-  const page = await fresh(t, { ...VIEWS[0], halfSeconds: 3 });
+  const page = await fresh(t, { ...VIEWS[0], halfSeconds: 3, fast: true });
   await page.locator(KICK).click();
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   await page.locator('[data-ob="next"]').click();
@@ -211,7 +213,7 @@ test('first session: a typed name does not beat the name just rolled', async (t)
 
 test('first session: reaching level 3 offers "Go to Kick off", which lands on Kick off', async (t) => {
   const prefs = { halfSeconds: 3, controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home', 'squad'] };
-  const page = await openApp(t, { xp: totalXpForLevel(3) - 10, prefs, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
+  const page = await openApp(t, { xp: totalXpForLevel(3) - 10, prefs, fast: true, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice']; } });
   await page.locator(SEL.kickOff).click();
   await page.locator(SEL.modalClose).waitFor({ timeout: 80_000 });
   await page.locator(SEL.modalClose).click();

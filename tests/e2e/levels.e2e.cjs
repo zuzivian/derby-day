@@ -65,7 +65,7 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
 });
 
 test('levels: a warm-up match awards XP, shown in the result dialog and the header', async (t) => {
-  const page = await openApp(t, { level: null, prefs: SHORT });
+  const page = await openApp(t, { level: null, prefs: SHORT, fast: true });
   await page.locator(SEL.kickOff).click();
   await page.waitForSelector(SEL.pitch);
   await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
@@ -91,7 +91,7 @@ test('levels: a warm-up match awards XP, shown in the result dialog and the head
 
 test('levels: crossing a level opens the level-up dialog; focus is trapped, Esc closes it and the tab appears', async (t) => {
   const start = totalXpForLevel(7) - 10;
-  const page = await openApp(t, { xp: start, prefs: SHORT, width: 390, height: 844 });
+  const page = await openApp(t, { xp: start, prefs: SHORT, fast: true, width: 390, height: 844 });
   expect(await tabScreens(page), 'no Ladder yet').notToContain('ladder');
   await playShortRanked(page);
   expect(await page.locator(SEL.levelUp).count(), 'waits behind the result').toBe(0);
@@ -161,7 +161,7 @@ test('levels: a forfeited match earns no XP', async (t) => {
 
 test('levels: at 1280x800 a level-up win shows the "Level up" flourish without scrolling the result', async (t) => {
   // Level 30, 40 XP short of 31; a 3–1 win pays well over that.
-  const page = await openApp(t, { xp: totalXpForLevel(31) - 40, prefs: SHORT, e2eHook: true, width: 1280, height: 800 });
+  const page = await openApp(t, { xp: totalXpForLevel(31) - 40, prefs: SHORT, fast: true, e2eHook: true, width: 1280, height: 800 });
   await startRanked(page);
   await page.waitForFunction(() => window.__derbyMatch);
   await page.evaluate(() => {

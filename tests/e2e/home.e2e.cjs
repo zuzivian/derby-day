@@ -49,7 +49,7 @@ test('home: from level 3 Kick off is ranked, and the win-chance gauge waits for 
 });
 
 test('home: Kick off starts a ranked match against the opponent shown', async (t) => {
-  const page = await openApp(t, { level: 3, prefs: SHORT });
+  const page = await openApp(t, { level: 3, prefs: SHORT, fast: true });
   const opp = (await page.locator(`${SEL.hero} .hero-name`).nth(1).innerText()).trim();
   await page.locator(SEL.kickOff).click();
   await page.waitForSelector(SEL.pitch);

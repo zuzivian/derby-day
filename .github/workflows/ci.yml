@@ -90,19 +90,20 @@ jobs:
       - name: Fairness check
         run: bun run fairness 12 --assert
 
-  # The suite is about 20 minutes on one runner (3D under SwiftShader, and the perf tests play several matches back to back),
-  # so it runs as three parallel jobs, each a third of the test files balanced by recorded time (tests/e2e/shard-weights.json,
-  # tests/e2e/lib/shard.cjs; tests/shard.test.ts proves every file runs in exactly one shard).
+  # The suite is about half an hour on one runner (3D under SwiftShader, and the perf tests play several matches back to back),
+  # so it runs as six parallel jobs, each a sixth of the tests balanced by recorded time per test (tests/e2e/shard-weights.json,
+  # tests/e2e/lib/shard.cjs; tests/shard.test.ts proves every test runs in exactly one shard). By test, not by file: perf.e2e.cjs
+  # alone is about ten minutes.
   e2e:
-    name: Browser end-to-end tests (shard ${{ matrix.shard }} of 3)
+    name: Browser end-to-end tests (shard ${{ matrix.shard }} of 6)
     runs-on: ubuntu-latest
-    # 25, not 20: "Install Chromium" has taken 6-7 min on a slow apt mirror (the system packages, not the
-    # browser download), which once cut off a shard in the second its tests finished.
-    timeout-minutes: 25
+    # "Install Chromium" has taken 6-7 min on a slow apt mirror (the system packages, not the browser download), which once
+    # cut off a shard in the second its tests finished.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       # Get the code.
       - uses: actions/checkout@v4
@@ -116,19 +117,30 @@ jobs:
       - name: Install Playwright
         run: npm install -g playwright@1
 
-      # Download Chromium plus the system libraries it needs on a fresh runner. Using the global
-      # `playwright` binary guarantees the browser matches the library the runner loads.
+      # Download the headless Chromium shell (the runner launches headless, which uses it) plus the system libraries it needs
+      # on a fresh runner; not the full browser as well. Using the global `playwright` binary guarantees the browser matches
+      # the library the runner loads.
       - name: Install Chromium
-        run: playwright install --with-deps chromium
+        run: playwright install --with-deps --only-shell chromium
 
       # The runner does require('playwright'); point Node at the global npm root so it resolves.
       # PLAYWRIGHT_CHROMIUM is unset here, so Playwright uses the browser installed above.
-      - name: Run e2e tests (shard ${{ matrix.shard }} of 3)
+      - name: Run e2e tests (shard ${{ matrix.shard }} of 6)
         env:
-          E2E_SHARD: ${{ matrix.shard }}/3
+          E2E_SHARD: ${{ matrix.shard }}/6
+          E2E_TIMINGS_FILE: e2e-timings-${{ matrix.shard }}.json
         run: |
           export NODE_PATH="$(npm root -g)"
           bun run e2e
+
+      # Seconds per test, to refresh tests/e2e/shard-weights.json: node tests/e2e/weights.cjs e2e-timings-*.json
+      - name: Upload test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-timings-${{ matrix.shard }}
+          path: e2e-timings-${{ matrix.shard }}.json
+          if-no-files-found: ignore
 
   # One check under the name the branch protection already knows: green only when every shard is green.
   e2e-all:
