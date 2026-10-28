@@ -1002,13 +1002,15 @@ const WOODWORK_E = 0.7;
 
 /**
  * The earliest point (0..1 along the step) at which a ball moving from `a` to `b` comes within `r`
- * of the point `c` (a post seen from above, or the bar seen side-on), or -1 if it doesn't.
+ * of the point `c` (a post seen from above, or the bar seen side-on), or -1 if it doesn't. A ball
+ * already touching it and moving away (as it is the tick after it came off it) doesn't hit it again:
+ * it did, and a ball off the top of the bar sat there for good, put back on it every tick.
  */
 function sweptHit(a: Vec, b: Vec, c: Vec, r: number): number {
   const d = sub(b, a);
   const f = sub(a, c);
   const cc = f.x * f.x + f.y * f.y - r * r;
-  if (cc <= 0) return 0;
+  if (cc <= 0) return f.x * d.x + f.y * d.y < 0 ? 0 : -1;
   const aa = d.x * d.x + d.y * d.y;
   if (aa < 1e-12) return -1;
   const bb = 2 * (f.x * d.x + f.y * d.y);

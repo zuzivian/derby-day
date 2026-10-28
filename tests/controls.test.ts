@@ -776,34 +776,39 @@ describe('right click without the ball tackles', () => {
   }
   const winsOver = (gap: number, cursorDx: number, n = 24) => {
     let wins = 0;
-    let cd = 0;
+    // The cooldown each attempt leaves as it is made (a standing tackle is won or lost on that tick).
+    const cds = new Set<number>();
     for (let seed = 1; seed <= n; seed++) {
       const { s, me } = duel(seed, gap);
       const tk = s.stats[0].tackles;
       const cursor = { x: me.pos.x + cursorDx, y: me.pos.y };
       step(s, { cursor, tackle: true });
-      cd = me.tackleCd;
+      cds.add(me.tackleCd);
       // A slide is judged as it travels (match.ts slideTackles), so watch it play out.
       for (let t = 0; t < 30 && s.phase === 'play'; t++) step(s, { cursor });
       if (s.stats[0].tackles > tk) wins++;
     }
-    return { wins, cd };
+    return { wins, cds: [...cds].sort((a, b) => a - b) };
   };
 
   test('close to the pointer it is a standing tackle: a lunge that wins the ball from a carrier in reach', () => {
     const r = winsOver(1.3, 1.5);
     expect(r.wins).toBeGreaterThan(14);
-    expect(r.cd).toBe(STAND_CD);
+    // Won: STAND_CD before the next; missed: off balance, then a longer wait.
+    expect(r.cds).toEqual([STAND_CD, STAND_MISS_DOWN + STAND_MISS_CD]);
   });
 
   test('a far pointer slides: it reaches a carrier a standing tackle cannot, and costs a longer recovery', () => {
     // 2.6 m is out of a standing tackle's 2 m reach, so a click on him (or the ball) there slides too.
     const onHim = winsOver(2.6, 2);
-    expect(onHim.cd).toBe(SLIDE_START_CD);
+    // A slide's cooldown is set as it starts (it is judged as it travels), at least SLIDE_CD_MIN whatever then happens.
+    expect(onHim.cds).toContain(SLIDE_START_CD);
+    expect(Math.min(...onHim.cds)).toBeGreaterThanOrEqual(SLIDE_CD_MIN);
     expect(onHim.wins).toBeGreaterThan(8);
     const slide = winsOver(2.6, 5);
     expect(slide.wins).toBeGreaterThan(8);
-    expect(slide.cd).toBe(SLIDE_START_CD);
+    expect(slide.cds).toContain(SLIDE_START_CD);
+    expect(Math.min(...slide.cds)).toBeGreaterThanOrEqual(SLIDE_CD_MIN);
     const { s, me } = duel(3, 2.6);
     step(s, { cursor: { x: me.pos.x + 5, y: me.pos.y }, tackle: true });
     expect(me.vel.x).toBeGreaterThan(8); // really goes in
