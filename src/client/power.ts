@@ -15,7 +15,8 @@
 import { passSpeed } from '../sim/ai.ts';
 import { oppGoal } from '../sim/field.ts';
 import { AIR_DRAG, BOUNCE_DAMP, BOUNCE_KEEP, DT, GOAL_BAR_H, GOAL_W, GRAVITY, PITCH_H, rollDecel } from '../sim/constants.ts';
-import { humanPass, humanShotLift, kickAim, loftRange, pointerPass, SHOT_Z0, shotSpeed } from '../sim/kicks.ts';
+import { FIRST_TIME_SHOT } from '../sim/human.ts';
+import { humanPass, humanShotLift, kickAim, loftRange, passTo, pointerPass, SHOT_Z0, shotSpeed } from '../sim/kicks.ts';
 import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 import type { RenderExtras } from './render.ts';
@@ -91,6 +92,24 @@ export function kickGauge(s: MatchState, x: RenderExtras): Gauge | null {
   if (pointer) return passGauge(pointerPass(s, p, pointer).speed);
   const target = humanPass(s, p, aim).target;
   return passGauge(passSpeed(Math.hypot(target.x - s.ball.pos.x, target.y - s.ball.pos.y), p.attrs.passing));
+}
+
+/**
+ * The gauge for the HUD power bar: only while a kick is charging (`x.armed`), or while a click is
+ * queued for the human's man as a ball comes to him (a first-time kick, or a header off a ball in
+ * the air: human.ts queueClick). Null while he just dribbles, so the bar stays out of the way.
+ */
+export function hudGauge(s: MatchState, x: RenderExtras): Gauge | null {
+  if (x.armed?.kind) return kickGauge(s, x);
+  const me: 0 | 1 = x.team ?? (s.humans[0] || !s.humans[1] ? 0 : 1);
+  const q = s.humans[me] && s.phase === 'play' ? s.queued?.[me] : null;
+  if (!q || q.player < 0 || q.player !== s.controlled[me]) return null;
+  if (q.kind === 'shoot') return shotGauge(FIRST_TIME_SHOT);
+  // Struck from about where he meets the ball, as human.ts plays it once he has it.
+  const p = s.players[q.player];
+  const from: MatchState = { ...s, ball: { ...s.ball, pos: { ...p.pos } } };
+  const mate = q.receiver >= 0 && !s.players[q.receiver].sentOff ? s.players[q.receiver] : null;
+  return passGauge((mate ? passTo(from, mate) : pointerPass(from, p, q.target)).speed);
 }
 
 /** Where a human's shot crosses the goal line: `y` across the pitch, `z` the height (m) it arrives at, `d` the metres of flight. */

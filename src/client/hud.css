@@ -55,7 +55,7 @@
 .hud-radar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: clamp(100px, 15%, 160px); height: auto; border-radius: 3px; opacity: .9; }
 .hud-power {
   position: absolute; right: 10px; bottom: 12px; width: clamp(90px, 15%, 170px); height: 13px; border: 2px solid #000; border-radius: 2px;
-  background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); opacity: .45; transition: opacity .15s;
+  background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); opacity: 0; transition: opacity .15s;
 }
 .hud-power-label {
   position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 11px/1 var(--font-display, 'Arial Narrow', sans-serif);
@@ -79,7 +79,6 @@
 .hud-me.winded .hud-me-legs i { background: #ff6b52; }
 .hud.replaying .hud-me { visibility: hidden; }
 .hud-power.on { opacity: 1; }
-.hud-power.idle { opacity: .7; }
 .hud-power.amber i { background: linear-gradient(#ffd06b, #f59e0b); }
 .hud-power i { display: block; height: 100%; width: 0; background: linear-gradient(#7cf06b, #2fb33b); }
 .hud-power.hot i { background: linear-gradient(#ff8a6b, #e0402a); }

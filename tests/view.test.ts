@@ -4,7 +4,7 @@
 import { describe, expect, test } from 'bun:test';
 import { autoLineup, generateLadder, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { HighlightSpotter, ReplayBuffer, SNAP_EVERY, BUFFER_TICKS, cloneState, type Highlight } from '../src/client/highlights.ts';
-import { goalCross, loftGauge, passGauge, shotGauge, shotGoalCross, kickGauge, SHOT_SWEET, SHOT_WILD } from '../src/client/power.ts';
+import { goalCross, hudGauge, loftGauge, passGauge, shotGauge, shotGoalCross, kickGauge, SHOT_SWEET, SHOT_WILD } from '../src/client/power.ts';
 import { WEDGE_MAX } from '../src/client/r3d/aim3d.ts';
 import { BROADCAST_WIDTH, MatchCamera, ZOOM_MAX, ZOOM_MIN, clampZoom } from '../src/client/r3d/camera3d.ts';
 import { longView, penaltyView } from '../src/client/r3d/renderer3d.ts';
@@ -196,6 +196,36 @@ describe('power gauge', () => {
     expect(shot.band).toBe('red');
     s.ball.owner = -1;
     expect(kickGauge(s, { cursor: { x: 90, y: 34 }, charge: 0, showCursor: true })).toBe(null);
+  });
+
+  test('the HUD bar is hidden while dribbling, shown while charging or with a click queued', () => {
+    const s = match(12);
+    for (let t = 0; t < 200; t++) step(s, {});
+    const me = s.players[s.controlled[0]];
+    me.pos = { x: 50, y: 34 };
+    s.ball.pos = { x: 50.5, y: 34 };
+    s.ball.owner = me.i;
+    s.ball.vel = { x: 0, y: 0 };
+    s.ball.z = 0;
+    const mate = s.players.find((p) => p.team === 0 && p.role !== 'GK' && p.i !== me.i)!;
+    mate.pos = { x: 70, y: 34 };
+    mate.vel = { x: 0, y: 0 };
+    // Dribbling, pointer on a teammate: the wedge still has its pass pace, the bar has nothing.
+    expect(kickGauge(s, { cursor: { ...mate.pos }, charge: 0, showCursor: true })).not.toBe(null);
+    expect(hudGauge(s, { cursor: { ...mate.pos }, charge: 0, showCursor: true })).toBe(null);
+    // Charging a shot: the bar shows it.
+    expect(hudGauge(s, { cursor: { x: 90, y: 34 }, charge: 0.5, showCursor: true, armed: { kind: 'shot', power: 0.7 } })?.kind).toBe('shot');
+    // A ball in the air on its way to him, with a click queued for a header or first-time kick.
+    s.phase = 'play';
+    s.ball.owner = -1;
+    s.ball.z = 3;
+    s.queued = [{ kind: 'shoot', target: { x: 100, y: 34 }, player: me.i, receiver: -1, until: s.tick + 90 }, null];
+    expect(hudGauge(s, { cursor: { x: 100, y: 34 }, charge: 0, showCursor: true })?.kind).toBe('shot');
+    s.queued = [{ kind: 'pass', target: { ...mate.pos }, player: me.i, receiver: mate.i, until: s.tick + 90 }, null];
+    expect(hudGauge(s, { cursor: { ...mate.pos }, charge: 0, showCursor: true })?.kind).toBe('pass');
+    // A follow-up for whoever gets it next is not his: no bar.
+    s.queued = [{ kind: 'pass', target: { ...mate.pos }, player: -1, receiver: -1, until: s.tick + 90 }, null];
+    expect(hudGauge(s, { cursor: { ...mate.pos }, charge: 0, showCursor: true })).toBe(null);
   });
 });
 

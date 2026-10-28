@@ -16,7 +16,7 @@ import { tickDue } from './ticks.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type TickInput } from './highlights.ts';
 import { setPieceSpot, InputController } from './input.ts';
-import { kickGauge } from './power.ts';
+import { hudGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
 import type { RenderExtras } from './render.ts';
 import { fallback2D, watchGfxLoss } from './gfxloss.ts';
@@ -508,7 +508,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
-        hud.update(s, charge, extras.charges ? undefined : kickGauge(s, extras));
+        hud.update(s, charge, extras.charges ? undefined : hudGauge(s, extras));
       }
     }
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
