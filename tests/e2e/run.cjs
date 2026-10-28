@@ -11,6 +11,7 @@
 //   E2E_TIMEOUT_MS       per-test timeout (default 90000)
 //   E2E_SHARD=k/n        run the k-th of n groups of tests, as CI's parallel jobs do (lib/shard.cjs)
 //   E2E_TIMINGS_FILE     write each test's seconds there as JSON (tests/e2e/weights.cjs turns them into shard-weights.json)
+//   E2E_JOBS=n           run the suite as n shards side by side, each its own runner and browser (default 1)
 //   E2E_PAGE_CLOSE_MS    how long a test's pages may take to close before the browser is killed and relaunched (default 1500)
 //
 // Playwright is not a dependency of the repo. It is resolved with require('playwright'), then from
@@ -174,6 +175,10 @@ const ROOT_ASSET = /^file:\/\/\/(manifest\.webmanifest|icons\/|sw\.js)/;
 
 async function main() {
   const tests = inShard.filter((t) => t.name.toLowerCase().includes(filter));
+  if (!tests.length && SHARD && registry.some((t) => t.name.toLowerCase().includes(filter))) {
+    console.log(`Shard ${SHARD}: none of the tests asked for are in this shard.`);
+    return;
+  }
   if (!tests.length) {
     console.error(`No tests match "${filter}".`);
     process.exit(2);
@@ -402,7 +407,60 @@ process.on('unhandledRejection', (e) => {
   process.exit(1);
 });
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+/**
+ * E2E_JOBS=n: the suite as n shards side by side on this machine, each a runner of its own with its own browser, as CI's
+ * jobs are. Each line of a shard's output is printed as it comes, tagged [k/n]; then the failures of all of them.
+ */
+function runParallel(n) {
+  const { spawn } = require('node:child_process');
+  const timings = process.env.E2E_TIMINGS_FILE;
+  const started = Date.now();
+  const runs = Array.from({ length: n }, (_, i) => {
+    const tag = `[${i + 1}/${n}]`;
+    const env = { ...process.env, E2E_SHARD: `${i + 1}/${n}`, E2E_JOBS: '1', ...(timings ? { E2E_TIMINGS_FILE: `${timings}.${i + 1}` } : {}) };
+    const child = spawn(process.execPath, [__filename, ...process.argv.slice(2)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const failed = [];
+    const counts = { passed: 0, failed: 0 };
+    let rest = '';
+    const onData = (buf) => {
+      const lines = (rest + buf).split('\n');
+      rest = lines.pop();
+      for (const line of lines) {
+        console.log(`${tag} ${line}`);
+        if (line.startsWith('FAIL  ')) failed.push(line.slice(6));
+        const m = /^(\d+) passed, (\d+) failed, \d+ total$/.exec(line);
+        if (m) Object.assign(counts, { passed: +m[1], failed: +m[2] });
+      }
+    };
+    child.stdout.on('data', onData);
+    child.stderr.on('data', onData);
+    return new Promise((resolve) => child.on('close', (code) => resolve({ tag, code, failed, counts })));
+  });
+  Promise.all(runs).then((done) => {
+    if (timings) {
+      const merged = {};
+      for (let k = 1; k <= n; k++) {
+        const f = `${timings}.${k}`;
+        if (!fs.existsSync(f)) continue;
+        Object.assign(merged, JSON.parse(fs.readFileSync(f, 'utf8')));
+        fs.unlinkSync(f);
+      }
+      fs.writeFileSync(timings, `${JSON.stringify(merged, null, 2)}\n`);
+    }
+    const passed = done.reduce((a, r) => a + r.counts.passed, 0);
+    const failed = done.flatMap((r) => r.failed.map((f) => `${r.tag} ${f}`));
+    const crashed = done.filter((r) => r.code !== 0 && !r.failed.length);
+    console.log(`\n${n} shards in ${Math.round((Date.now() - started) / 1000)} s: ${passed} passed, ${failed.length} failed`);
+    for (const f of failed) console.log(` - ${f}`);
+    for (const r of crashed) console.log(` - ${r.tag} exited with code ${r.code} (see its output above)`);
+    process.exit(failed.length || crashed.length ? 1 : 0);
+  });
+}
+
+const JOBS = Number(process.env.E2E_JOBS || 1);
+if (JOBS > 1 && !SHARD && !LIST_ONLY) runParallel(JOBS);
+else
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
