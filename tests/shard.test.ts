@@ -19,7 +19,7 @@ const names = registry.map((t) => t.name);
 const weightsPath = `${dir}shard-weights.json`;
 const weights: Record<string, number> = existsSync(weightsPath) ? JSON.parse(readFileSync(weightsPath, 'utf8')) : {};
 // The number of e2e jobs in .github/workflows/ci.yml.
-const CI_SHARDS = Number(/shard: \[([\d, ]+)\]/.exec(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'))![1].split(',').length);
+const CI_SHARDS = Number(/E2E_SHARD: \$\{\{ matrix\.shard \}\}\/(\d+)/.exec(readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8'))![1]);
 
 describe('e2e sharding', () => {
   test('every e2e test has its own name (the shards and the weights go by name)', () => expect(new Set(names).size).toBe(names.length));
@@ -64,5 +64,22 @@ describe('e2e sharding', () => {
     const groups = [1, 2, 3].map((k) => shardItems(names, `${k}/3`, w));
     for (const g of groups) expect(g.length).toBeGreaterThan(0);
     expect(groups.find((g) => g.includes(names[0]))!).toEqual([names[0]]);
+  });
+});
+
+// The unit tests split the same way, by file (scripts/unit-shard.ts), into the unit jobs of .github/workflows/ci.yml.
+describe('unit test sharding', () => {
+  const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const UNIT_SHARDS = Number(/unit-shard\.ts \$\{\{ matrix\.shard \}\}\/(\d+)/.exec(ci)![1]);
+  const unitFiles = readdirSync(new URL('./', import.meta.url).pathname).filter((f) => f.endsWith('.test.ts')).sort();
+  const unitWeights: Record<string, number> = JSON.parse(readFileSync(new URL('./unit-weights.json', import.meta.url), 'utf8'));
+
+  test(`the ${UNIT_SHARDS} unit jobs run every test file exactly once`, () => {
+    const groups = Array.from({ length: UNIT_SHARDS }, (_, i) => shardItems(unitFiles, `${i + 1}/${UNIT_SHARDS}`, unitWeights));
+    expect(groups.flat().sort()).toEqual(unitFiles);
+  });
+
+  test('unit weights name only test files that exist (refresh: bun run scripts/unit-shard.ts --measure)', () => {
+    for (const f of Object.keys(unitWeights)) expect(unitFiles).toContain(f);
   });
 });

@@ -16,15 +16,16 @@ permissions:
   contents: read
 
 jobs:
-  check:
-    name: Typecheck, unit tests, build, balance
+  # Typecheck, build and the headless sim guards. The unit tests run beside it in the unit jobs below.
+  build:
+    name: Typecheck, build, balance
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       # Get the code.
       - uses: actions/checkout@v4
 
-      # Bun runs the tests, the build script and the headless balance script.
+      # Bun runs the build script and the headless balance and career scripts.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.x
@@ -37,10 +38,6 @@ jobs:
       # Static type check of src/.
       - name: Typecheck
         run: bun run typecheck
-
-      # Deterministic sim and meta-layer unit tests.
-      - name: Unit tests
-        run: bun test
 
       # Bundle everything into dist/index.html.
       - name: Build
@@ -69,6 +66,40 @@ jobs:
           name: derby-day-dist
           path: dist/index.html
           if-no-files-found: error
+
+  # Deterministic sim and meta-layer unit tests, as two jobs of test files balanced by recorded seconds per file
+  # (tests/unit-weights.json, scripts/unit-shard.ts; tests/shard.test.ts proves every file runs in exactly one).
+  unit:
+    name: Unit tests (shard ${{ matrix.shard }} of 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.x
+
+      - name: Unit tests (shard ${{ matrix.shard }} of 2)
+        run: bun test $(bun run scripts/unit-shard.ts ${{ matrix.shard }}/2)
+
+  # One check under the name the branch protection already knows: green only when the build job and every unit shard are.
+  check:
+    name: Typecheck, unit tests, build, balance
+    needs: [build, unit]
+    # As for e2e-all: a cancelled workflow skips this instead of posting a red check; a failed or skipped job still fails it.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and every unit shard passed
+        run: |
+          echo "build: ${{ needs.build.result }}, unit shards: ${{ needs.unit.result }}"
+          test "${{ needs.build.result }}" = "success"
+          test "${{ needs.unit.result }}" = "success"
 
   fairness:
     name: Fair matches for every kind of player

@@ -8,7 +8,8 @@ import { autoLineup, clubFormation, clubMentality, cpuTeam, generateLadder, gene
 import { ensureElevenASide, newGame, setFormation, setMentality, clubTeam } from '../src/meta/game.ts';
 import { decodeReplay, encodeReplay, REPLAY_VERSION, ReplayRecorder, ReplaySeeker, type Replay } from '../src/meta/replay.ts';
 import { createMatch, step } from '../src/sim/match.ts';
-import { averageMetrics, measureMatch, mentalityLag, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
+import { measureMatch, mentalityLag, type TeamMetrics } from '../src/meta/tacticsProbe.ts';
+import { vsBalancedInWorker } from './workers/mentality.ts';
 import { FORMATION_IDS, FORMATIONS, MENTALITY_IDS, SIM_VERSION, TEAM_SIZE, type FormationId, type Mentality } from '../src/sim/constants.ts';
 import { TACTICS } from '../src/sim/ai.ts';
 import { makeRng } from '../src/sim/rng.ts';
@@ -152,23 +153,13 @@ describe('mentality changes how a side plays (fixed seeds, equal squads, each vs
   // its 2 m bar, and thirty-two left Defensive to Balanced's players forward within noise of its bar.
   const N = 64;
   const HALF = 90;
-  const id = (name: string, primary: string) => ({ id: name, name, short: name, primary, secondary: '#fff', crest: 'plain' as const });
   const metrics = new Map<Mentality, TeamMetrics>();
   const vsBalanced = (m: Mentality): TeamMetrics => metrics.get(m)!;
-  beforeAll(() => {
-    // Side A plays each mentality, side B Balanced, same squad and skill; A's metrics averaged, home and away.
-    for (const m of MENTALITY_IDS) {
-      const list: TeamMetrics[] = [];
-      for (let i = 0; i < N; i++) {
-        const squad = generateSquad(makeRng(5000 + Math.floor(i / 2)), 60);
-        const A = toTeamSetup(id('A', '#c00'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', m);
-        const B = toTeamSetup(id('B', '#00c'), squad, autoLineup(squad, '4-4-2'), 0.6, '4-4-2', 'balanced');
-        const aHome = i % 2 === 0;
-        const { teams } = measureMatch({ seed: 7100 + i, home: aHome ? A : B, away: aHome ? B : A, halfSeconds: HALF });
-        list.push(teams[aHome ? 0 : 1]);
-      }
-      metrics.set(m, averageMetrics(list));
-    }
+  beforeAll(async () => {
+    // Side A plays each mentality, side B Balanced, same squad and skill; A's metrics averaged, home and away
+    // (workers/mentality.ts). The five run at once, a Worker each: 320 matches one after another were most of this file's time.
+    const all = await Promise.all(MENTALITY_IDS.map((m) => vsBalancedInWorker(m, N, HALF)));
+    MENTALITY_IDS.forEach((m, i) => metrics.set(m, all[i]));
   }, 240_000);
 
   test('the defensive line climbs, and more players commit forward, step by step from Park the bus to High press', () => {
