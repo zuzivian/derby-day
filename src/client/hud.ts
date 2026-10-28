@@ -75,8 +75,8 @@ export function hudMarkup(o: HudOptions): string {
 export interface Hud {
   /**
    * Every frame. `charge` is the human's shot charge (0 when not charging). `gauge`, when given,
-   * drives the bar instead (src/client/power.ts, the same numbers as the 3D aim wedge): the pace of a
-   * plain pass while nothing charges, the shot or loft while it does.
+   * drives the bar instead (src/client/power.ts hudGauge, the same numbers as the 3D aim wedge): the
+   * shot or loft while it charges, or a click queued for a ball on its way; null hides the bar.
    */
   update(s: MatchState, charge: number, gauge?: Gauge | null): void;
   /** The REPLAY tag over an instant replay (top centre), or null to hide it. */
@@ -288,16 +288,15 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         lastClock = c;
       }
       if (gauge !== undefined) {
-        // Charging: full strength. Idle with the ball: the pace a click would pass at, dimmer.
+        // Shown only while a kick charges or a click is queued (power.ts hudGauge); hidden while he dribbles.
         const g = gauge;
-        const key = g ? `${Math.round(g.fill * 100)}|${g.band}|${g.tick}|${charge > 0}` : '';
+        const key = g ? `${Math.round(g.fill * 100)}|${g.band}|${g.tick}` : '';
         if (key !== lastGauge) {
           lastGauge = key;
           fill.style.width = `${g ? Math.round(g.fill * 100) : 0}%`;
           tick.style.left = `${(g ? g.tick : SWEET_SPOT) * 100}%`;
           tick.hidden = !!g && g.tick >= 1;
-          power.classList.toggle('on', !!g && charge > 0);
-          power.classList.toggle('idle', !!g && charge <= 0);
+          power.classList.toggle('on', !!g);
           power.classList.toggle('amber', g?.band === 'amber');
           power.classList.toggle('hot', g?.band === 'red');
           powerLabel.textContent = g ? GAUGE_LABEL[g.kind] : '';
