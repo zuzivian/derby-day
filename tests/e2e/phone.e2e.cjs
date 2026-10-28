@@ -60,7 +60,7 @@ test('tablet: at 768px the Squad table keeps its attribute columns (it scrolls i
 });
 
 test('200% zoom (640x400): the result dialog scrolls with the keyboard straight away', async (t) => {
-  const page = await openApp(t, { width: 640, height: 400, prefs: { halfSeconds: 3 } });
+  const page = await openApp(t, { width: 640, height: 400, prefs: { halfSeconds: 3 }, fast: true });
   await startRanked(page);
   await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
   const scroller = page.locator('.modal .rs-scroll');
@@ -76,7 +76,7 @@ test('200% zoom (640x400): the result dialog scrolls with the keyboard straight 
 });
 
 test('toasts sit at the top, clear of the result dialog\'s button', async (t) => {
-  const page = await openApp(t, { prefs: { halfSeconds: 3 } });
+  const page = await openApp(t, { prefs: { halfSeconds: 3 }, fast: true });
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await startRanked(page);
   await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
@@ -111,7 +111,7 @@ test('phone: tapping a player on Training brings his attributes into view', asyn
 });
 
 test('phone: the result dialog shows the rewards before the stats, with the Elo chip on screen', async (t) => {
-  const page = await openApp(t, { ...PHONE, prefs: { halfSeconds: 3 } });
+  const page = await openApp(t, { ...PHONE, prefs: { halfSeconds: 3 }, fast: true });
   await startRanked(page);
   await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
   const pos = await page.evaluate(() => {
@@ -178,7 +178,7 @@ test('phone: a toast sits below the club header, not over the wordmark and club 
 });
 
 test('phone: at 320x568 the XP card and its Level up are on screen when the result opens', async (t) => {
-  const page = await openApp(t, { width: 320, height: 568, prefs: { halfSeconds: 3 }, xp: totalXpForLevel(31) - 40 });
+  const page = await openApp(t, { width: 320, height: 568, prefs: { halfSeconds: 3 }, fast: true, xp: totalXpForLevel(31) - 40 });
   await startRanked(page);
   await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
   const box = await page.evaluate(() => {

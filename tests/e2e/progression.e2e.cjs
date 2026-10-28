@@ -38,7 +38,7 @@ async function playRanked(page) {
 }
 
 test('the 10th counted match rolls the season over and shows the review after the result', async (t) => {
-  const page = await openApp(t, { width: 390, height: 844, prefs: SHORT, mutateSave: (save) => ((save.week = 9), (save.year = 1)) });
+  const page = await openApp(t, { width: 390, height: 844, prefs: SHORT, fast: true, mutateSave: (save) => ((save.week = 9), (save.year = 1)) });
   const before = await readSave(page);
   expect(before.week, 'week before').toBe(9);
   await playRanked(page);
@@ -72,7 +72,7 @@ test('the 10th counted match rolls the season over and shows the review after th
 
 test('a full squad is only offered prospects; you can release someone to sign one', async (t) => {
   // Level 14: the calendar is on and the squad cap is still 24 (level 15 adds a place).
-  const page = await openApp(t, { level: 14, prefs: SHORT, mutateSave: nearSeasonEndFullSquad });
+  const page = await openApp(t, { level: 14, prefs: SHORT, fast: true, mutateSave: nearSeasonEndFullSquad });
   await playRanked(page);
   await page.locator(SEL.modalClose).click();
   await page.locator(R.review).waitFor();

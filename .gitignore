@@ -49,3 +49,4 @@ dist/
 
 # Agent worktrees
 .claude/worktrees/
+e2e-timings-*.json
