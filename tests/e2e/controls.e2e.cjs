@@ -105,6 +105,10 @@ test('mouse: the further the pointer, the faster the player runs, and a far poin
       const me = s.players[s.controlled[0]];
       for (const p of s.players) if (p !== me) p.stun = 1e7;
       s.switchTimer[0] = 1e9;
+      // He is the human's man now, not one handed over automatically (at the kick-off): no hold waiting for the pointer
+      // to move (MatchState.ctlHold). Eight small moves of a walk don't end it, and the CPU jogs him
+      // back to his place in the shape meanwhile, faster than the walk being measured.
+      s.ctlHold = [false, false];
       Object.assign(me, { stun: 0, pos: { x: 8, y: 20 }, vel: { x: 0, y: 0 }, energy: 1, winded: false });
       Object.assign(s.ball, { owner: -1, pos: { x: 60, y: 3 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
       s.ball.noPickup.fill(1e7);
@@ -115,13 +119,16 @@ test('mouse: the further the pointer, the faster the player runs, and a far poin
       const me = await page.evaluate(() => {
         const s = window.__derbyMatch;
         const m = s.players[s.controlled[0]];
-        return { x: m.pos.x, y: m.pos.y, speed: Math.hypot(m.vel.x, m.vel.y), sprinting: m.sprinting };
+        const steered = s.phase === 'play' && !s.ctlHold[0] && (s.idleTicks?.[0] ?? 0) === 0;
+        return { x: m.pos.x, y: m.pos.y, speed: Math.hypot(m.vel.x, m.vel.y), sprinting: m.sprinting, steered };
       });
       await moveTo(page, { x: Math.min(63, me.x + dx), y: 20 });
       await page.waitForTimeout(110);
       if (i >= 5) samples.push(me);
       if (me.x > 50) await page.evaluate(() => (window.__derbyMatch.players[window.__derbyMatch.controlled[0]].pos.x = 8));
     }
+    // Measured in open play with the human steering him, not the CPU positioning him (humanAuto).
+    expect(samples.every((m) => m.steered), `pointer ${dx} m ahead: the human steers him in open play`).toBe(true);
     return { speed: Math.max(...samples.map((m) => m.speed)), sprinting: samples.some((m) => m.sprinting) };
   };
   const near = await run(2.5);
