@@ -221,6 +221,8 @@ The runner never hangs silently: a test that times out prints each open page's s
 
 CI runs the suite as six parallel jobs (`E2E_SHARD=k/6`), split by test, not by file, and balanced by each test's recorded seconds in `tests/e2e/shard-weights.json`. Every job uploads its timings as an `e2e-timings-<k>` artifact; when a job warns that its shard is stale (or after adding slow tests), download a run's artifacts and run `node tests/e2e/weights.cjs e2e-timings-*.json` to refresh the file.
 
+Locally, `E2E_JOBS=3 bun run e2e` runs three shards side by side, each with its own browser: the whole suite in about 13 min on a 4-core machine instead of about 25. The 3D views share the CPU then (SwiftShader draws in software), so a test that measures real-time pace can fail under that load (the replay viewer's "about 60 ticks a second" did once in such a run); re-run one with `node tests/e2e/run.cjs <name>` before trusting the failure.
+
 Tests that only need a match played out, to check what follows it (the result, XP, levels, the season review, the recorded replay), pass `fast: true` to `openApp` (or call `fastMatches(context)`): the page sets `window.__e2eSpeed` and the match runs 8× faster than real time, with the same ticks and inputs, so the same result and replay. Tests of the match itself, its timing or its controls play at real speed, and `match.e2e.cjs` keeps one short match at real speed through to the result.
 
 All selectors live in `tests/e2e/lib/helpers.cjs` (`SEL`), including the best-effort onboarding skipper. When the UI changes, fix them there.
