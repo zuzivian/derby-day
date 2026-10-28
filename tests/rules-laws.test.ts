@@ -383,7 +383,8 @@ describe('Law 11: offside judged again when a teammate heads or deflects it on',
   test('a flick-on header to a teammate who was offside at the header is offside', () => {
     let given = 0;
     let missed = 0;
-    for (let seed = 1; seed <= 30; seed++) {
+    // 45 seeds: only those where A heads it and B is then offside count (14 when off-ball play changed in 29; 30 seeds gave 9).
+    for (let seed = 1; seed <= 45; seed++) {
       const s = live(seed, true);
       clearPitch(s);
       for (const [k, p] of s.players.filter((q) => q.team === 1).entries()) p.pos = p.role === 'GK' ? { x: PITCH_W - 0.5, y: MID - 12 } : { x: k < 3 ? 94 : 60, y: 10 + k * 4 };

@@ -498,6 +498,10 @@ export interface AiTeamPlan {
   /** Attacking: the teammates offering the carrier a short pass, and for each the angle he offers it at (radians from straight ahead). */
   support?: number[];
   supportAng?: number[];
+  /** ...how far from him they offer it (m): the tactic's supportR, further with a human on the ball... */
+  supportR?: number;
+  /** ...and who they support (the carrier, or the man the pass is going to), or -1. */
+  supportFor?: number;
   /** The striker kept on the last line (not a short supporter) while the ball is short of the final third, or -1. */
   pin?: number;
 }

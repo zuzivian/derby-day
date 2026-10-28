@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import { cpuTeam, generateLadder, ladderSquad } from '../src/meta/club.ts';
-import { GOAL_W, PITCH_H } from '../src/sim/constants.ts';
+import { GOAL_BAR_H, GOAL_W, PITCH_H } from '../src/sim/constants.ts';
 import { goalkeeper, oppGoal } from '../src/sim/field.ts';
 import { createMatch, humanPenaltyAim, step } from '../src/sim/match.ts';
 import { cpuKeeperDive, cpuTakerAim, resolveKick, type KickOutcome } from '../src/sim/penalty.ts';
@@ -39,13 +39,19 @@ function playOut(s: MatchState): KickOutcome | 'none' {
   const taker = s.ball.penalty!.by;
   const gk = s.ball.penalty!.gk;
   const g0 = s.score[0];
+  const lineX = oppGoal(s, 0).x;
+  // Its height as it crossed the goal line: the goal kick is given a few ticks later, when it has dropped.
+  let zLine = -1;
   for (let t = 0; t < 240; t++) {
     if (s.score[0] > g0) return 'goal';
     const lt = s.ball.lastTouch;
     if (lt === gk) return 'saved';
-    if (s.restart) return s.restart.kind === 'goalkick' ? (s.ball.z > 2 ? 'over' : 'wide') : 'none';
+    // Over the bar, or wide of the post below its height (one just wide at 2.2 m is wide).
+    if (s.restart) return s.restart.kind === 'goalkick' ? (zLine > GOAL_BAR_H ? 'over' : 'wide') : 'none';
     if (lt !== taker && lt >= 0) return 'post';
+    const before = s.ball.pos.x;
     step(s, still(s));
+    if (zLine < 0 && (before - lineX) * (s.ball.pos.x - lineX) <= 0) zLine = s.ball.z;
   }
   return 'post';
 }

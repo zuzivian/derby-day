@@ -936,6 +936,27 @@ describe('the woodwork', () => {
       }
     }
   });
+
+  test('a ball off the top of the bar goes on over it: it never sits on the bar', () => {
+    // Before: the tick after it touched the bar it was put back on it, every tick, so a penalty struck just
+    // over came to rest on top of the bar and stayed there (tests/penalties.test.ts, seed 30).
+    for (const zLine of [2.58, 2.6, 2.62]) {
+      const s = livePlay(3, -1);
+      isolate(s);
+      const t = 6 / 25;
+      const vz = (zLine - 1 + 0.5 * 9.8 * t * t) / t;
+      fire(s, { x: PITCH_W - 6, y: PITCH_H / 2 - 2 }, { x: 25, y: 0 }, 1, vz);
+      let still = 0;
+      for (let k = 0; k < 120 && s.phase === 'play'; k++) {
+        const x = s.ball.pos.x;
+        step(s);
+        if (Math.abs(s.ball.pos.x - x) < 1e-6 && Math.hypot(s.ball.vel.x, s.ball.vel.y) > 1) still++;
+      }
+      expect(still).toBe(0);
+      // Over the bar and out: a goal kick.
+      expect(s.restart?.kind).toBe('goalkick');
+    }
+  });
 });
 
 describe('a corner played to a team-mate', () => {
