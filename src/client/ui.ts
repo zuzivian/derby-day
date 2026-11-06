@@ -46,6 +46,12 @@ export interface ResultView {
   unrecorded?: string;
   /** A drawn cup tie settled by a shootout: the kicks scored by each side. Decides the headline. */
   pens?: { you: number; opp: number };
+  /** Replaces the close button's "Back to the club", e.g. "Next: semi-final" (the player lands on the bracket). */
+  closeLabel?: string;
+  /** Replaces the Victory/Draw/Defeat word, e.g. "Cup winners". */
+  headline?: string;
+  /** Ladder position before the match, for the Elo chip. */
+  rankBefore?: number;
 }
 
 export interface App {
@@ -95,7 +101,13 @@ export const PRACTICE = [
 /** Easy arrives at level 2, Normal at 4 and Hard at 5. */
 export const practiceUnlocked = (save: Save, id: string): boolean => isUnlocked(save, id === 'hard' ? 'practice-hard' : id === 'normal' ? 'practice-normal' : 'practice');
 
-function rankOf(save: Save): number {
+/** One helpful line under a ranked loss or draw: what the match still gave you. */
+export function rankedNote(gf: number, ga: number, sessions: number, trainingOpen: boolean): string {
+  const lead = gf === ga ? 'A point shared.' : ga - gf === 1 ? 'So close.' : 'Not this time.';
+  return `${lead} ${trainingOpen && sessions > 0 ? `Your ${sessions} training session${sessions === 1 ? ' is' : 's are'} waiting in Training.` : 'The prize money and XP are yours either way.'}`;
+}
+
+export function rankOf(save: Save): number {
   return ladderTable(save).findIndex((r) => r.you) + 1;
 }
 
@@ -482,9 +494,11 @@ function resultModal(app: App): string {
   const us = c.short;
   const them = r.opp.short;
   const sum = r.summary;
+  const rankNow = isUnlocked(app.save, 'ladder') ? rankOf(app.save) : 0;
+  const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` · Ladder #${r.rankBefore} → <b>#${rankNow}</b>` : '';
   const chips = sum
     ? [
-        r.ranked ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>`) : '',
+        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
         sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`) : '',
         // A forfeit's cost (forfeitCost in game.ts), so walking off is never free.
         sum.fine || sum.owed ? rewardChip('rs-money', COIN, 'Forfeit fine', sum.fine ? `−${formatMoney(sum.fine)}` : '±0', sum.owed ? `and ${sum.owed} XP owed from your next matches` : '') : '',
@@ -499,9 +513,9 @@ function resultModal(app: App): string {
     <div class="modal-card result-card" data-outcome="${outcome}">
       <div class="rs-scroll" tabindex="0" role="region" aria-labelledby="result-title">
       <header class="rs-hero">
-        ${outcome === 'win' ? confettiHtml() : ''}
+        ${outcome === 'win' ? confettiHtml(r.headline ? 40 : undefined) : ''}
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
-        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : OUTCOME_WORD[outcome]}</h2>
+        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? OUTCOME_WORD[outcome])}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
           <div class="rs-team">
@@ -549,7 +563,7 @@ function resultModal(app: App): string {
       </div>
       <footer class="rs-foot">
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
-        <button class="btn primary big rs-close" data-action="close-result">Back to the club</button>
+        <button class="btn primary big rs-close" data-action="close-result">${esc(r.closeLabel ?? 'Back to the club')}</button>
       </footer>
     </div>
   </div>`;

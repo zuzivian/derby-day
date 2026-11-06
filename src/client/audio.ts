@@ -213,7 +213,7 @@ export function crowdLevel(s: MatchState): number {
 // UI stingers (pure note choice)
 
 /** A short jingle for a reward moment outside the match: the result dialog and the level-up dialog. */
-export type StingerKind = 'win' | 'draw' | 'loss' | 'levelup';
+export type StingerKind = 'win' | 'draw' | 'loss' | 'levelup' | 'cup' | 'train';
 
 export interface StingerNote {
   /** Hz */
@@ -235,6 +235,15 @@ export function stingerNotes(kind: StingerKind): StingerNote[] {
       return [n(392, 0, 0.35, 0.14, 'sine'), n(392, 0.2, 0.6, 0.14, 'sine'), n(523.25, 0.2, 0.6, 0.08, 'sine')];
     case 'loss':
       return [n(220, 0, 0.45, 0.12, 'sine'), n(174.61, 0.28, 0.8, 0.12, 'sine')];
+    case 'train':
+      // Training or a signing: two short bright notes, a click of reward rather than a fanfare.
+      return [n(659.25, 0, 0.14, 0.14), n(880, 0.09, 0.3, 0.16)];
+    case 'cup':
+      // A trophy: the level-up run with a full chord held at the top, so it sounds bigger than a win.
+      return [
+        n(523.25, 0, 0.26, 0.2), n(659.25, 0.1, 0.26, 0.2), n(783.99, 0.2, 0.26, 0.2), n(1046.5, 0.3, 0.3, 0.22), n(1318.5, 0.42, 0.3, 0.22),
+        n(1568, 0.54, 1.1, 0.24), n(1046.5, 0.54, 1.1, 0.12, 'sine'), n(783.99, 0.54, 1.1, 0.1, 'sine'), n(2093, 0.7, 0.9, 0.12, 'sine'),
+      ];
     case 'levelup':
       return [
         n(523.25, 0, 0.26, 0.2), n(659.25, 0.1, 0.26, 0.2), n(783.99, 0.2, 0.26, 0.2), n(1046.5, 0.3, 0.3, 0.22), n(1318.5, 0.42, 0.3, 0.22),

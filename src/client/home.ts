@@ -67,15 +67,24 @@ const bars = (n: number) =>
 type Res = 'W' | 'D' | 'L';
 const RES_WORD: Record<Res, string> = { W: 'win', D: 'draw', L: 'defeat' };
 
+/** Wins in a row at the end of the match history (0 when the latest match was not a win). */
+export function winStreak(history: ReadonlyArray<{ goalsFor: number; goalsAgainst: number }>): number {
+  let n = 0;
+  for (let i = history.length - 1; i >= 0 && history[i].goalsFor > history[i].goalsAgainst; i--) n++;
+  return n;
+}
+
 /** Last five results as coloured chips, oldest first; empty slots are dashed. */
 function formChips(s: Save): string {
   const last = s.history.slice(-5).map((m): Res => (m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L'));
-  const label = last.length ? `Recent form, oldest first: ${last.map((r) => RES_WORD[r]).join(', ')}` : 'No matches played yet';
+  const streak = winStreak(s.history);
+  const streakText = streak >= 3 ? `${streak} wins in a row` : '';
+  const label = last.length ? `Recent form, oldest first: ${last.map((r) => RES_WORD[r]).join(', ')}${streakText ? `. ${streakText}` : ''}` : 'No matches played yet';
   const slots = [...last, ...Array<Res | null>(5 - last.length).fill(null)];
   if (!last.length) return `<div class="form-strip is-empty" role="img" aria-label="${label}"><span class="form-empty" aria-hidden="true">First match awaits</span></div>`;
   return `<div class="form-strip" role="img" aria-label="${label}">${slots
     .map((r) => (r ? `<span class="form-chip res-${r}" aria-hidden="true">${r}</span>` : `<span class="form-chip empty" aria-hidden="true"></span>`))
-    .join('')}</div>`;
+    .join('')}${streakText ? `<span class="form-streak" aria-hidden="true">${streakText}</span>` : ''}</div>`;
 }
 
 /** A small Elo sparkline, only once there is some history to draw. */

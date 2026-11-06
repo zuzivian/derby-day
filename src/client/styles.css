@@ -1442,3 +1442,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   summary { display: flex; align-items: center; }
   button.level-badge::before { content: ''; position: absolute; inset: -8px; }
 }
+/* Repeat-play feedback: a win-streak callout on the form strip, a one-shot flash on a trained stat or the money chip. */
+.form-streak { margin-left: 8px; align-self: center; font-size: var(--fs-xs); font-weight: 800; color: #eafff1; white-space: nowrap; }
+@keyframes stat-flash { 0% { background: color-mix(in srgb, var(--good) 45%, transparent); transform: scale(1.03); } 100% { background: transparent; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .attr-list li.flash, .stat.flash { animation: stat-flash .45s ease-out 1; border-radius: 8px; }
+}

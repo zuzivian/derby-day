@@ -51,7 +51,7 @@ import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
-import { emptyState, esc, type App } from './ui.ts';
+import { emptyState, esc, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -356,6 +356,14 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
   }
 }
 
+/** What the result's close button says, since it lands on the bracket or table: the next round while the cup is live, otherwise back to the competition. */
+export function closeLabelFor(kind: 'cup' | 'season', s: Save): string {
+  if (kind === 'season') return 'Back to the league';
+  const cup = s.cup;
+  if (!cup || cup.done) return 'Back to the cup';
+  return cup.round >= CUP_ROUNDS.length - 1 ? 'On to the final' : `Next: ${CUP_ROUNDS[cup.round].toLowerCase()}`;
+}
+
 /** Launch your next cup tie or league fixture live. Returns true if a match started. */
 function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean {
   const s = ctx.app.save;
@@ -401,6 +409,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
     const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
     const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
+    const rankBefore = rankOf(s);
     // Quick-simulating the rest of the round happens here (~250 ms).
     const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited, pens) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);
     maybeRollover(s); // after the whole round is recorded, so the CPU ties used this year's squads
@@ -420,6 +429,9 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
       label,
       note: outcome.note,
       pens,
+      rankBefore,
+      headline: outcome.trophy ? (outcome.trophy.kind === 'cup' ? 'Cup winners' : 'Champions') : undefined,
+      closeLabel: closeLabelFor(kind, s),
     };
     ctx.persist();
     ctx.app.screen = 'competitions';
