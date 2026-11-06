@@ -461,8 +461,10 @@ export class InputController {
     }
     // A screen reader's double-tap (or Enter / Space on a focused button) sends only a click, no pointer events:
     // treat it as a quick tap. A real press already acted on pointerdown, so its click is skipped.
-    const viaPointer = new WeakSet<HTMLElement>();
-    for (const b of [passBtn, shootBtn]) b.addEventListener('pointerdown', () => viaPointer.add(b));
+    // A cancelled press sends no click, so the mark expires rather than swallowing the next screen-reader tap.
+    const pressedAt = new WeakMap<HTMLElement, number>();
+    for (const b of [passBtn, shootBtn]) b.addEventListener('pointerdown', () => pressedAt.set(b, performance.now()));
+    const viaPointer = { delete: (b: HTMLElement) => { const t = pressedAt.get(b); pressedAt.delete(b); return t !== undefined && performance.now() - t < 4000; } };
     passBtn.addEventListener('click', () => {
       if (viaPointer.delete(passBtn)) return;
       this.press = { world: null, x: 0, y: 0, type: 'touch' };
