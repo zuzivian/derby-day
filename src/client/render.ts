@@ -222,6 +222,9 @@ export class PitchRenderer {
       const pick = x.switchTo ?? pickTeammate(s, me, x.cursor);
       if (pick >= 0 && pick !== ctrl.i) ring(s.players[pick].pos, PLAYER_R + 0.45, 'rgba(255,214,10,.9)');
     }
+    // A pass on its way to a teammate of ours: a ring on him.
+    const rcv = s.ball.owner < 0 && s.phase === 'play' ? s.players[s.ball.receiver] : null;
+    if (rcv && s.humans[rcv.team] && !rcv.sentOff) ring(rcv.pos, PLAYER_R + 0.4, 'rgba(255,255,255,.75)');
 
     // Sprint streaks behind anyone running flat out.
     ctx.lineCap = 'round';

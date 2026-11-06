@@ -618,12 +618,15 @@ export class SoundEngine {
 
   private kick(ctx: Ctx, out: AudioNode, kind: 'pass' | 'shot', power: number): void {
     const t = ctx.currentTime;
+    // Each strike a touch different (a few % in pitch); a full-blooded one adds a sharp crack.
+    const j = 0.94 + Math.random() * 0.12;
+    if (power > 0.85) this.burst(ctx, out, t, 0.025, 'highpass', 3200, 3200, 0.8, 0.22);
     if (kind === 'shot') {
-      this.tone(ctx, out, t, 'sine', 170 + 90 * power, 48, 0.14 + 0.06 * power, 0.5 + 0.35 * power);
+      this.tone(ctx, out, t, 'sine', (170 + 90 * power) * j, 48, 0.14 + 0.06 * power, 0.5 + 0.35 * power);
       this.burst(ctx, out, t, 0.05, 'bandpass', 2400, 900, 0.8, 0.22 + 0.2 * power);
       this.burst(ctx, out, t, 0.09, 'lowpass', 600, 160, 0.7, 0.2);
     } else {
-      this.tone(ctx, out, t, 'sine', 120 + 90 * power, 55, 0.09, 0.28 + 0.25 * power);
+      this.tone(ctx, out, t, 'sine', (120 + 90 * power) * j, 55, 0.09, 0.28 + 0.25 * power);
       this.burst(ctx, out, t, 0.035, 'bandpass', 1800, 800, 0.9, 0.1 + 0.1 * power);
     }
   }
