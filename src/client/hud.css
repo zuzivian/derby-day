@@ -351,3 +351,14 @@
   .hud-me-legs i { background: Highlight; forced-color-adjust: none; }
   .hud-me.winded .hud-me-legs i { background: GrayText; }
 }
+
+/* Big moments (matchView.ts): a quick white flash as a goal goes in, and a bright cut into a replay. */
+.pitch-wrap.goal-flash::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; background: #fff; animation: goal-flash .5s ease-out forwards;
+}
+@keyframes goal-flash { from { opacity: .4; } to { opacity: 0; } }
+.pitch-wrap.replaying canvas { animation: replay-cut .4s ease-out; }
+@keyframes replay-cut { from { filter: brightness(2.2) saturate(.6); } to { filter: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .pitch-wrap.goal-flash::before, .pitch-wrap.replaying canvas { animation: none; }
+}
