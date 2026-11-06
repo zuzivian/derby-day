@@ -49,6 +49,7 @@
   .replay-canvas { width: 100%; }
   .rp-controls { display: grid; grid-template-columns: 1fr 1fr; }
   .rp-controls .btn { min-width: 0; }
+  .rp-status:empty { min-height: 0; }
   .rp-time { min-width: 0; font-size: 12px; }
   .rp-keys { display: none; }
   .rp-row { grid-template-columns: 26px 40px minmax(0, 1fr); }

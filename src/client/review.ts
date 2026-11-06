@@ -136,11 +136,12 @@ function ladderBody(rv: SeasonReview): string {
     ? `<p class="muted small">${w ? 'Squad quality' : 'Elo'}, before → after.</p><ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${signed(m.after - m.before)})</span></span></li>`).join('')}</ul>`
     : '';
   if (!w) return section('Around the ladder', movers);
-  const line = (text: string, cls = '') => `<li class="rv-row"><span class="rv-main${cls}">${esc(text)}</span></li>`;
+  // Only the leading Up / Down word is coloured; the sentence stays in normal ink.
+  const line = (text: string, lead = '', cls = '') => `<li class="rv-row"><span class="rv-main">${lead ? `<b class="${cls}">${lead}</b>` : ''}${esc(text)}</span></li>`;
   const lines = [
     ...w.champions.map((c) => line(`${c.name} top ${divisionName(c.division)}.`)),
-    ...grouped(w.promoted).map(([to, names]) => line(`Up to ${divisionName(to)}: ${names}.`, ' up')),
-    ...grouped(w.relegated).map(([to, names]) => line(`Down to ${divisionName(to)}: ${names}.`, ' down')),
+    ...grouped(w.promoted).map(([to, names]) => line(` to ${divisionName(to)}: ${names}.`, '▲ Up', 'up')),
+    ...grouped(w.relegated).map(([to, names]) => line(` to ${divisionName(to)}: ${names}.`, '▼ Down', 'down')),
     ...w.transfers.map((t) => line(t)),
     ...w.retired.map((t) => line(t)),
   ];

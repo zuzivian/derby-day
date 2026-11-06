@@ -144,6 +144,8 @@ function panel(): void {
       /* the panel still works without it */
     }
     box.append(h, p, row, note);
+    // The game behind a broken screen must not take focus or be reachable by screen readers.
+    document.getElementById('app')?.setAttribute('inert', '');
     el.appendChild(box);
     document.body.appendChild(el);
     h.focus();

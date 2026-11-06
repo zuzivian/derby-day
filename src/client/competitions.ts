@@ -155,7 +155,7 @@ function cupPanel(s: Save): string {
   if (tie && opp) status = nextMatch(s, opp, `Cup ${CUP_ROUNDS[cup.round].toLowerCase()}`, 'cup', tie.a === s.club.id);
   else if (cup.done) {
     const won = cup.winner === s.club.id;
-    status = `<div class="comp-status ${won ? 'good' : ''}" role="status"><b>${won ? 'Cup winners!' : `${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.`}</b> You earned ${formatMoney(cup.earned)}.</div>
+    status = `<div class="comp-status ${won ? 'good' : ''}" role="status">${won ? `${CUP_ICON} ` : ''}<b>${won ? 'Cup winners!' : `${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.`}</b>${cup.earned > 0 ? ` You earned ${formatMoney(cup.earned)}.` : ' No prize money this time.'}</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Done: clear the bracket</button></div>`;
   } else {
     status = `<div class="comp-status" role="status">${out ? 'You are out of the cup.' : ''} The other ties are still to play.</div>
@@ -189,7 +189,7 @@ function tieCard(s: Save, t: Tie, round: number, k: number): string {
     const c = clubById(s, id);
     const you = id === s.club.id;
     const win = played && t.winner === id;
-    return `<div class="tie-row${win ? ' win' : ''}${played && !win ? ' lose' : ''}${you ? ' you' : ''}">
+    return `<div class="tie-row${win ? ' win' : ''}${win && round === ROUND_PLURAL.length - 1 ? ' champ' : ''}${played && !win ? ' lose' : ''}${you ? ' you' : ''}">
       ${c ? kit(c) : ''}<span class="tie-name">${esc(c?.name ?? '?')}${you ? ' <span class="pill">you</span>' : ''}</span>
       <span class="tie-score">${goals ?? ''}${pens !== undefined ? `<small> (${pens})</small>` : ''}</span>
     </div>`;
@@ -234,7 +234,7 @@ function seasonPanel(s: Save): string {
   if (f && opp) status = nextMatch(s, opp, `Matchday ${season.matchday + 1}`, 'season', f.home === s.club.id);
   else {
     const pos = season.finish ?? 0;
-    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))} You earned ${formatMoney(season.earned)}.</div>
+    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Done: clear the table</button></div>`;
   }
   return `
@@ -250,6 +250,8 @@ function seasonPanel(s: Save): string {
 
 function leagueTable(s: Save, season: Season): string {
   const rows = seasonTable(s, season);
+  // The fixture grid abbreviates clubs; show the same code beside each name so the two can be matched up.
+  const codes = fixtureCodes(s, season.entrants);
   const started = rows.some((r) => r.played > 0);
   const d = season.division ?? DIVISIONS;
   const up = d > 1;
@@ -266,7 +268,7 @@ function leagueTable(s: Save, season: Season): string {
     <tbody>${rows
       .map((r, i) => `<tr class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
         <td class="num">${i + 1}</td>
-        <th scope="row" class="name">${kit(r)}${esc(r.name)}${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
+        <th scope="row" class="name">${kit(r)}${esc(r.name)} <span class="club-code" aria-hidden="true">${esc(codes.get(r.id) ?? '')}</span>${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
         <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd ? signed(r.gd) : '0'}</td><td class="num ovr">${r.points}</td>
       </tr>`)
