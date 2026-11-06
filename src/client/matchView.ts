@@ -138,8 +138,8 @@ const TOUCH_HINT = hint(
   `Your player runs toward your finger, faster the further it is.`,
 );
 const MOUSE_HINT = hint(
-  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
-  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch. <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
+  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot · <b>V</b> camera · <b>Esc</b> pause`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. Your player runs to the pointer, faster the further it is. Also: hold <b>C</b> loft · <b>Shift</b> sprint · <b>E</b> switch · <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -200,6 +200,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (done || v === paused) return;
     if (v && (ending || s.phase === 'fulltime')) return;
     paused = v;
+    if (!v) disarmForfeit();
     input.reset?.();
     $('pause').hidden = !v;
     coach?.setPaused(v);
@@ -230,8 +231,29 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
+  // Arm-then-confirm (as the shootout's Leave): one stray Enter after Resume must not end the match.
+  let forfeitArmed = false;
+  let forfeitTimer = 0;
+  const forfeitLabel = $('forfeit').textContent ?? '';
+  const disarmForfeit = () => {
+    clearTimeout(forfeitTimer);
+    if (!forfeitArmed) return;
+    forfeitArmed = false;
+    $('forfeit').textContent = forfeitLabel;
+    $('forfeit').classList.remove('danger');
+  };
   $('forfeit').addEventListener('click', () => {
-    if (!ending && s.phase !== 'fulltime') finish(true);
+    if (ending || s.phase === 'fulltime') return;
+    if (!forfeitArmed) {
+      forfeitArmed = true;
+      $('forfeit').textContent = 'Really? Activate again to confirm';
+      $('forfeit').classList.add('danger');
+      announce(`${forfeitLabel}. Activate the button again to confirm.`);
+      forfeitTimer = window.setTimeout(disarmForfeit, 4000);
+      return;
+    }
+    disarmForfeit();
+    finish(true);
   });
   const onVis = () => document.hidden && setPaused(true);
   document.addEventListener('visibilitychange', onVis);

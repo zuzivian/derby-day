@@ -153,6 +153,7 @@ test('levels: a forfeited match earns no XP', async (t) => {
   const page = await openApp(t, { xp: 350 });
   await startRanked(page);
   await page.keyboard.press('Escape');
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.locator(SEL.modalClose).waitFor();
   expect(await page.locator(SEL.xpGain).innerText(), 'result line').toMatch(/No XP/);

@@ -275,6 +275,7 @@ test(
     await page.locator(SEL.resume).click();
     expect(await waitState('running'), 'back and resumed').toBe(true);
     await page.keyboard.press('Escape');
+    await page.locator(SEL.forfeit).click(); // arm; the second press confirms
     await page.locator(SEL.forfeit).click();
     await page.locator(SEL.modal).waitFor();
     expect(await waitState('suspended'), 'after the match: suspended once the crowd fades').toBe(true);

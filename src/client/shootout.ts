@@ -421,6 +421,10 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
         ? `${o.youClub.name} go through.`
         : `${o.oppClub.name} go through.`;
     $('so-end').hidden = false;
+    // The shootout is decided: Leave is dead (a second press would record the tie as a forfeit).
+    clearTimeout(leaveTimer);
+    confirmLeave = false;
+    $('so-leave').hidden = true;
     setInfo(`<b>${won ? 'Shootout won' : 'Shootout lost'}</b> ${a}–${b}`, '');
     say(`${won ? 'You win' : 'You lose'} the shootout ${a} to ${b}.`);
     $('so-continue').focus();
@@ -555,6 +559,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   });
   on($('so-continue'), 'click', () => end(false));
   on($('so-leave'), 'click', () => {
+    if (sh.done || phase === 'done') return;
     const btn = $('so-leave');
     if (!confirmLeave) {
       confirmLeave = true;
