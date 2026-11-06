@@ -17,10 +17,10 @@ export const DRAW_BUDGET_MS = 10;
 /** Average time between frames above this (under 25 fps; a 30 fps-capped phone stays under it) is over budget too: a GPU-bound or busy machine, ms. */
 export const FRAME_BUDGET_MS = 40;
 /** Each judgement averages this long of frames (and at least GOV_MIN_FRAMES of them), ms. */
-export const GOV_WINDOW_MS = 2000;
+export const GOV_WINDOW_MS = 1500;
 export const GOV_MIN_FRAMES = 10;
 /** After a step (and at the start), wait this long before judging again, ms. */
-export const GOV_SETTLE_MS = 3000;
+export const GOV_SETTLE_MS = 2000;
 /** Step back up after this long of windows all under half of both budgets, ms. */
 export const GOV_HEADROOM_MS = 10_000;
 /** Steps back up allowed per match. */
