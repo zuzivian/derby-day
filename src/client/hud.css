@@ -150,9 +150,10 @@
 .hud-prompt[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
-.pitch-wrap .pause { z-index: 4; } /* above the replay's skip layer, so Resume works mid-replay */
-/* The HUD's buttons (Menu, Cam, zoom), mute and the touch pads stay usable over the replay's skip layer. */
-.pitch-wrap.replaying .hud, .pitch-wrap.replaying .juice-mute, .pitch-wrap.replaying .touch-pad { z-index: 4; }
+/* The pause card's z-index lives in styles.css (.pause, 5): above the replay-raised HUD (4) and the skip layer (3). */
+/* The HUD's buttons (Menu, Cam, zoom) and mute stay usable over the replay's skip layer; the touch pads sit under it, dimmed. */
+.pitch-wrap.replaying .hud, .pitch-wrap.replaying .juice-mute { z-index: 4; }
+.pitch-wrap.replaying .touch-pad { opacity: .35; pointer-events: none; }
 .replay-skip { position: absolute; inset: 0; z-index: 3; cursor: pointer; background: transparent; border: 0; padding: 0; pointer-events: auto; }
 .replay-skip:focus-visible { outline: 3px solid #ffd60a; outline-offset: -3px; }
 .pitch-wrap.replaying::after {

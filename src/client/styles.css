@@ -874,10 +874,19 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pause-actions { gap: 6px; }
   .pause-card .pause-tactics { margin-top: 0; }
   .pause-card .pause-opt { margin-top: 0; justify-content: flex-start; text-align: left; }
-  .pause-card .hint { display: none; }
 }
 @media (pointer: coarse) {
   .pause-card .hint { display: none; }
+}
+/* Portrait phones (down to 320x568): a tighter pause card so Resume ... Sound fit without scrolling. */
+@media ((max-height: 600px) or (max-width: 480px)) and (orientation: portrait) {
+  .pause { padding: 4px; }
+  .pause-card { gap: 8px; padding: 12px 14px; }
+  .pause-card h2 { font-size: 28px; }
+  .pause-card h2::after { margin-top: 4px; }
+  .pause-actions { gap: 6px; }
+  .pause-actions .btn { min-height: 44px; }
+  .pause-card .pause-tactics, .pause-card .pause-opt { margin-top: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .banner { animation: none; }
@@ -1107,6 +1116,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .ties { gap: var(--sp-2); }
   .comp-prizes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .comp-prizes dt { white-space: normal; text-overflow: clip; letter-spacing: .04em; }
   .league-table .opt { display: none; }
   .league-table th, .league-table td, .league-table tbody th[scope="row"] { padding: 6px 4px; }
   .league-table .name { white-space: normal; }

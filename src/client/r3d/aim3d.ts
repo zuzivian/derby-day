@@ -590,7 +590,7 @@ export class AimLayer {
       this.alpha[p.i] = bar ? (isCtrl ? 1 : 0.75) : 0;
       this.m4.makeTranslation(head.x, head.y + 0.28 * k, head.z);
       this.bars.setMatrixAt(p.i, this.m4);
-      const showName = live && (isCtrl || (near && s.ball.owner === p.i));
+      const showName = live && !x.noAim && (isCtrl || (near && s.ball.owner === p.i));
       const existing = this.names.get(p.i);
       if (showName) {
         const sp = this.name(p);
