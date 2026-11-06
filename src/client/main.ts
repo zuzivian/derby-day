@@ -39,6 +39,7 @@ import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
+import { introLine } from './stakes.ts';
 import { clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
@@ -349,6 +350,8 @@ function playLive(
     toast('Pick a full XI in Squad first.', false);
     return false;
   }
+  const rival = pending && s.ladder.find((c) => c.id === pending.opponentId);
+  const intro = rival ? introLine(s, rival) : undefined; // before beginMatch: this match is not yet a meeting
   if (pending) {
     beginMatch(s, pending);
     persist();
@@ -368,6 +371,7 @@ function playLive(
     humanTeam: 0,
     crests: [s.club.crest, crest],
     label,
+    intro,
     forfeitText,
     controls: app.prefs.controls,
     // The input mode the player settled on becomes their preference (the first-run flow no longer asks).

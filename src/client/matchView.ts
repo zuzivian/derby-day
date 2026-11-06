@@ -30,6 +30,8 @@ import { MENTALITY_IDS, MENTALITY_LABEL, type Mentality } from '../sim/constants
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
   label: string;
+  /** Opening banner: the stakes of this match (stakes.ts introLine). */
+  intro?: { title: string; sub: string };
   /** Pause-menu text for leaving early. Defaults by label (ranked forfeits count as 0–3). */
   forfeitText?: string;
   /** Preferred control style; the input still follows whatever the player touches. */
@@ -475,6 +477,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   function banner(text: string, ms: number, sub?: string, tone?: string) {
     hud.word(text, ms, sub, tone);
     bannerUntil = performance.now() + ms;
+  }
+
+  if (o.intro) {
+    // Higher and smaller than the goal words, clear of the kick-off prompt in the middle of the pitch.
+    const el = root.querySelector<HTMLElement>('#banner')!;
+    banner(o.intro.title, 2600, o.intro.sub);
+    el.classList.add('intro');
+    setTimeout(() => el.classList.remove('intro'), 2700);
   }
 
   function finish(forfeited: boolean) {

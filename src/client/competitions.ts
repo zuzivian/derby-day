@@ -51,6 +51,7 @@ import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
+import { storyHtml } from './stakes.ts';
 import { emptyState, esc, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
@@ -106,6 +107,12 @@ function cabinet(s: Save): string {
   </article>`;
 }
 
+/** What winning the tie is worth: the next round, or the cup itself. */
+function cupWinLine(s: Save): string {
+  const r = s.cup?.round ?? 0;
+  return `Win: ${r >= CUP_ROUNDS.length - 1 ? 'lift the cup' : `through to the ${CUP_ROUNDS[r + 1].toLowerCase()}`}`;
+}
+
 /** The "next match" strip shared by both panels. */
 function nextMatch(s: Save, opp: LadderClub, label: string, kind: 'cup' | 'season', home: boolean): string {
   const ours = clubStrength(s, s.club.id);
@@ -121,6 +128,7 @@ function nextMatch(s: Save, opp: LadderClub, label: string, kind: 'cup' | 'seaso
         <div class="vs" aria-hidden="true">vs</div>
         <div class="side">${crestSvg(b.c, 44)}<div class="comp-side-name">${esc(b.n)}</div><div class="side-elo">XI ${b.x}</div></div>
       </div>
+      ${storyHtml(s, opp, kind === 'cup' ? cupWinLine(s) : undefined)}
       <button class="btn primary big" data-action="comp-play" data-kind="${kind}">Play ${esc(label.toLowerCase())}</button>
     </div>`;
 }
