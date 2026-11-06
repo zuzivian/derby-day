@@ -138,7 +138,7 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   await page.waitForFunction(() => /Player 2 kicks off: press Enter/.test(document.querySelector('.hud-prompt')?.textContent ?? ''), null, { timeout: 60_000, polling: 'raf' });
   await page.locator(SEL.modal).waitFor({ timeout: 90_000 });
   const modal = await page.locator(SEL.modal).innerText();
-  expect(modal, 'result dialog says Local 2P').toMatch(/Local 2P/i);
+  expect(modal, 'result dialog says One screen').toMatch(/One screen/i);
   expect(modal, 'and that nothing is recorded').toMatch(/no Elo/i);
   const after = await readSave(page);
   expect(after.club.elo, 'Elo unchanged').toBe(before.club.elo);

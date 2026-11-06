@@ -223,7 +223,7 @@ export function clubScreen(app: App): string {
   return `
   <div class="club-grid">
     <article class="panel form">
-      <h2 class="eyebrow">Elo</h2>
+      <h2 class="eyebrow">Club rating (Elo)</h2>
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
       ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
       <h3 class="eyebrow">Recent</h3>
@@ -318,7 +318,7 @@ export function squadScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
-        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Value</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
       </table></div>
     </article>
@@ -341,7 +341,7 @@ export function transfersScreen(app: App): string {
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl has-action">
-        <thead><tr><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
+        <thead><tr><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
@@ -353,7 +353,7 @@ export function transfersScreen(app: App): string {
     <article class="panel">
       <h2 class="eyebrow">Sell<span class="eyebrow-more"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
       <div class="table-scroll"><table class="tbl compact has-action">
-        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
+        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
             ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`

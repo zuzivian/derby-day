@@ -274,7 +274,7 @@ export const cupWaitLeft = (save: Save): number => Math.max(0, save.cupWait ?? 0
 export const cupWaitText = (n: number): string => `Next cup after ${n} more ranked or league match${n === 1 ? '' : 'es'}.`;
 
 export function canStart(save: Save, kind: 'cup' | 'league' = 'league'): { ok: boolean; message: string } {
-  if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI first.' };
+  if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI in Squad first.' };
   if (save.ladder.length < COMP_SIZE - 1) return { ok: false, message: 'Not enough clubs on the ladder.' };
   if (kind === 'cup' && cupWaitLeft(save) > 0) return { ok: false, message: cupWaitText(cupWaitLeft(save)) };
   return { ok: true, message: '' };

@@ -102,7 +102,7 @@ function cabinet(s: Save): string {
     ${t.length
       ? `<ul class="trophies">${t.map((x) => `<li class="trophy trophy-${x.kind}">${x.kind === 'cup' ? CUP_ICON : SHIELD_ICON}<span>${esc(x.title)}</span></li>`).join('')}</ul>`
       : emptyState('Empty for now. Win the cup or the league to put something in it.', CUP_ICON)}
-    <p class="muted small">Cup and league matches pay prize money and an extra training session, and move your Elo (not your ladder record). Forfeiting counts as a 0–3 defeat.</p>
+    <p class="muted small">Cup and league matches pay prize money and an extra training session, and change your Elo rating (not your ladder record). Forfeiting counts as a 0–3 defeat.</p>
   </article>`;
 }
 
@@ -156,7 +156,7 @@ function cupPanel(s: Save): string {
   else if (cup.done) {
     const won = cup.winner === s.club.id;
     status = `<div class="comp-status ${won ? 'good' : ''}" role="status">${won ? `${CUP_ICON} ` : ''}<b>${won ? 'Cup winners!' : `${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.`}</b>${cup.earned > 0 ? ` You earned ${formatMoney(cup.earned)}.` : ' No prize money this time.'}</div>
-      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Done: clear the bracket</button></div>`;
+      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Finish the cup</button></div>`;
   } else {
     status = `<div class="comp-status" role="status">${out ? 'You are out of the cup.' : ''} The other ties are still to play.</div>
       <div class="actions"><button class="btn primary" data-action="comp-sim-cup">Simulate the rest of the cup</button></div>`;
@@ -235,7 +235,7 @@ function seasonPanel(s: Save): string {
   else {
     const pos = season.finish ?? 0;
     status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
-      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Done: clear the table</button></div>`;
+      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Finish the season</button></div>`;
   }
   return `
   <article class="panel comp-panel" aria-labelledby="season-title">

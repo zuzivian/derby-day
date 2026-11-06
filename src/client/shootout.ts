@@ -139,7 +139,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
         aim: 'Touch where to shoot, hold to build power, lift to strike. Stay in the green; too hard flies over the bar.',
         dive: 'Tap left, middle or right of the goal to dive.',
         cont: 'Tap the pitch to continue',
-        leaveArmed: 'Really leave? Tap again to forfeit',
+        leaveArmed: 'Really forfeit? Tap again to confirm',
       }
     : {
         canvas: 'The goal, seen from the penalty spot. Aim with the mouse or the arrow keys.',
@@ -148,7 +148,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
         aim: 'Aim with the mouse or arrow keys. Hold the left button or Space to build power, release to strike. Strike in the green; too hard flies over the bar.',
         dive: 'Click the left, middle or right of the goal to dive, or use the arrow keys and Space.',
         cont: 'Click or press Space to continue',
-        leaveArmed: 'Really leave? Click again to forfeit',
+        leaveArmed: 'Really forfeit? Click again to confirm',
       };
 
   root.innerHTML = `
@@ -189,7 +189,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
         <button class="btn" type="button" data-dive="1">Dive right</button>
       </div>
       <button class="btn" type="button" id="so-quick" hidden>Strike at medium power</button>
-      <button class="btn ghost" type="button" id="so-leave" aria-label="Leave shootout (counts as a loss)" title="Leaving counts as a loss">Leave</button>
+      <button class="btn ghost" type="button" id="so-leave" aria-label="Forfeit shootout (counts as a loss)" title="Forfeiting counts as a loss">Forfeit</button>
     </div>
     <p class="visually-hidden" id="so-live" role="status" aria-live="polite"></p>
   </section>`;
@@ -566,11 +566,11 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       btn.textContent = TXT.leaveArmed;
       btn.removeAttribute('aria-label');
       btn.classList.add('danger');
-      say('Leaving counts as a loss. Activate the button again to confirm.');
+      say('Forfeiting counts as a loss. Press the button again to confirm.');
       leaveTimer = window.setTimeout(() => {
         confirmLeave = false;
-        btn.textContent = 'Leave';
-        btn.setAttribute('aria-label', 'Leave shootout (counts as a loss)');
+        btn.textContent = 'Forfeit';
+        btn.setAttribute('aria-label', 'Forfeit shootout (counts as a loss)');
         btn.classList.remove('danger');
       }, 4000);
       return;

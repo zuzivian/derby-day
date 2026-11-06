@@ -246,9 +246,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (ending || s.phase === 'fulltime') return;
     if (!forfeitArmed) {
       forfeitArmed = true;
-      $('forfeit').textContent = 'Really? Activate again to confirm';
+      $('forfeit').textContent = `${coarsePointer() ? 'Tap' : 'Click'} again to ${/forfeit/i.test(forfeitLabel) ? 'forfeit' : 'leave'}`;
       $('forfeit').classList.add('danger');
-      announce(`${forfeitLabel}. Activate the button again to confirm.`);
+      announce(`${forfeitLabel}. Press the button again to confirm.`);
       forfeitTimer = window.setTimeout(disarmForfeit, 4000);
       return;
     }
