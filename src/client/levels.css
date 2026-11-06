@@ -167,3 +167,9 @@
   .xp-card .level-badge { width: 44px; height: 44px; font-size: 20px; }
 }
 .xp-card-next { margin: 2px 0 0; font-size: var(--fs-xs, 12px); color: var(--muted); }
+
+/* Forced colors (#507): the XP bars are gradient fills on a background track. */
+@media (forced-colors: active) {
+  .xp-bar, .xp-card-track { border: 1px solid CanvasText; }
+  .xp-bar span, .xp-card-fill { background: Highlight; forced-color-adjust: none; }
+}

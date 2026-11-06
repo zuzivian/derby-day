@@ -344,3 +344,10 @@
 @media (pointer: coarse) and (orientation: portrait) and (min-width: 768px) {
   .hud-me { right: auto; left: 16px; bottom: 76px; width: 128px; }
 }
+
+/* Forced colors (#511): the stamina bar is a background fill on a background track. */
+@media (forced-colors: active) {
+  .hud-me-legs { border: 1px solid CanvasText; }
+  .hud-me-legs i { background: Highlight; forced-color-adjust: none; }
+  .hud-me.winded .hud-me-legs i { background: GrayText; }
+}
