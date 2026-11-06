@@ -1,6 +1,6 @@
 /* In-match HUD over the pitch (src/client/hud.ts) and the 3D view's controls. */
 /* 140 px: the page's top padding, the pitch and the one-line controls hint fit a 1280x800 window without scrolling. */
-.match .pitch-wrap { width: min(100%, calc((100vh - 140px) * 1.531)); }
+.match .pitch-wrap { width: min(100%, calc((100vh - 140px) * 1.531)); width: min(100%, calc((100dvh - 140px) * 1.531)); }
 .hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--font-display, 'Arial Narrow', sans-serif); border-radius: 10px; overflow: hidden; }
 .hud button { pointer-events: auto; }
 
@@ -259,7 +259,7 @@
 }
 
 /* Replay viewer stage (src/client/replayView.ts) */
-.rp-stage { position: relative; width: min(100%, calc((100vh - 300px) * 1.531)); margin: 0 auto; }
+.rp-stage { position: relative; width: min(100%, calc((100vh - 300px) * 1.531)); width: min(100%, calc((100dvh - 300px) * 1.531)); margin: 0 auto; }
 .rp-stage .replay-canvas { width: 100%; }
 .rp-tag, .rp-word {
   position: absolute; pointer-events: none; color: #fff; font-family: var(--font-display, 'Arial Narrow', sans-serif); font-style: italic; font-weight: 900;

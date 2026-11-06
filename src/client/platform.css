@@ -8,7 +8,7 @@
 .crash-note { color: var(--muted, #5a6478); font-size: 14px; min-height: 1.2em; }
 .crash-details, .settings textarea { width: 100%; box-sizing: border-box; font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: var(--bg, #e9eeec); color: var(--ink, #17223a); border: 1px solid var(--line, #cbd4d1); border-radius: 8px; padding: 8px; resize: vertical; }
 .crash-details { min-height: 140px; }
-.settings-card { max-height: calc(100vh - 32px); overflow-y: auto; }
+.settings-card { max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .settings-card h2 { margin: 0; font-family: var(--font-display, 'Arial Narrow', sans-serif); font-size: 30px; text-transform: uppercase; }
 .settings-card h3 { margin: 6px 0 0; }
 .settings-card p { margin: 0; }
