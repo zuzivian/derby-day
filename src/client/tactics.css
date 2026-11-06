@@ -73,3 +73,11 @@
 @media (pointer: coarse) {
   .qt-step, .tac-step { min-height: 44px; }
 }
+/* Tablets: nine formations in clean rows (3x3 up to 760 px, one row beyond) instead of 7+2 orphans. */
+@media (min-width: 641px) and (max-width: 760px) {
+  .tac-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (min-width: 761px) and (max-width: 1100px) {
+  .tac-cards { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
+  .tac-card { padding-inline: 3px; }
+}

@@ -328,3 +328,19 @@
   #app:has(> .match) { max-width: none; }
   .match .pitch-wrap { width: min(100%, calc((100vh - 160px) * 1.531)); width: min(100%, calc((100dvh - 160px) * 1.531)); }
 }
+
+/* Portrait tablets (iPad, Galaxy Tab): a tall pitch like phones get, so the match uses the screen; the pause card fits inside. */
+@media (pointer: coarse) and (orientation: portrait) and (min-width: 641px) {
+  #pitch.pitch-3d { aspect-ratio: 3 / 4; max-height: calc(100dvh - 110px); }
+  .hud-radar { width: 96px; }
+}
+/* Large touch screens: the power gauge and player card follow the bigger Pass / Shoot pads inboard. */
+@media (pointer: coarse) and (min-width: 768px) and (min-height: 521px) {
+  .hud-power { bottom: 118px; right: 28px; }
+  .hud-me { bottom: 146px; right: 28px; }
+  .pitch-wrap .juice-mute { left: 16px; bottom: 16px; }
+  .hud-radar { left: 74px; }
+}
+@media (pointer: coarse) and (orientation: portrait) and (min-width: 768px) {
+  .hud-me { right: auto; left: 16px; bottom: 76px; width: 128px; }
+}
