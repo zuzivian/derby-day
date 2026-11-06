@@ -22,6 +22,7 @@ import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
 import { clubFormation, clubMentality } from '../meta/club.ts';
 import { crestSvg } from './crest.ts';
+import { storyHtml } from './stakes.ts';
 import { esc, PRACTICE, practiceUnlocked, type App } from './ui.ts';
 
 /** The one standard match length, for labels: "2 × 3 min". */
@@ -165,6 +166,7 @@ function hero(app: App): string {
         ${ranked ? `<div class="hero-tactic">${clubFormation(app.nextOpp)} · <b>${MENTALITY_LABEL[clubMentality(app.nextOpp)]}</b></div>` : ''}
       </div>
     </div>
+    ${ranked ? storyHtml(s, app.nextOpp) : ''}
     <p id="hero-desc" class="sr-only">${kind} against ${esc(opp.name)}, ${MATCH_LENGTH_SPOKEN}.${gaugeOn ? ` Win chance ${pct}%.` : ''}</p>
     <button class="kickoff" id="kick-off" data-action="${ranked ? 'play-ranked' : 'play-warmup'}" aria-describedby="hero-desc">${ICON.ball(30)}<span>Kick off</span></button>
   </section>`;

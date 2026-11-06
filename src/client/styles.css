@@ -1549,3 +1549,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pad-btn.down { border-color: Highlight; }
   .pad-btn.coach-pulse { outline: 3px solid Highlight; outline-offset: 3px; }
 }
+
+/* Stakes and rivalry: the line under the Home hero and the fixture cards. */
+.hero-story { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: var(--fs-sm); color: var(--hero-ink); text-align: center; }
+.hero-story .story-win { font-weight: 700; font-variant-numeric: tabular-nums; }
+.derby { display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--hero-ink); color: var(--hero-bg, #0b3d2e); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
