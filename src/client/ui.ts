@@ -306,7 +306,7 @@ export function transfersScreen(app: App): string {
   <div class="stack">
     <article class="panel">
       <div class="board-head">
-        <h2 class="eyebrow">Transfer market · refreshes after every ranked match</h2>
+        <h2 class="eyebrow">Transfer market<span class="eyebrow-more"> · refreshes after every ranked match</span></h2>
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl has-action">
@@ -320,7 +320,7 @@ export function transfersScreen(app: App): string {
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
     <article class="panel">
-      <h2 class="eyebrow">Sell · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</h2>
+      <h2 class="eyebrow">Sell<span class="eyebrow-more"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
       <div class="table-scroll"><table class="tbl compact has-action">
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
@@ -370,7 +370,7 @@ export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
   return `
   <article class="panel">
-    <h2 class="eyebrow">Ladder · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</h2>
+    <h2 class="eyebrow">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
     <div class="table-scroll"><table class="tbl ladder">
       <thead><tr><th class="num">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num opt-narrow">P</th><th class="num opt-narrow">W</th><th class="num opt-narrow">D</th><th class="num opt-narrow">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td><td class="num opt-narrow">${r.played}</td><td class="num opt-narrow">${r.won}</td><td class="num opt-narrow">${r.drawn}</td><td class="num opt-narrow">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>

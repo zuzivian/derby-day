@@ -134,8 +134,8 @@
 .levelup-actions .btn { width: 100%; }
 
 /* Crest and kit pickers (Club news) */
-.identity-row { display: flex; flex-wrap: wrap; gap: var(--sp-2, 8px) var(--sp-4, 16px); align-items: center; padding-top: var(--sp-3, 12px); border-top: 1px solid var(--line); }
-.identity-field { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); color: var(--muted); font-size: 14px; font-weight: 600; }
+.identity-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-2, 8px) var(--sp-4, 16px); align-items: center; padding-top: var(--sp-3, 12px); border-top: 1px solid var(--line); }
+.identity-field { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2, 8px); color: var(--muted); font-size: 14px; font-weight: 600; }
 
 /* Onboarding: the level note on the last step */
 .ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3, 12px) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md, 10px); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
