@@ -84,7 +84,9 @@ export interface Hud {
   /** A small tag at the top for a call made while play goes on (Advantage), for `ms`. */
   tag(text: string, ms: number, sub?: string): void;
   /** Big centre word, with an optional smaller line under it. */
-  word(text: string, ms: number, sub?: string): void;
+  word(text: string, ms: number, sub?: string, tone?: string): void;
+  /** Hide the big centre word now (an instant replay is starting). */
+  clearWord(): void;
   dispose(): void;
 }
 
@@ -92,7 +94,7 @@ export interface Hud {
  * The big HUD word for a referee's call (goals, half and full time are shown by the match view
  * from s.goals and the phase), with a smaller line under it.
  */
-export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string; live?: boolean } | null {
+export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string; live?: boolean; tone?: string } | null {
   const name = (i: number) => (i >= 0 && s.players[i] ? s.players[i].name : undefined);
   switch (e.kind) {
     case 'offside':
@@ -103,7 +105,7 @@ export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?:
       return e.penalty ? { word: 'Penalty', sub: s.teams[e.team === 0 ? 1 : 0].name } : { word: 'Foul', sub: name(e.player) };
     case 'card':
       // A second yellow is followed by its red in the same tick; the red is the word left showing.
-      return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
+      return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', tone: e.color, sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
     case 'restart':
       // The advantage came to nothing: play comes back for the foul.
       if (e.reason === 'advantage') return { word: e.restart === 'penalty' ? 'Penalty' : 'Free kick', sub: 'Advantage brought back' };
@@ -332,7 +334,19 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         until = 0;
       }
     },
-    word(text, ms, sub) {
+    clearWord() {
+      banner.hidden = true;
+      until = 0;
+    },
+    word(text, ms, sub, tone) {
+      // A card's colour ('yellow' | 'red') or a team colour (any CSS colour) tints the word; the text stays the cue.
+      delete banner.dataset.tone;
+      banner.style.removeProperty('--tone');
+      if (tone === 'yellow' || tone === 'red') banner.dataset.tone = tone;
+      else if (tone) {
+        banner.dataset.tone = 'team';
+        banner.style.setProperty('--tone', tone);
+      }
       banner.innerHTML = `<span>${esc(text)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}`;
       banner.hidden = false;
       // Restart the pop-in animation.

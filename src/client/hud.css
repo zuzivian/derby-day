@@ -51,6 +51,23 @@
 }
 .hud .hud-word small { font-size: .26em; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 @keyframes hud-pop { from { transform: translate(-50%, -50%) skewX(-8deg) scale(.55); opacity: 0; } }
+/* Tone of a call: card colour, or the scorer's colours for a goal. The words stay; colour is a second cue. */
+.hud .hud-word[data-tone] small { color: #fff; }
+.hud .hud-word[data-tone="yellow"] { color: #ffd60a; }
+.hud .hud-word[data-tone="red"] { color: #ff5a45; }
+.hud .hud-word[data-tone="team"] { text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 12px var(--tone), 0 0 34px var(--tone); }
+.hud .hud-word[data-tone="team"] > span { border-bottom: .07em solid var(--tone); padding: 0 .06em; }
+.hud .hud-word[data-tone="yellow"] > span::before, .hud .hud-word[data-tone="red"] > span::before {
+  content: ''; display: inline-block; width: .28em; height: .4em; margin-right: .18em; border-radius: 2px; background: currentColor; transform: translateY(.02em) rotate(-6deg);
+}
+/* The scoring side's number pops when a goal goes in (matchView.ts adds .bump). */
+.hud-goals > span { display: inline-block; }
+.hud-goals > .bump { animation: score-bump .7s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes score-bump { 0% { transform: scale(1); color: #fff; } 25% { transform: scale(1.6); color: #fff; text-shadow: 0 0 14px rgba(255, 255, 255, .9); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) {
+  .hud-goals > .bump { animation-name: score-flash; animation-duration: .9s; }
+  @keyframes score-flash { 0%, 40% { color: #fff; } }
+}
 
 .hud-radar { position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%); width: clamp(100px, 15%, 160px); height: auto; border-radius: 3px; opacity: .9; }
 .hud-power {

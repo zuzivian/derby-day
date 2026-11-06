@@ -40,7 +40,11 @@ export type SfxEvent =
   | { type: 'ooh'; power: number }
   /** A keeper gathering the ball into his hands. */
   | { type: 'catch'; power: number }
-  | { type: 'header'; power: number };
+  | { type: 'header'; power: number }
+  /** The referee's big calls: a card shown, the assistant's flag for offside, a penalty awarded. */
+  | { type: 'call'; kind: CallKind };
+
+export type CallKind = 'yellow' | 'red' | 'offside' | 'penalty';
 
 /** 'foul': one short blast when the referee stops play for a foul, an offside, an advantage brought back or a second touch. */
 export type WhistleKind = 'kickoff' | 'halftime' | 'fulltime' | 'foul';
@@ -110,6 +114,9 @@ export function detectSfx(prev: Snapshot, next: MatchState): SfxEvent[] {
   // referee's whistle for a stoppage is the phase change above.)
   for (let i = prev.events; i < next.events.length; i++) {
     const e = next.events[i];
+    if (e.kind === 'card' && !(e.color === 'yellow' && e.secondYellow)) out.push({ type: 'call', kind: e.color });
+    else if (e.kind === 'offside') out.push({ type: 'call', kind: 'offside' });
+    else if ((e.kind === 'foul' && e.penalty && !e.advantage) || (e.kind === 'restart' && e.restart === 'penalty' && e.reason === 'advantage')) out.push({ type: 'call', kind: 'penalty' });
     if (e.kind === 'restart' && e.reason === 'out' && (e.restart === 'goalkick' || e.restart === 'corner') && nearMiss(prev, prevSpeed)) out.push({ type: 'ooh', power: clamp01((prevSpeed - 10) / 16) });
   }
   if (prev.phase !== 'play' && prev.phase !== 'init') return out;
@@ -499,6 +506,9 @@ export class SoundEngine {
         case 'catch':
           this.gather(r.ctx, r.out, ev.power);
           break;
+        case 'call':
+          this.call(r.ctx, r.out, ev.kind);
+          break;
         case 'header':
           this.tone(r.ctx, r.out, r.ctx.currentTime, 'sine', 210 + 60 * ev.power, 90, 0.07, 0.22 + 0.2 * ev.power);
           this.burst(r.ctx, r.out, r.ctx.currentTime, 0.04, 'lowpass', 900, 300, 0.7, 0.12);
@@ -609,6 +619,24 @@ export class SoundEngine {
     const t = ctx.currentTime;
     this.tone(ctx, out, t, 'sine', 150 + 40 * power, 70, 0.1, 0.3 + 0.25 * power);
     this.burst(ctx, out, t, 0.06, 'lowpass', 700, 250, 0.7, 0.14 + 0.1 * power);
+  }
+
+  /** A card, flag or penalty: a low thud under the (already sounding) whistle; red is heavier with a second blast. */
+  private call(ctx: Ctx, out: AudioNode, kind: CallKind): void {
+    const t = ctx.currentTime + 0.01;
+    if (kind === 'offside') {
+      // The flag's two-note chirp.
+      this.tone(ctx, out, t, 'triangle', 880, 880, 0.08, 0.18);
+      this.tone(ctx, out, t + 0.1, 'triangle', 1175, 1175, 0.1, 0.18);
+    } else if (kind === 'penalty') {
+      this.tone(ctx, out, t, 'sine', 110, 60, 0.25, 0.5);
+      this.blast(ctx, out, t + 0.05, 0.5);
+    } else {
+      const red = kind === 'red';
+      this.tone(ctx, out, t, 'sine', red ? 95 : 140, red ? 45 : 70, red ? 0.35 : 0.2, red ? 0.6 : 0.4);
+      this.blast(ctx, out, t + 0.04, 0.25);
+      if (red) this.blast(ctx, out, t + 0.4, 0.3);
+    }
   }
 
   private whistle(ctx: Ctx, out: AudioNode, kind: WhistleKind): void {

@@ -706,6 +706,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .touch-pad { display: none; position: absolute; right: 10px; bottom: 10px; gap: 10px; }
 .pad-btn { width: 66px; height: 66px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .8); background: rgba(15, 21, 19, .55); color: #fff; font-weight: 800; font-size: var(--fs-sm); touch-action: none; }
 .pad-btn.shoot { background: rgba(207, 51, 38, .75); }
+.pad-btn { transition: transform .08s ease-out, background-color .08s, box-shadow .12s; -webkit-tap-highlight-color: transparent; }
+.pad-btn.down { transform: scale(.92); background: rgba(255, 255, 255, .3); }
+.pad-btn.shoot.down { background: rgba(207, 51, 38, .95); box-shadow: 0 0 0 4px rgba(255, 214, 10, .5), 0 0 18px rgba(255, 214, 10, .45); }
+/* The kick's power while a pad button is held (matchView.ts sets --charge, 0 to 1): the button fills from the bottom. */
+.pad-btn.down { background-image: linear-gradient(to top, rgba(255, 214, 10, .8) calc(var(--charge, 0) * 100%), transparent calc(var(--charge, 0) * 100%)); }
+@media (prefers-reduced-motion: reduce) {
+  .pad-btn.down { transform: none; }
+}
 @media (pointer: coarse) {
   .touch-pad { display: flex; }
   .controls-hint { display: none; }
