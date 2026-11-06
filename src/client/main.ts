@@ -484,9 +484,42 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
 // ---------------------------------------------------------------------------
 // Events
 
+/** True from a Kick off tap until the match has been mounted, so a second tap cannot start a second one. */
+let launching = false;
+
+/**
+ * Building a match takes a few hundred ms of uninterrupted work (players, shaders, a first draw), so the tap
+ * is acknowledged first: the button shows it is busy (aria-busy plus a label change, announced politely) and
+ * two frames are allowed to paint before the build starts.
+ */
+function launch(btn: HTMLElement, start: () => void) {
+  if (launching) return;
+  launching = true;
+  const label = btn.querySelector('span');
+  const was = label?.textContent ?? '';
+  btn.classList.add('busy');
+  btn.setAttribute('aria-busy', 'true');
+  if (label && btn.classList.contains('kickoff')) label.textContent = 'Getting ready\u2026';
+  announce('Getting the match ready.');
+  const frames = new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  const cap = new Promise<void>((r) => setTimeout(r, 250)); // a hidden tab never fires frames
+  void Promise.race([frames, cap]).then(() => {
+    try {
+      start();
+    } finally {
+      launching = false;
+      if (btn.isConnected) {
+        btn.classList.remove('busy');
+        btn.removeAttribute('aria-busy');
+        if (label) label.textContent = was;
+      }
+    }
+  });
+}
+
 root.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
-  if (!el || takeover) return;
+  if (!el || takeover || launching) return;
   const s = app.save;
   const id = el.dataset.id ?? '';
   const action = el.dataset.action;
@@ -551,14 +584,14 @@ root.addEventListener('click', (e) => {
       startTraining();
       return;
     case 'play-ranked':
-      if (isUnlocked(s, 'ranked')) startMatch(true, app.nextOpp);
+      if (isUnlocked(s, 'ranked')) launch(el, () => startMatch(true, app.nextOpp));
       return;
     case 'play-warmup':
-      startWarmup();
+      launch(el, startWarmup);
       return;
     case 'play-practice': {
       const level = PRACTICE.find((p) => p.id === el.dataset.level);
-      if (level && practiceUnlocked(s, level.id)) startMatch(false, null, level);
+      if (level && practiceUnlocked(s, level.id)) launch(el, () => startMatch(false, null, level));
       return;
     }
     case 'play-local2p':
