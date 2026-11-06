@@ -500,7 +500,7 @@ function resultModal(app: App): string {
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
-        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
+        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 1 ? 'up' : d < -1 ? 'down' : 'level'}`, d > 1 ? RS_UP : d < -1 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
         sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`) : '',
         // A forfeit's cost (forfeitCost in game.ts), so walking off is never free.
         sum.fine || sum.owed ? rewardChip('rs-money', COIN, 'Forfeit fine', sum.fine ? `−${formatMoney(sum.fine)}` : '±0', sum.owed ? `and ${sum.owed} XP owed from your next matches` : '') : '',
