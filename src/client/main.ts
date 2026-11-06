@@ -150,6 +150,9 @@ function render() {
   pendingFocus = null;
   beforeRender(root);
   root.innerHTML = shell(app, screens[app.screen](app));
+  // A short entry fade only when the section changed, not on in-screen actions (Sell, Sign, Train).
+  if (root.dataset.shown !== app.screen) root.querySelector('#panel')?.classList.add('enter');
+  root.dataset.shown = app.screen;
   const levelUp = !app.result && levelUpOpen(app.save);
   syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   // The scrolling part of the result takes focus (it is labelled by the title), so the arrow and Page keys scroll it at once.
