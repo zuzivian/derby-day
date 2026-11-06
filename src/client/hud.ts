@@ -44,8 +44,8 @@ export function hudMarkup(o: HudOptions): string {
     <div class="hud" data-hud>
       <div class="hud-tl">
         <div class="hud-crests" aria-hidden="true">
-          <span class="hud-club">${crestSvg({ ...home, crest: o.crests[0] }, 26)}<b>${code(home)}</b></span>
-          <span class="hud-club">${crestSvg({ ...away, crest: o.crests[1] }, 26)}<b>${code(away)}</b></span>
+          <span class="hud-club">${crestSvg({ ...home, crest: o.crests[0] }, 26)}</span>
+          <span class="hud-club">${crestSvg({ ...away, crest: o.crests[1] }, 26)}</span>
         </div>
         <div class="hud-bars">
           <div class="hud-bar scoreboard" title="${esc(home.name)} v ${esc(away.name)}">

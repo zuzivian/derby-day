@@ -138,7 +138,7 @@ function cupPanel(s: Save): string {
       <div class="board-head"><h2 id="cup-title" class="comp-title">The Cup</h2><span class="eyebrow">Knockout · ${COMP_SIZE} clubs · ${divisionName(d)} prizes</span></div>
       <p>${field}, seeded by Elo. Quarter-final, semi-final, final. One match a round; a draw goes to penalties.</p>
       <dl class="facts comp-prizes">
-        <div><dt>Quarter-final</dt><dd>${formatMoney(prizeIn(CUP_PRIZES[0], d))}</dd></div>
+        <div><dt>Quarter-final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[0], d))}</dd></div>
         <div><dt>Semi-final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[1], d))}</dd></div>
         <div><dt>Final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[2], d))}</dd></div>
         <div><dt>Winner</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[3], d))}</dd></div>
@@ -219,10 +219,10 @@ function seasonPanel(s: Save): string {
       <div class="board-head"><h2 id="season-title" class="comp-title">The League</h2><span class="eyebrow">${divisionName(d)} · ${COMP_SIZE} clubs · ${COMP_SIZE - 1} matchdays</span></div>
       <p>Play the rest of ${divisionName(d)} once. Three points for a win, one for a draw; goal difference, then goals scored, split ties. ${moves[0].toUpperCase()}${moves.slice(1)}. Prize money for every place, paid for the matchdays you play.</p>
       <dl class="facts comp-prizes">
-        <div><dt>Champions</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[0], d))}</dd></div>
-        <div><dt>2nd</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[1], d))}</dd></div>
-        <div><dt>3rd</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[2], d))}</dd></div>
-        <div><dt>8th</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[7], d))}</dd></div>
+        <div><dt>Champions</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[0], d))}</dd></div>
+        <div><dt>2nd</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[1], d))}</dd></div>
+        <div><dt>3rd</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[2], d))}</dd></div>
+        <div><dt>8th</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[7], d))}</dd></div>
       </dl>
       <div class="actions"><button class="btn primary big" id="comp-start-season" data-action="comp-start-season">Start a season</button></div>
     </article>`;

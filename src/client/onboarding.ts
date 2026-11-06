@@ -117,7 +117,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
       const w = celebrationWords(o.gf, o.ga);
       const p = levelForXp(o.save.xp ?? 0);
       const next = nextUnlockText(o.save);
-      return `<section class="panel ob-card ob-celebrate" aria-labelledby="ob-title">
+      return `<section class="panel ob-card ob-celebrate${o.gf > o.ga ? ' won' : ''}" aria-labelledby="ob-title">
         ${o.gf > o.ga ? confettiHtml() : ''}
         <p class="eyebrow">Full time</p>
         <h2 id="ob-title" class="ob-title" tabindex="-1">${w.title}</h2>

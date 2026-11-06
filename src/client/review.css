@@ -49,7 +49,10 @@
   .rv-hero { padding: var(--sp-4) var(--sp-3) 18px; }
   .rv-record { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rv-tile { padding: 8px; }
-  .rv-tile dd { font-size: 20px; }
+  .rv-tile dd { font-size: 20px; white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  .rv-tile dd { font-size: 17px; }
   .rv-tile .rv-tile-sub { font-size: var(--fs-2xs); }
   .rv-body { padding: var(--sp-3); }
   .rv-section { padding: var(--sp-3); }

@@ -79,7 +79,9 @@
 }
 
 /* First-run screens (src/client/onboarding.ts) */
-.ob-celebrate .ob-title { color: var(--accent); }
+/* The brand accent celebrates a win; a draw or a loss stays in ink (red there read as an error). */
+.ob-celebrate .ob-title { color: var(--ink); }
+.ob-celebrate.won .ob-title { color: var(--accent); }
 .ob-celebrate { position: relative; }
 .ob-score > span { display: inline-block; }
 .ob-score > span > span { display: inline-block; animation: ob-score-pop .5s .35s var(--ease-spring, ease-out) both; }
