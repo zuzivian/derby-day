@@ -32,6 +32,7 @@ import { mountAfterMatch, mountWelcome } from './onboarding.ts';
 import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { openSettings } from './settings.ts';
+import { getSound } from './audio.ts';
 import { telemetry } from './telemetry.ts';
 import { clubLevel } from '../meta/levels.ts';
 import { mountTutorial } from './tutorial.ts';
@@ -156,8 +157,13 @@ function render() {
   const levelUp = !app.result && levelUpOpen(app.save);
   syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   // The scrolling part of the result takes focus (it is labelled by the title), so the arrow and Page keys scroll it at once.
-  if (app.result && !hadResult) root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
-  else if (levelUp && !hadLevelUp) {
+  if (app.result && !hadResult) {
+    root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
+    // Reward jingle: a win, a softer one for a draw, a low gentle one for a loss; nothing when the match was forfeited or abandoned.
+    const outcome = root.querySelector<HTMLElement>('.result-card')?.dataset.outcome;
+    if (!app.result.abandoned && !app.result.forfeited && (outcome === 'win' || outcome === 'draw' || outcome === 'loss')) getSound().stinger(outcome);
+  } else if (levelUp && !hadLevelUp) {
+    getSound().stinger('levelup');
     levelOrigin = key;
     root.querySelector<HTMLElement>('#levelup-title')?.focus();
     announce(levelUpAnnouncement(app.save));
@@ -248,6 +254,7 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
     persist();
     writePrefs(app.prefs);
     takeover = true;
+    if (gf > ga) getSound().stinger('win');
     const stop = mountAfterMatch(root, {
       save: s,
       opp: opp.id,

@@ -14,6 +14,7 @@ import { DIVISIONS, divisionName, playerDivision } from '../meta/world.ts';
 import { historyPanel } from './history.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
+import { confettiHtml } from './confetti.ts';
 import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpCardHtml } from './levels.ts';
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
@@ -478,6 +479,7 @@ function resultModal(app: App): string {
     <div class="modal-card result-card" data-outcome="${outcome}">
       <div class="rs-scroll" tabindex="0" role="region" aria-labelledby="result-title">
       <header class="rs-hero">
+        ${outcome === 'win' ? confettiHtml() : ''}
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : OUTCOME_WORD[outcome]}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
