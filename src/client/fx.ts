@@ -14,6 +14,8 @@ export interface Juice {
   tick(s: MatchState): void;
   /** The match is paused (or the tab hidden): sound stops until unpaused. */
   setPaused(paused: boolean): void;
+  /** A light tap on touch phones (a player switch); guarded like every buzz: mute and reduced motion silence it. */
+  buzz(ms: number): void;
   /** Drop any confetti in the air (an instant replay is starting). */
   clear(): void;
   dispose(): void;
@@ -282,6 +284,7 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     sound.play(ev);
     if (ev.type === 'kick' && ev.power > 0.7) buzz(12);
     else if (ev.type === 'call' && ev.kind === 'red') buzz(60);
+    else if (ev.type === 'tackle') buzz(ev.won ? 25 : 8);
     if (ev.type === 'goal') goal(ev.team);
     else if (ev.type === 'whistle' && ev.kind === 'kickoff') kickoff();
   };
@@ -296,6 +299,7 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
       if (paused) sound.suspend();
       else sound.resume();
     },
+    buzz: (ms: number) => buzz(ms),
     clear() {
       particles = [];
       if (raf) cancelAnimationFrame(raf);

@@ -196,6 +196,8 @@ export function setPieceSpot(s: MatchState, team: 0 | 1): Vec | null {
 /** Tap on a touch screen: at most this long and this many CSS pixels of travel. */
 const TOUCH_TAP_MS = 260;
 const TOUCH_TAP_PX = 14;
+/** The touch preview ring and aim line stay this long (ms) after the last finger lifts. */
+const TOUCH_RING_MS = 300;
 
 export class InputController {
   cursor: Vec | null = null;
@@ -235,6 +237,11 @@ export class InputController {
   /** Touch pointers down on the pitch. Only the first one steers; two at once is a pinch (renderer.ts), which doesn't. */
   private touches = new Set<number>();
   private steerTouch: number | null = null;
+  /** A second finger's own tap, to switch player while the first keeps steering: where and when it landed. */
+  private extraTap: { t: number; x: number; y: number; id: number; world: Vec } | null = null;
+  /** The last pointer was a finger, and when the last finger lifted (performance.now): the ring hides after it. */
+  private lastTouch = false;
+  private touchLiftAt = -Infinity;
   private rect: () => { left: number; top: number } = () => ({ left: 0, top: 0 });
   private cutSeen = -1;
 
@@ -265,6 +272,7 @@ export class InputController {
     const steers = (e: PointerEvent) => e.pointerType === 'mouse' || (e.pointerId === this.steerTouch && this.touches.size < 2);
     on(canvas, 'pointermove', (e) => {
       if (!steers(e)) return;
+      this.lastTouch = e.pointerType !== 'mouse';
       this.mode = 'mouse';
       if (this.client) this.travel += Math.hypot(e.clientX - this.client.x, e.clientY - this.client.y);
       this.cursor = toWorld(e);
@@ -278,12 +286,15 @@ export class InputController {
         }
         this.touches.add(e.pointerId);
         if (this.touches.size === 1) this.steerTouch = e.pointerId;
+        this.lastTouch = true;
         if (!steers(e)) {
-          this.touchTap = null; // a second finger: a pinch, not a tap
+          this.touchTap = null; // a second finger: a pinch, or a tap that switches player (checked on release)
+          this.extraTap = this.touches.size === 2 ? { t: performance.now(), x: e.clientX, y: e.clientY, id: e.pointerId, world: picker.toWorld(e.clientX - canvas.getBoundingClientRect().left, e.clientY - canvas.getBoundingClientRect().top) } : null;
           return;
         }
       }
       this.cursor = toWorld(e);
+      if (e.pointerType === 'mouse') this.lastTouch = false;
       if (e.pointerType !== 'mouse') {
         // Touching the pitch hands you to the pointer scheme, even if the keys were chosen.
         this.mode = 'mouse';
@@ -305,6 +316,7 @@ export class InputController {
     });
     const touchUp = (e: PointerEvent) => {
       this.touches.delete(e.pointerId);
+      if (this.touches.size === 0) this.touchLiftAt = performance.now();
       if (e.pointerId === this.steerTouch) this.steerTouch = null;
     };
     on(window, 'pointercancel', (e) => {
@@ -314,6 +326,15 @@ export class InputController {
       if (e.pointerType !== 'mouse') {
         const steering = e.pointerId === this.steerTouch && this.touches.size < 2;
         touchUp(e);
+        const extra = this.extraTap;
+        if (extra && extra.id === e.pointerId) {
+          this.extraTap = null;
+          // A quick, still second finger picks a player there; the steering finger and its target are untouched.
+          if (performance.now() - extra.t < TOUCH_TAP_MS && Math.hypot(e.clientX - extra.x, e.clientY - extra.y) < TOUCH_TAP_PX && !this.hasBall() && this.steerTouch !== null) {
+            this.select = true;
+            this.aim = extra.world;
+          }
+        }
         if (!steering) return;
         const tap = this.touchTap;
         this.touchTap = null;
@@ -521,6 +542,11 @@ export class InputController {
    * nearest in its direction. -1 when you have the ball, the pointer is not in use, nobody qualifies,
    * or it is the player you already steer.
    */
+  /** Show the pointer ring and aim line: always for a mouse; for a finger only while it is down and just after. */
+  pointerShown(): boolean {
+    return !this.lastTouch || this.touches.size > 0 || performance.now() - this.touchLiftAt < TOUCH_RING_MS;
+  }
+
   switchCandidate(s: MatchState, team: 0 | 1 = 0): number {
     if (this.mode !== 'mouse' || !this.cursor || this.hasBall() || s.controlled[team] < 0) return -1;
     const pick = pickTeammate(s, team, this.cursor);

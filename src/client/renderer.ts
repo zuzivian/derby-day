@@ -95,6 +95,9 @@ function quality(software: boolean): Quality {
   return software ? 'low' : 'high';
 }
 
+/** A pinch must change the finger spread by this many CSS pixels before it zooms (a second finger's tap is not a pinch). */
+const PINCH_DEAD_PX = 40;
+
 export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic?: boolean } = {}): MatchRenderer {
   const pref = rendererPref();
   let why: string | null = null;
@@ -236,7 +239,7 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   // Pinch to zoom on touch screens: two fingers on the pitch scale the zoom by how far apart they
   // move (spreading them shows less pitch, like a map). One finger still steers (input.ts).
   const touches = new Map<number, { x: number; y: number }>();
-  let pinch: { d0: number; z0: number } | null = null;
+  let pinch: { d0: number; z0: number; live: boolean } | null = null;
   const spread = () => {
     const [a, b] = [...touches.values()];
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -244,12 +247,19 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   const onDown = (e: PointerEvent) => {
     if (e.pointerType !== 'touch') return;
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (touches.size === 2) pinch = { d0: Math.max(20, spread()), z0: r.zoom };
+    if (touches.size === 2) pinch = { d0: Math.max(20, spread()), z0: r.zoom, live: false };
   };
   const onMove = (e: PointerEvent) => {
     if (!touches.has(e.pointerId)) return;
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch && touches.size === 2) {
+      // A dead zone: a second finger's quick tap (the steering finger still moving) is not a pinch.
+      // Only once the fingers have spread or closed by PINCH_DEAD_PX does zoom start, from that spread.
+      if (!pinch.live) {
+        if (Math.abs(spread() - pinch.d0) <= PINCH_DEAD_PX) return;
+        pinch.live = true;
+        pinch.d0 = Math.max(20, spread());
+      }
       r.setZoom(pinch.z0 * (pinch.d0 / Math.max(20, spread())));
       label();
     }
@@ -257,8 +267,9 @@ export function mountCameraToggle(wrap: HTMLElement, r: MatchRenderer, canvas?: 
   const onUp = (e: PointerEvent) => {
     if (!touches.delete(e.pointerId)) return;
     if (pinch && touches.size < 2) {
+      const live = pinch.live;
       pinch = null;
-      flash(`Zoom ${Math.round(r.zoom * 100)}%`);
+      if (live) flash(`Zoom ${Math.round(r.zoom * 100)}%`);
     }
   };
   // On-screen zoom buttons (shown on touch screens, hud.css), so zoom needs neither wheel nor keys.

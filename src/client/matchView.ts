@@ -220,7 +220,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     c.paused = () => paused;
     c.setPiece = () => setPieceSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse' && c.pointerShown(), armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -512,7 +512,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
             pendingTactic = 0;
           }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
+          const before = s.controlled[0];
           step(s, used);
+          if (!Array.isArray(used) && (used.select || used.switchPlayer) && s.controlled[0] !== before) juice.buzz(10);
           juice.tick(s);
           buffer.push(used, s);
           for (const h of spotter.update(s)) consider(h);
