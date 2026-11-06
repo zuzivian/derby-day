@@ -76,6 +76,25 @@ const HINT: Record<Hint, string> = {
   'kept-it': 'Close. They kept the ball. Try again.',
 };
 
+/** Which pad buttons each drill uses (Shoot doubles as the tackle button). */
+const PAD_USE: Record<DrillId, ('pass' | 'shoot')[]> = { move: [], pass: ['pass'], shoot: ['shoot'], tackle: ['shoot'] };
+
+const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/** The retry note, restating the control in use so it says what to do next. */
+function retryText(why: Retry, mode: Mode): string {
+  if (why === 'no-receiver') {
+    if (mode === 'keys') return 'Nobody got that one. Run a step toward a teammate so you face them, then press Space.';
+    if (mode === 'touch') return 'Nobody got that one. Drag onto a teammate, then tap Pass.';
+  }
+  if (why === 'missed') {
+    if (mode === 'touch') return 'Not this time. Point at the goal, hold Shoot, release.';
+    if (mode === 'mouse') return 'Not this time. Point at the goal and right click.';
+    return 'Not this time. Hold F, then release to shoot.';
+  }
+  return RETRY[why];
+}
+
 export function mountTutorial(container: HTMLElement, o: TutorialOptions): () => void {
   const s = createTraining(4242, o.home);
   // End-to-end tests set window.__e2e before the page loads to read the live state.
@@ -97,8 +116,14 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
         <ol class="coach-dots" aria-hidden="true">${DRILLS.map((d) => `<li data-drill="${d}"></li>`).join('')}</ol>
       </div>
       <h3 class="coach-title" id="coach-title"></h3>
-      <p class="coach-text" id="coach-text"></p>
-      <p class="coach-note" id="coach-note"></p>
+      <div class="coach-stack">
+        <p class="coach-text" id="coach-text"></p>
+        <span class="coach-ghosts" id="coach-ghost-text" aria-hidden="true"></span>
+      </div>
+      <div class="coach-stack">
+        <p class="coach-note" id="coach-note"></p>
+        <span class="coach-ghosts" id="coach-ghost-note" aria-hidden="true"></span>
+      </div>
     </div>
     <div class="pitch-wrap training-pitch">
       <canvas id="tr-pitch" class="pitch-canvas" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Training pitch" aria-describedby="coach-title coach-text"></canvas>
@@ -114,8 +139,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
         </div>
       </div>
       <div class="touch-pad" aria-hidden="true">
-        <button class="pad-btn" id="tr-pad-pass" tabindex="-1">Pass</button>
-        <button class="pad-btn shoot" id="tr-pad-shoot" tabindex="-1">Shoot</button>
+        <button class="pad-btn" id="tr-pad-pass" tabindex="-1" aria-disabled="true">Pass</button>
+        <button class="pad-btn shoot" id="tr-pad-shoot" tabindex="-1" aria-disabled="true">Shoot</button>
       </div>
     </div>
   </section>`;
@@ -145,7 +170,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   input.mode = o.controls;
   input.bindTouchButtons($('tr-pad-pass'), $('tr-pad-shoot'));
   const skip = () => finish(false);
-  $('tr-skip').addEventListener('click', skip);
+  // Leave in the header opens the pause card first: its Resume / Leave pair is the confirmation.
+  $('tr-skip').addEventListener('click', () => setPaused(true));
   $('tr-skip-2').addEventListener('click', skip);
   $('tr-pause').addEventListener('click', () => setPaused(true));
   $('tr-resume').addEventListener('click', () => setPaused(false));
@@ -171,6 +197,17 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     $('coach-count').textContent = `Drill ${index + 1} of ${DRILLS.length}`;
     $('coach-title').textContent = c.title;
     $('coach-text').textContent = c.text[mode];
+    // Every drill's copy (and every note) sits invisibly in the same grid cell, so the card is always
+    // as tall as the longest and the pitch below never moves between drills.
+    $('coach-ghost-text').innerHTML = DRILLS.map((d) => `<span>${esc(COPY[d].text[mode])}</span>`).join('');
+    $('coach-ghost-note').innerHTML = [...(Object.keys(RETRY) as Retry[]).map((k) => retryText(k, mode)), ...Object.values(HINT), ...DRILLS.map((d) => COPY[d].done)].map((x) => `<span>${esc(x)}</span>`).join('');
+    // The pad shows only what this drill uses; the sim ignores the rest anyway.
+    const uses = PAD_USE[drill.id];
+    for (const [id, key] of [['tr-pad-pass', 'pass'], ['tr-pad-shoot', 'shoot']] as const) {
+      const b = $(id);
+      b.classList.toggle('locked', !uses.includes(key));
+      b.setAttribute('aria-disabled', String(!uses.includes(key)));
+    }
     container.querySelectorAll<HTMLElement>('.coach-dots li').forEach((li, i) => {
       li.className = i < index ? 'done' : i === index ? 'on' : '';
     });
@@ -179,6 +216,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   function note(text: string, good: boolean) {
     const n = $('coach-note');
     n.textContent = text;
+    n.className = 'coach-note';
+    void n.offsetWidth; // restart the reveal when one note replaces another
     n.className = `coach-note ${good ? 'good' : 'again'}`;
   }
 
@@ -210,7 +249,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   }
 
   function retry(why: Retry, now: number) {
-    const text = why === 'no-receiver' && mode === 'keys' ? 'Nobody got that one. Run a step toward a teammate so you face them, then press Space.' : RETRY[why];
+    const text = retryText(why, mode);
     note(text, false);
     announce(text);
     holdUntil = now + 1100;

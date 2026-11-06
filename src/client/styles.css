@@ -933,7 +933,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Training ground ------------------------------------------------------------- */
 .training { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; }
-.training-head { width: 100%; display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap; }
+.training-head { width: 100%; display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-3); }
 .training-head .eyebrow { margin: 0; }
 .training-title { font-size: 30px; font-weight: 900; text-transform: uppercase; }
 .training-title:focus { outline: none; }
@@ -949,13 +949,29 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .coach-dots li.on { border-color: var(--accent); background: var(--accent); }
 .coach-dots li.done { border-color: var(--xp-fill); background: var(--xp-fill); }
 .coach-title { font-size: 26px; font-weight: 900; text-transform: uppercase; }
-.coach-text { margin: 0; font-size: 16px; max-width: 72ch; min-height: 3em; }
-/* Space for the note is always reserved, so the pitch never moves under the pointer. */
+.coach-text { margin: 0; font-size: 16px; max-width: 72ch; }
+/* Every drill's copy and every note is laid invisibly in the same cell (tutorial.ts showDrill), so the card
+   is always as tall as the longest and the pitch never moves under the pointer. */
+.coach-stack { display: grid; }
+.coach-stack > * { grid-area: 1 / 1; min-width: 0; }
+.coach-ghosts { display: grid; visibility: hidden; pointer-events: none; max-width: 72ch; font-size: 16px; }
+.coach-note + .coach-ghosts { font-weight: 700; }
+.coach-ghosts > span { grid-area: 1 / 1; }
 .coach-note { margin: 0; font-weight: 700; min-height: 1.5em; }
 .coach-note.good { color: var(--good); }
 .coach-note.good::before { content: '\2713  '; }
-.coach-note.again { color: var(--muted); }
-.training-pitch { width: min(100%, calc((100vh - 370px) * 1.493)); width: min(100%, calc((100dvh - 370px) * 1.493)); }
+.coach-note.again { color: var(--ink); }
+.coach-note.again::before { content: '\21BB  '; color: var(--accent); }
+.coach-note.good, .coach-note.again { animation: coach-note-in .28s var(--ease-out); }
+@keyframes coach-note-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+/* The pitch is what is being learned from: head and coach card take about 250px of the viewport height. */
+.training-pitch { width: min(100%, calc((100vh - 300px) * 1.493)); width: min(100%, calc((100dvh - 300px) * 1.493)); }
+/* The Pause chip sits top right here: the spectators stand along the top touchline on the left. */
+.training-pitch .pitch-pause { left: auto; right: 10px; }
+/* A pad button this drill does not use: muted and flat, so it does not look live. */
+.pad-btn.locked, .pad-btn.locked.down { opacity: .35; transform: scale(.85); box-shadow: none; background-image: none; }
+.pad-btn.locked.down { background: rgba(15, 21, 19, .55); }
+.pad-btn.shoot.locked.down { background: rgba(207, 51, 38, .75); }
 
 @media (max-width: 640px) {
   .ob-step-label { display: none; }
@@ -967,9 +983,24 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .ob-nav .btn.big { padding: 10px var(--sp-4); }
   .training-title { font-size: var(--fs-2xl); }
   .coach-title { font-size: 21px; }
-  .coach-text { font-size: var(--fs-md); min-height: 4.5em; }
-  .coach-note { min-height: 3em; }
+  .coach-text, .coach-ghosts { font-size: var(--fs-md); }
   .training-pitch { width: 100%; }
+  .training-head { align-items: center; }
+  .training-head .eyebrow { display: none; }
+}
+/* Phones held sideways: coach card left, pitch (with its pad) right, all inside the viewport. */
+@media (max-height: 520px) and (orientation: landscape) {
+  #app:has(.training) { padding-block: 10px; }
+  .training { display: grid; grid-template-columns: minmax(0, 36%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--sp-3); row-gap: 6px; align-items: start; justify-items: stretch; }
+  .training-head { grid-column: 1; grid-row: 1; }
+  .training-head .eyebrow { display: none; }
+  .training-title { font-size: var(--fs-xl); line-height: 1.05; }
+  .coach { grid-column: 1; grid-row: 2; padding: 8px 12px 8px 16px; gap: 2px; max-height: calc(100dvh - 80px); overflow-y: auto; }
+  .coach-title { font-size: 18px; }
+  .coach-text, .coach-note { font-size: var(--fs-sm); }
+  .coach-ghosts { display: none; }
+  .training-pitch { grid-column: 2; grid-row: 1 / span 2; justify-self: end; width: min(100%, calc((100dvh - 24px) * 1.493)); min-width: 0; }
+  .training-pitch .pad-btn { width: 54px; height: 54px; }
 }
 
 /* ==========================================================================
