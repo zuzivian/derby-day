@@ -6,10 +6,10 @@ import { teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
-import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
+import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
-import { potentialText, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
+import { isRising, potentialText, scoutedPotential, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { DIVISIONS, divisionName, playerDivision } from '../meta/world.ts';
 import { historyPanel } from './history.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
@@ -214,6 +214,19 @@ function formChips(save: Save): string {
     .join('')}</ul>`;
 }
 
+/** One line on what to do next, from what the save already holds. Empty until training is unlocked. */
+function nextUp(s: Save): string {
+  if (!isUnlocked(s, 'training')) return '';
+  const rising = s.squad.filter(isRising).sort((a, b) => overall(a) - overall(b))[0];
+  const n = s.trainingPoints;
+  const text = n > 0
+    ? `${n} training session${n === 1 ? '' : 's'} waiting. ${rising ? `Start with ${esc(shortName(rising))}, who is rising.` : 'Spend them on your youngest players.'}`
+    : rising
+      ? `${esc(shortName(rising))} is rising. Play a ranked or cup match to earn sessions for them.`
+      : 'Play a ranked match to earn training sessions and move up the ladder.';
+  return `<p class="next-up panel" role="note"><span class="next-up-k">Next up</span> ${text}</p>`;
+}
+
 /**
  * The Club tab: everything that used to crowd the first view. Elo history and
  * results, replays, the club level panel, club news, the tutorial and reset.
@@ -222,6 +235,7 @@ export function clubScreen(app: App): string {
   const s = app.save;
   return `
   <div class="club-grid">
+    ${nextUp(s)}
     <article class="panel form">
       <h2 class="eyebrow">Club rating (Elo)</h2>
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
@@ -267,9 +281,12 @@ function attrCell(v: number): string {
   return `<td class="num attr opt t-${tier}">${v}</td>`;
 }
 
+/** The mark on a young player with room to grow (isRising). */
+const RISING = '<span class="rise-tag" title="Young, with room to grow"><span aria-hidden="true">▲</span><span class="sr-only"> Rising</span></span>';
+
 /** The name, and (shown only on the narrowest phones, where the Pos column goes) the position chip under it. */
 const nameCell = (p: Player): string =>
-  `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>`;
+  `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>${isRising(p) ? RISING : ''}`;
 
 function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
   return `<tr${starter ? ' class="starter"' : ''}>
@@ -375,7 +392,7 @@ export function trainingScreen(app: App): string {
     <article class="panel roster">
       <h2 class="eyebrow train-head">Training<span class="train-left">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
-        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
+        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${isRising(x) ? RISING : ''}${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
       <p class="muted small train-rule">Sessions earned per match: ranked win +3, other results +2, friendlies +1.</p>
     </article>
@@ -383,7 +400,7 @@ export function trainingScreen(app: App): string {
       <div class="trainee-head">
         <span class="magnet big">${p.number}</span>
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
-        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span></div>
+        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : '<span class="room done">at potential</span>'; })()}</div>
       </div>
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>

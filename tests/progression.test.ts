@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { clubBadges } from '../src/meta/history.ts';
 import { ladderSquad } from '../src/meta/club.ts';
 import { applyResult, isSave, MAX_SQUAD, MIN_SQUAD, newGame as freshGame, type Save } from '../src/meta/game.ts';
 import { totalXpForLevel } from '../src/meta/levels.ts';
@@ -7,6 +8,7 @@ import {
   agePlayer,
   ensureProgressionFields,
   generateProspect,
+  isRising,
   maybeRollover,
   potentialText,
   retireChance,
@@ -417,5 +419,27 @@ describe('older saves', () => {
     const p: Player = generatePlayer(makeRng(1), { quality: 50, age: 20 });
     expect(p.scout).toBeUndefined();
     expect(scoutedPotential(p).exact).toBe(true);
+  });
+});
+
+describe('presentation helpers', () => {
+  test('isRising: young with headroom only', () => {
+    const p = generatePlayer(makeRng(5), { role: 'MID', quality: 60, age: 18 });
+    p.scout = 0;
+    p.potential = overall(p) + 8;
+    expect(isRising(p)).toBe(true);
+    p.potential = overall(p) + 5;
+    expect(isRising(p)).toBe(false);
+    p.potential = overall(p) + 8;
+    p.age = 24;
+    expect(isRising(p)).toBe(false);
+  });
+  test('clubBadges follow records and trophies', () => {
+    const s = freshGame(3);
+    expect(clubBadges(s).filter((b) => b.got)).toHaveLength(0);
+    s.records = { ...(s.records as NonNullable<Save['records']>), played: 12, won: 10 };
+    s.trophies = [{ kind: 'cup', title: 'Cup', year: 1 } as never];
+    const got = clubBadges(s).filter((b) => b.got).map((b) => b.id);
+    expect(got).toEqual(['m10', 'w10', 'cup']);
   });
 });

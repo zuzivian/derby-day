@@ -4,7 +4,7 @@
 
 import { signed, type Save } from '../meta/game.ts';
 import { isUnlocked } from '../meta/levels.ts';
-import type { SeasonSummary } from '../meta/history.ts';
+import { clubBadges, type SeasonSummary } from '../meta/history.ts';
 import { divisionName } from '../meta/world.ts';
 import { EMPTY_ICON, UNSET, emptyState, esc } from './ui.ts';
 
@@ -29,6 +29,7 @@ export function historyPanel(s: Save): string {
   return `
   <article class="panel history-panel" aria-labelledby="history-title">
     <h2 id="history-title" class="eyebrow" tabindex="-1">Club history</h2>
+    <ul class="badges" aria-label="Club milestones">${clubBadges(s).map((b) => `<li class="badge${b.got ? ' got' : ''}">${b.got ? '<span aria-hidden="true">★</span> ' : '<span aria-hidden="true">☆</span> '}${esc(b.label)}<span class="sr-only">${b.got ? ', earned' : `, locked: ${esc(b.how)}`}</span></li>`).join('')}</ul>
     <ul class="rv-list history-marks">${marks.map(([k, v, sub]) => row(`<b>${esc(k)}</b> ${v}`, esc(sub))).join('')}</ul>
     <h3 class="eyebrow">Season by season</h3>
     ${seasons.length ? `<ul class="rv-list">${seasons.slice(0, 5).map(season).join('')}</ul>` : emptyState('The first season is still being played.', EMPTY_ICON.calendar)}
