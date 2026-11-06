@@ -13,7 +13,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
-import { announce, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
+import { announce, autoFocus, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
 import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
@@ -192,7 +192,7 @@ window.addEventListener('scroll', () => placeMark(root, false), { passive: true 
 
 /** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
 function focusMain(keepScroll = false) {
-  root.querySelector<HTMLElement>('#main')?.focus({ preventScroll: keepScroll });
+  autoFocus(root.querySelector<HTMLElement>('#main'), { preventScroll: keepScroll });
   if (keepScroll) window.scrollTo({ top: 0 });
 }
 

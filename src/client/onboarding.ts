@@ -10,7 +10,7 @@ import type { ClubIdentity } from '../meta/club.ts';
 import type { Save } from '../meta/game.ts';
 import { NAME_MAX, NAME_MIN, renameClub, rerollColours, rerollName, validateClubName } from '../meta/identity.ts';
 import { levelForXp, nextUnlockText, type XpGain } from '../meta/levels.ts';
-import { announce, captureFocus, restoreFocus } from './a11y.ts';
+import { announce, autoFocus, captureFocus, restoreFocus } from './a11y.ts';
 import { xpCardHtml } from './levels.ts';
 import { crestSvg } from './crest.ts';
 import { armXpCard } from './screenFx.ts';
@@ -61,7 +61,7 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
     else if (el?.dataset.action === 'skip-onboarding') o.onSkip();
   };
   root.addEventListener('click', onClick);
-  root.querySelector<HTMLElement>('#ob-kickoff')?.focus();
+  autoFocus(root.querySelector<HTMLElement>('#ob-kickoff'));
   return () => root.removeEventListener('click', onClick);
 }
 

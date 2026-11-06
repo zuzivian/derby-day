@@ -141,6 +141,26 @@ function visible(el: HTMLElement): boolean {
   return !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
 }
 
+/**
+ * May the page move focus by itself yet? Not in a frame of another origin before the user has touched it: browsers
+ * refuse there (Chrome logs a permissions-policy violation for focus-without-user-activation), so the call is skipped.
+ */
+export function mayAutoFocus(): boolean {
+  let framed = false;
+  try {
+    framed = window.self !== window.top;
+  } catch {
+    framed = true;
+  }
+  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+  return !framed || !ua || ua.hasBeenActive;
+}
+
+/** Focus `el` unless the page may not move focus by itself yet (mayAutoFocus). */
+export function autoFocus(el: HTMLElement | null | undefined, opts?: FocusOptions): void {
+  if (el && mayAutoFocus()) el.focus(opts);
+}
+
 /** Find the best stand-in for a control that was focused before a re-render, and focus it. */
 export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?: string): void {
   if (!key) return;
