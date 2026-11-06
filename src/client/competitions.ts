@@ -360,7 +360,7 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
 export function closeLabelFor(kind: 'cup' | 'season', s: Save): string {
   if (kind === 'season') return 'Back to the league';
   const cup = s.cup;
-  if (!cup || cup.done) return 'Back to the cup';
+  if (!cup || cup.done || isOut(s, cup)) return 'Back to the cup';
   return cup.round >= CUP_ROUNDS.length - 1 ? 'On to the final' : `Next: ${CUP_ROUNDS[cup.round].toLowerCase()}`;
 }
 

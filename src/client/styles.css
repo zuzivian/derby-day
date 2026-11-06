@@ -1163,11 +1163,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-total { font-family: var(--font-display); font-weight: 900; font-size: 32px; line-height: 1; min-width: 1.1em; text-align: right; font-variant-numeric: tabular-nums; color: #ffd60a; }
 .so-sd { position: absolute; right: 14px; top: -9px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); border-radius: var(--r-pill); padding: 2px 10px; }
 
-.so-stage { container-type: inline-size; position: relative; width: min(100%, calc((100vh - 330px) * 1.6)); width: min(100%, calc((100dvh - 330px) * 1.6)); min-width: min(100%, 320px); }
+.so-stage { position: relative; width: min(100%, calc((100vh - 330px) * 1.6)); width: min(100%, calc((100dvh - 330px) * 1.6)); min-width: min(100%, 320px); }
 #so-canvas { display: block; width: 100%; aspect-ratio: 16 / 10; border-radius: var(--r-md); background: #1b2a24; touch-action: none; cursor: crosshair; }
 .so-banner {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%) rotate(-3deg); pointer-events: none;
-  font-family: var(--font-display); font-weight: 900; font-size: clamp(28px, 6vw, 60px); font-size: clamp(24px, 8.5cqw, 60px); text-transform: uppercase; color: #ffd60a;
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(24px, 6vw, 60px); text-transform: uppercase; color: #ffd60a;
   text-shadow: 0 3px 0 #0f1513, 0 0 24px rgba(0, 0, 0, .5); white-space: nowrap; animation: pop .35s ease-out;
 }
 /* Per outcome: green when the kick went your way, coral when it did not; a goal bursts a little bigger. */
