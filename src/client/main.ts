@@ -316,9 +316,11 @@ function startTraining() {
     home: clubTeam(s, 0.6),
     controls: app.prefs.controls,
     headingLevel: 1,
-    onDone: (completed) => {
+    offerMatch: true,
+    onDone: (completed, next) => {
       stop();
       takeover = false;
+      if (next === 'match') app.screen = 'home';
       pendingFocus = keyFor({ action: 'replay-tutorial' });
       const xp = completed ? tutorialXp() : '';
       render();

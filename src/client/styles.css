@@ -1007,6 +1007,15 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .coach-note.again::before { content: '\21BB  '; color: var(--accent); }
 .coach-note.good, .coach-note.again { animation: coach-note-in .28s var(--ease-out); }
 @keyframes coach-note-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.coach-top .btn { margin-left: auto; }
+.coach.win { animation: coach-win .7s ease-out 1; }
+@keyframes coach-win { 0% { box-shadow: 0 0 0 0 var(--good); } 100% { box-shadow: var(--shadow-1); } }
+.coach-done[hidden] { display: none; }
+.coach-done .coach-title:focus { outline: none; }
+.coach-done .coach-title::before { content: '\2713  '; color: var(--good); }
+.coach-replays, .coach-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: 6px; }
+.coach-actions .btn { min-height: 44px; }
+@media (prefers-reduced-motion: reduce) { .coach.win { animation: none; } }
 /* The pitch is what is being learned from: head and coach card take about 250px of the viewport height. */
 .training-pitch { width: min(100%, calc((100vh - 300px) * 1.493)); width: min(100%, calc((100dvh - 300px) * 1.493)); }
 /* The Pause chip sits top right here: the spectators stand along the top touchline on the left. */
@@ -1042,6 +1051,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .coach-title { font-size: 18px; }
   .coach-text, .coach-note { font-size: var(--fs-sm); }
   .coach-ghosts { display: none; }
+  .coach-done .coach-actions { order: 1; }
+  .coach-done .coach-text { font-size: var(--fs-xs); }
+  .coach-replays { gap: 4px; }
+  .coach-replays .btn { padding: 4px 8px; font-size: var(--fs-xs); }
+  .coach-actions .btn { min-height: 38px; }
   .training-pitch { grid-column: 2; grid-row: 1 / span 2; justify-self: end; width: min(100%, calc((100dvh - 24px) * 1.493)); min-width: 0; }
   .training-pitch .pad-btn { width: 54px; height: 54px; }
 }

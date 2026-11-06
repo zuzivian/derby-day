@@ -6,6 +6,7 @@ import { DT, GOAL_BOTTOM, GOAL_TOP, PITCH_W } from '../sim/constants.ts';
 import { step } from '../sim/match.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import { announce, reducedMotion, trapTab } from './a11y.ts';
+import { getSound } from './audio.ts';
 import { checkDrill, createTraining, CARRIER, DRILLS, filterInput, holdFrozen, HUMAN, MARKER_R, stageDrill, type DrillId, type Hint, type Retry } from './drills.ts';
 import { InputController } from './input.ts';
 import { PitchRenderer } from './render.ts';
@@ -15,7 +16,9 @@ export interface TutorialOptions {
   home: TeamSetup;
   controls: ControlStyle;
   /** Called once, after the view has cleaned up. `completed` is false when skipped. */
-  onDone: (completed: boolean) => void;
+  onDone: (completed: boolean, next?: 'match') => void;
+  /** When set, the finished card offers 'Play a match' (the caller then goes to Home). */
+  offerMatch?: boolean;
   /** Heading level for the section title: 2 inside setup, 1 when it is the whole page. */
   headingLevel?: 1 | 2;
 }
@@ -114,6 +117,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       <div class="coach-top">
         <span class="coach-count" id="coach-count"></span>
         <ol class="coach-dots" aria-hidden="true">${DRILLS.map((d) => `<li data-drill="${d}"></li>`).join('')}</ol>
+        <button class="btn small ghost" id="tr-again" type="button" aria-label="Restart drill">Restart</button>
       </div>
       <h2 class="coach-title" id="coach-title"></h2>
       <div class="coach-stack">
@@ -123,6 +127,15 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       <div class="coach-stack">
         <p class="coach-note" id="coach-note"></p>
         <span class="coach-ghosts" id="coach-ghost-note" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="coach coach-done" id="coach-done" hidden>
+      <h2 class="coach-title" id="coach-done-title" tabindex="-1">All four done</h2>
+      <p class="coach-text">Move, pass, shoot and tackle: that is the whole game. Next, try it in a real match. Or replay any drill:</p>
+      <div class="coach-replays">${DRILLS.map((d, i) => `<button class="btn small" type="button" data-replay="${i}">${esc(COPY[d].title)}</button>`).join('')}</div>
+      <div class="coach-actions">
+        ${o.offerMatch ? '<button class="btn primary" id="tr-match" type="button">Play a match</button>' : ''}
+        <button class="btn${o.offerMatch ? '' : ' primary'}" id="tr-finish" type="button">Done</button>
       </div>
     </div>
     <div class="pitch-wrap training-pitch">
@@ -175,6 +188,24 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   $('tr-skip-2').addEventListener('click', skip);
   $('tr-pause').addEventListener('click', () => setPaused(true));
   $('tr-resume').addEventListener('click', () => setPaused(false));
+  $('tr-again').addEventListener('click', () => {
+    if (paused) return;
+    pending = null;
+    holdUntil = 0;
+    startDrill(index, drill.id !== 'pass');
+    canvas.focus({ preventScroll: true });
+  });
+  $('tr-finish').addEventListener('click', () => finish(true));
+  const matchBtn = container.querySelector<HTMLElement>('#tr-match');
+  if (matchBtn) matchBtn.addEventListener('click', () => finish(true, 'match'));
+  container.querySelectorAll<HTMLElement>('[data-replay]').forEach((b) =>
+    b.addEventListener('click', () => {
+      allDone = false;
+      $('coach-done').hidden = true;
+      $('coach').hidden = false;
+      startDrill(Number(b.dataset.replay), true);
+      canvas.focus({ preventScroll: true });
+    }));
   const onKey = (e: KeyboardEvent) => {
     if (paused) trapTab($('tr-paused'), e);
   };
@@ -190,6 +221,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   let mode: Mode = touch ? 'touch' : input.mode;
   let holdUntil = 0;
   let pending: (() => void) | null = null;
+  let burst: { x: number; y: number; t: number } | null = null;
+  let allDone = false;
   const still = reducedMotion();
 
   function showDrill() {
@@ -235,11 +268,23 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     const c = COPY[drill.id];
     note(c.done, true);
     container.querySelectorAll<HTMLElement>('.coach-dots li')[index].className = 'done';
-    holdUntil = now + 1100;
-    if (index === DRILLS.length - 1) {
-      announce(`${c.done} Training done.`);
+    holdUntil = now + 1300;
+    const me = s.players[HUMAN].pos;
+    burst = { x: me.x, y: me.y, t: now };
+    $('coach').classList.remove('win');
+    void $('coach').offsetWidth;
+    $('coach').classList.add('win');
+    const last = index === DRILLS.length - 1;
+    getSound().stinger(last ? 'win' : 'train');
+    if (last) {
+      announce(`${c.done} All four drills done. Play a match next, or replay a drill.`);
       $('coach-count').textContent = 'Training done';
-      pending = () => finish(true);
+      pending = () => {
+        allDone = true;
+        $('coach').hidden = true;
+        $('coach-done').hidden = false;
+        $('coach-done-title').focus({ preventScroll: true });
+      };
     } else {
       announce(c.done);
       const nextIndex = index + 1;
@@ -252,7 +297,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     const text = retryText(why, mode);
     note(text, false);
     announce(text);
-    holdUntil = now + 1100;
+    holdUntil = now + 1500;
     pending = () => {
       drill = stageDrill(s, drill.id);
     };
@@ -294,6 +339,16 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       ctx.arc(c.x, c.y, 1.7 + pulse * 0.5, 0, Math.PI * 2);
       ctx.stroke();
     }
+    if (burst) {
+      const k = (now - burst.t) / 700;
+      if (k < 1) {
+        ctx.strokeStyle = `rgba(52,199,89,${1 - k})`;
+        ctx.lineWidth = 0.3;
+        ctx.beginPath();
+        ctx.arc(burst.x, burst.y, still ? 2 : 1 + k * 4, 0, Math.PI * 2);
+        ctx.stroke();
+      } else burst = null;
+    }
     ctx.restore();
   }
 
@@ -309,7 +364,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       mode = m;
       showDrill();
     }
-    if (!paused) {
+    if (!paused && !allDone) {
       if (now < holdUntil) {
         input.take(); // drop clicks made during the pause between drills
         acc = 0;
@@ -356,11 +411,11 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     document.removeEventListener('visibilitychange', onVis);
   }
 
-  function finish(completed: boolean) {
+  function finish(completed: boolean, next?: 'match') {
     if (finished) return;
     finished = true;
     dispose();
-    o.onDone(completed);
+    o.onDone(completed, next);
   }
 
   showDrill();
