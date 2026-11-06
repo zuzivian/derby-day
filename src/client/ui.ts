@@ -171,9 +171,25 @@ function sparkline(values: number[]): string {
   </svg>`;
 }
 
+const svgIcon = (body: string) => `<svg class="icon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+/** Icons for the empty states: a list, a calendar, a play button. */
+export const EMPTY_ICON = {
+  list: svgIcon('<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>'),
+  calendar: svgIcon('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>'),
+  play: svgIcon('<circle cx="12" cy="12" r="9"/><path d="m10 8.5 5 3.5-5 3.5Z"/>'),
+};
+
+/** The one empty-state box: a dashed frame, an icon tile and a line saying what to do next. */
+export function emptyState(text: string, icon: string = EMPTY_ICON.list): string {
+  return `<div class="empty-state"><span class="empty-icon" aria-hidden="true">${icon}</span><p>${esc(text)}</p></div>`;
+}
+
+/** A stat that has no value yet: a muted dash (read as "none"). */
+export const UNSET = '<span class="unset" aria-hidden="true">–</span><span class="sr-only">none</span>';
+
 function formChips(save: Save): string {
   const recent = save.history.slice(-6).reverse();
-  if (!recent.length) return `<p class="muted">No matches yet. Your first ranked result moves your Elo by up to ${kFactor(0)} points.</p>`;
+  if (!recent.length) return emptyState(`No matches yet. Your first ranked result moves your Elo by up to ${kFactor(0)} points.`, EMPTY_ICON.list);
   return `<ul class="results">${recent
     .map((m) => {
       const r = m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L';
@@ -193,8 +209,8 @@ export function clubScreen(app: App): string {
   <div class="club-grid">
     <article class="panel form">
       <h2 class="eyebrow">Elo</h2>
-      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
-      ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : `<div class="spark-empty"><span aria-hidden="true">${LADDER}</span>Your Elo chart starts with your first ranked match.</div>`}
+      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
+      ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
       <h3 class="eyebrow">Recent</h3>
       ${formChips(s)}
       ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
@@ -242,7 +258,7 @@ const nameCell = (p: Player): string =>
 
 function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
   return `<tr${starter ? ' class="starter"' : ''}>
-    <td class="num${showNumber ? '' : ' muted opt'}">${showNumber ? p.number : '–'}</td>
+    ${showNumber ? `<td class="num">${p.number}</td>` : ''}
     <td class="name">${nameCell(p)}${starter ? ' <span class="pill">XI</span>' : ''}</td>
     <td class="opt">${esc(nation(p))}</td>
     <td class="num opt">${p.age}</td>
@@ -310,20 +326,20 @@ export function transfersScreen(app: App): string {
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       <div class="table-scroll"><table class="tbl has-action">
-        <thead><tr><th class="num opt">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
+        <thead><tr><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
           return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
-        }).join('') : `<tr><td colspan="16" class="muted">Nobody at that position right now.</td></tr>`}</tbody>
+        }).join('') : `<tr><td colspan="15" class="muted">Nobody at that position right now.</td></tr>`}</tbody>
       </table></div>
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
     <article class="panel">
       <h2 class="eyebrow">Sell<span class="eyebrow-more"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
       <div class="table-scroll"><table class="tbl compact has-action">
-        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt-narrow">Pos</th><th class="num opt">Age</th><th class="num">OVR</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
-        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num opt">${p.age}</td><td class="num ovr">${overall(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
+        <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow">Pos</th><th class="num">OVR</th><th class="num opt">POT</th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
+        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
             ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
@@ -372,8 +388,11 @@ export function ladderScreen(app: App): string {
   <article class="panel">
     <h2 class="eyebrow">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
     <div class="table-scroll"><table class="tbl ladder">
-      <thead><tr><th class="num">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num opt-narrow">P</th><th class="num opt-narrow">W</th><th class="num opt-narrow">D</th><th class="num opt-narrow">L</th><th class="num">Elo</th></tr></thead>
-      <tbody>${rows.map((r, i) => `<tr${r.you ? ' class="you"' : ''}><td class="num">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td><td class="num opt-narrow">${r.played}</td><td class="num opt-narrow">${r.won}</td><td class="num opt-narrow">${r.drawn}</td><td class="num opt-narrow">${r.lost}</td><td class="num ovr">${r.elo}</td></tr>`).join('')}</tbody>
+      <thead><tr><th class="num pos-col">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num rec opt-narrow">P</th><th class="num rec opt-narrow">W</th><th class="num rec opt-narrow">D</th><th class="num rec opt-narrow">L</th><th class="num">Elo</th></tr></thead>
+      <tbody>${rows.map((r, i) => {
+        const rec = (n: number) => `<td class="num rec opt-narrow${n ? '' : ' zero'}">${n || '–'}</td>`;
+        return `<tr${r.you ? ' class="you"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
+      }).join('')}</tbody>
     </table></div>
   </article>`;
 }

@@ -51,7 +51,7 @@ import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
-import { esc, type App } from './ui.ts';
+import { emptyState, esc, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -101,7 +101,7 @@ function cabinet(s: Save): string {
     <h2 id="cabinet-title" class="eyebrow">Trophy cabinet</h2>
     ${t.length
       ? `<ul class="trophies">${t.map((x) => `<li class="trophy trophy-${x.kind}">${x.kind === 'cup' ? CUP_ICON : SHIELD_ICON}<span>${esc(x.title)}</span></li>`).join('')}</ul>`
-      : `<p class="muted">Empty for now. Win the cup or the league to put something in it.</p>`}
+      : emptyState('Empty for now. Win the cup or the league to put something in it.', CUP_ICON)}
     <p class="muted small">Cup and league matches pay prize money and an extra training session, and move your Elo (not your ladder record). Forfeiting counts as a 0–3 defeat.</p>
   </article>`;
 }

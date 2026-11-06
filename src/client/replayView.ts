@@ -14,6 +14,7 @@ import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
 import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
+import { EMPTY_ICON, emptyState } from './ui.ts';
 
 const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -63,7 +64,7 @@ export function recentReplaysHtml(): string {
     .join('');
   return `<div class="replays">
     <h3 class="eyebrow">Recent replays</h3>
-    ${rows ? `<ul class="replay-list">${rows}</ul>` : `<p class="muted small">Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).</p>`}
+    ${rows ? `<ul class="replay-list">${rows}</ul>` : emptyState(`Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).`, EMPTY_ICON.play)}
     <div class="replay-paste">
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">

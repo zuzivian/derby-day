@@ -294,7 +294,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .board-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 /* Empty states: an icon tile and one line of what to do next. */
 .empty-state { display: flex; align-items: center; gap: 14px; padding: 14px var(--sp-4); border-radius: var(--r-md); background: var(--surface-2); border: 1px dashed var(--line-strong); color: var(--muted); }
-.empty-state p { margin: 0; }
+.empty-state p { margin: 0; font-size: var(--fs-sm); font-weight: 600; line-height: 1.45; text-wrap: pretty; }
+.empty-state .icon { display: block; width: 20px; height: 20px; }
+.panel > .empty-state, .panel > .eyebrow + .empty-state { margin-top: var(--sp-3); }
+/* A stat with no value yet: a muted dash (or a zero line), never a bright 0. */
+.unset { color: var(--muted); opacity: .6; font-weight: 600; }
 .empty-state b { color: var(--ink); }
 .empty-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--r-md); background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
 
@@ -354,6 +358,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Club screen ---------------------------------------------------------------- */
 .club-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: var(--sp-4); }
 .club-grid .news { align-self: start; }
+/* Club history spans the grid, with its records in two columns, so no column is left empty beside it. */
+.club-grid .history-panel { grid-column: 1 / -1; }
+@media (min-width: 900px) {
+  .history-panel .history-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); }
+  .history-panel .history-marks > li:nth-child(2) { border-top: 0; }
+}
 .versus { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--sp-3); }
 .side { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; min-width: 0; }
 .side-name { font-family: var(--font-display); font-weight: 800; font-size: var(--fs-2xl); line-height: 1.05; text-wrap: balance; }
@@ -372,8 +382,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .spark-area { fill: var(--accent); opacity: .12; }
 .spark-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
 .spark-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
-.spark-empty { display: flex; align-items: center; gap: var(--sp-3); min-height: 72px; padding: var(--sp-3) var(--sp-4); border: 1.5px dashed var(--line-strong); border-radius: var(--r-md); color: var(--muted); font-weight: 600; }
-.spark-empty .icon { display: block; color: var(--accent); }
 .results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .results li { display: grid; grid-template-columns: 26px 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); font-variant-numeric: tabular-nums; }
 .res { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; font-weight: 800; font-size: var(--fs-sm); color: var(--on-status); }
@@ -407,7 +415,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tbl tr.you td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
 .tbl tr.you td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 /* Short tables (Sell): the name takes the spare width, the numbers sit together on the right. */
-.tbl.compact td.name { width: 100%; }
+@media (min-width: 601px) { .tbl.compact td.name { min-width: 200px; } }
+/* Ladder: a narrow centred position column, and P/W/D/L as one tight cluster beside Elo. */
+.tbl.ladder td.name { width: 100%; }
+.tbl.ladder .pos-col { width: 44px; text-align: center; padding-left: 0; padding-right: 0; color: var(--muted); }
+.tbl.ladder th.pos-col { color: var(--muted); }
+.tbl.ladder tr.you .pos-col { color: var(--ink); }
+.tbl.ladder .rec { min-width: 40px; padding-left: 4px; padding-right: 4px; font-variant-numeric: tabular-nums; }
+.tbl.ladder td.zero { color: color-mix(in srgb, var(--muted) 55%, transparent); }
 /* Phones: the player tables keep #, name, position, OVR and the money column; the detail columns go. */
 /* Column tiers. The transfer tables (.has-action) lose their detail columns below
    1000 px, so the money column and the Sign/Sell button always fit; the Squad
