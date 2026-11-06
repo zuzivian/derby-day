@@ -161,7 +161,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <p id="ob-name-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
         ${nameError ? `<p id="ob-name-error" class="ob-error" role="alert">${esc(nameError)}</p>` : ''}
       </form>
-      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Skip</button><button class="btn primary big" data-ob="done" type="button">Go to the club</button></div>
+      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Keep this club</button><button class="btn primary big" data-ob="done" type="button">Go to the club</button></div>
     </section>`;
   }
 

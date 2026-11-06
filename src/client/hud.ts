@@ -282,7 +282,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       if (pr !== lastPrompt) {
         lastPrompt = pr;
         prompt.hidden = !pr;
-        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>the CPU takes it in ${ko.secs} s</small>`;
+        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>· the CPU takes it in ${ko.secs} s</small>`;
       }
       const c = matchClock(s);
       if (c !== lastClock) {

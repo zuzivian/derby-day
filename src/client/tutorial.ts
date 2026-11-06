@@ -63,11 +63,11 @@ const COPY: Record<DrillId, { title: string; text: Record<Mode, string>; done: s
 
 const RETRY: Record<Retry, string> = {
   'walked-in': 'Nice, but stay on the drill. Setting it up again.',
-  'no-receiver': 'Nobody got that one. Aim at a teammate this time.',
-  missed: 'Not this time. Setting it up again.',
-  'shoot-it': 'That counts in a match, but shoot it this time.',
+  'no-receiver': 'No teammate there. Aim at one.',
+  missed: 'Missed. Setting it up again.',
+  'shoot-it': 'That counts in a match, but this drill wants a shot.',
   conceded: 'They scored. Get close, then tackle.',
-  saved: 'Your keeper saved it. Get there first this time.',
+  saved: 'Saved. Beat the keeper to the ball.',
   'lost-it': 'Setting it up again. Get close, then tackle.',
 };
 
@@ -84,13 +84,13 @@ const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 /** The retry note, restating the control in use so it says what to do next. */
 function retryText(why: Retry, mode: Mode): string {
   if (why === 'no-receiver') {
-    if (mode === 'keys') return 'Nobody got that one. Run a step toward a teammate so you face them, then press Space.';
-    if (mode === 'touch') return 'Nobody got that one. Drag onto a teammate, then tap Pass.';
+    if (mode === 'keys') return 'No teammate there. Run a step toward a teammate so you face them, then press Space.';
+    if (mode === 'touch') return 'No teammate there. Drag onto one, then tap Pass.';
   }
   if (why === 'missed') {
-    if (mode === 'touch') return 'Not this time. Point at the goal, hold Shoot, release.';
-    if (mode === 'mouse') return 'Not this time. Point at the goal and right click.';
-    return 'Not this time. Hold F, then release to shoot.';
+    if (mode === 'touch') return 'Missed. Point at the goal, hold Shoot, release.';
+    if (mode === 'mouse') return 'Missed. Point at the goal and right click.';
+    return 'Missed. Hold F, then release to shoot.';
   }
   return RETRY[why];
 }
@@ -108,7 +108,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
         <p class="eyebrow">Practice skills</p>
         <${h} id="tr-title" class="training-title" tabindex="-1">Learn the controls</${h}>
       </div>
-      <button class="btn small ghost" id="tr-skip" type="button">Leave</button>
+      <button class="btn small ghost" id="tr-skip" type="button">Leave practice</button>
     </div>
     <div class="coach" id="coach">
       <div class="coach-top">
@@ -133,7 +133,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
           <h2 id="tr-paused-title">Paused</h2>
           <div class="pause-actions">
             <button class="btn primary" id="tr-resume" type="button">Resume</button>
-            <button class="btn" id="tr-skip-2" type="button">Leave</button>
+            <button class="btn" id="tr-skip-2" type="button">Leave practice</button>
           </div>
           <p class="hint">Esc or P pauses and resumes.</p>
         </div>

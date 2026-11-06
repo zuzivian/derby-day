@@ -128,7 +128,7 @@ function persist() {
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
   if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
-  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is NOT saved. Free some space, or back up your club in Club > Back up.', false);
+  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is NOT saved. Free some space, or back up your club: Club tab, then Back up or restore.', false);
   telemetry.level(clubLevel(app.save));
 }
 
@@ -305,7 +305,7 @@ function tutorialXp(): string {
 function startTraining() {
   const s = app.save;
   if (!lineupReady(s)) {
-    toast('Pick a full XI first.', false);
+    toast('Pick a full XI in Squad first.', false);
     return;
   }
   takeover = true;
@@ -346,7 +346,7 @@ function playLive(
 ): boolean {
   const s = app.save;
   if (!lineupReady(s)) {
-    toast('Pick a full XI first.', false);
+    toast('Pick a full XI in Squad first.', false);
     return false;
   }
   if (pending) {
@@ -796,6 +796,6 @@ if (app.prefs.onboarded === false) {
 } else if (!openInvite()) render();
 if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
 else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
-else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
+else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club tab, then Back up or restore).', false);
 else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
 else if (abandoned) toast(abandoned, false);

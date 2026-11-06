@@ -305,7 +305,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     text = tipText(id, o.mode(), touch(), introTip === id);
     const lead = introTip === id ? `<span class="coach-lead">${INTRO} </span>` : '';
     el.dataset.coachTip = id;
-    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${lead}${tipText(id, o.mode(), touch())}</span><button class="coach-x" type="button" aria-label="Dismiss the tip: ${tip.title}">Got it</button>`;
+    el.innerHTML = `<span class="coach-icon" aria-hidden="true">i</span><span class="coach-text"><b>${tip.title}</b> ${lead}${tipText(id, o.mode(), touch())}</span><button class="coach-x" type="button" aria-label="Got it, dismiss tip: ${tip.title}">Got it</button>`;
   };
   const show = (id: TipId) => {
     shown = id;

@@ -41,7 +41,7 @@ function offerRow(s: Save, p: Player): string {
   const full = s.squad.length >= squadCap(s);
   const v = scoutedPotential(p);
   return `<li class="rv-row rv-offer" data-offer="${esc(p.id)}">
-    <span class="rv-main"><b>${esc(p.first[0])}. ${esc(p.last)}</b>${rolePill(p.role)}<span class="muted">age ${p.age} · OVR ${overall(p)}</span>${stars(v.stars)}<span class="muted">POT ${potentialText(p)}</span></span>
+    <span class="rv-main"><b>${esc(p.first[0])}. ${esc(p.last)}</b>${rolePill(p.role)}<span class="muted">age ${p.age} · <abbr title="Overall rating">OVR</abbr> ${overall(p)}</span>${stars(v.stars)}<span class="muted"><abbr title="Potential">POT</abbr> ${potentialText(p)}</span></span>
     <span class="rv-sign">
       ${full ? `<label class="visually-hidden" for="release-${esc(p.id)}">Release to make room for ${esc(p.last)}</label><select id="release-${esc(p.id)}" class="rv-release">${releaseOptions(s)}</select>` : ''}
       <button class="btn small primary" data-action="review-sign" data-id="${esc(p.id)}">${full ? 'Release and sign' : 'Sign'}</button>
@@ -56,7 +56,7 @@ function intakeRow(s: Save, e: IntakeEntry): string {
   const live = inSquad ? scoutedPotential(inSquad) : null;
   const status = e.joined ? 'Joined the squad' : inSquad ? 'Signed' : 'Moved on';
   return `<li class="rv-row">
-    <span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age} · OVR ${e.overall}</span>${stars(live?.stars ?? e.stars)}<span class="muted">POT ${live ? potentialText(inSquad!) : esc(e.range)}</span></span>
+    <span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age} · <abbr title="Overall rating">OVR</abbr> ${e.overall}</span>${stars(live?.stars ?? e.stars)}<span class="muted"><abbr title="Potential">POT</abbr> ${live ? potentialText(inSquad!) : esc(e.range)}</span></span>
     <span class="rv-status${e.joined || inSquad ? ' up' : ' muted'}">${status}</span>
   </li>`;
 }

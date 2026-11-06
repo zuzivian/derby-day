@@ -143,8 +143,8 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   const near = [...ladder].sort((a, b) => Math.abs(a.elo - o.save.club.elo) - Math.abs(b.elo - o.save.club.elo))[0];
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="l2p-title">
-    <h1 id="l2p-title" tabindex="-1">Local 2P friendly</h1>
-    <p>Two players on one keyboard. Each of you steers one player of your team; the CPU runs everyone else. No Elo, no rewards.</p>
+    <h1 id="l2p-title" tabindex="-1">Two players, one screen</h1>
+    <p>Two players, one keyboard. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
     <div class="vs-sides">
       <div class="side">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
       <div class="vs">vs</div>
@@ -178,7 +178,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       halfSeconds: o.prefs.halfSeconds,
       humans: [true, true],
       crests: [o.save.club.crest, club.crest],
-      label: 'Local 2P',
+      label: 'One screen',
       forfeitText: 'Leave match',
       controlsHint: `${dot(0)} <b>P1:</b> WASD · Space pass · hold F shoot · E switch · Left Shift sprint (or the mouse) &nbsp; ${dot(1)} <b>P2:</b> arrows · Enter or / pass · hold . shoot · , switch · Right Shift sprint · Esc pause`,
       inputSource: (canvas, renderer, s, togglePause) => {
@@ -201,7 +201,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       onEnd: (m, left) => {
         stopMatch?.();
         stopMatch = null;
-        o.onDone(left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'Local 2P', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`));
+        o.onDone(left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`));
       },
     });
   }
@@ -224,8 +224,8 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
 
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="link-title" id="link-lobby">
-    <h1 id="link-title" tabindex="-1">Link two tabs</h1>
-    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, open the club, choose <b>Link two tabs</b> and join with that code. Each tab steers its own team, and the tabs exchange only inputs: both run the same deterministic match in lockstep. No Elo, no rewards.</p>
+    <h1 id="link-title" tabindex="-1">Two tabs</h1>
+    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, open the club, choose <b>Two tabs</b> and join with that code. Each tab steers its own team, and the tabs exchange only inputs: both run the same deterministic match in lockstep. No Elo, no rewards.</p>
     ${support.ok ? (support.note ? `<p class="link-note">${esc(support.note)}</p>` : '') : `<p class="link-warn" id="link-unsupported" role="alert">${esc(support.reason)}</p>`}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -356,7 +356,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
         stopMatch = null;
         closed = true;
         tr.close();
-        o.onDone(netResult(m, end, start, side, o, 'Linked friendly'));
+        o.onDone(netResult(m, end, start, side, o, 'Two-tab friendly'));
       },
     });
   }
@@ -418,8 +418,8 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="online-title" id="online-lobby">
-    <h1 id="online-title" tabindex="-1">Online friendly</h1>
-    <p>Play a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team and only inputs cross the network. No Elo, no rewards.</p>
+    <h1 id="online-title" tabindex="-1">Online</h1>
+    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team and only inputs cross the network. No Elo, no rewards.</p>
     ${cfg ? '' : '<p class="link-warn" role="alert" id="online-off">Online play is not switched on for this copy of the game.</p>'}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -646,11 +646,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const [home, away] = s.teams;
   const me = o.side;
   const delayMs = Math.round(o.start.delay * FRAME_MS);
-  const label = o.label ?? 'Linked';
+  const label = o.label ?? 'Two tabs';
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   root.innerHTML = `
   <section class="match" aria-label="${label} match" id="net-match" data-side="${me}" data-mode="${o.link ? 'online' : 'tabs'}">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. Mouse or keys as usual; Esc opens the leave menu."></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run and tap a player to pick him. There are no Pass or Shoot buttons in this match. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label, menuId: 'net-menu-btn', menuText: 'Menu' })}
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
@@ -666,7 +667,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       </div>
     </div>
     <p class="net-stats" id="net-stats"></p>
-    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.</p>
+    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run and tap a player to pick him. This match has no Pass or Shoot buttons yet, so it plays best on a mouse or keyboard.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
   </section>`;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');

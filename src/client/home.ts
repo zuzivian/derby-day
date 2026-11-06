@@ -149,7 +149,7 @@ function hero(app: App): string {
       <div class="hero-side">
         ${crestSvg(c, 84)}
         <div class="hero-name">${esc(c.name)}</div>
-        <div class="hero-elo"><span>Elo <b>${c.elo}</b></span>${miniSpark(s.eloHistory)}</div>
+        <div class="hero-elo"><span title="Elo rating">Elo <b>${c.elo}</b></span>${miniSpark(s.eloHistory)}</div>
         ${formChips(s)}
       </div>
       <div class="hero-mid">
@@ -161,7 +161,7 @@ function hero(app: App): string {
       <div class="hero-side">
         ${crestSvg(opp, 84)}
         <div class="hero-name">${esc(opp.name)}</div>
-        <div class="hero-elo">${ranked ? `<span>Elo <b>${app.nextOpp.elo}</b></span>` : '<span>Friendly</span>'}</div>
+        <div class="hero-elo">${ranked ? `<span title="Elo rating">Elo <b>${app.nextOpp.elo}</b></span>` : '<span>Friendly</span>'}</div>
         ${ranked ? `<div class="hero-tactic">${clubFormation(app.nextOpp)} · <b>${MENTALITY_LABEL[clubMentality(app.nextOpp)]}</b></div>` : ''}
       </div>
     </div>
@@ -181,8 +181,8 @@ function versusCard(s: Save): string {
   <article class="mode-card" data-mode="player" aria-labelledby="mode-player">
     <div class="mode-top"><span class="mode-icon">${ICON.players}</span><div><h3 id="mode-player" class="mode-title">vs Player</h3><p class="mode-sub">Friendly · no Elo</p></div></div>
     <div class="mode-actions">
-      ${local ? `<button class="mode-btn" id="play-local2p" data-action="play-local2p" aria-label="vs Player on one screen: Local 2P">${ICON.keys}<span>One screen</span></button>` : ''}
-      ${link ? `<button class="mode-btn" id="play-link" data-action="play-link" aria-label="vs Player in two browser tabs: Link two tabs">${ICON.tabs}<span>Two tabs</span></button>` : ''}
+      ${local ? `<button class="mode-btn" id="play-local2p" data-action="play-local2p" aria-label="vs Player, one screen">${ICON.keys}<span>One screen</span></button>` : ''}
+      ${link ? `<button class="mode-btn" id="play-link" data-action="play-link" aria-label="vs Player: two tabs of this browser">${ICON.tabs}<span>Two tabs</span></button>` : ''}
       ${link && relayConfig() ? `<button class="mode-btn" id="play-online" data-action="play-online" style="flex-basis: 100%" aria-label="vs Player online: invite a friend">${ICON.globe}<span>Online</span></button>` : ''}
     </div>
   </article>`;
