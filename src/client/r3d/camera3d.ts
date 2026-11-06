@@ -369,8 +369,8 @@ export class MatchCamera {
    */
   private replayShot(dt: number, f: CameraFocus, r: { kind: 'low' | 'goal'; goalX: number }, slow: number): void {
     const cam = this.camera;
-    const ex = r.kind === 'goal' ? r.goalX + Math.sign(r.goalX || 1) * 9 : f.x - f.vx * 0.15;
-    const ey = r.kind === 'goal' ? 5.5 : 7;
+    const ex = r.kind === 'goal' ? r.goalX + Math.sign(r.goalX || 1) * 7 : f.x - f.vx * 0.15;
+    const ey = r.kind === 'goal' ? 3.6 : 7;
     const ez = r.kind === 'goal' ? f.z * 0.35 : Math.min(HALF_H + 14, f.z + 24);
     const lx = f.x;
     const ly = Math.min(2, f.air * 0.5) + 0.6;
@@ -391,7 +391,7 @@ export class MatchCamera {
       this.look.z += (lz - this.look.z) * kl;
     }
     this.target.set(this.look.x, 0, this.look.z);
-    cam.fov = r.kind === 'goal' ? 46 : 34;
+    cam.fov = r.kind === 'goal' ? 40 : 34;
     cam.position.copy(this.eye);
     cam.near = 0.5;
     cam.far = 2400;

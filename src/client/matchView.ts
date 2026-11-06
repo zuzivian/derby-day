@@ -131,6 +131,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
   }
 }
 
+const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 /** The controls line: the essentials (always shown whole) and the detail behind "All controls" (hud.css). */
 const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
@@ -340,6 +341,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     state: MatchState;
     step: () => boolean;
     end: number;
+    /** The tick the slow-motion finish begins at (the strike, for a goal). */
+    slowFrom: number;
     acc: number;
     started: number;
     skip: HTMLButtonElement;
@@ -406,7 +409,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     wrapEl.classList.add('replaying');
     hudEl.classList.add('replaying');
     input.reset?.();
-    replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
+    const end = Math.min(buffer.latest, h.tick + REPLAY_TAIL);
+    // A goal's slow-motion starts as the shot is struck (a beat before it), so the swing and the flight to the net
+    // are the slow part, capped at 2.2 s of clip; the rest keep the plain last 1.5 s.
+    const slowFrom = h.shot !== undefined ? Math.max(h.shot - 9, end - Math.round(2.2 * TICK_HZ), from) : end - REPLAY_SLOW_TICKS;
+    replay = { h, state: opened.state, step: opened.step, end, slowFrom: Math.min(slowFrom, end - REPLAY_SLOW_TICKS), acc: 0, started: performance.now(), skip };
     // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
     r3.replayShot = { kind: 'low', goalX: h.goalX };
     hud.replay(`${h.label} · ${coarsePointer() ? 'tap to skip' : hotseat ? 'click or Esc to skip' : 'click, Space or Esc to skip'}`);
@@ -435,8 +442,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   /** Advance the replay by `elapsed` seconds of wall time; false once it has finished. */
   function stepReplay(elapsed: number): boolean {
     const r = replay!;
-    const slow = r.state.tick >= r.end - REPLAY_SLOW_TICKS;
-    r.acc += elapsed * (slow ? 0.5 : 1);
+    const slow = r.state.tick >= r.slowFrom;
+    // Slow-motion is for those who haven't asked for less motion; the closer angle on the goal stays.
+    r.acc += elapsed * (slow && !reducedMotion() ? 0.5 : 1);
     if (slow && r.h.kind !== 'red' && r.h.kind !== 'yellow') (renderer as Renderer3D).replayShot = { kind: 'goal', goalX: r.h.goalX };
     while (r.acc >= DT) {
       r.acc -= DT;
@@ -472,6 +480,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let lastEvent = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
+  let endSkip = () => {};
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
   function banner(text: string, ms: number, sub?: string, tone?: string) {
@@ -491,6 +500,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (done) return;
     done = true;
     cancelAnimationFrame(raf);
+    endSkip();
     dispose();
     if (input.mode) o.onControls?.(input.mode());
     if (forfeited) clearLastReplay();
@@ -527,7 +537,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           if (!Array.isArray(used) && (used.select || used.switchPlayer) && s.controlled[0] !== before) juice.buzz(10);
           juice.tick(s);
           buffer.push(used, s);
-          for (const h of spotter.update(s)) consider(h);
+          for (const h of spotter.update(s)) {
+            // The near things get their word as they happen, replay or not.
+            if (h.kind === 'woodwork' || h.kind === 'miss') hud.tag(h.kind === 'miss' ? 'So close!' : 'Off the woodwork!', 1700, h.label.split(' · ')[1]);
+            consider(h);
+          }
           acc -= DT;
           steps++;
           if (live()) shownThisStop = false;
@@ -580,6 +594,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
       banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      // A quick white flash over the pitch as the net moves (CSS drops it under reduced motion).
+      wrapEl.classList.remove('goal-flash');
+      void wrapEl.offsetWidth;
+      wrapEl.classList.add('goal-flash');
       // The scorer's number pops (the sides' own score cells, not the HUD's text writes below).
       const cell = ev.team === 0 ? sbH : sbA;
       cell.classList.remove('bump');
@@ -599,9 +617,23 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       ending = true;
       // Law 3: abandoned, the awarded result stands.
       if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
-      else banner('Full time', 99999);
+      else banner('Full time', 99999, `${home.name} ${s.score[0]}–${s.score[1]} ${away.name}`);
       announce(`Full-time. ${scoreLine()}`);
-      setTimeout(() => finish(false), 1100);
+      // A beat for the whistle and the score before the result dialog; a tap, click or Space/Enter/Esc moves on.
+      const timer = window.setTimeout(() => finish(false), 2000);
+      const t0 = performance.now();
+      const skipEnd = (e: Event) => {
+        if (performance.now() - t0 < REPLAY_SKIP_AFTER_MS || (e instanceof KeyboardEvent && !['Escape', ' ', 'Enter'].includes(e.key))) return;
+        clearTimeout(timer);
+        finish(false);
+      };
+      wrapEl.addEventListener('pointerdown', skipEnd);
+      window.addEventListener('keydown', skipEnd);
+      endSkip = () => {
+        wrapEl.removeEventListener('pointerdown', skipEnd);
+        window.removeEventListener('keydown', skipEnd);
+        clearTimeout(timer);
+      };
       cancelAnimationFrame(raf);
     }
   }
@@ -637,6 +669,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onTacticKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    endSkip();
     if (guardingBack) {
       window.removeEventListener('popstate', onPop);
       guardingBack = false;
