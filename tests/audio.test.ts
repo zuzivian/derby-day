@@ -239,3 +239,23 @@ describe('crowdLevel', () => {
     expect(box).toBeLessThanOrEqual(1);
   });
 });
+
+describe('detectSfx referee calls', () => {
+  const withEvent = (e: Record<string, unknown>) => {
+    const s = liveMatch();
+    s.ball.pos = { x: 30, y: 20 };
+    const prev = snapshot(s);
+    s.events.push({ tick: s.tick, player: 0, team: 0, ...e } as unknown as MatchEvent);
+    return detectSfx(prev, s);
+  };
+  test('cards, offside and penalties get a call cue', () => {
+    expect(withEvent({ kind: 'card', color: 'yellow', name: 'A', secondYellow: false, reason: 'foul' })).toContainEqual({ type: 'call', kind: 'yellow' });
+    expect(withEvent({ kind: 'card', color: 'red', name: 'A', secondYellow: false, reason: 'foul' })).toContainEqual({ type: 'call', kind: 'red' });
+    expect(withEvent({ kind: 'offside', spot: { x: 1, y: 1 } })).toContainEqual({ type: 'call', kind: 'offside' });
+    expect(withEvent({ kind: 'foul', penalty: true, advantage: false, victim: 1, spot: { x: 1, y: 1 }, severity: 'reckless' })).toContainEqual({ type: 'call', kind: 'penalty' });
+  });
+  test('a second yellow sounds once, as the red', () => {
+    const evs = withEvent({ kind: 'card', color: 'yellow', name: 'A', secondYellow: true, reason: 'foul' });
+    expect(evs.filter((e) => e.type === 'call')).toEqual([]);
+  });
+});

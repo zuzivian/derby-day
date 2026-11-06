@@ -322,6 +322,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   } | null = null;
   const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
+  const padEl = root.querySelector<HTMLElement>('.touch-pad')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
 
   // WebGL context loss (a GPU or driver reset): hold the match under a calm note instead of playing on
@@ -375,6 +376,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     });
     skip.addEventListener('contextmenu', (e) => e.preventDefault());
     wrapEl.appendChild(skip);
+    juice.clear();
+    hud.clearWord();
+    bannerUntil = 0;
     wrapEl.classList.add('replaying');
     hudEl.classList.add('replaying');
     input.reset?.();
@@ -446,8 +450,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let shownHalftime = false;
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
-  function banner(text: string, ms: number, sub?: string) {
-    hud.word(text, ms, sub);
+  function banner(text: string, ms: number, sub?: string, tone?: string) {
+    hud.word(text, ms, sub, tone);
     bannerUntil = performance.now() + ms;
   }
 
@@ -513,6 +517,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
+        // Touch pads: the held button fills with the kick's power.
+        const heldPad = padEl.querySelector<HTMLElement>('.pad-btn.down');
+        if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
         hud.update(s, charge, extras.charges ? undefined : hudGauge(s, extras));
       }
     }
@@ -531,14 +538,19 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const e = s.events[lastEvent++];
       const w = refereeWord(s, e);
       if (w?.live) hud.tag(w.word, 1800, w.sub);
-      else if (w) banner(w.word, 1500, w.sub);
+      else if (w) banner(w.word, 1500, w.sub, w.tone);
       const call = refereeCall(s, e);
       if (call) announce(call);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
-      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
+      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      // The scorer's number pops (the sides' own score cells, not the HUD's text writes below).
+      const cell = ev.team === 0 ? sbH : sbA;
+      cell.classList.remove('bump');
+      void cell.offsetWidth;
+      cell.classList.add('bump');
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {

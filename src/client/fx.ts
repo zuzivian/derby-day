@@ -14,6 +14,8 @@ export interface Juice {
   tick(s: MatchState): void;
   /** The match is paused (or the tab hidden): sound stops until unpaused. */
   setPaused(paused: boolean): void;
+  /** Drop any confetti in the air (an instant replay is starting). */
+  clear(): void;
   dispose(): void;
 }
 
@@ -242,13 +244,24 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     const frames: Keyframe[] = [];
     const steps = 12;
     for (let i = 0; i <= steps; i++) {
-      const amp = 7 * (1 - i / steps) ** 1.5;
+      const amp = 5 * (1 - i / steps) ** 1.5;
       frames.push({ transform: `translate(${(i % 2 ? 1 : -1) * amp}px, ${((i % 3) - 1) * amp * 0.6}px)` });
     }
-    animate(wrap, frames, { duration: 520, easing: 'linear' });
+    // Only the pitch moves: the HUD, Menu and Pass/Shoot buttons stay put under the thumb. (Looked up each time: a lost WebGL context swaps the canvas.)
+    animate(root.querySelector<HTMLElement>('#pitch') ?? wrap, frames, { duration: 520, easing: 'linear' });
   }
 
+  /** A short buzz on touch phones; never under reduced motion or when muted. No-op where unsupported (iOS). */
+  const buzz = (pattern: number | number[]) => {
+    try {
+      if (!reducedMotion() && !sound.muted) navigator.vibrate?.(pattern);
+    } catch {
+      /* no vibration API */
+    }
+  };
+
   function goal(team: 0 | 1) {
+    buzz([40, 60, 80]);
     if (reducedMotion()) {
       // No shake or particles: a slow, soft wash of the scorer's colour.
       if (flash) flash.style.background = s.teams[team].primary;
@@ -267,6 +280,8 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
   let prev: Snapshot = initialSnapshot(s);
   const handle = (ev: SfxEvent) => {
     sound.play(ev);
+    if (ev.type === 'kick' && ev.power > 0.7) buzz(12);
+    else if (ev.type === 'call' && ev.kind === 'red') buzz(60);
     if (ev.type === 'goal') goal(ev.team);
     else if (ev.type === 'whistle' && ev.kind === 'kickoff') kickoff();
   };
@@ -280,6 +295,12 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     setPaused(paused: boolean) {
       if (paused) sound.suspend();
       else sound.resume();
+    },
+    clear() {
+      particles = [];
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      ctx?.clearRect(0, 0, cw, ch);
     },
     dispose() {
       cleanup.forEach((c) => c());

@@ -449,6 +449,16 @@ export class InputController {
       e.preventDefault();
       fn();
     };
+    // A pressed look while a finger is on the button (the .down class; styles.css .pad-btn.down).
+    for (const b of [passBtn, shootBtn]) {
+      const on = () => b.classList.add('down');
+      const off = () => {
+        b.classList.remove('down');
+        b.style.removeProperty('--charge');
+      };
+      b.addEventListener('pointerdown', on);
+      for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, off);
+    }
     passBtn.addEventListener('pointerdown', down(() => {
       this.press = { world: null, x: 0, y: 0, type: 'touch' };
       this.pressLeft();
