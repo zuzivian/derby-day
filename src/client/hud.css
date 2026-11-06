@@ -18,6 +18,9 @@
 }
 .hud-goals { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; color: #ffd60a; }
 .hud-dash { color: rgba(255, 255, 255, .7); }
+.hud-clock.late { color: #ffd37a; box-shadow: 0 0 0 1px rgba(255, 211, 122, .55), 0 0 12px rgba(255, 190, 70, .35); animation: late-pulse 2.4s ease-in-out infinite; }
+@keyframes late-pulse { 50% { box-shadow: 0 0 0 1px rgba(255, 211, 122, .9), 0 0 18px rgba(255, 190, 70, .6); } }
+@media (prefers-reduced-motion: reduce) { .hud-clock.late { animation: none; } }
 .hud-clock { font-size: 16px; padding: 2px 9px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
 
 .hud-tr { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }

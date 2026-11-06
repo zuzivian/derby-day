@@ -10,6 +10,7 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
 import { keeperHoldLeft } from '../sim/human.ts';
+import { tension } from './audio.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
@@ -288,6 +289,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       if (c !== lastClock) {
         clock.textContent = c;
         lastClock = c;
+        // Late drama: the last minutes of a level or one-goal game warm the clock (CSS pulse; static under reduced motion).
+        clock.parentElement?.classList.toggle('late', tension(s) >= 0.75);
       }
       if (gauge !== undefined) {
         // Shown only while a kick charges or a click is queued (power.ts hudGauge); hidden while he dribbles.

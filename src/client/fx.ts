@@ -7,7 +7,7 @@
 
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
-import { crowdLevel, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
+import { crowdLevel, goalMood, resultMood, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
 
 export interface Juice {
   /** Call after every sim step with the live state. */
@@ -280,17 +280,25 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
 
   // -- the hook ----------------------------------------------------------------
   let prev: Snapshot = initialSnapshot(s);
+  let cur = s;
   const handle = (ev: SfxEvent) => {
     sound.play(ev);
     if (ev.type === 'kick' && ev.power > 0.7) buzz(12);
     else if (ev.type === 'call' && ev.kind === 'red') buzz(60);
     else if (ev.type === 'tackle') buzz(ev.won ? 25 : 8);
-    if (ev.type === 'goal') goal(ev.team);
-    else if (ev.type === 'whistle' && ev.kind === 'kickoff') kickoff();
+    if (ev.type === 'goal') {
+      goal(ev.team);
+      const m = goalMood(cur, ev.team);
+      sound.react(m.side, m.big);
+    } else if (ev.type === 'whistle' && ev.kind === 'kickoff') kickoff();
+    else if (ev.type === 'whistle' && ev.kind === 'fulltime') sound.react(resultMood(cur));
+    // The woodwork draws the crowd's gasp too, not only a shot dragged wide.
+    else if (ev.type === 'knock' && ev.kind === 'post' && ev.power > 0.4) sound.play({ type: 'ooh', power: ev.power });
   };
 
   return {
     tick(state: MatchState) {
+      cur = state;
       for (const ev of detectSfx(prev, state)) handle(ev);
       prev = snapshot(state);
       if (state.tick % 6 === 0) sound.setCrowd(crowdLevel(state));

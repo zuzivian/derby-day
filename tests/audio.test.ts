@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { crowdLevel, detectSfx, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
+import { crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -272,5 +272,30 @@ describe('UI stingers', () => {
   test('the level-up run is longer than the win, and every jingle is short', () => {
     expect(stingerLength('levelup')).toBeGreaterThan(stingerLength('win'));
     for (const k of ['win', 'draw', 'loss', 'levelup'] as const) expect(stingerLength(k)).toBeLessThan(2);
+  });
+});
+
+describe('atmosphere helpers', () => {
+  const mk = (): MatchState => createMatch({ seed: 5, ...teams(7), halfSeconds: 30, humanTeam: -1 });
+  test('tension: none early or in a rout, building late in a close second half', () => {
+    const s = mk();
+    expect(tension(s)).toBe(0);
+    s.half = 2;
+    s.clock = Math.floor(s.halfTicks * 2 * 0.95);
+    expect(tension(s)).toBeGreaterThan(0.6);
+    s.score = [3, 0];
+    expect(tension(s)).toBe(0);
+  });
+  test('goalMood and resultMood read the human side', () => {
+    const s = mk();
+    s.humans = [true, false];
+    s.score = [1, 1];
+    expect(goalMood(s, 0)).toEqual({ side: 'for', big: true });
+    expect(goalMood(s, 1).side).toBe('against');
+    s.score = [4, 0];
+    expect(goalMood(s, 0).big).toBe(false);
+    expect(resultMood(s)).toBe('win');
+    s.humans = [false, true];
+    expect(resultMood(s)).toBe('loss');
   });
 });

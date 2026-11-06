@@ -8,6 +8,7 @@
 //                 master gain, mute setting and the crowd bed.
 
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../sim/constants.ts';
+import { matchSeconds } from '../sim/rules.ts';
 import type { MatchState, Phase } from '../sim/types.ts';
 
 // ---------------------------------------------------------------------------
@@ -206,7 +207,30 @@ export function crowdLevel(s: MatchState): number {
   const near = clamp01(1 - d / 24);
   const inBox = d < 10 ? 0.25 : 0;
   const breaking = Math.hypot(s.ball.vel.x, s.ball.vel.y) > 14 ? 0.1 : 0;
-  return clamp01(0.18 + 0.5 * near * near + inBox + breaking);
+  return clamp01(Math.max(0.18 + 0.5 * near * near + inBox + breaking, 0.18 + 0.3 * tension(s)));
+}
+
+/** The side the stands are behind: the human's team (team 0 when it is CPU vs CPU or both are human). */
+export const homeTeam = (s: MatchState): 0 | 1 => (s.humans[1] && !s.humans[0] ? 1 : 0);
+
+/** 0..1: how tense the stands are. Rises from the 70th minute of a game still level or a goal apart, to full at the end. */
+export function tension(s: MatchState): number {
+  if (s.phase === 'fulltime' || s.half !== 2 || Math.abs(s.score[0] - s.score[1]) > 1) return 0;
+  return clamp01((matchSeconds(s) - 4200) / 1200) * (s.score[0] === s.score[1] ? 1 : 0.8);
+}
+
+/** How the stands take a goal that is already on the board: 'for' the home side, 'against' it; big when it levels or settles it, or comes late. */
+export function goalMood(s: MatchState, team: 0 | 1): { side: 'for' | 'against'; big: boolean } {
+  const [a, b] = s.score;
+  const gap = Math.abs(a - b);
+  return { side: team === homeTeam(s) ? 'for' : 'against', big: gap === 0 || gap === 1 || matchSeconds(s) >= 4800 };
+}
+
+/** The full-time whistle's reaction: a home win, a home defeat, or a draw. */
+export function resultMood(s: MatchState): 'win' | 'loss' | 'draw' {
+  const h = homeTeam(s);
+  const d = s.score[h] - s.score[1 - h];
+  return d > 0 ? 'win' : d < 0 ? 'loss' : 'draw';
 }
 
 // ---------------------------------------------------------------------------
@@ -522,7 +546,7 @@ export class SoundEngine {
     this.crowdLevelNow = 0;
   }
 
-  private roar(strength: number): void {
+  private roar(strength: number, hold = 1800): void {
     const r = this.ready();
     if (!r || !this.crowdGain || !this.crowdFilter) return;
     const { ctx } = r;
@@ -533,8 +557,24 @@ export class SoundEngine {
     this.crowdFilter.frequency.cancelScheduledValues(t);
     this.crowdFilter.frequency.setTargetAtTime(1400, t, 0.15);
     // Hold the roar, then let setCrowd settle the bed back down (slowly, via its time constant).
-    this.roarUntil = performance.now() + 1800;
+    this.roarUntil = performance.now() + hold;
     this.crowdLevelNow = -1;
+  }
+
+  /** The stands' reaction to a goal (for or against the home side) or the final whistle; the goal's net sound plays separately. */
+  react(kind: 'for' | 'against' | 'win' | 'loss' | 'draw', big = false): void {
+    const r = this.ready();
+    if (!r) return;
+    try {
+      if (kind === 'for' || kind === 'win') this.roar(kind === 'win' ? 0.8 : big ? 1 : 0.7, big || kind === 'win' ? 3600 : 1800);
+      else if (kind === 'against' || kind === 'loss') {
+        // Away fans' small cheer is the roar at a lower strength; the home end groans under it.
+        this.roar(kind === 'loss' ? 0.1 : 0.3, 1200);
+        this.ooh(r.ctx, r.out, 0, 0.7);
+      } else this.roar(0.3, 1500);
+    } catch {
+      /* a failed sound must never break the match */
+    }
   }
 
   // -- one-shots -------------------------------------------------------------
@@ -544,7 +584,7 @@ export class SoundEngine {
     if (!r) return;
     const now = performance.now();
     const key = ev.type === 'kick' || ev.type === 'knock' ? `${ev.type}${'kind' in ev ? ev.kind : ''}` : ev.type;
-    const gap = ev.type === 'knock' ? 60 : ev.type === 'kick' ? 40 : 0;
+    const gap = ev.type === 'knock' ? 60 : ev.type === 'kick' ? 40 : ev.type === 'ooh' ? 1500 : 0;
     if (gap && now - (this.lastPlayed.get(key) ?? -1e9) < gap) return;
     this.lastPlayed.set(key, now);
     try {
@@ -659,10 +699,10 @@ export class SoundEngine {
   }
 
   /** The crowd's "ooh": a vowel-like swell (noise through a falling formant) over the bed. */
-  private ooh(ctx: Ctx, out: AudioNode, power: number): void {
+  private ooh(ctx: Ctx, out: AudioNode, power: number, pitch = 1): void {
     const t = ctx.currentTime;
     const peak = 0.16 + 0.16 * power;
-    const dur = 1.1;
+    const dur = pitch < 1 ? 1.5 : 1.1;
     for (const [f0, f1, q, m] of [[620, 380, 3, 1], [1150, 820, 4, 0.45]] as const) {
       const src = ctx.createBufferSource();
       src.buffer = this.noise;
@@ -670,8 +710,8 @@ export class SoundEngine {
       const f = ctx.createBiquadFilter();
       f.type = 'bandpass';
       f.Q.value = q;
-      f.frequency.setValueAtTime(f0, t);
-      f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+      f.frequency.setValueAtTime(f0 * pitch, t);
+      f.frequency.exponentialRampToValueAtTime(f1 * pitch, t + dur);
       src.connect(f).connect(this.env(ctx, out, t, peak * m, 0.18, dur));
       src.start(t, Math.random() * 1.5);
       src.stop(t + dur + 0.25);
