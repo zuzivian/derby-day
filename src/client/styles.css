@@ -1071,29 +1071,40 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-board { width: min(100%, 820px); display: flex; flex-direction: column; gap: 4px; background: #0f1513; color: #f3f6f1; border-radius: var(--r-md); padding: var(--sp-2) 14px; position: relative; }
 .so-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 3px 6px; border-radius: 6px; border: 1.5px solid transparent; }
 .so-row.kicking { border-color: #ffd60a; }
-.so-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.so-you { font-family: var(--font-body); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #ffd60a; color: #0f1513; border-radius: var(--r-pill); padding: 1px 6px; vertical-align: middle; }
+.so-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.so-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-you { flex: none;  font-family: var(--font-body); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #ffd60a; color: #0f1513; border-radius: var(--r-pill); padding: 1px 6px; line-height: 1.4; }
 .so-marks { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .so-mark { width: 22px; text-align: center; font-size: 20px; line-height: 1.1; font-weight: 700; color: #6b7a74; border-bottom: 2px solid transparent; }
 .so-mark.scored { color: #5fd08e; }
+.so-mark.fresh { animation: so-mark .6s var(--ease-out, ease-out); }
+.so-total.pop { animation: so-total .6s var(--ease-out, ease-out); }
+@keyframes so-mark { 0% { transform: scale(2.1); } 100% { transform: none; } }
+@keyframes so-total { 0% { transform: scale(1.7); color: #5fd08e; } 100% { transform: none; } }
 .so-mark.missed { color: #ff8a7a; }
 .so-mark[aria-current="step"] { border-bottom-color: #ffd60a; color: #ffd60a; }
 .so-total { font-family: var(--font-display); font-weight: 900; font-size: 32px; line-height: 1; min-width: 1.1em; text-align: right; font-variant-numeric: tabular-nums; color: #ffd60a; }
 .so-sd { position: absolute; right: 14px; top: -9px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); border-radius: var(--r-pill); padding: 2px 10px; }
 
-.so-stage { position: relative; width: min(100%, calc((100vh - 330px) * 1.6)); width: min(100%, calc((100dvh - 330px) * 1.6)); min-width: min(100%, 320px); }
+.so-stage { container-type: inline-size; position: relative; width: min(100%, calc((100vh - 330px) * 1.6)); width: min(100%, calc((100dvh - 330px) * 1.6)); min-width: min(100%, 320px); }
 #so-canvas { display: block; width: 100%; aspect-ratio: 16 / 10; border-radius: var(--r-md); background: #1b2a24; touch-action: none; cursor: crosshair; }
 .so-banner {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%) rotate(-3deg); pointer-events: none;
-  font-family: var(--font-display); font-weight: 900; font-size: clamp(28px, 6vw, 60px); text-transform: uppercase; color: #ffd60a;
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(28px, 6vw, 60px); font-size: clamp(24px, 8.5cqw, 60px); text-transform: uppercase; color: #ffd60a;
   text-shadow: 0 3px 0 #0f1513, 0 0 24px rgba(0, 0, 0, .5); white-space: nowrap; animation: pop .35s ease-out;
 }
+/* Per outcome: green when the kick went your way, coral when it did not; a goal bursts a little bigger. */
+.so-banner[data-tone="good"] { color: #5fd08e; }
+.so-banner[data-tone="bad"] { color: #ff8a7a; }
+.so-banner[data-outcome="goal"] { animation-name: so-goal; animation-duration: .5s; }
+@keyframes so-goal { 0% { transform: translate(-50%, -50%) rotate(-3deg) scale(.5); opacity: 0; } 60% { transform: translate(-50%, -50%) rotate(-3deg) scale(1.18); opacity: 1; } 100% { transform: translate(-50%, -50%) rotate(-3deg); } }
 .so-meter { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); width: min(70%, 420px); height: 14px; border-radius: var(--r-pill); background: rgba(15, 21, 19, .8); border: 1.5px solid rgba(243, 246, 241, .8); overflow: hidden; }
 .so-zone { position: absolute; top: 0; bottom: 0; opacity: .55; }
 .so-zone-sweet { background: #5fd08e; }
 .so-zone-risky { background: #f0b35a; }
 .so-zone-sky { background: #ff7b5f; }
 .so-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgba(255, 255, 255, .9); mix-blend-mode: normal; border-right: 3px solid #fff; }
+.so-meter.timer { bottom: auto; top: 6px; height: 9px; border-width: 1px; }
 .so-meter.timer .so-zone { display: none; }
 .so-meter.timer .so-fill { background: #ffd60a; border-right: 0; }
 .so-overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10, 16, 14, .72); border-radius: var(--r-md); padding: 10px; overflow: auto; }
@@ -1106,14 +1117,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-info { width: min(100%, 820px); display: flex; flex-direction: column; gap: 2px; text-align: center; min-height: 3.4em; }
 .so-who { margin: 0; font-size: 17px; }
 .so-help { margin: 0; font-size: 14px; color: var(--muted); }
+.so-skip { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); min-height: 1.3em; opacity: 0; transition: opacity .3s; }
+.so-skip.on { opacity: 1; }
+.so-nowrap { white-space: nowrap; }
 .so-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; }
 .so-actions [hidden] { display: none; }
 .so-dive { display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: center; }
 .so-dive .btn { min-width: 108px; }
+#so-leave { min-height: 36px; padding-inline: var(--sp-4); font-size: var(--fs-sm); }
 
-@media (max-width: 640px) {
+@media (max-width: 640px), (max-height: 480px) {
   /* The intro and end cards are taller than the pitch on a phone: show them as full-screen sheets. */
-  .so-overlay { position: fixed; inset: 0; z-index: 45; border-radius: 0; place-items: safe center; padding: max(var(--sp-4), env(safe-area-inset-top, 0px)) var(--sp-4) max(var(--sp-4), env(safe-area-inset-bottom, 0px)); }
+  .so-overlay { position: fixed; inset: 0; z-index: 45; border-radius: 0; place-items: safe center; padding: max(var(--sp-4), env(safe-area-inset-top, 0px)) max(var(--sp-4), env(safe-area-inset-right, 0px)) max(var(--sp-4), env(safe-area-inset-bottom, 0px)) max(var(--sp-4), env(safe-area-inset-left, 0px)); }
+}
+@media (max-width: 640px) {
   #so-canvas { aspect-ratio: 4 / 3; }
   .so-stage { width: 100%; }
   .so-name { font-size: 16px; }
@@ -1127,9 +1144,40 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .so-card { padding: var(--sp-3); gap: var(--sp-2); }
   .so-card h2 { font-size: var(--fs-2xl); }
   .so-howto { font-size: var(--fs-sm); }
+  #so-leave { min-height: 44px; }
+}
+/* Landscape phone: the pitch takes the full height on the right; scoreboard, text and buttons stack on the left. */
+@media (max-height: 480px) and (orientation: landscape) {
+  #app:has(.shootout) { padding-block: 8px; }
+  .shootout { display: grid; grid-template-columns: minmax(262px, 38%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 12px; row-gap: 6px; align-items: start; height: calc(100vh - 16px); height: calc(100dvh - 16px); }
+  .so-board { grid-column: 1; grid-row: 1; width: 100%; padding: 6px 8px; gap: 2px; }
+  .so-info { grid-column: 1; grid-row: 2; width: 100%; min-height: 0; text-align: left; gap: 1px; }
+  .so-actions { grid-column: 1; grid-row: 3; align-self: end; flex-direction: column; align-items: stretch; gap: 6px; flex-wrap: nowrap; }
+  .so-stage { grid-column: 2; grid-row: 1 / span 3; width: 100%; min-width: 0; height: 100%; align-self: stretch; }
+  #so-canvas { height: 100%; aspect-ratio: auto; }
+  .so-name { font-size: 15px; }
+  .so-row { gap: 6px; padding: 2px; grid-template-columns: minmax(0, 1fr) auto auto; }
+  .so-row .crest { display: none; }
+  .so-mark { width: 14px; font-size: 15px; }
+  .so-marks { gap: 3px; }
+  .so-total { font-size: 24px; }
+  .so-who { font-size: 14px; }
+  .so-help { font-size: 12px; }
+  .so-skip { font-size: 12px; }
+  .so-dive { flex-wrap: nowrap; gap: 6px; }
+  .so-dive .btn { min-width: 0; flex: 1; padding-inline: 6px; }
+  .so-actions .btn { min-height: 40px; }
+  .so-actions #so-leave { min-height: 34px; }
+  .so-overlay { place-items: safe center; }
+  .so-card { max-width: 640px; padding: 12px 18px; gap: 8px; }
+  .so-card h2 { font-size: 22px; }
+  .so-howto { flex-direction: row; gap: 18px; font-size: 13px; }
+  .so-howto li { flex: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .so-banner { animation: none; }
+  .so-banner, .so-banner[data-outcome] { animation: none; }
+  .so-mark.fresh, .so-total.pop { animation: none; }
+  .so-skip { transition: none; }
 }
 
 /* ==========================================================================
