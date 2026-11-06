@@ -25,6 +25,7 @@
   --fs-lg: 17px;
   --fs-xl: 20px;
   --fs-2xl: 24px;
+  --fs-feature: 28px; /* titles of feature cards: Competitions, Training */
   --fs-3xl: 32px;
   --fs-4xl: 44px;
   --fs-5xl: 64px;
@@ -232,6 +233,14 @@ kbd { font: 700 var(--fs-xs)/1 var(--font-body); padding: 2px 6px; border: 1px s
 .btn.small { min-height: 32px; padding: 5px var(--sp-3); font-size: var(--fs-sm); border-radius: var(--r-sm); }
 .btn.ghost { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: var(--line-strong); box-shadow: none; }
 .btn.ghost:hover { --btn-bg: var(--surface-2); --btn-fg: var(--ink); }
+/* Dark mode: small primaries in table rows (Sign, Train...) go tonal so a column of them does not out-shout the
+   one solid primary per screen. Label is --accent on a ~18% accent tint: contrast >= 4.5:1 (hover 22%: still >= 4.5). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(td, li) > .btn.small.primary { --btn-bg: color-mix(in srgb, var(--accent) 18%, var(--surface)); --btn-fg: var(--accent); --btn-line: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none; }
+  :root:not([data-theme="light"]) :is(td, li) > .btn.small.primary:hover { --btn-bg: color-mix(in srgb, var(--accent) 22%, var(--surface)); filter: none; }
+}
+:root[data-theme="dark"] :is(td, li) > .btn.small.primary { --btn-bg: color-mix(in srgb, var(--accent) 18%, var(--surface)); --btn-fg: var(--accent); --btn-line: color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: none; }
+:root[data-theme="dark"] :is(td, li) > .btn.small.primary:hover { --btn-bg: color-mix(in srgb, var(--accent) 22%, var(--surface)); filter: none; }
 .btn.danger { --btn-bg: color-mix(in srgb, var(--bad) 10%, var(--surface)); --btn-fg: var(--bad); --btn-line: color-mix(in srgb, var(--bad) 55%, transparent); }
 .btn.danger:hover { --btn-bg: color-mix(in srgb, var(--bad) 16%, var(--surface)); --btn-line: var(--bad); }
 .btn[aria-disabled="true"], .btn:disabled { opacity: .45; cursor: not-allowed; filter: saturate(.4); box-shadow: none; }
@@ -284,7 +293,8 @@ option { background: var(--surface); color: var(--ink); }
 .rename-form label { font-size: 14px; font-weight: 700; color: var(--ink); }
 .rename-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .rename-row input { flex: 1 1 180px; min-width: 0; }
-.rename-row .btn { flex: none; }
+.rename-row .btn { flex: none; min-height: 34px; }
+.rename-row input { min-height: 34px; }
 .rename-form .muted { margin: 0; }
 .panel {
   position: relative; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg);
@@ -339,8 +349,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Scroll shadows: when the tabs overflow (phones at high levels) a soft edge shows on the side with more. */
 .tabs {
   background:
-    linear-gradient(90deg, var(--surface) 40%, transparent) left center / 36px 100% no-repeat local,
-    linear-gradient(270deg, var(--surface) 40%, transparent) right center / 36px 100% no-repeat local,
+    linear-gradient(90deg, var(--surface) 80%, transparent) left center / 36px 100% no-repeat local,
+    linear-gradient(270deg, var(--surface) 80%, transparent) right center / 36px 100% no-repeat local,
     radial-gradient(farthest-side at 0 50%, var(--scroll-shadow), transparent) left center / 28px 100% no-repeat scroll,
     radial-gradient(farthest-side at 100% 50%, var(--scroll-shadow), transparent) right center / 28px 100% no-repeat scroll,
     var(--surface);
@@ -500,6 +510,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .formation-pick select { font-size: var(--fs-xs); font-weight: 800; min-height: 28px; padding: 2px 26px 2px 8px; letter-spacing: .04em; }
 
 /* Training -------------------------------------------------------------------- */
+.train-head { display: flex; justify-content: flex-start; align-items: baseline; gap: var(--sp-3); }
+.train-left { margin-left: auto; letter-spacing: .06em; text-transform: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.train-rule { margin: var(--sp-3) 0 0; }
 .training-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--sp-4); align-items: start; }
 .roster-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .roster-btn {
@@ -938,7 +951,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .training { display: flex; flex-direction: column; gap: 10px; align-items: center; width: 100%; }
 .training-head { width: 100%; display: flex; justify-content: space-between; align-items: flex-end; gap: var(--sp-3); }
 .training-head .eyebrow { margin: 0; }
-.training-title { font-size: 30px; font-weight: 900; text-transform: uppercase; }
+.training-title { font-size: var(--fs-feature); font-weight: 900; text-transform: uppercase; }
 .training-title:focus { outline: none; }
 .coach {
   position: relative; width: 100%; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-1);
@@ -1015,7 +1028,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .comp-cabinet p { margin: 0; }
 .league-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
 .league-body > div { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.comp-title { font-size: 32px; font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
+.comp-title { font-size: var(--fs-feature); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
 .comp-panel { overflow: hidden; }
 .comp-panel::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 30%, #ffd60a)); }
 .comp-panel p { margin: 0; }
@@ -1098,7 +1111,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .league-table th, .league-table td, .league-table tbody th[scope="row"] { padding: 6px 4px; }
   .league-table .name { white-space: normal; }
   .league-table .pill { display: none; }
-  .comp-title { font-size: 26px; }
+  .comp-title { font-size: var(--fs-2xl); }
 }
 
 /* ==========================================================================
@@ -1269,10 +1282,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
     radial-gradient(45% 80% at 80% -10%, rgba(255, 255, 255, .14), transparent 70%),
     radial-gradient(120% 90% at 50% 120%, rgba(0, 0, 0, .35), transparent 60%);
 }
-.hero-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); position: relative; }
-.hero-title { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: 22px; text-transform: uppercase; letter-spacing: .05em; }
+.hero-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); position: relative; }
+.hero-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); white-space: nowrap; font-size: 22px; text-transform: uppercase; letter-spacing: .05em; }
 .hero-tag { font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .1em; padding: 2px var(--sp-2); border-radius: var(--r-pill); background: var(--hero-ink); color: var(--hero-felt); }
-.hero-len { font-weight: 700; font-size: 14px; color: var(--hero-muted); font-variant-numeric: tabular-nums; border: 1px solid var(--hero-line); background: rgba(0, 0, 0, .18); border-radius: var(--r-pill); padding: 3px 12px; }
+.hero-len { white-space: nowrap; font-weight: 700; font-size: 14px; color: var(--hero-muted); font-variant-numeric: tabular-nums; border: 1px solid var(--hero-line); background: rgba(0, 0, 0, .18); border-radius: var(--r-pill); padding: 3px 12px; }
 .hero-match { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
 .hero-side { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; min-width: 0; }
 .hero .crest { color: var(--hero-ink); filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .4)); }
@@ -1387,6 +1400,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .club-name { max-width: 100%; font-size: 16px; }
   .hero { padding: 14px var(--sp-3) var(--sp-4); gap: var(--sp-3); border-radius: var(--r-lg); }
   .hero-title { font-size: 19px; }
+  .hero-tag { letter-spacing: .06em; }
+  .hero-len { font-size: 13px; padding: 2px 10px; }
   .hero-match { gap: 6px; }
   .hero .crest { width: 60px; height: 66px; }
   .hero-name { font-size: 18px; }

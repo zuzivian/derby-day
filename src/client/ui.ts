@@ -359,10 +359,11 @@ export function trainingScreen(app: App): string {
   return `
   <div class="training-grid">
     <article class="panel roster">
-      <h2 class="eyebrow">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left · ranked win +3, other results +2, friendlies +1</h2>
+      <h2 class="eyebrow train-head">Training<span class="train-left">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
         <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
+      <p class="muted small train-rule">Sessions earned per match: ranked win +3, other results +2, friendlies +1.</p>
     </article>
     <article class="panel trainee">
       <div class="trainee-head">
