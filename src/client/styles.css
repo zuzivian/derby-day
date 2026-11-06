@@ -510,8 +510,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .formation-pick select { font-size: var(--fs-xs); font-weight: 800; min-height: 28px; padding: 2px 26px 2px 8px; letter-spacing: .04em; }
 
 /* Training -------------------------------------------------------------------- */
-.train-head { display: flex; justify-content: flex-start; align-items: baseline; gap: var(--sp-3); }
-.train-left { margin-left: auto; letter-spacing: .06em; text-transform: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.train-head { display: flex; justify-content: flex-start; align-items: baseline; }
+.train-left { margin-left: auto; padding-left: var(--sp-3); letter-spacing: .06em; text-transform: none; font-weight: 700; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .train-rule { margin: var(--sp-3) 0 0; }
 .training-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--sp-4); align-items: start; }
 .roster-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
