@@ -42,6 +42,8 @@ export interface ResultView {
   label?: string;
   /** One line under the score, e.g. "Through to the final. +ƒ160k." */
   note?: string;
+  /** A short pointer for after a ranked loss or draw (rankedNote), shown under the rewards so the hero stays compact on a phone. */
+  tip?: string;
   /** Replaces "Nothing recorded for an abandoned friendly." when there is no summary. */
   unrecorded?: string;
   /** A drawn cup tie settled by a shootout: the kicks scored by each side. Decides the headline. */
@@ -556,7 +558,8 @@ function resultModal(app: App): string {
           ${sum
             ? `${chips.length ? `<ul class="rs-chips">${chips.join('')}</ul>` : ''}
               ${r.forfeited ? growth : ''}
-              ${xpCardHtml(app.save, sum.xp, r.forfeited)}`
+              ${xpCardHtml(app.save, sum.xp, r.forfeited)}
+              ${r.tip ? `<p class="rs-tip">${esc(r.tip)}</p>` : ''}`
             : `<p class="rs-empty">${esc(r.unrecorded ?? 'Nothing recorded for an abandoned friendly.')}</p>`}
         </section>
       </div>

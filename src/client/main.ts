@@ -473,7 +473,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     scorersFor,
     scorersAgainst,
     rankBefore,
-    note: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
+    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
   persist();

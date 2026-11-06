@@ -629,6 +629,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-scorer { font-weight: 600; }
 .rs-min { font-weight: 800; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; }
 .result-note { margin: 16px auto 0; display: table; max-width: 52ch; padding: 6px 14px; border-radius: var(--r-pill); background: rgba(0, 0, 0, .28); font-weight: 700; color: #fff; }
+.rs-tip { margin: var(--sp-3) 0 0; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); }
 
 .rs-body { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); }
 .rs-panel { min-width: 0; padding: 18px var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-3); }
