@@ -52,7 +52,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
 import { storyHtml } from './stakes.ts';
-import { emptyState, esc, rankOf, type App } from './ui.ts';
+import { CUP_ICON, emptyState, esc, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -66,7 +66,6 @@ export interface CompContext {
 
 const ROUND_PLURAL = ['Quarter-finals', 'Semi-finals', 'Final'];
 
-const CUP_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V6h3V3Zm0 5H6a2 2 0 0 0 1 1.7V8Zm10 0v1.7A2 2 0 0 0 18 8h-1Z" fill="currentColor"/></svg>`;
 const SHIELD_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 5 1.5 3.1 3.4.5-2.5 2.4.6 3.4L12 14.8 9 16.4l.6-3.4-2.5-2.4 3.4-.5L12 7Z" fill="currentColor"/></svg>`;
 
 // ---------------------------------------------------------------------------
@@ -121,8 +120,8 @@ function nextMatch(s: Save, opp: LadderClub, label: string, kind: 'cup' | 'seaso
   const right = { c: opp, n: opp.name, x: theirs };
   const [a, b] = home ? [left, right] : [right, left];
   return `
-    <div class="comp-next">
-      <div class="comp-next-label eyebrow">Next: ${esc(label)} · ${home ? 'home' : 'away'}</div>
+    <div class="comp-next${kind === 'cup' && s.cup?.round === CUP_ROUNDS.length - 1 ? ' final' : ''}">
+      <div class="comp-next-label eyebrow">${kind === 'cup' && s.cup?.round === CUP_ROUNDS.length - 1 ? `${CUP_ICON} ` : ''}Next: ${esc(label)} · ${home ? 'home' : 'away'}</div>
       <div class="comp-versus">
         <div class="side">${crestSvg(a.c, 44)}<div class="comp-side-name">${esc(a.n)}</div><div class="side-elo">XI ${a.x}</div></div>
         <div class="vs" aria-hidden="true">vs</div>
@@ -163,10 +162,10 @@ function cupPanel(s: Save): string {
   if (tie && opp) status = nextMatch(s, opp, `Cup ${CUP_ROUNDS[cup.round].toLowerCase()}`, 'cup', tie.a === s.club.id);
   else if (cup.done) {
     const won = cup.winner === s.club.id;
-    status = `<div class="comp-status ${won ? 'good' : ''}" role="status">${won ? `${CUP_ICON} ` : ''}<b>${won ? 'Cup winners!' : `${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.`}</b>${cup.earned > 0 ? ` You earned ${formatMoney(cup.earned)}.` : ' No prize money this time.'}</div>
+    status = `<div class="comp-status ${won ? 'good lift' : out ? 'out' : ''}" role="status">${won ? `${CUP_ICON} ` : ''}${out ? '<b>Out of the cup.</b> ' : ''}${won ? '<b>Cup winners!</b>' : `${out ? `${knockedOut(s, cup)} ` : ''}<b>${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.</b>`}${cup.earned > 0 ? ` You earned ${formatMoney(cup.earned)}.` : ' No prize money this time.'}</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Finish the cup</button></div>`;
   } else {
-    status = `<div class="comp-status" role="status">${out ? 'You are out of the cup.' : ''} The other ties are still to play.</div>
+    status = `<div class="comp-status${out ? ' out' : ''}" role="status">${out ? `<b>Out of the cup.</b> ${knockedOut(s, cup)} ` : ''}The other ties are still to play.</div>
       <div class="actions"><button class="btn primary" data-action="comp-sim-cup">Simulate the rest of the cup</button></div>`;
   }
   return `
@@ -177,12 +176,23 @@ function cupPanel(s: Save): string {
   </article>`;
 }
 
+/** "Beaten by X in the semi-finals." for a club that has lost its tie. */
+function knockedOut(s: Save, cup: Cup): string {
+  for (let r = 0; r < CUP_ROUNDS.length; r++) {
+    const t = cup.rounds[r].find((x) => (x.a === s.club.id || x.b === s.club.id) && x.winner && x.winner !== s.club.id);
+    if (t) return `Beaten by ${esc(clubById(s, t.winner!)?.name ?? '')} in the ${CUP_ROUNDS[r].toLowerCase()}${t.pens ? ' on penalties' : ''}.`;
+  }
+  return '';
+}
+
 function bracket(s: Save, cup: Cup): string {
+  // Your road to the cup: the tie you play next, and the empty ties it feeds.
+  const mine = cup.done ? -1 : cup.rounds[cup.round].findIndex((t) => (t.a === s.club.id || t.b === s.club.id) && t.winner === undefined);
   const cols = CUP_ROUNDS.map((_, r) => {
     const ties = cup.rounds[r].length ? cup.rounds[r] : placeholderTies(r);
     return `<section class="round" aria-labelledby="round-${r}">
       <h3 id="round-${r}" class="round-title">${ROUND_PLURAL[r]}</h3>
-      <ol class="ties">${ties.map((t, k) => tieCard(s, t, r, k)).join('')}</ol>
+      <ol class="ties">${ties.map((t, k) => tieCard(s, t, r, k, mine < 0 ? '' : r === cup.round && k === mine ? 'Next up' : r > cup.round && k === mine >> (r - cup.round) ? 'Your path' : '')).join('')}</ol>
     </section>`;
   });
   return `<div class="bracket">${cols.join('')}</div>`;
@@ -190,7 +200,7 @@ function bracket(s: Save, cup: Cup): string {
 
 const placeholderTies = (r: number): Tie[] => Array.from({ length: [4, 2, 1][r] }, () => ({ a: '', b: '' }));
 
-function tieCard(s: Save, t: Tie, round: number, k: number): string {
+function tieCard(s: Save, t: Tie, round: number, k: number, flag = ''): string {
   const played = t.winner !== undefined;
   const row = (id: string, goals: number | undefined, pens: number | undefined, from: string) => {
     if (!id) return `<div class="tie-row tbc"><span class="tie-name">${from}</span></div>`;
@@ -208,10 +218,10 @@ function tieCard(s: Save, t: Tie, round: number, k: number): string {
   const label = t.a && t.b
     ? `${clubById(s, t.a)?.name} ${played ? `${t.ga}–${t.gb}${t.pens ? `, ${t.pens[0]}–${t.pens[1]} on penalties` : ''}` : 'versus'} ${clubById(s, t.b)?.name}`
     : 'To be decided';
-  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ' mine' : ''}" aria-label="${esc(label)}">
+  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ' mine' : ''}${flag ? ' flag' : ''}${flag === 'Your path' ? ' path' : ''}" aria-label="${esc(label)}${flag ? `. ${flag}` : ''}">
     ${row(t.a, t.ga, t.pens?.[0], fromA)}
     ${row(t.b, t.gb, t.pens?.[1], fromB)}
-    ${t.pens ? `<div class="tie-note">on penalties</div>` : ''}
+    ${t.pens ? `<div class="tie-note">on penalties</div>` : flag ? `<div class="tie-note tie-flag" aria-hidden="true">${flag}</div>` : ''}
   </li>`;
 }
 

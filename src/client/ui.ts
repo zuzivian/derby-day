@@ -499,6 +499,8 @@ function rewardChip(cls: string, icon: string, label: string, main: string, sub 
   return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main">${main}</b></li>`;
 }
 
+export const CUP_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V6h3V3Zm0 5H6a2 2 0 0 0 1 1.7V8Zm10 0v1.7A2 2 0 0 0 18 8h-1Z" fill="currentColor"/></svg>`;
+
 function resultModal(app: App): string {
   const r = app.result!;
   const c = app.save.club;
@@ -533,6 +535,7 @@ function resultModal(app: App): string {
       <div class="rs-scroll" tabindex="0" role="region" aria-labelledby="result-title">
       <header class="rs-hero">
         ${outcome === 'win' ? confettiHtml(r.headline ? 40 : undefined) : ''}
+        ${r.headline === 'Cup winners' ? `<div class="rs-trophy">${CUP_ICON}</div>` : ''}
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
         <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? OUTCOME_WORD[outcome])}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
@@ -552,7 +555,7 @@ function resultModal(app: App): string {
             ${scorerList(r.scorersAgainst, r.opp.name)}
           </div>
         </div>
-        ${r.note ? `<p class="result-note">${esc(r.note)}</p>` : ''}
+        ${r.note ? `<p class="result-note${r.label?.startsWith('Cup') ? (outcome === 'loss' ? ' out' : '') : ''}">${esc(r.note)}</p>` : ''}
       </header>
       <div class="rs-body">
         ${r.forfeited
