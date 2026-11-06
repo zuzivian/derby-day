@@ -271,6 +271,23 @@ function windowTexture(): CanvasTexture {
   return tex(c, 4, true);
 }
 
+/** Profiled steel roof sheeting: light panels with a shadowed rib every repeat (one repeat is about 1.6 m of roof). */
+function roofTexture(): CanvasTexture {
+  const [c, g] = canvas(64, 16);
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, '#c9ced5');
+  grad.addColorStop(0.45, '#dde1e6');
+  grad.addColorStop(0.8, '#cfd4da');
+  grad.addColorStop(1, '#c4c9d0');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 16);
+  g.fillStyle = 'rgba(40,48,60,.38)';
+  g.fillRect(56, 0, 5, 16);
+  g.fillStyle = 'rgba(255,255,255,.55)';
+  g.fillRect(54, 0, 2, 16);
+  return tex(c, 4, true);
+}
+
 function parkingTexture(): CanvasTexture {
   const [c, g] = canvas(256, 256);
   g.fillStyle = '#7d8084';
@@ -680,7 +697,15 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
   // --- stands, crowd, flags --------------------------------------------------
   const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
-  const roofMat = keep(new MeshStandardMaterial({ color: '#e7e9ec', roughness: 0.6, metalness: 0.2, side: DoubleSide }));
+  // Ribbed steel sheeting on top: a plain pale slab read as a blank grey band across the top of an upright phone's picture.
+  const roofMat = keep(new MeshStandardMaterial({ color: '#ffffff', map: keep(roofTexture()), roughness: 0.6, metalness: 0.2, side: DoubleSide }));
+  // The roof's leading edge: a dark fascia that gives it a crisp front line seen from any camera.
+  const fasciaMat = keep(new MeshStandardMaterial({ color: '#232a36', roughness: 0.5, metalness: 0.3 }));
+  // The underside, seen from the pitch under a tall upright frame (a phone held upright): a shaded steel soffit, not a
+  // flat pale slab that read as a blank band across the top of the picture.
+  const soffitMat = keep(new MeshStandardMaterial({ color: '#3a4250', roughness: 0.8, metalness: 0.25, side: DoubleSide }));
+  // BoxGeometry face order: +x, -x, +y (top), -y (underside), +z, -z.
+  const roofMats = [roofMat, roofMat, roofMat, soffitMat, roofMat, roofMat];
   const steelMat = keep(new MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.55, metalness: 0.2 }));
   const fanGeo = keep(fanGeometry());
   const flagGeo = keep(new PlaneGeometry(1.3, 0.85, 8, 1).translate(0.65, 0.42, 0));
@@ -749,8 +774,13 @@ export function buildStadium(o: StadiumOptions): Stadium {
     if (roof) {
       const rh = backH + 4.5;
       const roofG = new BoxGeometry(along + 2, 0.25, depth + 3).translate(0, 0, (depth - 3) / 2);
-      const rm = new Mesh(roofG, roofMat);
-      disposables.push(roofG);
+      // One texture repeat per 1.6 m along the stand, so the ribs keep their spacing on every stand.
+      const uv = roofG.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * ((along + 2) / 1.6));
+      const rm = new Mesh(roofG, roofMats);
+      const fasciaG = new BoxGeometry(along + 2.2, 0.8, 0.3).translate(0, -0.2, -3);
+      rm.add(new Mesh(fasciaG, fasciaMat));
+      disposables.push(roofG, fasciaG);
       rm.position.set(0, rh, 0);
       rm.rotation.x = -0.07;
       rm.castShadow = true;

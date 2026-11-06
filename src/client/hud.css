@@ -238,6 +238,9 @@
   .hud-tr .pitch-zoom [data-zoom="1"] { grid-area: 2 / 1; }
   .hud-tr .pitch-cam { grid-area: 2 / 2; }
   .hud-tr .pitch-zoom [data-zoom="-1"] { grid-area: 2 / 3; }
+  /* The centred calls go under those two rows of 44 px buttons, not across the camera chip and zoom. */
+  .hud-tag, .hud-replay { top: 112px; }
+  .hud-fk, .hud-prompt { top: 142px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }

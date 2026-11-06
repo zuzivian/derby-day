@@ -25,15 +25,16 @@ export function crestSvg(c: { primary: string; secondary: string; crest: CrestPa
     chevron: `<rect width="40" height="44" fill="${p}"/><path d="M0 14 L20 26 L40 14 L40 22 L20 34 L0 22 Z" fill="${s}"/>`,
   };
   const shield = 'M3 3 H37 V20 C37 32 27 38 20 41 C13 38 3 32 3 20 Z';
-  const textFill = pattern === 'plain' || pattern === 'sash' ? s : p;
-  const textStroke = textFill === s ? p : s;
-  // Three letters always fit inside the shield, whatever font loaded (the fallback is much wider).
-  const fit = code.length >= 3 ? ' textLength="26" lengthAdjust="spacingAndGlyphs"' : '';
+  // The code sits on a dark plate across the shield, so it reads the same on every pattern and pair of colours
+  // (lettering in the club's own colours vanished into a half or a stripe of the same colour).
+  const plateY = 16;
+  // Three letters always fit on the plate, whatever font loaded (the fallback is much wider).
+  const fit = code.length >= 3 ? ' textLength="22" lengthAdjust="spacingAndGlyphs"' : '';
   return `<svg class="crest" width="${size}" height="${Math.round(size * 1.1)}" viewBox="0 0 40 44" aria-hidden="true">
     <defs><clipPath id="${id}"><path d="${shield}"/></clipPath></defs>
-    <g clip-path="url(#${id})">${fills[pattern]}</g>
+    <g clip-path="url(#${id})">${fills[pattern]}<rect x="0" y="${plateY}" width="40" height="12" fill="#121a2c" fill-opacity=".86"/><rect x="0" y="${plateY}" width="40" height="1" fill="#fff" fill-opacity=".22"/></g>
     <path d="${shield}" fill="none" stroke="currentColor" stroke-opacity=".55" stroke-width="1.6"/>
-    <text x="20" y="${pattern === 'hoops' ? 19 : 25}" text-anchor="middle" font-family="'Big Shoulders Display', 'Arial Narrow', sans-serif" font-weight="800" font-size="12"${fit}
-      fill="${textFill}" stroke="${textStroke}" stroke-width="2.4" paint-order="stroke">${esc(code)}</text>
+    <text x="20" y="${plateY + 9.6}" text-anchor="middle" font-family="'Big Shoulders Display', 'Arial Narrow', sans-serif" font-weight="800" font-size="10.5" letter-spacing=".4"${fit}
+      fill="#fff">${esc(code)}</text>
   </svg>`;
 }
