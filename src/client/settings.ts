@@ -59,12 +59,17 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     <div class="settings-foot"><button class="btn ghost" id="settings-close">Close</button></div>
   </div>`;
   document.body.appendChild(wrap);
+  // Everything behind the dialog is inert while it is open (as the result and level-up dialogs do).
+  const appEl = document.getElementById('app');
+  const wasInert = appEl?.hasAttribute('inert') ?? false;
+  if (!wasInert) appEl?.setAttribute('inert', '');
   const $ = <T extends HTMLElement>(id: string) => wrap.querySelector<T>('#' + id)!;
   $('settings-title').focus();
 
   const close = () => {
     wrap.remove();
     document.removeEventListener('keydown', onKey, true);
+    if (!wasInert) appEl?.removeAttribute('inert');
     opener?.isConnected ? opener.focus() : document.getElementById('main')?.focus();
   };
   const onKey = (e: KeyboardEvent) => {
@@ -150,6 +155,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       setTimeout(() => {
         wrap.remove();
         document.removeEventListener('keydown', onKey, true);
+        if (!wasInert) appEl?.removeAttribute('inert');
         hooks.onImported();
       }, RELOAD_DELAY_MS);
     });
@@ -167,6 +173,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     expectRestore();
     wrap.remove();
     document.removeEventListener('keydown', onKey, true);
+    if (!wasInert) appEl?.removeAttribute('inert');
     hooks.onImported();
   });
   $<HTMLInputElement>('bk-file').addEventListener('change', async (e) => {

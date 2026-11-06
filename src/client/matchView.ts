@@ -176,9 +176,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
-      <div class="touch-pad" aria-hidden="true">
-        <button class="pad-btn" id="pad-pass" tabindex="-1">Pass</button>
-        <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
+      <div class="touch-pad" role="group" aria-label="Kick buttons">
+        <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
+        <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
     </div>
     <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : MOUSE_HINT)}</p>
