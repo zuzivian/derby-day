@@ -645,14 +645,20 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const s = matchFromStart(o.start);
   const [home, away] = s.teams;
   const me = o.side;
+  // End-to-end tests set window.__e2e before the page loads to read the live state back (as matchView does).
+  if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: MatchState }).__derbyMatch = s;
   const delayMs = Math.round(o.start.delay * FRAME_MS);
   const label = o.label ?? 'Two tabs';
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   root.innerHTML = `
   <section class="match" aria-label="${label} match" id="net-match" data-side="${me}" data-mode="${o.link ? 'online' : 'tabs'}">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run and tap a player to pick him. There are no Pass or Shoot buttons in this match. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run, tap a player to pick him, and use the Pass and Shoot buttons. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label, menuId: 'net-menu-btn', menuText: 'Menu' })}
+      <div class="touch-pad" role="group" aria-label="Kick buttons">
+        <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
+        <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
+      </div>
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
@@ -667,7 +673,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       </div>
     </div>
     <p class="net-stats" id="net-stats"></p>
-    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run and tap a player to pick him. This match has no Pass or Shoot buttons yet, so it plays best on a mouse or keyboard.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
+    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run · Pass, hold to loft · Shoot, hold for power, tackles off the ball · tap a man to pick him. Your player runs toward your finger, faster the further it is.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
   </section>`;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');
@@ -688,6 +694,9 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
     c.mode = o.controls;
     c.setPiece = () => setPieceSpot(s, me);
+    // Fresh buttons each time (a rebuilt controller must not leave the old one listening); same markup and classes as matchView.
+    for (const id of ['pad-pass', 'pad-shoot']) $(id).replaceWith($(id).cloneNode(true));
+    c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
     return c;
   };
   let input = makeInput();
@@ -835,7 +844,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     raf = requestAnimationFrame(frame);
     pump();
     renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse', armed: input.armed(), team: me });
-    hud.update(s, input.charge());
+    const charge = input.charge();
+    // Touch pad: the held button fills with the kick's power (as in matchView).
+    const heldPad = section.querySelector<HTMLElement>('.touch-pad .pad-btn.down');
+    if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
+    hud.update(s, charge);
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
     $('sb-min').textContent = `${matchMinute(s)}'`;
