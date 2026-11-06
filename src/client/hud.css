@@ -50,6 +50,8 @@
   text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 28px rgba(0, 0, 0, .45); animation: hud-pop .32s ease-out;
 }
 .hud .hud-word small { font-size: .26em; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+/* The word's 4 px drop shadow read as a second, ghosted line under the small scorer line: a shadow to its own size. */
+.hud .hud-word small, .hud .hud-word[data-tone="team"] small { text-shadow: 0 1.5px 0 rgba(0, 0, 0, .6), 0 0 8px rgba(0, 0, 0, .5); }
 @keyframes hud-pop { from { transform: translate(-50%, -50%) skewX(-8deg) scale(.55); opacity: 0; } }
 /* Tone of a call: card colour, or the scorer's colours for a goal. The words stay; colour is a second cue. */
 .hud .hud-word[data-tone] small { color: #fff; }
