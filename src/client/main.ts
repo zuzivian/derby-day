@@ -439,6 +439,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
     save: app.save,
     prefs: app.prefs,
     avoidClash,
+    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp })),
     onDone: (result) => {
       stop();
       takeover = false;
@@ -678,6 +679,15 @@ root.addEventListener('click', (e) => {
       break;
     case 'reset-cancel':
       break;
+    case 'rematch': {
+      const again = app.result?.again;
+      app.result = null;
+      if (again) {
+        again.run();
+        return;
+      }
+      break;
+    }
     case 'close-result':
       app.result = null;
       pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
