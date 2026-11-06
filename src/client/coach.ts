@@ -33,16 +33,16 @@ export const TIPS: Record<TipId, Tip> = {
   run: {
     id: 'run',
     title: 'Run',
-    mouse: 'Move the mouse and your player runs to the pointer: the further away it is, the faster he runs. On a keyboard, use WASD or the arrows.',
+    mouse: 'Move the mouse and your player runs to the pointer: further away, faster. On a keyboard, use WASD or the arrows.',
     keys: 'Use WASD or the arrow keys to run, and hold Shift to sprint. With a mouse, your player runs to the pointer instead.',
     touch: 'Drag on the pitch: your player runs to your finger, faster the further it is.',
   },
   pass: {
     id: 'pass',
     title: 'You have the ball',
-    mouse: 'Left click to kick off and to pass: the ball rolls to the pointer. Aim at a teammate, or just ahead of one who is running. Hold the button for a lofted ball: the dots show where it lands.',
+    mouse: 'Left click to kick off or pass: the ball goes to the pointer. Hold the button for a lofted ball.',
     keys: 'Press Space to kick off and to pass to the teammate you are facing.',
-    touch: 'Tap Pass to kick off or pass where you aim. Hold it to loft.',
+    touch: 'Tap Pass to kick off. Hold it to loft.',
   },
   shoot: {
     id: 'shoot',
@@ -61,8 +61,8 @@ export const TIPS: Record<TipId, Tip> = {
   restart: {
     id: 'restart',
     title: 'Your restart',
-    mouse: 'Play is stopped and your player takes it. Left click to pass where you want it. If you wait, the CPU takes it for you.',
-    keys: 'Your player takes it. Press Space to pass. If you wait, the CPU takes it for you.',
+    mouse: 'Your player takes it. Left click to pass where you want. If you wait, the CPU takes it.',
+    keys: 'Your player takes it. Press Space to pass. If you wait, the CPU takes it.',
     touch: 'Your player takes it: tap Pass. If you wait, the CPU takes it.',
   },
   freekick: {
@@ -82,7 +82,7 @@ export const TIPS: Record<TipId, Tip> = {
 };
 
 /** The first tip of a first match starts by saying which player is you and which way you attack (team 0 always attacks the right-hand goal). */
-export const INTRO = 'You are the player with the yellow ring, attacking the goal on the right.';
+export const INTRO = 'You are the yellow ring, attacking the goal on the right.';
 /** The same, short enough for a one-line banner: on a narrow phone the card has no room for the long sentence (coach.css). */
 export const INTRO_SHORT = 'You are the yellow ring, attacking right →';
 
@@ -235,6 +235,9 @@ export function tipText(id: TipId, mode: 'mouse' | 'keys', touch: boolean, intro
   return intro ? `${INTRO} ${body}` : body;
 }
 
+/** Which on-screen pad a tip is asking the player to tap (phones): it gets a gentle ring while the tip is up. */
+const PAD_FOR: Partial<Record<TipId, string>> = { pass: 'pad-pass', restart: 'pad-pass', corner: 'pad-pass', shoot: 'pad-shoot', freekick: 'pad-shoot', tackle: 'pad-shoot' };
+
 export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   const human = o.human ?? 0;
   const tracker = new CoachTracker(o.seen);
@@ -266,7 +269,24 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
       if (introTip === shown) o.onSeen('intro');
     }
   };
+  // The pad the shown tip points at gets .coach-pulse (coach.css); pressing it, dismissing the tip or a new tip clears it.
+  let pulsing: HTMLElement | null = null;
+  const unpulse = () => {
+    pulsing?.classList.remove('coach-pulse');
+    pulsing = null;
+  };
+  const pulse = (id: TipId) => {
+    unpulse();
+    const pad = touch() ? PAD_FOR[id] : undefined;
+    pulsing = pad ? (host.querySelector<HTMLElement>(`#${pad}`) ?? document.getElementById(pad)) : null;
+    pulsing?.classList.add('coach-pulse');
+  };
+  const onPad = (e: Event) => {
+    if ((e.target as HTMLElement).closest?.('.coach-pulse')) unpulse();
+  };
+  host.addEventListener('pointerdown', onPad, true);
   const hide = () => {
+    unpulse();
     // Cut short before it could be read: not counted, and it may be offered again.
     if (shown && !counted) {
       tracker.forget(shown);
@@ -297,6 +317,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
       introPending = false;
     }
     draw(id);
+    pulse(id);
     el.hidden = false;
     banner.hidden = introTip !== id;
     // Next frame, so the fade-in runs.
@@ -319,7 +340,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     if (shown) {
       age += dtMs;
       if (!counted && age >= SEEN_AFTER_MS) countSeen();
-      if (redraw && text !== tipText(shown, o.mode(), touch(), introTip === shown)) draw(shown); // the player switched input: say it their way
+      if (redraw && text !== tipText(shown, o.mode(), touch(), introTip === shown)) { draw(shown); pulse(shown); } // the player switched input: say it their way
       if (age >= autoHideMs(text)) hide();
       // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
       else if (tracker.queue.length && age >= minTipMs(text)) hide();
@@ -340,6 +361,8 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
     dismiss: hide,
     dispose() {
       el.removeEventListener('click', onClick);
+      host.removeEventListener('pointerdown', onPad, true);
+      unpulse();
       el.remove();
       banner.remove();
       if (e2eHook && (globalThis as { __derbyCoach?: unknown }).__derbyCoach === hook) delete (globalThis as { __derbyCoach?: unknown }).__derbyCoach;

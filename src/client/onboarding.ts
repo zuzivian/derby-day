@@ -45,7 +45,7 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
     <main id="main" class="ob-main" tabindex="-1">
       <section class="panel ob-card ob-welcome" aria-labelledby="ob-title">
         <h2 id="ob-title" class="ob-title" tabindex="-1">Welcome, coach</h2>
-        <p class="ob-lede">Run a football club and play every match yourself. Your first game is against ${esc(o.opp.name)}, a friendly one: about six minutes, and the coach will show you the controls as you go.</p>
+        <p class="ob-lede">Run a club and play every match yourself. First up: a friendly against ${esc(o.opp.name)}, about six minutes. The coach shows the controls as you go.</p>
         <div class="versus ob-versus">
           <div class="side">${crestSvg(c, 64)}<div class="side-name">${esc(c.name)}</div>${kit(c)}</div>
           <div class="vs" aria-hidden="true">vs</div>
@@ -76,17 +76,9 @@ export function celebrationWords(gf: number, ga: number): { title: string; sub: 
   return { title: 'Good effort', sub: 'Everyone loses a first game. Now you know the controls.' };
 }
 
-/** "Squad, vs Player (one screen and two tabs) and Practice (Easy)": names like "Practice: Easy" are grouped, so a sentence has no stray colons. */
+/** "Squad, vs Player and Practice": the menu names only. Variants such as "Practice: Easy" fold into their head, so a sentence has no colons or brackets. */
 function listNames(names: string[]): string {
-  const groups = new Map<string, string[]>();
-  for (const n of names) {
-    const [head, ...rest] = n.split(': ');
-    groups.set(head, [...(groups.get(head) ?? []), ...(rest.length ? [rest.join(': ')] : [])]);
-  }
-  const items = [...groups].map(([head, parts]) => {
-    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
-    return list ? `${head} (${list})` : head;
-  });
+  const items = [...new Set(names.map((n) => n.split(': ')[0]))];
   return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
 }
 
@@ -141,7 +133,8 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
           ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.` : 'The club opens up as it levels.'}</p>` : ''}
           ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
         </div>
-        <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Skip, go to the club</button><button class="btn primary big" data-ob="next" type="button">Name your club</button></div>
+        <p class="ob-whatsnext">On Home, press Kick off to play again.</p>
+        <div class="ob-nav"><button class="btn ghost" data-ob="next" type="button">Name your club</button><button class="btn primary big" data-ob="skip" type="button">Go to the club</button></div>
       </section>`;
     }
     return `<section class="panel ob-card" aria-labelledby="ob-title">
