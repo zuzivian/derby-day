@@ -165,19 +165,19 @@
   .hud-tl { left: 6px; top: 6px; gap: 5px; }
   .hud-tr { right: 6px; top: 6px; gap: 4px; }
   .hud-club .crest { width: 18px; height: 20px; }
-  .hud-club b { font-size: 9px; }
+  .hud-club b { font-size: 11px; padding: 0 3px; }
   .hud-bar { font-size: 14px; gap: 6px; padding: 2px 6px; }
   .hud-clock { font-size: 12px; }
   .hud-menu { font-size: 11px; padding: 3px 6px; gap: 4px; }
-  .hud-menu kbd { font-size: 9px; padding: 2px 3px; }
+  .hud-menu kbd { font-size: 11px; padding: 2px 3px; }
   .hud-mode { display: none; }
-  .pitch-cam { font-size: 10px; padding: 3px 6px; }
+  .pitch-cam { font-size: 11px; padding: 3px 5px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
   .hud-me { right: 6px; bottom: 34px; width: 128px; padding: 3px 7px 4px 4px; gap: 2px 6px; grid-template-rows: auto 4px; }
   .hud-me-no { width: 20px; height: 20px; font-size: 11px; }
   .hud-me-name { font-size: 12px; }
-  .hud-power-label { font-size: 9px; }
+  .hud-power-label { font-size: 10px; }
   .hud-hold { right: 6px; bottom: 24px; font-size: 11px; padding: 2px 6px; }
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
@@ -187,7 +187,7 @@
   .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
   .hud-prompt b { font-size: 13px; }
   .hud-tag b { font-size: 13px; }
-  .hud-replay small { font-size: 10px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hud-replay small { font-size: 11px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
 }
 @media (max-width: 640px) and (orientation: portrait) {
@@ -206,6 +206,11 @@
 /* Landscape phones: no room above the buttons without covering play; the card sits at the bottom, beside the radar. */
 @media (pointer: coarse) and (max-height: 520px) {
   .hud-me { right: auto; left: 168px; bottom: 8px; }
+}
+/* Phones held upright: the player card moves out of open play and the right thumb zone to the bottom
+   left, above the mute button and radar row (the radar is 72 px wide at left 60, about 47 px tall). */
+@media (pointer: coarse) and (orientation: portrait) {
+  .hud-me { right: auto; left: 10px; bottom: 64px; width: 112px; }
 }
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
