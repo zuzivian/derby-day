@@ -267,6 +267,11 @@ export class AimLayer {
   private sightLine: Mesh;
   private sightTex = sightTexture();
   private recvRing: Mesh;
+  /** One-shot expanding ring where a firm kick leaves the foot (prepared up front, hidden otherwise). */
+  private strikeRing: Mesh;
+  private strikeAt = -9;
+  private strikePower = 0;
+  private prevOwner = -1;
   private switchRing: Mesh;
   private retreat: Mesh;
   private chipDots: InstancedMesh;
@@ -341,6 +346,8 @@ export class AimLayer {
     this.sightLine.position.y = 0.033;
     this.sightLine.renderOrder = 3;
 
+    this.strikeRing = flat(new Mesh(keepG(new RingGeometry(0.8, 1.0, 32)), overlay('#ffffff', 0.6)), 0.05) as Mesh;
+    this.strikeRing.visible = false;
     this.recvRing = flat(new Mesh(keepG(new RingGeometry(0.85, 1.0, 40)), keepM(overlay('#ffffff', 0.75))), 0.04) as Mesh;
     // Pale blue, not white, so it doesn't read as a pitch marking.
     this.retreat = flat(new Mesh(keepG(new RingGeometry(RETREAT - 0.06, RETREAT + 0.06, 96)), keepM(overlay('#9fd4ff', 0.6))), 0.03) as Mesh;
@@ -382,7 +389,7 @@ export class AimLayer {
     this.bars.frustumCulled = false;
     this.bars.renderOrder = 19;
 
-    this.group.add(this.pointer, this.reticle, this.wedge, this.sightLine, this.sightPost, this.sightFoot, this.sight, this.recvRing, this.switchRing, this.retreat, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
+    this.group.add(this.pointer, this.reticle, this.wedge, this.sightLine, this.sightPost, this.sightFoot, this.sight, this.recvRing, this.strikeRing, this.switchRing, this.retreat, this.chipDots, this.chipRing, ...this.markers, ...this.rings, this.bars);
   }
 
   private name(p: MatchPlayer): Sprite {
@@ -529,7 +536,8 @@ export class AimLayer {
         u.color.value.copy(col(gauge ? GAUGE_COLORS[gauge.band] : '#ffffff'));
         u.fill.value = gauge ? gauge.fill : 0;
         u.tick.value = gauge ? gauge.tick : 1;
-        u.opacity.value = wedgeAlpha;
+        // Full charge: the wedge pulses so the top of the power is unmistakable.
+        u.opacity.value = gauge && gauge.fill >= 0.98 && armed && !f.reduced ? 0.8 + 0.2 * Math.sin(f.time * 22) : wedgeAlpha;
         (this.chipRing.material as MeshBasicMaterial).color.copy(col(gauge && armed?.kind === 'loft' ? GAUGE_COLORS[gauge.band] : '#8cdcff'));
       }
     } else if (ctrl && !hasBall && pointerOn && cursor && s.phase === 'play' && !x.noAim) {
@@ -541,6 +549,29 @@ export class AimLayer {
         this.switchRing.position.set(sx(m.pos.x), 0.04, sz(m.pos.y));
         this.switchRing.scale.setScalar(1 + (f.reduced ? 0 : Math.sin(f.time * 6) * 0.06));
       }
+    }
+    // A pass on its way to a teammate of ours: his ring tightens onto him (static under reduced motion).
+    const flight = s.ball.receiver;
+    if (!hasBall && live && flight >= 0 && s.ball.owner < 0 && s.humans[s.players[flight]?.team ?? 0] && s.players[flight] && !s.players[flight].sentOff && !this.recvRing.visible) {
+      const m = s.players[flight];
+      this.recvRing.visible = true;
+      this.recvRing.position.set(sx(m.pos.x), 0.04, sz(m.pos.y));
+      this.recvRing.scale.setScalar(f.reduced ? 1 : 1.35 - 0.35 * Math.min(1, Math.hypot(m.pos.x - s.ball.pos.x, m.pos.y - s.ball.pos.y) / 4));
+    }
+    // Strike ring: a firm kick (the ball leaves a foot fast) sends a thin ring out from the spot.
+    const ownerNow = s.ball.owner;
+    const sp = Math.hypot(s.ball.vel.x, s.ball.vel.y);
+    if (this.prevOwner >= 0 && ownerNow < 0 && sp > 12 && !f.reduced) {
+      this.strikeAt = f.time;
+      this.strikePower = clamp01((sp - 12) / 18);
+      this.strikeRing.position.set(sx(s.ball.pos.x), 0.05, sz(s.ball.pos.y));
+    }
+    this.prevOwner = ownerNow;
+    const sa = (f.time - this.strikeAt) / 0.3;
+    this.strikeRing.visible = sa >= 0 && sa < 1;
+    if (this.strikeRing.visible) {
+      this.strikeRing.scale.setScalar((0.5 + sa * (1.2 + 1.4 * this.strikePower)) * k);
+      (this.strikeRing.material as MeshBasicMaterial).opacity = (1 - sa) * (0.35 + 0.4 * this.strikePower);
     }
     if (showRet) {
       this.reticle.position.set(sx(tx), 0, sz(ty));
