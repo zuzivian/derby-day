@@ -517,6 +517,8 @@ async function expectTipClearOfControls(page, label) {
     return { tip: tb, hits, x: box(document.querySelector('.coach-x')) };
   });
   expect(r.hits, `${label}: the tip covers no pitch button`).toEqual([]);
-  expect(r.x.w, `${label}: "Got it" is at least 44 px wide`).toBeGreaterThanOrEqual(44);
-  expect(r.x.h, `${label}: "Got it" is at least 44 px tall`).toBeGreaterThanOrEqual(44);
+  // Rounded to 1/100 px: measured while the card's fade-in transform settles, a 44 px box can read 43.99999.
+  const px = (n) => Math.round(n * 100) / 100;
+  expect(px(r.x.w), `${label}: "Got it" is at least 44 px wide`).toBeGreaterThanOrEqual(44);
+  expect(px(r.x.h), `${label}: "Got it" is at least 44 px tall`).toBeGreaterThanOrEqual(44);
 }
