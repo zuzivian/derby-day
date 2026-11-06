@@ -625,7 +625,7 @@ root.addEventListener('click', (e) => {
       if (r.ok) {
         persist();
         getSound().stinger('train');
-        flash = ['.stat.money'];
+        flash = ['.stat.money', '.tab[data-screen="squad"]'];
       }
       break;
     }

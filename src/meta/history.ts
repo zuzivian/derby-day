@@ -142,3 +142,26 @@ export function closeYear(save: Save, s: Omit<SeasonSummary, 'notes'>): SeasonSu
   trim(save);
   return summary;
 }
+
+export interface ClubBadge {
+  id: string;
+  label: string;
+  /** What earns it, shown while it is locked. */
+  how: string;
+  got: boolean;
+}
+
+/** Milestone badges for the club history panel, worked out from totals and records that are already kept. Display only. */
+export function clubBadges(s: Save): ClubBadge[] {
+  const r = s.records;
+  const played = r?.played ?? 0;
+  const b = (id: string, label: string, how: string, got: boolean): ClubBadge => ({ id, label, how, got });
+  return [
+    b('m10', '10 matches', 'Play 10 competitive matches', played >= 10),
+    b('m50', '50 matches', 'Play 50 competitive matches', played >= 50),
+    b('w10', '10 wins', 'Win 10 competitive matches', (r?.won ?? 0) >= 10),
+    b('run5', '5 unbeaten', 'Go 5 matches unbeaten', (r?.longestUnbeaten?.value ?? 0) >= 5),
+    b('elo', 'Elo 1200', 'Reach Elo 1200', (r?.highestElo?.value ?? 0) >= 1200),
+    b('cup', 'Trophy winner', 'Win the cup or the league', (s.trophies ?? []).length > 0),
+  ];
+}

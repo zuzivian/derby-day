@@ -1549,3 +1549,18 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pad-btn.down { border-color: Highlight; }
   .pad-btn.coach-pulse { outline: 3px solid Highlight; outline-offset: 3px; }
 }
+
+/* Progression cues: a rising young player, the room left in training. */
+.rise-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--good, #0a7d3c); white-space: nowrap; }
+@media (min-width: 641px) { .rise-tag::after { content: " Rising"; } }
+.roster-btn.on .rise-tag { color: inherit; }
+.room { font-size: var(--fs-sm); font-weight: 700; color: var(--good, #0a7d3c); }
+.room.done { color: var(--muted, inherit); font-weight: 500; }
+.next-up { grid-column: 1 / -1; margin: 0; border-left: 4px solid var(--accent); font-weight: 600; }
+.next-up-k { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-right: 6px; }
+.badges { list-style: none; margin: 0 0 var(--sp-3); padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.badge { font-size: var(--fs-sm); font-weight: 700; padding: 2px 10px; border-radius: var(--r-pill); border: 1px dashed var(--line); color: var(--muted); }
+.badge.got { border: 1px solid var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
+.tab.flash { animation: stat-flash .6s ease-out 2; }
+.roster-name .rise-tag { margin: 0 5px 0 0; }
+.roster-name .rise-tag::after { content: none; }
