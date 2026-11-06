@@ -44,7 +44,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       <button class="btn" id="bk-code">Show copyable code</button>
     </div>
     <div id="bk-code-out" hidden>
-      <textarea id="bk-code-text" readonly rows="3" aria-label="Backup code"></textarea>
+      <textarea id="bk-code-text" readonly rows="4" aria-label="Backup code"></textarea>
       <button class="btn small" id="bk-copy">Copy code</button>
     </div>
     <h3 class="eyebrow">Restore a backup</h3>

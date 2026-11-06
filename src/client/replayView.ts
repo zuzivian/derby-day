@@ -147,7 +147,7 @@ function codeBox(code: string, opener: HTMLElement | null) {
   el.className = 'replay-layer';
   el.innerHTML = `<div class="replay-card replay-codebox" role="dialog" aria-modal="true" aria-labelledby="rc-title">
     <h2 id="rc-title" class="rp-title">Replay code</h2>
-    <p class="small">Your browser would not copy it for you. Select all, copy, and send it to a friend: ${formatSize(codeSize(code))}.</p>
+    <p class="small" id="rc-note">Your browser would not copy it for you. Select all, copy, and send it to a friend: ${formatSize(codeSize(code))}.</p>
     <label class="visually-hidden" for="rc-text">Replay code</label>
     <textarea id="rc-text" class="replay-code" readonly rows="5"></textarea>
     <div class="rp-foot"><button class="btn primary" data-rp="done">Done</button></div>
@@ -169,6 +169,7 @@ function copyCode(code: string, opener: HTMLElement | null) {
   const fallback = () => {
     // Older browsers and locked-down iframes: select the text and try the legacy command.
     const ta = codeBox(code, opener);
+    const note = ta.closest('.replay-codebox')?.querySelector<HTMLElement>('#rc-note');
     let ok = false;
     try {
       ok = document.execCommand('copy');
@@ -176,7 +177,8 @@ function copyCode(code: string, opener: HTMLElement | null) {
       /* the box stays open for a manual copy */
     }
     if (ok) {
-      showToast('Replay code copied.');
+      // Only the true outcome shows: the dialog says it was copied, not that it could not be.
+      if (note) note.textContent = `Copied to your clipboard. The code is below if you need it again (${formatSize(codeSize(code))}).`;
       announce('Replay code copied.');
     }
     return ta;

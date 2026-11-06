@@ -144,7 +144,7 @@ export function levelUpModal(s: Save): string {
         <h2 id="levelup-title" class="levelup-title" tabindex="-1">Level ${level}</h2>
       </div>
       <div class="levelup-body">
-        <p id="levelup-lede" class="levelup-lede">Unlocked: ${esc(fresh.map((u) => u.name).join(', '))}.</p>
+        <p id="levelup-lede" class="levelup-lede">${fresh.length === 1 ? 'You unlocked something new' : `You unlocked ${fresh.length} new things`}<span class="visually-hidden">: ${esc(fresh.map((u) => u.name).join(', '))}.</span></p>
         <ul class="unlock-list levelup-list">${fresh.map((u) => `<li class="unlock unlock-done"><span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span><span class="unlock-body"><b>${esc(u.name)}</b><span class="muted small">${esc(u.text)}</span></span>${u.kind === 'perk' ? '<span class="pill perk-pill">perk</span>' : '<span class="pill new-pill">new</span>'}</li>`).join('')}</ul>
         ${next ? `<p class="levelup-next"><span class="level-next-label">Next</span> ${esc(next)}</p>` : ''}
         <div class="levelup-actions">

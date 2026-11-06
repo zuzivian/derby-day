@@ -109,7 +109,7 @@
 @keyframes xp-shine { to { transform: translateX(110%); } }
 
 /* Level-up dialog: a gold burst over the badge, then what just opened. */
-.levelup-card { width: min(480px, 100%); padding: 0; gap: 0; overflow: hidden; text-align: center; }
+.levelup-card { width: min(480px, 100%); padding: 0; gap: 0; overflow: clip; text-align: center; }
 .levelup-hero {
   position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 10px;
   padding: 26px var(--sp-6, 24px) 22px; color: #fff8e1;
@@ -131,6 +131,17 @@
 .new-pill { background: var(--xp-fill); color: var(--on-status); }
 .levelup-next { margin: 0; font-size: var(--fs-sm, 13px); color: var(--muted); }
 .levelup-actions { display: flex; flex-direction: column; gap: var(--sp-2, 8px); }
+/* Short screens: the buttons stay in reach whatever the unlock list does. */
+@media (max-height: 760px) {
+  .levelup-actions { position: sticky; bottom: calc(-1 * max(var(--sp-4, 16px), env(safe-area-inset-bottom, 0px))); z-index: 2; margin: 0 -20px calc(-1 * var(--sp-4, 16px)); padding: var(--sp-3, 12px) 20px var(--sp-4, 16px); background: var(--surface); border-top: 1px solid var(--line); }
+  .levelup-hero { padding: 14px var(--sp-4, 16px) 14px; gap: 4px; display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'badge eyebrow' 'badge title'; justify-items: start; align-items: center; column-gap: 14px; text-align: left; }
+  .levelup-hero .level-badge { grid-area: badge; width: 56px; height: 56px; font-size: 26px; }
+  .levelup-eyebrow { grid-area: eyebrow; align-self: end; }
+  .levelup-title { grid-area: title; align-self: start; font-size: 30px; line-height: 1; }
+  .levelup-rays { width: 360px; height: 360px; margin: -180px 0 0 -180px; left: 40px; top: 50%; }
+  .levelup-body { padding-bottom: var(--sp-4, 16px); gap: 10px; }
+  .levelup-list .unlock { padding-top: 8px; padding-bottom: 8px; }
+}
 .levelup-actions .btn { width: 100%; }
 
 /* Crest and kit pickers (Club news) */

@@ -18,4 +18,12 @@
 .bk-bad { color: var(--bad, #b8322a); font-weight: 600; }
 #bk-code-out { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .guard { width: 100%; display: grid; place-items: center; }
+#guard-guest { --btn-fg: var(--ink, #17223a); }
+@media (max-width: 640px) {
+  .settings-actions .btn, .settings-card label.btn, #bk-copy, #bk-choose { flex: 1 1 100%; align-self: stretch; width: 100%; }
+  #bk-code-out { align-items: stretch; }
+}
+@media (max-width: 480px) {
+  .crash-actions .btn, .guard-actions .btn { flex: 1 1 100%; }
+}
 #crash-title:focus, #guard-title:focus, .settings-card h2:focus { outline: none; }

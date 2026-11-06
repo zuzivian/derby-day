@@ -54,18 +54,30 @@ export const DEFAULT_DELAY = 4;
 
 const STYLE_ID = 'versus-style';
 const CSS = `
-.vs-setup { max-width: 760px; margin: 0 auto; }
+.vs-setup { max-width: 760px; margin: 0 auto; min-width: 0; }
 .vs-setup h1 { margin: 0; font-family: var(--font-display); font-size: 34px; }
 .vs-setup p { margin: 0; }
 .vs-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
 .vs-player { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
-.vs-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(0,0,0,.25); }
+.vs-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(0,0,0,.25); vertical-align: -1px; margin-right: 2px; }
+.vs-setup th .vs-dot { vertical-align: middle; }
+.vs-setup .vs { justify-self: center; }
+.vs-tablewrap { overflow-x: auto; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); }
+.vs-tablewrap .tbl { white-space: normal; }
 .vs-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.vs-setup select, .vs-setup input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1.5px solid var(--control-line); background: var(--surface); color: var(--ink); max-width: 100%; }
+.vs-setup select, .vs-setup input { font: inherit; padding: 6px 10px; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--control-line); background-color: var(--surface); color: var(--ink); max-width: 100%; }
+.vs-setup .link-col select, .vs-setup .link-col input { width: 100%; }
+.vs-setup select:focus-visible, .vs-setup input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vs-setup label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
+.vs-setup label.vs-player { flex-direction: row; }
+#link-code-input, #online-code-input { text-transform: uppercase; letter-spacing: .2em; font-weight: 700; text-align: center; font-family: var(--font-display); font-size: 18px; }
+.vs-setup [role="status"] { margin: 0; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; }
+.vs-setup [role="status"]:empty { display: none; }
+.vs-setup [role="status"].link-warn { border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
 .link-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.link-col { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.link-col { display: flex; flex-direction: column; gap: 8px; padding: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .link-col h2 { margin: 0; font-size: 16px; }
-.link-code { font-family: var(--font-display); font-weight: 900; font-size: 44px; letter-spacing: .14em; color: var(--accent); }
+.link-code { user-select: all; font-family: var(--font-display); font-weight: 900; font-size: 44px; letter-spacing: .14em; color: var(--accent); }
 .link-warn { color: var(--bad); font-weight: 600; }
 .link-note { color: var(--warn); }
 .net-stats { margin: 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
@@ -140,8 +152,8 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
         <select id="l2p-opp">${ladder.map((c) => `<option value="${esc(c.id)}"${c === near ? ' selected' : ''}>${esc(c.name)} (Elo ${c.elo})</option>`).join('')}</select>
       </div>
     </div>
-    <table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col">${dot(0)} Player 1</th><th scope="col">${dot(1)} Player 2</th></tr></thead>
-      <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table>
+    <div class="vs-tablewrap"><table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col">${dot(0)} Player 1</th><th scope="col">${dot(1)} Player 2</th></tr></thead>
+      <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table></div>
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="vs-actions">
       <button class="btn primary big" id="l2p-start"${home ? '' : ' disabled'}>Kick off</button>

@@ -234,9 +234,12 @@ kbd { font: 700 var(--fs-xs)/1 var(--font-body); padding: 2px 6px; border: 1px s
 .btn.ghost:hover { --btn-bg: var(--surface-2); --btn-fg: var(--ink); }
 .btn.danger { --btn-bg: color-mix(in srgb, var(--bad) 10%, var(--surface)); --btn-fg: var(--bad); --btn-line: color-mix(in srgb, var(--bad) 55%, transparent); }
 .btn.danger:hover { --btn-bg: color-mix(in srgb, var(--bad) 16%, var(--surface)); --btn-line: var(--bad); }
-.btn[aria-disabled="true"] { opacity: .45; cursor: not-allowed; filter: saturate(.4); }
-.btn[aria-disabled="true"]:hover { --btn-bg: var(--surface-2); --btn-line: var(--line-strong); }
-.btn.primary[aria-disabled="true"]:hover { --btn-bg: var(--accent); --btn-line: transparent; filter: saturate(.4); }
+.btn[aria-disabled="true"], .btn:disabled { opacity: .45; cursor: not-allowed; filter: saturate(.4); box-shadow: none; }
+.btn[aria-disabled="true"]:hover, .btn:disabled:hover { --btn-bg: var(--surface-2); --btn-line: var(--line-strong); }
+.btn.primary[aria-disabled="true"]:hover, .btn.primary:disabled:hover { --btn-bg: var(--accent); --btn-line: transparent; filter: saturate(.4); }
+.btn.ghost:disabled:hover, .btn.ghost[aria-disabled="true"]:hover { --btn-bg: transparent; --btn-line: var(--line-strong); }
+.btn.danger:disabled:hover, .btn.danger[aria-disabled="true"]:hover { --btn-bg: color-mix(in srgb, var(--bad) 10%, var(--surface)); --btn-line: color-mix(in srgb, var(--bad) 55%, transparent); }
+.btn:disabled:active, .btn[aria-disabled="true"]:active { transform: none; }
 .actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
 
 /* Form controls */
@@ -1015,6 +1018,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tie-score { font-variant-numeric: tabular-nums; font-weight: 800; min-width: 1.2em; text-align: right; }
 .tie-score small { font-weight: 600; color: var(--muted); }
 .tie-row.win .tie-name { font-weight: 800; }
+.tie-row.champ { box-shadow: inset 3px 0 0 var(--warn); }
+.club-code { margin-left: 6px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .08em; color: var(--muted); }
+.comp-status .trophy-icon { width: 20px; height: 20px; vertical-align: -4px; }
 .tie-row.lose { color: var(--muted); }
 .tie-row.lose .kit { opacity: .5; }
 .tie-row.tbc .tie-name { color: var(--muted); font-style: italic; font-weight: 500; grid-column: 1 / -1; }
@@ -1053,6 +1059,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .comp-top, .league-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
+  .comp-panel > .actions .btn { width: 100%; }
   .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .ties { gap: var(--sp-2); }
   .comp-prizes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
