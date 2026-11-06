@@ -115,7 +115,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
         <span class="coach-count" id="coach-count"></span>
         <ol class="coach-dots" aria-hidden="true">${DRILLS.map((d) => `<li data-drill="${d}"></li>`).join('')}</ol>
       </div>
-      <h3 class="coach-title" id="coach-title"></h3>
+      <h2 class="coach-title" id="coach-title"></h2>
       <div class="coach-stack">
         <p class="coach-text" id="coach-text"></p>
         <span class="coach-ghosts" id="coach-ghost-text" aria-hidden="true"></span>

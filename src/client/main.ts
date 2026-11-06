@@ -565,6 +565,10 @@ root.addEventListener('click', (e) => {
       break;
     case 'market-role':
       app.marketRole = el.dataset.role as Role | 'ALL';
+      {
+        const n = s.market.filter((p) => app.marketRole === 'ALL' || p.role === app.marketRole).length;
+        announce(`Showing ${n} ${app.marketRole === 'ALL' ? '' : app.marketRole + ' '}player${n === 1 ? '' : 's'}.`);
+      }
       break;
     case 'buy': {
       // The table re-renders after a signing, so a double-click would land on the
@@ -599,9 +603,11 @@ root.addEventListener('click', (e) => {
     case 'reroll':
       rerollIdentity(s);
       persist();
+      toast(`Now ${s.club.name}.`);
       break;
     case 'reset':
       app.confirmReset = true;
+      announce('Delete this club and start over? Keep it is selected; choose Delete to confirm.');
       break;
     case 'reset-confirm':
       clearSave();
@@ -634,6 +640,7 @@ root.addEventListener('change', (e) => {
   } else if (el.dataset.change === 'formation') {
     setFormation(app.save, el.value as FormationId);
     persist();
+    announce(`Formation ${el.value}. Best XI re-picked.`);
     render();
   } else if (el.dataset.change === 'mentality') {
     setMentality(app.save, el.value as Mentality);
@@ -686,6 +693,14 @@ root.addEventListener('submit', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  // Esc backs out of "Delete this club?" (the safe choice).
+  if (!takeover && e.key === 'Escape' && app.confirmReset && root.querySelector('[data-action="reset-cancel"]')) {
+    e.preventDefault();
+    app.confirmReset = false;
+    pendingFocus = keyFor({ action: 'reset' });
+    render();
+    return;
+  }
   // Esc dismisses a tab mark (it counts as seen), when no dialog is open.
   const markEl = root.querySelector<HTMLElement>('.tab-mark');
   if (!takeover && e.key === 'Escape' && markEl && !root.querySelector('.modal') && app.prefs.marks) {

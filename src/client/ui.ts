@@ -387,12 +387,12 @@ export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
   return `
   <article class="panel">
-    <h2 class="eyebrow">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
-    <div class="table-scroll"><table class="tbl ladder">
+    <h2 class="eyebrow" id="ladder-title">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
+    <div class="table-scroll"><table class="tbl ladder" aria-labelledby="ladder-title">
       <thead><tr><th class="num pos-col">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num rec opt-narrow">P</th><th class="num rec opt-narrow">W</th><th class="num rec opt-narrow">D</th><th class="num rec opt-narrow">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => {
         const rec = (n: number) => `<td class="num rec opt-narrow${n ? '' : ' zero'}">${n || '–'}</td>`;
-        return `<tr${r.you ? ' class="you"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
+        return `<tr${r.you ? ' class="you" aria-current="true"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
       }).join('')}</tbody>
     </table></div>
   </article>`;
