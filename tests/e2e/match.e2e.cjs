@@ -70,6 +70,7 @@ test('forfeiting a ranked match records a loss', async (t) => {
   const before = await readSave(page);
   await startRanked(page);
   await page.keyboard.press('Escape');
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.locator(SEL.modal).waitFor();
 

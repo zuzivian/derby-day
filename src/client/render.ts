@@ -383,19 +383,25 @@ export class PitchRenderer {
     // Mouse target
     if (x.cursor && x.showCursor) {
       const c = x.cursor;
-      ctx.strokeStyle = 'rgba(255,255,255,.9)';
-      ctx.lineWidth = 0.1;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 0.55, 0, Math.PI * 2);
-      ctx.moveTo(c.x - 0.95, c.y);
-      ctx.lineTo(c.x - 0.3, c.y);
-      ctx.moveTo(c.x + 0.3, c.y);
-      ctx.lineTo(c.x + 0.95, c.y);
-      ctx.moveTo(c.x, c.y - 0.95);
-      ctx.lineTo(c.x, c.y - 0.3);
-      ctx.moveTo(c.x, c.y + 0.3);
-      ctx.lineTo(c.x, c.y + 0.95);
+      ctx.arc(c.x, c.y, 0.7, 0, Math.PI * 2);
+      ctx.moveTo(c.x - 1.2, c.y);
+      ctx.lineTo(c.x - 0.4, c.y);
+      ctx.moveTo(c.x + 0.4, c.y);
+      ctx.lineTo(c.x + 1.2, c.y);
+      ctx.moveTo(c.x, c.y - 1.2);
+      ctx.lineTo(c.x, c.y - 0.4);
+      ctx.moveTo(c.x, c.y + 0.4);
+      ctx.lineTo(c.x, c.y + 1.2);
+      // A dark pass under the white one so it reads on the stripes.
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = 'rgba(0,0,0,.55)';
+      ctx.lineWidth = 0.34;
       ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,.95)';
+      ctx.lineWidth = 0.17;
+      ctx.stroke();
+      ctx.lineCap = 'butt';
     }
   }
 

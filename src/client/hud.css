@@ -276,6 +276,7 @@
    an ellipsis; the detail waits behind "All controls". */
 .controls-hint.clamp:has(.hint-key) { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
 .controls-hint.clamp .hint-rest { display: none; }
+.controls-hint:not(.clamp) .hint-rest::before { content: "· "; }
 .hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .hint-more:hover { color: var(--ink); }
 @media (pointer: coarse) {
@@ -310,4 +311,19 @@
   .pause-opt { min-height: 44px; }
   .pause-opt input[type="checkbox"] { width: 24px; height: 24px; }
   .pause-volume input { height: 44px; }
+}
+
+/* A replay owns the top of the pitch: the kick-off prompt, the call tags and the KICK-OFF label wait until it is over. */
+.hud.replaying .hud-prompt, .hud.replaying .hud-tag, .hud.replaying .hud-fk { visibility: hidden; }
+.pitch-wrap.replaying .juice-label { display: none; }
+/* Mouse screens: the power gauge (and the player card above it) clear the rounded canvas edge. */
+@media (min-width: 1000px) and (pointer: fine) {
+  .hud-power { bottom: 18px; }
+  .hud-me { bottom: 52px; }
+  .hud-hold { bottom: 42px; }
+}
+/* Big monitors: the pitch is limited by the window height (the width rule at the top), not by the page column. */
+@media (min-width: 1500px) and (min-height: 900px) and (pointer: fine) {
+  #app:has(> .match) { max-width: none; }
+  .match .pitch-wrap { width: min(100%, calc((100vh - 160px) * 1.531)); width: min(100%, calc((100dvh - 160px) * 1.531)); }
 }

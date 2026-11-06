@@ -439,7 +439,8 @@ export class AimLayer {
     // World overlays grow a little with camera distance so they stay readable when zoomed out.
     const k = Math.max(0.8, Math.min(1.5, f.camDist / 40));
 
-    this.pointer.visible = !!cursor && x.showCursor && live && !x.noAim;
+    // Not gated on the phase: the canvas hides the OS pointer, so the ring is the only one (goal, half-time, full-time too).
+    this.pointer.visible = !!cursor && x.showCursor && !x.noAim;
     if (cursor && this.pointer.visible) {
       this.pointer.position.set(sx(cursor.x), 0, sz(cursor.y));
       this.pointer.scale.setScalar(k);

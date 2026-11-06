@@ -68,6 +68,7 @@ test('onboarding: leaving or reloading the first match brings the welcome and th
   await page.waitForSelector(SEL.pitch);
   // Esc, Leave match: nothing recorded, and the welcome is back with the same club.
   await page.keyboard.press('Escape');
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.waitForSelector(KICK);
   expect((await page.locator('.ob-versus .side-name').nth(1).innerText()).trim(), 'same opponent after leaving').toBe(opp);
