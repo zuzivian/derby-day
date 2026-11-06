@@ -1251,6 +1251,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .wordmark::after { height: 4px; }
   .status-strip { gap: 6px; width: 100%; position: relative; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px 0; margin: -3px 0; }
   .status-strip::-webkit-scrollbar { display: none; }
+  /* It scrolls sideways: the right edge fades so a cut chip reads as "more this way", and the end padding lets the last
+     chip come fully clear of the fade. */
+  .status-strip { padding-right: 28px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent); }
   .status-strip > * { flex: none; }
   .status-strip .level-chip { height: 34px; flex: 1 1 auto; min-width: 196px; padding-right: 12px; }
   .status-strip .xp-text { font-size: var(--fs-xs); }
