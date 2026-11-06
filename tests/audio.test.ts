@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { crowdLevel, detectSfx, initialSnapshot, snapshot, type SfxEvent } from '../src/client/audio.ts';
+import { crowdLevel, detectSfx, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -257,5 +257,20 @@ describe('detectSfx referee calls', () => {
   test('a second yellow sounds once, as the red', () => {
     const evs = withEvent({ kind: 'card', color: 'yellow', name: 'A', secondYellow: true, reason: 'foul' });
     expect(evs.filter((e) => e.type === 'call')).toEqual([]);
+  });
+});
+
+describe('UI stingers', () => {
+  test('a win rises through a major arpeggio; a loss is lower and quieter; a draw is level and soft', () => {
+    const win = stingerNotes('win');
+    expect(win.map((n) => n.f)).toEqual([...win.map((n) => n.f)].sort((a, b) => a - b));
+    const peak = (k: 'win' | 'draw' | 'loss' | 'levelup') => Math.max(...stingerNotes(k).map((n) => n.peak));
+    expect(peak('loss')).toBeLessThan(peak('win'));
+    expect(peak('draw')).toBeLessThan(peak('win'));
+    expect(Math.max(...stingerNotes('loss').map((n) => n.f))).toBeLessThan(Math.min(...win.map((n) => n.f)));
+  });
+  test('the level-up run is longer than the win, and every jingle is short', () => {
+    expect(stingerLength('levelup')).toBeGreaterThan(stingerLength('win'));
+    for (const k of ['win', 'draw', 'loss', 'levelup'] as const) expect(stingerLength(k)).toBeLessThan(2);
   });
 });

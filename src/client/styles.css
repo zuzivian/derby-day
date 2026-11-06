@@ -588,6 +588,22 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-mid { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 6px; }
 .big-score { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 900; font-size: 84px; line-height: .9; font-variant-numeric: tabular-nums; text-shadow: 0 4px 0 rgba(0, 0, 0, .3); }
 .big-score .lo { opacity: .55; }
+/* The score lands after the title's slam: each number pops in turn (reduced motion: the global rule below makes it instant). */
+.big-score > span { animation: rs-score .5s var(--ease-spring) both; animation-delay: .35s; }
+.big-score > .rs-dash { animation-delay: .45s; }
+.big-score > span:last-child { animation-delay: .55s; }
+@keyframes rs-score { from { transform: scale(.6); opacity: 0; } }
+/* A win's one-shot confetti burst (confetti.ts), clipped to its card, never in the way of a click. */
+.confetti { position: absolute; inset: 0; z-index: 1; overflow: hidden; pointer-events: none; }
+.confetti i { position: absolute; left: 50%; top: 42%; width: 8px; height: 12px; border-radius: 2px; background: var(--c); opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .confetti i { animation: confetti-burst 1.2s calc(.35s + var(--d, 0s)) cubic-bezier(.15, .7, .3, 1) both; }
+}
+@keyframes confetti-burst {
+  0% { opacity: 1; transform: translate(-50%, -50%) scale(.4) rotate(0deg); }
+  60% { opacity: 1; transform: translate(calc(-50% + var(--dx) * 1px), calc(-50% + var(--dy) * 1px)) scale(1) rotate(var(--rot)); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx) * 1.1px), calc(-50% + var(--dy) * 1px + 70px)) scale(.9) rotate(calc(var(--rot) * 1.4)); }
+}
 .rs-dash { opacity: .45; font-size: .6em; }
 .rs-pens { font-size: var(--fs-sm); font-weight: 800; letter-spacing: .04em; padding: 2px 10px; border-radius: var(--r-pill); background: rgba(0, 0, 0, .3); }
 .rs-scorers { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--fs-sm); line-height: 1.3; color: #dde8e1; }

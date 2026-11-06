@@ -13,6 +13,7 @@ import { levelForXp, nextUnlockText, type XpGain } from '../meta/levels.ts';
 import { announce, autoFocus, captureFocus, restoreFocus } from './a11y.ts';
 import { xpCardHtml } from './levels.ts';
 import { crestSvg } from './crest.ts';
+import { confettiHtml } from './confetti.ts';
 import { armXpCard } from './screenFx.ts';
 import { esc } from './ui.ts';
 
@@ -125,11 +126,12 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
       const p = levelForXp(o.save.xp ?? 0);
       const next = nextUnlockText(o.save);
       return `<section class="panel ob-card ob-celebrate" aria-labelledby="ob-title">
+        ${o.gf > o.ga ? confettiHtml() : ''}
         <p class="eyebrow">Full time</p>
         <h2 id="ob-title" class="ob-title" tabindex="-1">${w.title}</h2>
         <div class="versus ob-versus">
           <div class="side">${crestSvg(c, 56)}<div class="side-name">${esc(c.name)}</div></div>
-          <div class="ob-score" role="img" aria-label="Final score: ${o.gf} to ${o.ga}"><span aria-hidden="true">${o.gf} – ${o.ga}</span></div>
+          <div class="ob-score" role="img" aria-label="Final score: ${o.gf} to ${o.ga}"><span aria-hidden="true"><span>${o.gf}</span> – <span>${o.ga}</span></span></div>
           <div class="side">${crestSvg(o.opp, 56)}<div class="side-name">${esc(o.opp.name)}</div></div>
         </div>
         <p class="ob-lede">${w.sub}</p>

@@ -69,6 +69,12 @@
 
 /* First-run screens (src/client/onboarding.ts) */
 .ob-celebrate .ob-title { color: var(--accent); }
+.ob-celebrate { position: relative; }
+.ob-score > span { display: inline-block; }
+.ob-score > span > span { display: inline-block; animation: ob-score-pop .5s .35s var(--ease-spring, ease-out) both; }
+.ob-score > span > span:last-child { animation-delay: .55s; }
+@keyframes ob-score-pop { from { transform: scale(.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ob-score > span > span { animation: none; } }
 .ob-score { font-family: var(--font-display); font-weight: 900; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ob-xp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: 10px; background: var(--surface-2); }
 .ob-xp-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }

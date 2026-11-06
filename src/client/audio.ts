@@ -210,6 +210,45 @@ export function crowdLevel(s: MatchState): number {
 }
 
 // ---------------------------------------------------------------------------
+// UI stingers (pure note choice)
+
+/** A short jingle for a reward moment outside the match: the result dialog and the level-up dialog. */
+export type StingerKind = 'win' | 'draw' | 'loss' | 'levelup';
+
+export interface StingerNote {
+  /** Hz */
+  f: number;
+  /** Seconds after the start. */
+  at: number;
+  dur: number;
+  peak: number;
+  wave: 'sine' | 'triangle';
+}
+
+/** Win: a bright major arpeggio. Draw: two soft, level notes. Loss: two low, gentle falling notes. Level-up: a longer rising run. */
+export function stingerNotes(kind: StingerKind): StingerNote[] {
+  const n = (f: number, at: number, dur: number, peak: number, wave: 'sine' | 'triangle' = 'triangle'): StingerNote => ({ f, at, dur, peak, wave });
+  switch (kind) {
+    case 'win':
+      return [n(523.25, 0, 0.28, 0.2), n(659.25, 0.11, 0.28, 0.2), n(783.99, 0.22, 0.3, 0.2), n(1046.5, 0.33, 0.7, 0.24)];
+    case 'draw':
+      return [n(392, 0, 0.35, 0.14, 'sine'), n(392, 0.2, 0.6, 0.14, 'sine'), n(523.25, 0.2, 0.6, 0.08, 'sine')];
+    case 'loss':
+      return [n(220, 0, 0.45, 0.12, 'sine'), n(174.61, 0.28, 0.8, 0.12, 'sine')];
+    case 'levelup':
+      return [
+        n(523.25, 0, 0.26, 0.2), n(659.25, 0.1, 0.26, 0.2), n(783.99, 0.2, 0.26, 0.2), n(1046.5, 0.3, 0.3, 0.22), n(1318.5, 0.42, 0.3, 0.22),
+        n(1568, 0.54, 0.9, 0.24), n(1046.5, 0.54, 0.9, 0.1, 'sine'),
+      ];
+  }
+}
+
+/** The jingle's total length in seconds. */
+export function stingerLength(kind: StingerKind): number {
+  return Math.max(...stingerNotes(kind).map((x) => x.at + x.dur));
+}
+
+// ---------------------------------------------------------------------------
 // Engine (browser)
 
 export const MUTE_KEY = 'derbyday.audio.muted.v1';
@@ -336,13 +375,29 @@ export class SoundEngine {
     this.unlock();
   }
 
+  /** A reward jingle outside the match (result or level-up dialog). Silent when muted; scales with the volume setting like every other sound. */
+  stinger(kind: StingerKind): void {
+    if (this._muted || this._volume <= 0) return;
+    this.unlock();
+    const r = this.ready();
+    if (!r) return;
+    try {
+      const t = r.ctx.currentTime + 0.03;
+      for (const x of stingerNotes(kind)) this.tone(r.ctx, r.out, t + x.at, x.wave, x.f, x.f, x.dur, x.peak);
+    } catch {
+      /* a failed sound must never break the UI */
+    }
+    // Let it ring out before the context sleeps again (nothing else is playing between matches).
+    this.idle(Math.ceil(stingerLength(kind) * 1000) + 500);
+  }
+
   /** Nothing to play (the match is over): once the crowd has faded out, suspend the context until the next match. */
-  idle(): void {
+  idle(afterMs = 1200): void {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
       this.idleTimer = null;
       if (!this.crowdSrc && this.ctx?.state === 'running') void this.ctx.suspend().catch(() => {});
-    }, 1200);
+    }, afterMs);
   }
 
   private build(ctx: Ctx): void {
