@@ -57,17 +57,17 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
   const m = mentalityOf(mentality);
   const cards = FORMATION_IDS.map(
     (id) => `<label class="tac-card${id === f ? ' on' : ''}" title="${FORMATION_NOTE[id]}">
-      <input type="radio" id="tac-formation-${id}" name="formation" value="${id}" data-change="formation"${id === f ? ' checked' : ''} aria-describedby="tac-f-${id}">
+      <input type="radio" id="tac-formation-${id}" name="formation" value="${id}" data-change="formation"${id === f ? ' checked' : ''} aria-labelledby="tac-fn-${id}" aria-describedby="tac-f-${id}">
       ${formationSvg(id)}
-      <span class="tac-name">${id}</span>
+      <span class="tac-name" id="tac-fn-${id}">${id}</span>
       <span class="sr-only" id="tac-f-${id}">${FORMATION_NOTE[id]}</span>
     </label>`,
   ).join('');
   const steps = MENTALITY_IDS.map(
     (id, i) => `<label class="tac-step${id === m ? ' on' : ''}" data-step="${i}">
-      <input type="radio" id="tac-mentality-${id}" name="mentality" value="${id}" data-change="mentality"${id === m ? ' checked' : ''} aria-describedby="tac-m-${id}">
+      <input type="radio" id="tac-mentality-${id}" name="mentality" value="${id}" data-change="mentality"${id === m ? ' checked' : ''} aria-labelledby="tac-mn-${id}" aria-describedby="tac-m-${id}">
       <span class="tac-pips" aria-hidden="true">${MENTALITY_IDS.map((_, j) => `<i${j <= i ? ' class="lit"' : ''}></i>`).join('')}</span>
-      <span class="tac-step-name">${MENTALITY_LABEL[id]}</span>
+      <span class="tac-step-name" id="tac-mn-${id}">${MENTALITY_LABEL[id]}</span>
       <span class="tac-step-note" id="tac-m-${id}">${MENTALITY_NOTE[id]}</span>
     </label>`,
   ).join('');

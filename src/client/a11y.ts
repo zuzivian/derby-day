@@ -75,7 +75,7 @@ export function showToast(text: string, ok = true, ms = 3600): void {
  * Re-placed on scroll while it shows, because an action can move the page (focus lands lower down).
  */
 function placeToast(t: HTMLElement): void {
-  const bar = document.querySelector('.topbar');
+  const bar = document.querySelector('.tabs') ?? document.querySelector('.topbar');
   const below = bar && !document.querySelector('.modal') ? bar.getBoundingClientRect().bottom : 0;
   t.style.top = below > 0 ? `${Math.round(below + 8)}px` : '';
 }
@@ -113,7 +113,7 @@ export interface FocusKey {
 const ALIASES: Record<string, string[]> = {
   sell: ['sell-confirm'],
   'sell-confirm': ['sell'],
-  reset: ['reset-confirm'],
+  reset: ['reset-cancel'], // arming the confirm focuses the safe 'Keep it', never the destructive button
   'reset-confirm': ['reset'],
   'reset-cancel': ['reset'],
 };
@@ -168,7 +168,7 @@ export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?:
   const tries: (() => HTMLElement | undefined)[] = [
     () => (key.elId ? pick(`#${CSS.escape(key.elId)}`)[0] : undefined),
     () => (Object.keys(key.data).length ? pick(selectorFor(key.data))[0] : undefined),
-    () => (key.data.id ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
+    () => (key.data.id && !key.data.action ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
     () => {
       const a = key.data.action;
       if (!a) return undefined;
