@@ -78,6 +78,12 @@
   .tab.coach-spot { animation: none; }
 }
 
+/* First visit to a revealed tab: why it is worth your time, above its content (coach.ts hintHtml). */
+.tab-hint { display: flex; align-items: center; gap: 12px; margin: 0 0 var(--sp-3, 12px); padding: 10px 12px; border-radius: 10px; background: var(--surface, #fff); border: 1px solid var(--line, #d8dde3); border-left: 4px solid var(--accent, #ffb02e); font-size: 14px; line-height: 1.4; }
+.tab-hint span { flex: 1; min-width: 0; }
+.tab-hint .btn { flex: none; }
+@media (max-width: 420px) { .tab-hint { flex-wrap: wrap; } .tab-hint span { flex-basis: 100%; } }
+
 /* First-run screens (src/client/onboarding.ts) */
 /* The brand accent celebrates a win; a draw or a loss stays in ink (red there read as an error). */
 .ob-celebrate .ob-title { color: var(--ink); }

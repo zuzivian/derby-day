@@ -16,7 +16,7 @@
 import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import { winChance, type Save } from '../meta/game.ts';
-import { clubLevel, isUnlocked, nextUnlocks, unlockLevel, type UnlockId } from '../meta/levels.ts';
+import { clubLevel, isUnlocked, nextUnlocks, nextUnlockText, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
@@ -257,6 +257,8 @@ export function homeScreen(app: App): string {
   const s = app.save;
   // At level 1 there is only the hero and its Kick off; the other ways to play appear as they unlock.
   const cards = `${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}`;
+  // Until the Club tab opens (level 3) nothing else says what is coming: one line, so the next level is a goal.
+  const next = clubLevel(s) >= 2 && !isUnlocked(s, 'club') ? nextUnlockText(s) : null;
   return `
   <div class="home">
     ${hero(app)}
@@ -264,5 +266,6 @@ export function homeScreen(app: App): string {
       <h2 id="modes-title" class="sr-only">Other ways to play</h2>
       <div class="mode-grid">${cards}</div>
     </section>` : ''}
+    ${next ? `<p class="home-next muted small" id="home-next"><span class="level-next-label">Next</span> ${esc(next)}</p>` : ''}
   </div>`;
 }

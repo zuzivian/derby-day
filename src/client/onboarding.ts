@@ -130,11 +130,11 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <div class="ob-xp" aria-labelledby="ob-xp-title">
           <h3 id="ob-xp-title" class="eyebrow">Club level ${p.level}</h3>
           ${xpCardHtml(o.save, o.xp, false)}
-          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.` : 'The club opens up as it levels.'}</p>` : ''}
+          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.${o.opened.some((n) => n.startsWith('Squad')) ? ' Pick your eleven in Squad, or play on in Practice at no risk to your Elo.' : ''}` : 'The club opens up as it levels.'}</p>` : ''}
           ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
         </div>
         <p class="ob-whatsnext">On Home, press Kick off to play again.</p>
-        <div class="ob-nav"><button class="btn ghost" data-ob="next" type="button">Name your club</button><button class="btn primary big" data-ob="skip" type="button">Go to the club</button></div>
+        <div class="ob-nav"><button class="btn ghost" data-ob="next" type="button">Name your club</button><button class="btn primary big" data-ob="skip" type="button">Go to Home</button></div>
       </section>`;
     }
     return `<section class="panel ob-card" aria-labelledby="ob-title">
@@ -161,7 +161,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <p id="ob-name-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
         ${nameError ? `<p id="ob-name-error" class="ob-error" role="alert">${esc(nameError)}</p>` : ''}
       </form>
-      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Keep this club</button><button class="btn primary big" data-ob="done" type="button">Go to the club</button></div>
+      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Keep this club</button><button class="btn primary big" data-ob="done" type="button">Go to Home</button></div>
     </section>`;
   }
 
