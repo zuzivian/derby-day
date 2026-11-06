@@ -20,6 +20,7 @@ import {
   finalScore,
   forfeitShootout,
   marks,
+  kickStakes,
   planKick,
   playKick,
   type Aim,
@@ -232,6 +233,16 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   let confirmLeave = false;
 
   // --- scoreboard ----------------------------------------------------------
+  /** A decisive kick, in your words: [text, tone]. Null for an ordinary one. */
+  function stakeOf(side: 0 | 1): [string, 'good' | 'bad'] | null {
+    const k = kickStakes(sh);
+    if (side === 0) return k.missLoses ? ['Must score', 'bad'] : k.scoreWins ? ['Score to win', 'good'] : null;
+    return k.scoreWins ? ['Save or lose', 'bad'] : k.missLoses ? ['Save to win', 'good'] : null;
+  }
+  const stakePill = (side: 0 | 1) => {
+    const s = stakeOf(side);
+    return s ? ` <span class="so-stake" data-tone="${s[1]}">${s[0]}</span>` : '';
+  };
   function renderBoard() {
     const turn = sh.done ? null : planKick(sh)?.turn;
     const suddenDeath = !sh.done && sh.taken[0] >= KICKS_PER_SIDE && sh.taken[1] >= KICKS_PER_SIDE;
@@ -246,7 +257,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
           return `<li class="so-mark ${m === null ? 'pending' : m ? 'scored' : 'missed'}"${k === nextIdx ? ' aria-current="step"' : ''}><span aria-hidden="true">${sym}</span><span class="visually-hidden">Kick ${k + 1}: ${word}</span></li>`;
         })
         .join('');
-      return `<div class="so-row${turn && turn.side === side ? ' kicking' : ''}">
+      return `<div class="so-row${turn && turn.side === side ? ` kicking${stakeOf(side) ? ' decisive' : ''}` : ''}">
         ${crestSvg(clubs[i], 26)}
         <span class="so-name"><span class="so-name-t">${esc(clubs[i].name)}</span>${i === 0 ? '<span class="so-you">you</span>' : ''}</span>
         <ol class="so-marks" aria-label="${esc(sideLabel(i))} kicks">${list}</ol>
@@ -326,8 +337,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showDive(false);
       showQuick(true);
       const n = turn.round + 1;
-      setInfo(`<b>Your kick</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)}, shooting ${Math.round(turn.taker.shooting * 100)}`, TXT.aim);
-      say(`Your kick, ${turn.taker.name}. Facing ${turn.keeper.name} in goal. Aim, hold to build power, release to strike.`);
+      setInfo(`<b>Your kick</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)}, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(0)}`, TXT.aim);
+      say(`${stakeOf(0)?.[0] ? `${stakeOf(0)![0]}. ` : ''}Your kick, ${turn.taker.name}. Facing ${turn.keeper.name} in goal. Aim, hold to build power, release to strike.`);
     } else {
       phase = 'telegraph';
       tellDive = plan.tell;
@@ -336,8 +347,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showDive(true);
       showMeter('timer');
       const n = turn.round + 1;
-      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. ${TXT.dive}`);
-      say(`${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
+      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(1)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. ${TXT.dive}`);
+      say(`${stakeOf(1)?.[0] ? `${stakeOf(1)![0]}. ` : ''}${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
     }
   }
 
