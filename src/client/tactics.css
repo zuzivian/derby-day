@@ -81,3 +81,12 @@
   .tac-cards { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
   .tac-card { padding-inline: 3px; }
 }
+
+/* Forced colors (#504): the chosen card or step was marked by border colour, inset shadow and background only. */
+@media (forced-colors: active) {
+  .tac-card.on, .tac-card:has(input:checked), .tac-step.on, .tac-step:has(input:checked) { outline: 3px solid Highlight; outline-offset: -2px; border-width: 2px; }
+  .tac-step.on .tac-pips i.lit, .tac-step:has(input:checked) .tac-pips i.lit { background: Highlight; forced-color-adjust: none; }
+  .qt-step:has(input:checked) { outline: 3px solid Highlight; outline-offset: -2px; border-width: 2px; }
+  .tac-pips i.lit { background: CanvasText; forced-color-adjust: none; }
+  .tac-pips i { border: 1px solid GrayText; }
+}
