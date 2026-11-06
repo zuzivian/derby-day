@@ -166,3 +166,4 @@
   .xp-card { padding: 10px var(--sp-3, 12px); gap: 6px var(--sp-3, 12px); }
   .xp-card .level-badge { width: 44px; height: 44px; font-size: 20px; }
 }
+.xp-card-next { margin: 2px 0 0; font-size: var(--fs-xs, 12px); color: var(--muted); }

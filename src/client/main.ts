@@ -13,7 +13,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
-import { announce, autoFocus, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
+import { announce, autoFocus, reducedMotion, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
 import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
@@ -39,7 +39,7 @@ import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
-import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -90,6 +90,8 @@ let saved = writeSaveResult(app.save) !== 'blocked';
 let takeover = false;
 /** Where focus goes after the next render, when it isn't simply "where it was". */
 let pendingFocus: FocusKey | null = null;
+/** Selectors that get a one-shot flash class after the next render (a trained stat row, the money chip). */
+let flash: string[] | null = null;
 /** The control that started the last match, to return focus to after the result dialog. */
 let matchOrigin: FocusKey | null = null;
 /** Where focus goes back to when the level-up dialog closes. */
@@ -152,8 +154,15 @@ function render() {
   beforeRender(root);
   root.innerHTML = shell(app, screens[app.screen](app));
   // A short entry fade only when the section changed, not on in-screen actions (Sell, Sign, Train).
-  if (root.dataset.shown !== app.screen) root.querySelector('#panel')?.classList.add('enter');
+  const entered = root.dataset.shown !== app.screen;
+  if (entered) root.querySelector('#panel')?.classList.add('enter');
   root.dataset.shown = app.screen;
+  // The ladder opens on your own row (on entry only, so a re-render never moves the page).
+  if (entered && app.screen === 'ladder') root.querySelector('tr.you')?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  if (flash) {
+    for (const sel of flash) root.querySelector(sel)?.classList.add('flash');
+    flash = null;
+  }
   const levelUp = !app.result && levelUpOpen(app.save);
   syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   // The scrolling part of the result takes focus (it is labelled by the title), so the arrow and Page keys scroll it at once.
@@ -161,7 +170,7 @@ function render() {
     root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
     // Reward jingle: a win, a softer one for a draw, a low gentle one for a loss; nothing when the match was forfeited or abandoned.
     const outcome = root.querySelector<HTMLElement>('.result-card')?.dataset.outcome;
-    if (!app.result.abandoned && !app.result.forfeited && (outcome === 'win' || outcome === 'draw' || outcome === 'loss')) getSound().stinger(outcome);
+    if (!app.result.abandoned && !app.result.forfeited && (outcome === 'win' || outcome === 'draw' || outcome === 'loss')) getSound().stinger(outcome === 'win' && app.result.headline ? 'cup' : outcome);
   } else if (levelUp && !hadLevelUp) {
     getSound().stinger('levelup');
     levelOrigin = key;
@@ -446,6 +455,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
   const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
+  const rankBefore = rankOf(s);
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, warmup, forfeited, practice);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
@@ -462,6 +472,8 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     possession: possessionShare(m),
     scorersFor,
     scorersAgainst,
+    rankBefore,
+    note: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
   persist();
@@ -577,7 +589,11 @@ root.addEventListener('click', (e) => {
       lastBuyAt = performance.now();
       const r = buyPlayer(s, id);
       toast(r.message, r.ok);
-      if (r.ok) persist();
+      if (r.ok) {
+        persist();
+        getSound().stinger('train');
+        flash = ['.stat.money'];
+      }
       break;
     }
     case 'sell':
@@ -597,7 +613,11 @@ root.addEventListener('click', (e) => {
     case 'train': {
       const r = train(s, id, el.dataset.attr as AttrKey);
       toast(r.message, r.ok);
-      if (r.ok) persist();
+      if (r.ok) {
+        persist();
+        getSound().stinger('train');
+        flash = [`li:has([data-action="train"][data-id="${id}"][data-attr="${el.dataset.attr}"])`, '.stat.sessions'];
+      }
       break;
     }
     case 'reroll':
