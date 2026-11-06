@@ -495,7 +495,7 @@ function resultModal(app: App): string {
   const them = r.opp.short;
   const sum = r.summary;
   const rankNow = isUnlocked(app.save, 'ladder') ? rankOf(app.save) : 0;
-  const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` · Ladder #${r.rankBefore} → <b>#${rankNow}</b>` : '';
+  const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
         r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 0 ? 'up' : d < 0 ? 'down' : 'level'}`, d > 0 ? RS_UP : d < 0 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
