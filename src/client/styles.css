@@ -603,7 +603,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-chip-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--surface-3); color: var(--muted); }
 .rs-chip-text { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); }
 .rs-chip-label { font-weight: 700; font-size: 14px; }
-.rs-chip-sub { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rs-chip-sub { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .rs-chip-sub b { color: var(--ink); }
 .rs-chip-main { font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rs-elo.up { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); background: color-mix(in srgb, var(--good) 8%, var(--surface-2)); }
@@ -685,11 +685,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @keyframes pop { from { transform: translate(-50%, -50%) rotate(-3deg) scale(.6); opacity: 0; } }
 /* Pause menu: a game menu over the dimmed pitch, stacked full-width buttons. */
 .pause {
-  position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; padding: var(--sp-4); border-radius: var(--r-md);
+  position: absolute; inset: 0; z-index: 5; display: grid; grid-template-columns: minmax(0, 1fr); place-items: safe center; padding: var(--sp-4); border-radius: var(--r-md);
+  overflow-y: auto; overscroll-behavior: contain;
   background: radial-gradient(70% 70% at 50% 45%, rgba(6, 10, 9, .5), rgba(6, 10, 9, .82));
 }
 .pause-card {
-  width: min(340px, 100%); background: var(--surface); color: var(--ink); border-radius: var(--r-xl); border: 1px solid var(--line);
+  width: min(340px, 100%); min-width: 0; background: var(--surface); color: var(--ink); border-radius: var(--r-xl); border: 1px solid var(--line);
   padding: var(--sp-6); display: flex; flex-direction: column; gap: 14px; align-items: stretch; text-align: center; box-shadow: var(--shadow-3);
   animation: modal-rise .22s var(--ease-out);
 }
@@ -782,6 +783,28 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .rs-chip-main { font-size: 23px; }
   .pause-card { padding: 20px; }
   .pause-card h2 { font-size: 36px; }
+  .rs-team:first-child .rs-scorers { align-items: flex-start; }
+  .rs-team:last-child .rs-scorers { align-items: flex-end; }
+  .rs-team:first-child .rs-scorers li { text-align: left; }
+  .rs-team:last-child .rs-scorers li { text-align: right; }
+}
+/* Phones held sideways: a compact pause card that fits the short pitch, scrolling if it must. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .pause { padding: var(--sp-2); }
+  .pause-card { padding: 12px 16px; width: min(560px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 20px; row-gap: 6px; align-content: start; text-align: center; }
+  .pause-card h2 { grid-column: 1 / -1; }
+  .pause-card .pause-actions { grid-column: 1; grid-row: 2; }
+  .pause-card .pause-tactics { grid-column: 2; grid-row: 2 / span 3; align-self: start; }
+  .pause-card .pause-opt { grid-column: 1; }
+  .pause-card h2 { font-size: 28px; }
+  .pause-card h2::after { margin-top: 6px; height: 3px; }
+  .pause-actions { gap: 6px; }
+  .pause-card .pause-tactics { margin-top: 0; }
+  .pause-card .pause-opt { margin-top: 0; justify-content: flex-start; text-align: left; }
+  .pause-card .hint { display: none; }
+}
+@media (pointer: coarse) {
+  .pause-card .hint { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .banner { animation: none; }
