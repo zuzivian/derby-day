@@ -434,7 +434,7 @@ test('without WebGL the match falls back to the 2D renderer and says so', async 
   expect(await page.locator(SEL.pitch).getAttribute('data-renderer'), 'renderer').toBe('2d');
   expect(await page.locator(SEL.pitch).getAttribute('data-fallback'), 'fallback reason').toBe('webgl-unavailable');
   await page.waitForSelector(SEL.toast);
-  expect(await toastText(page), 'notice').toMatch(/3D view is not available/i);
+  expect(await toastText(page), 'notice').toMatch(/3D view isn't available/i);
 });
 
 // ---------------------------------------------------------------------------

@@ -118,10 +118,10 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     const ta = $<HTMLTextAreaElement>('bk-code-text');
     try {
       await navigator.clipboard.writeText(ta.value);
-      showToast('Code copied.');
+      showToast('Backup code copied.');
     } catch {
       ta.select();
-      showToast('Press Ctrl+C to copy the selected code.', false);
+      showToast('Press Ctrl+C (or ⌘C) to copy the selected code.', false);
     }
   });
 

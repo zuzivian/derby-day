@@ -140,7 +140,7 @@ function statusStrip(s: Save): string {
   const items = [
     levelChip(s),
     isUnlocked(s, 'training') ? sessionPips(s.trainingPoints) : '',
-    isUnlocked(s, 'transfers') ? `<div class="stat money" title="Club florins">${COIN}<span class="stat-num" aria-hidden="true">${formatMoney(s.budget)}</span><span class="sr-only">Money: ${formatMoney(s.budget)}</span></div>` : '',
+    isUnlocked(s, 'transfers') ? `<div class="stat money" title="Club florins">${COIN}<span class="stat-num" aria-hidden="true">${formatMoney(s.budget)}</span><span class="sr-only">Budget: ${formatMoney(s.budget)}</span></div>` : '',
     isUnlocked(s, 'ladder') ? `<div class="stat rank" title="Ladder position">${LADDER}<span class="stat-num" aria-hidden="true">#${rankOf(s)}</span><span class="sr-only">Ladder position ${rankOf(s)} of ${s.ladder.length + 1}</span></div>` : '',
     isUnlocked(s, 'calendar') ? `<div class="stat week" title="Season and week">${CAL}<span class="stat-num" aria-hidden="true">S${s.year ?? 1} · W${weekOfYear(s)}</span><span class="sr-only">Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</span></div>` : '',
   ].filter(Boolean);
@@ -366,7 +366,7 @@ export function transfersScreen(app: App): string {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
           return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
-        }).join('') : `<tr><td colspan="15" class="muted">Nobody at that position right now.</td></tr>`}</tbody>
+        }).join('') : `<tr><td colspan="15" class="muted">No players at that position right now. Try another filter.</td></tr>`}</tbody>
       </table></div>
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
@@ -423,7 +423,7 @@ function ladderDivision(s: Save, rows: ReturnType<typeof ladderTable>): string {
   const d = playerDivision(s);
   const mine = rows.filter((r) => r.division === d);
   const at = mine.findIndex((r) => r.you) + 1;
-  const rule = isUnlocked(s, 'league') ? ` ${d > 1 ? `Finish the League in the top two to go up to ${divisionName(d - 1)}.` : 'The top division: finish the League in the bottom two and you drop.'}` : '';
+  const rule = isUnlocked(s, 'league') ? ` ${d > 1 ? `Finish the league in the top two to go up to ${divisionName(d - 1)}.` : 'The top division: finish the league in the bottom two and you drop.'}` : '';
   return at ? `<p class="ladder-div"><b>${divisionName(d)}</b> · ${ordinal(at)} of ${mine.length} by Elo.${rule}</p>` : '';
 }
 
