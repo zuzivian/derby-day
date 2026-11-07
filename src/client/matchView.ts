@@ -321,8 +321,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     const v = (e.target as HTMLInputElement).value as Mentality;
     pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
     resumeTag = v;
-    qtNote(v, ' Applies when you resume.');
-    announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
+    qtNote(v, ' Applies when you resume.'); // #qt-note is a polite live region: it says this once
   });
   // Quick tactics from the keyboard while playing: 1 Park the bus ... 5 High press, as in the pause menu.
   // By key position (Digit1-5, Numpad1-5), so the top row works on AZERTY too.
@@ -563,7 +562,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
             pendingTactic = 0;
-            if (resumeTag) hud.tag(MENTALITY_LABEL[resumeTag], 1600, 'Mentality');
+            if (resumeTag) {
+              hud.tag(MENTALITY_LABEL[resumeTag], 1600, 'Mentality');
+              qtNote(resumeTag); // in effect now: the note drops 'Applies when you resume'
+            }
             resumeTag = null;
           }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;

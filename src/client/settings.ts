@@ -36,7 +36,8 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
   const guestTab = isSaveGuest();
   // The rolling backup of this same club (its last autosave) is crash recovery, not an "earlier club" to offer.
   const old = previousClub();
-  const prev = old && old.seed !== save.seed ? old : null;
+  // A pre-import copy (the undo of a restore) is always offered, even of this same club.
+  const prev = old && !(old.rolling && old.seed === save.seed) ? old : null;
   wrap.innerHTML = `
   <div class="modal-card settings-card">
     <h2 id="settings-title" tabindex="-1">Back up or restore</h2>

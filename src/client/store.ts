@@ -260,10 +260,10 @@ function previousRaw(): { raw: string; save: Save; key: string } | null {
   return null;
 }
 
-export function previousClub(): { name: string; played: number; seed: number } | null {
+export function previousClub(): { name: string; played: number; seed: number; rolling: boolean } | null {
   if (guest) return null;
   const p = previousRaw();
-  return p ? { name: p.save.club.name, played: p.save.club.played, seed: p.save.seed } : null;
+  return p ? { name: p.save.club.name, played: p.save.club.played, seed: p.save.seed, rolling: p.key === BACKUP_KEY } : null;
 }
 
 /** Swap the previous club back in. What it replaces is kept as the new "previous", so it can be undone again. */

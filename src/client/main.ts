@@ -702,6 +702,7 @@ root.addEventListener('click', (e) => {
       queueReveal('.panel.trainee');
       break;
     case 'train': {
+      app.trainee = id; // keep this player selected, rather than the fallback re-picking after his gain
       const r = train(s, id, el.dataset.attr as AttrKey);
       toast(r.message, r.ok);
       if (r.ok) {
