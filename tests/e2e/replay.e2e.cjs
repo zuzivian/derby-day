@@ -56,6 +56,34 @@ const canvasStats = async (page, sel = '#rv-canvas') => {
 };
 
 const scrubValue = (page) => page.$eval('#rv-scrub', (el) => Number(el.value));
+/**
+ * How many ticks the replay advanced per second of *rendered* time. The viewer advances by the frame time it is given
+ * (capped at 0.2 s a frame), not by the wall clock, so on a starved machine a wall-clock window sees fewer frames and
+ * fewer ticks: that says nothing about the rate. This counts the same capped frame time from requestAnimationFrame
+ * (its callback runs after the viewer's, which registered first) and reads the scrub at both ends, so the answer does
+ * not depend on how fast frames arrive. Returns { ticks, sec } over at least minSec of rendered time.
+ */
+const playbackRate = (page, minSec = 0.5) =>
+  page.evaluate(
+    (need) =>
+      new Promise((resolve, reject) => {
+        const scrub = document.querySelector('#rv-scrub');
+        let prev = null;
+        let from = null;
+        let sec = 0;
+        let frames = 0;
+        const step = (now) => {
+          if (prev !== null && from !== null) sec += Math.min(0.2, (now - prev) / 1000);
+          if (from === null && prev !== null) from = Number(scrub.value); // the first interval is not counted: the viewer's own clock started earlier
+          prev = now;
+          if (sec >= need) return resolve({ ticks: Number(scrub.value) - from, sec });
+          if (++frames > 3000) return reject(new Error('the replay did not render enough frames'));
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+    minSec,
+  );
 const scrubMax = (page) => page.$eval('#rv-scrub', (el) => Number(el.max));
 const setScrub = (page, v) =>
   page.$eval(
@@ -170,11 +198,18 @@ test('replay: goal highlights, next and previous, slow-mo, and keyboard play', a
   await page.keyboard.press('Space');
   await setScrub(page, 0);
   await page.keyboard.press('Space');
-  await page.waitForTimeout(1000);
-  const fullSpeed = await scrubValue(page);
-  expect(fullSpeed, 'full speed runs about 60 ticks a second').toBeGreaterThan(30);
+  const full = await playbackRate(page);
+  const fullRate = full.ticks / full.sec;
+  expect(fullRate, `full speed runs 60 ticks per second of rendered time (${full.ticks} in ${full.sec.toFixed(2)} s)`).toBeGreaterThan(57);
+  expect(fullRate, 'and no faster').toBeLessThan(63);
   await slow.click();
   expect(await slow.getAttribute('aria-pressed'), 'slow-mo on').toBe('true');
+  await page.waitForTimeout(100);
+  const half = await playbackRate(page);
+  const halfRate = half.ticks / half.sec;
+  expect(halfRate, `slow-mo runs 30 ticks per second of rendered time (${half.ticks} in ${half.sec.toFixed(2)} s)`).toBeGreaterThan(27);
+  expect(halfRate, 'and no faster').toBeLessThan(33);
+  expect(halfRate, 'slower than normal play').toBeLessThan(fullRate * 0.6);
   await page.keyboard.press('s');
   expect(await slow.getAttribute('aria-pressed'), 'S toggles it off').toBe('false');
   await page.keyboard.press('s');
@@ -305,4 +340,71 @@ test('replay: the viewer and the Recent list fit a 390 px phone, light and dark'
     expect((await canvasStats(page)).colours, `${colorScheme}: drawn`).toBeGreaterThan(6);
     await page.keyboard.press('Escape');
   }
+});
+
+test('replay: clip chips and goal markers jump to the moments, the camera switches, and the slider is named', async (t) => {
+  const page = await openApp(t, { width: 1280, height: 800 });
+  await storeReplay(page, goalCode());
+  await page.locator('.rp-row [data-replay="watch"]').click();
+  await page.locator(VIEWER).waitFor();
+
+  // One chip per goal plus the whole match; the current one is pressed.
+  const chips = page.locator('[data-rp="clip"]');
+  const goals = (await chips.count()) - 1;
+  expect(goals, 'a chip per goal and one for the match').toBeGreaterThanOrEqual(2);
+  expect(await chips.first().getAttribute('aria-pressed'), 'first goal is current').toBe('true');
+  expect(await page.locator('#rv-scrub').getAttribute('aria-label'), 'slider says what it scrubs').toMatch(/^Position in Goal 1 of/);
+  expect(await page.locator('#rv-tag').innerText(), 'the picture says which clip it is').toMatch(/Goal 1\//i);
+
+  // A goal clip has its goal marked; the whole match marks every goal.
+  expect(await page.locator('.rp-mark').count(), 'one marker in a goal clip').toBe(1);
+  await chips.last().click();
+  expect(await title(page), 'chip opens the whole match').toMatch(/WHOLE MATCH/i);
+  expect(await chips.last().getAttribute('aria-pressed')).toBe('true');
+  expect(await page.locator('.rp-mark').count(), 'every goal is marked on the whole match').toBe(goals);
+  await page.keyboard.press('Space'); // pause so the position is exact
+  await page.locator('.rp-mark').nth(1).click();
+  const want = await page.locator('.rp-mark').nth(1).getAttribute('data-tick');
+  // While the background pass is still loading, the jump is held at the furthest ready point and finished when it is done.
+  await page.waitForFunction((t) => Math.abs(Number(document.querySelector('#rv-scrub').value) - t) < 40, Number(want) - 120, { timeout: 15_000 }).catch(() => {});
+  const at = await scrubValue(page);
+  expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
+  expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
+  // Pips are placed with a unitless fraction (typed calc() arithmetic is not portable): later goals sit further right, none at 0:00.
+  const ps = await page.locator('.rp-mark').evaluateAll((els) => els.map((e) => e.getAttribute('style')));
+  expect(ps.every((x) => /--p:\s*0?\.\d+(;|$)|--p:\s*1(\.0+)?(;|$)/.test(x)), 'pip --p is a bare fraction').toBe(true);
+  const lefts = await page.locator('.rp-mark').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().left));
+  expect(lefts[1], 'later goals sit further right').toBeGreaterThan(lefts[0]);
+  // Changing clip with a pip focused keeps focus on the timeline.
+  await page.locator('.rp-mark').nth(1).focus();
+  await page.keyboard.press('PageUp');
+  expect(await page.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !!document.activeElement.closest('.rp-scrub')), 'focus stays on the timeline after a clip change').toBe(true);
+
+  // Camera: the V key and the button switch the side and end views (3D only).
+  const cam = page.locator('[data-rp="cam"]');
+  if (await cam.isVisible()) {
+    expect(await cam.innerText()).toBe('Cam: Side');
+    await page.keyboard.press('v');
+    expect(await cam.innerText(), 'V switches the camera').toBe('Cam: End');
+    await cam.click();
+    expect(await cam.innerText(), 'the button switches it back').toBe('Cam: Side');
+  }
+  await page.keyboard.press('Escape');
+});
+
+test('replay: on a phone held sideways the picture is large and the controls sit beside it', async (t) => {
+  const page = await openApp(t, { width: 844, height: 390 });
+  await storeReplay(page, goalCode());
+  await page.locator('.rp-row [data-replay="watch"]').click();
+  await page.locator(VIEWER).waitFor();
+  const canvas = await page.locator('#rv-canvas').boundingBox();
+  expect(canvas.height, 'the picture is not a postage stamp').toBeGreaterThan(250);
+  const card = await page.locator('.replay-card').boundingBox();
+  expect(card.y + card.height, 'card fits the screen height').toBeLessThanOrEqual(390.5);
+  for (const rp of ['prev', 'play', 'next', 'slow', 'close']) {
+    const b = await page.locator(`[data-rp="${rp}"]`).boundingBox();
+    expect(b.y + b.height, `${rp} on screen`).toBeLessThanOrEqual(390.5);
+    expect(b.x, `${rp} right of the picture`).toBeGreaterThan(canvas.x + canvas.width - 2);
+  }
+  await page.keyboard.press('Escape');
 });

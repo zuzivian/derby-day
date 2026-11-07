@@ -30,7 +30,7 @@ import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { setPieceSpot, InputController } from './input.ts';
-import { mountMatch } from './matchView.ts';
+import { mountMatch, refereeCall } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
 import { createMatchRenderer, mountCameraToggle } from './renderer.ts';
@@ -45,6 +45,10 @@ export interface VersusOptions {
   prefs: Prefs;
   /** Away kit swap when the colours are too close (lives in main.ts). */
   avoidClash: (home: TeamSetup, away: TeamSetup) => TeamSetup;
+  /** Preselect this ladder club on One screen (a rematch). */
+  opp?: string;
+  /** Reopen this mode's setup or lobby, for the result's rematch button. */
+  again?: (opp?: string) => void;
   /** Called once: a result to show in the usual dialog, or null to go straight back to the club. */
   onDone: (result: ResultView | null) => void;
 }
@@ -54,26 +58,47 @@ export const DEFAULT_DELAY = 4;
 
 const STYLE_ID = 'versus-style';
 const CSS = `
-.vs-setup { max-width: 760px; margin: 0 auto; }
+.vs-setup { max-width: 760px; margin: 0 auto; min-width: 0; }
 .vs-setup h1 { margin: 0; font-family: var(--font-display); font-size: 34px; }
 .vs-setup p { margin: 0; }
-.vs-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+.vs-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; }
 .vs-player { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
-.vs-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(0,0,0,.25); }
+.vs-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(0,0,0,.25); vertical-align: -1px; margin-right: 2px; }
+.vs-setup th .vs-dot { vertical-align: middle; }
+.vs-setup .vs { justify-self: center; align-self: center; }
+.vs-tablewrap { overflow-x: auto; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); }
+.vs-tablewrap .tbl { white-space: normal; }
 .vs-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-.vs-setup select, .vs-setup input { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1.5px solid var(--control-line); background: var(--surface); color: var(--ink); max-width: 100%; }
+.vs-setup select, .vs-setup input { font: inherit; padding: 6px 10px; min-height: 40px; border-radius: var(--r-sm); border: 1px solid var(--control-line); background-color: var(--surface); color: var(--ink); max-width: 100%; }
+.vs-setup .link-col select, .vs-setup .link-col input { width: 100%; }
+.vs-setup select:focus-visible, .vs-setup input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.vs-setup label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
+.vs-setup label.vs-player { flex-direction: row; }
+#link-code-input, #online-code-input { text-transform: uppercase; letter-spacing: .2em; font-weight: 700; text-align: center; font-family: var(--font-display); font-size: 18px; }
+.vs-setup [role="status"] { margin: 0; padding: 8px 12px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; }
+.vs-setup [role="status"]:empty { display: none; }
+.vs-setup [role="status"].link-warn { border-color: color-mix(in srgb, var(--bad) 50%, transparent); }
 .link-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.link-col { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; }
+.link-col { display: flex; flex-direction: column; gap: 8px; padding: 14px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); }
 .link-col h2 { margin: 0; font-size: 16px; }
-.link-code { font-family: var(--font-display); font-weight: 900; font-size: 44px; letter-spacing: .14em; color: var(--accent); }
+.link-code { user-select: all; font-family: var(--font-display); font-weight: 900; font-size: 44px; letter-spacing: .14em; color: var(--accent); }
 .link-warn { color: var(--bad); font-weight: 600; }
 .link-note { color: var(--warn); }
 .net-stats { margin: 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
 .net-banner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; padding: 6px 12px; border-radius: 8px; background: rgba(15,21,19,.85); color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .net-banner.lost { background: #8a5a00; }
+.net-banner:not(.bad) { white-space: normal; text-align: center; max-width: calc(100% - 24px); top: 60px; }
+.net-chip { position: absolute; right: 8px; bottom: 8px; z-index: 3; padding: 2px 8px; border-radius: 99px; background: rgba(15,21,19,.78); color: #ffd27a; font-size: 12px; font-weight: 700; pointer-events: none; }
 .invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
 .invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
+.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; }
+.vs-setup th[data-pc] { border-bottom: 3px solid var(--pc); }
+.link-wait { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted); }
+.link-wait::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: link-pulse 1.2s ease-in-out infinite; }
+@keyframes link-pulse { 50% { transform: scale(.55); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .link-wait::before { animation: none; } }
+.vs-setup [role="status"].link-go { border-color: var(--accent); font-weight: 800; font-size: 16px; }
 @media (max-width: 640px) { .link-cols, .vs-sides { grid-template-columns: 1fr; } }
 `;
 
@@ -128,20 +153,20 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   let stopMatch: (() => void) | null = null;
   const home = ownTeam(o.save);
   const ladder = [...o.save.ladder].sort((a, b) => b.elo - a.elo);
-  const near = [...ladder].sort((a, b) => Math.abs(a.elo - o.save.club.elo) - Math.abs(b.elo - o.save.club.elo))[0];
+  const near = ladder.find((c) => c.id === o.opp) ?? [...ladder].sort((a, b) => Math.abs(a.elo - o.save.club.elo) - Math.abs(b.elo - o.save.club.elo))[0];
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="l2p-title">
-    <h1 id="l2p-title" tabindex="-1">Local 2P friendly</h1>
-    <p>Two players on one keyboard. Each of you steers one player of your team; the CPU runs everyone else. No Elo, no rewards.</p>
+    <h1 id="l2p-title" tabindex="-1">Two players, one screen</h1>
+    <p>Two players, one keyboard. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
     <div class="vs-sides">
-      <div class="side">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
+      <div class="side" style="--pc:${HUMAN_COLORS[0]}">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
       <div class="vs">vs</div>
-      <div class="side"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
+      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
         <select id="l2p-opp">${ladder.map((c) => `<option value="${esc(c.id)}"${c === near ? ' selected' : ''}>${esc(c.name)} (Elo ${c.elo})</option>`).join('')}</select>
       </div>
     </div>
-    <table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col">${dot(0)} Player 1</th><th scope="col">${dot(1)} Player 2</th></tr></thead>
-      <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table>
+    <div class="vs-tablewrap"><table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col" data-pc style="--pc:${HUMAN_COLORS[0]}">${dot(0)} Player 1</th><th scope="col" data-pc style="--pc:${HUMAN_COLORS[1]}">${dot(1)} Player 2</th></tr></thead>
+      <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table></div>
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="vs-actions">
       <button class="btn primary big" id="l2p-start"${home ? '' : ' disabled'}>Kick off</button>
@@ -166,7 +191,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       halfSeconds: o.prefs.halfSeconds,
       humans: [true, true],
       crests: [o.save.club.crest, club.crest],
-      label: 'Local 2P',
+      label: 'One screen',
       forfeitText: 'Leave match',
       controlsHint: `${dot(0)} <b>P1:</b> WASD · Space pass · hold F shoot · E switch · Left Shift sprint (or the mouse) &nbsp; ${dot(1)} <b>P2:</b> arrows · Enter or / pass · hold . shoot · , switch · Right Shift sprint · Esc pause`,
       inputSource: (canvas, renderer, s, togglePause) => {
@@ -189,7 +214,12 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       onEnd: (m, left) => {
         stopMatch?.();
         stopMatch = null;
-        o.onDone(left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'Local 2P', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`));
+        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
+        if (r) {
+          r.headline = m.score[0] === m.score[1] ? 'Honours even' : `Player ${m.score[0] > m.score[1] ? '1 (yellow)' : '2 (cyan)'} wins`;
+          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id) };
+        }
+        o.onDone(r);
       },
     });
   }
@@ -212,8 +242,8 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
 
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="link-title" id="link-lobby">
-    <h1 id="link-title" tabindex="-1">Link two tabs</h1>
-    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, open the club, choose <b>Link two tabs</b> and join with that code. Each tab steers its own team, and the tabs exchange only inputs: both run the same deterministic match in lockstep. No Elo, no rewards.</p>
+    <h1 id="link-title" tabindex="-1">Two tabs</h1>
+    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, choose <b>Two tabs</b> and join with that code. Each tab steers its own team. No Elo, no rewards.</p>
     ${support.ok ? (support.note ? `<p class="link-note">${esc(support.note)}</p>` : '') : `<p class="link-warn" id="link-unsupported" role="alert">${esc(support.reason)}</p>`}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -225,7 +255,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
       </div>
       <div class="link-col">
         <h2>Join</h2>
-        <label>Room code <input id="link-code-input" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"></label>
+        <label>Match code <input id="link-code-input" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"></label>
         <button class="btn primary" id="link-join"${support.ok && home ? '' : ' disabled'}>Join</button>
       </div>
     </div>
@@ -234,10 +264,10 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     <p class="muted small">Tip: put the two windows side by side. A hidden tab keeps playing, but only while the other tab is sending.</p>
   </section>`;
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)!;
-  const status = (t: string, bad = false) => {
+  const status = (t: string, bad = false, go = false) => {
     const el = $('link-status');
     el.textContent = t;
-    el.className = bad ? 'link-warn' : '';
+    el.className = bad ? 'link-warn' : go ? 'link-go' : '';
   };
   $('link-title').focus();
 
@@ -264,7 +294,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     $('link-code').hidden = false;
     $<HTMLButtonElement>('link-host').disabled = true;
     $<HTMLButtonElement>('link-join').disabled = true;
-    status(`Waiting for the other tab to join with code ${code}…`);
+    status(`Waiting for your friend… In the other tab choose Two tabs, then Join with code ${code}.`);
     let start: StartInfo | null = null;
     let guest: string | null = null;
     const seed = clientSeed();
@@ -274,7 +304,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
         if (!start) return;
         guest = m.id;
         tr.send({ t: 'start', to: guest, host: id, start });
-        status('Guest found. Starting…');
+        status('Connected — kick off!', false, true);
       } else if (m.t === 'ready' && m.id === guest && start) {
         off();
         tr.peer = guest;
@@ -322,8 +352,9 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
           transport = null;
           $<HTMLButtonElement>('link-host').disabled = false;
           $<HTMLButtonElement>('link-join').disabled = false;
+          $('link-join').textContent = 'Try again';
           status(
-            `No host answered on code ${code}. Check the code, and that the host tab is this same page (same file or address) in the same browser. Embedded viewers can block tabs from talking; if so, open dist/index.html directly in two tabs.`,
+            `No host answered on code ${code}. Check the code, and that the host tab is this same page in the same browser. If you are in an embedded viewer, open the game directly in two tabs.`,
             true,
           );
           return;
@@ -344,7 +375,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
         stopMatch = null;
         closed = true;
         tr.close();
-        o.onDone(netResult(m, end, start, side, o, 'Linked friendly'));
+        o.onDone(netResult(m, end, start, side, o, 'Two-tab friendly'));
       },
     });
   }
@@ -359,11 +390,17 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
 
 /** The result dialog for a finished or abandoned two-human match (null: straight back to the club). */
 function netResult(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o: VersusOptions, label: string): ResultView | null {
+  const r = netResultView(m, end, start, side, o, label);
+  if (r && o.again) r.again = { label: 'Play again', run: () => o.again!() };
+  return r;
+}
+
+function netResultView(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o: VersusOptions, label: string): ResultView | null {
   clearLastReplay(); // linked and online matches aren't recorded; don't offer the previous replay
   if (end === 'left') return null;
   const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
-  if (end === 'abandoned') {
-    const note = `Your opponent disconnected and did not come back within 20 seconds. Stopped at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
+  if (end === 'abandoned' || end === 'gone') {
+    const note = `${opp.name} ${end === 'gone' ? 'left the match' : 'disconnected and did not come back within 20 seconds'}. Stopped at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
     return { ...resultFor(m, side, opp, o.save.club.elo, label, note), abandoned: true, unrecorded: 'Abandoned friendly: no result, no Elo, no money, no training.' };
   }
   const hash = syncHash(m).toString(16).padStart(8, '0');
@@ -406,8 +443,8 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="online-title" id="online-lobby">
-    <h1 id="online-title" tabindex="-1">Online friendly</h1>
-    <p>Play a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team and only inputs cross the network. No Elo, no rewards.</p>
+    <h1 id="online-title" tabindex="-1">Online</h1>
+    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); the match starts by itself once they open it. Each of you steers your own team. No Elo, no rewards.</p>
     ${cfg ? '' : '<p class="link-warn" role="alert" id="online-off">Online play is not switched on for this copy of the game.</p>'}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -415,11 +452,12 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         <h2>Invite a friend</h2>
         <label>Input delay <select id="online-delay">${[3, 4, 5, 6, 8].map((d) => `<option value="${d}"${d === DEFAULT_DELAY ? ' selected' : ''}>${d} ticks (${Math.round((d * 1000) / 60)} ms)</option>`).join('')}</select></label>
         <button class="btn primary" id="online-host"${cfg && home ? '' : ' disabled'}>Create a match</button>
+        <div class="link-wait" id="online-wait" aria-hidden="true" hidden>Waiting for your friend…</div>
         <div class="link-code" id="online-code" aria-live="polite" hidden></div>
         <div class="invite" id="online-invite" hidden>
           <input id="online-link" readonly aria-label="Invite link">
-          <button class="btn" id="online-copy">Copy link</button>
-          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn" id="online-share">Share</button>' : ''}
+          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn primary" id="online-share">Share invite…</button>' : ''}
+          <button class="btn${typeof navigator !== 'undefined' && 'share' in navigator ? '' : ' primary'}" id="online-copy">Copy invite link</button>
         </div>
       </div>
       <div class="link-col">
@@ -437,7 +475,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
   const status = (t: string, bad = false, state = '') => {
     const el = $('online-status');
     el.textContent = t;
-    el.className = bad ? 'link-warn' : '';
+    el.className = bad ? 'link-warn' : state === 'pairing' ? 'link-go' : '';
     lobby.dataset.state = state;
   };
   const buttons = (enabled: boolean) => {
@@ -452,15 +490,23 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     for (const f of offLink) f();
     offLink = [];
   };
+  let retryId = 'online-host';
+  /** The device itself has no network (the browser knows before any socket fails). */
+  const offline = () => navigator.onLine === false;
+  const OFFLINE = "You're offline. Check your Wi-Fi or mobile data, then try again.";
   /** Back to the lobby's start, keeping the message on screen. */
   const reset = () => {
     cleanup();
     link?.close();
     link = null;
     $('online-code').hidden = true;
+    $('online-wait').hidden = true;
     $('online-invite').hidden = true;
     $('online-host').hidden = false;
+    $(retryId).textContent = 'Try again';
     buttons(true);
+    // The button that was just disabled held focus: put it back on the way to retry instead of losing it to the page.
+    if (!document.activeElement || document.activeElement === document.body) $(retryId).focus();
   };
   const leave = () => {
     if (closed) return;
@@ -470,13 +516,19 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     o.onDone(null);
   };
   $('online-back').addEventListener('click', leave);
+  let copyTimer = 0;
   $('online-copy').addEventListener('click', async () => {
     const input = $<HTMLInputElement>('online-link');
+    const btn = $('online-copy');
     try {
       await navigator.clipboard.writeText(input.value);
-      status('Link copied. Send it to your friend; this page waits for them.', false, lobby.dataset.state);
+      btn.textContent = 'Copied ✓';
+      clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => (btn.textContent = 'Copy invite link'), 2500);
+      status('Link copied. Send it to your friend; this page waits for them to join.', false, lobby.dataset.state);
     } catch {
       input.select();
+      status('Press Ctrl+C (or ⌘C) to copy the selected link, then send it to your friend.', false, lobby.dataset.state);
     }
   });
   root.querySelector('#online-share')?.addEventListener('click', () => {
@@ -491,7 +543,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       tr.onEvent((e) => {
         if (stopMatch || closed) return;
         if (e.type === 'error') {
-          status(e.msg, true, e.code);
+          status(e.code === 'network' && offline() ? OFFLINE : e.msg, true, e.code);
           reset();
         } else if (e.type === 'peer' && e.s === 'left') {
           status('Your friend left before kick-off.', true, 'peer-left');
@@ -504,7 +556,9 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 
   $('online-host').addEventListener('click', () => {
     if (link || !home || !cfg) return;
+    if (offline()) return status(OFFLINE, true, 'offline');
     buttons(false);
+    retryId = 'online-host';
     const delay = Number($<HTMLSelectElement>('online-delay').value) || DEFAULT_DELAY;
     const tr = connect(cfg, { host: true });
     status('Connecting to the match server…', false, 'connecting');
@@ -518,11 +572,15 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
           const url = inviteLink(e.code, cfg);
           $('online-code').textContent = e.code;
           $('online-code').hidden = false;
+          $('online-wait').hidden = false;
           $('online-host').hidden = true;
           $<HTMLInputElement>('online-link').value = url;
           $('online-invite').hidden = false;
           status(`Send your friend the link or the code ${e.code}. Waiting for them to join…`, false, 'waiting');
-        } else if (e.type === 'peer' && e.s === 'joined') status('Friend connected. Setting up the match…', false, 'pairing');
+        } else if (e.type === 'peer' && e.s === 'joined') {
+          $('online-wait').hidden = true;
+          status('Your friend joined. Starting the match…', false, 'pairing');
+        }
       }),
       tr.onMessage((m) => {
         if (m.t === 'join' && typeof m.id === 'string' && (guestId === null || guestId === m.id)) {
@@ -545,16 +603,18 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       status('Type the code your friend sees on their screen.', true, 'bad-code');
       return;
     }
+    if (offline()) return status(OFFLINE, true, 'offline');
     buttons(false);
     const id = peerId();
     const tr = connect(cfg, { join: code });
+    retryId = 'online-join';
     status(`Joining ${code}…`, false, 'connecting');
     let started = false;
     const hello = () => tr.send({ t: 'join', id, team: home, crest: o.save.club.crest });
     offLink.push(
       tr.onEvent((e) => {
         if (e.type !== 'room' || started) return;
-        status('Connected. Waiting for the match to start…', false, 'pairing');
+        status(`Found match ${code}. Waiting for the host to start…`, false, 'pairing');
         hello();
         timers.push(setInterval(() => !started && hello(), 700));
       }),
@@ -611,7 +671,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 // Linked and online matches
 
 /** How a two-human match ended: full-time, someone left (or desync), or the opponent never came back. */
-type NetEnd = 'full' | 'left' | 'abandoned';
+type NetEnd = 'full' | 'left' | 'abandoned' | 'gone';
 
 interface NetMatchOptions {
   start: StartInfo;
@@ -633,14 +693,23 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const s = matchFromStart(o.start);
   const [home, away] = s.teams;
   const me = o.side;
+  const them = (me === 0 ? away : home).name;
+  // End-to-end tests set window.__e2e before the page loads to read the live state back (as matchView does).
+  if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: MatchState }).__derbyMatch = s;
   const delayMs = Math.round(o.start.delay * FRAME_MS);
-  const label = o.label ?? 'Linked';
+  const label = o.label ?? 'Two tabs';
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   root.innerHTML = `
   <section class="match" aria-label="${label} match" id="net-match" data-side="${me}" data-mode="${o.link ? 'online' : 'tabs'}">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. Mouse or keys as usual; Esc opens the leave menu."></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run, tap a player to pick him, and use the Pass and Shoot buttons. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label, menuId: 'net-menu-btn', menuText: 'Menu' })}
+      <div class="touch-pad" role="group" aria-label="Kick buttons">
+        <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
+        <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
+      </div>
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
+      <div class="net-chip" id="net-chip" role="status" hidden></div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="net-menu-title">
@@ -654,7 +723,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       </div>
     </div>
     <p class="net-stats" id="net-stats"></p>
-    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.</p>
+    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run · Pass, hold to loft · Shoot, hold for power, tackles off the ball · tap a man to pick him. Your player runs toward your finger, faster the further it is.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
   </section>`;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');
@@ -675,6 +744,9 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const c = new InputController(canvas, renderer, () => s.controlled[me] >= 0 && s.ball.owner === s.controlled[me], () => setMenu(!menuOpen));
     c.mode = o.controls;
     c.setPiece = () => setPieceSpot(s, me);
+    // Fresh buttons each time (a rebuilt controller must not leave the old one listening); same markup and classes as matchView.
+    for (const id of ['pad-pass', 'pad-shoot']) $(id).replaceWith($(id).cloneNode(true));
+    c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
     return c;
   };
   let input = makeInput();
@@ -684,7 +756,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     ls.leave();
     finish('left');
   });
-  $('net-stop-back').addEventListener('click', () => finish('left'));
+  $('net-stop-back').addEventListener('click', () => finish(gone ? 'gone' : 'left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
   // Back from the back-forward cache (or a phone app switch): reconnect now rather than after the backoff.
@@ -725,15 +797,17 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       ro.observe(canvas);
       renderer.resize();
       renderer.prepare(s);
-      announce('The graphics could not be restored, so the match carries on in the 2D view.');
     },
   });
 
   /** Stopped with a message (desync, the opponent left, the link died): the match no longer moves. */
   let halted = false;
-  const stop = (text: string) => {
+  let gone = false;
+  const stop = (text: string, left = false) => {
     if (ended || halted) return;
     halted = true;
+    gone = left;
+    $('net-stop-back').textContent = left ? 'See result' : 'Back to the club';
     $('net-wait').hidden = true;
     $('net-stop-text').textContent = text;
     $('net-stop').hidden = false;
@@ -745,10 +819,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     section.dataset.desync = String(d.tick);
     stop(`Desync at tick ${d.tick}: the two tabs no longer agree on the match (#${d.mine.toString(16)} vs #${d.theirs.toString(16)}). Stopped.`);
   };
-  ls.onPeerLeft = () => stop('Your opponent left the match.');
+  const left = () => stop(`${them} left the match. Nothing is recorded.`, true);
+  ls.onPeerLeft = left;
   const offLink = o.link
     ? o.link.onEvent((e) => {
-        if (e.type === 'peer' && e.s === 'left' && ls.running) stop('Your opponent left the match.');
+        if (e.type === 'peer' && e.s === 'left' && ls.running) left();
         else if (e.type === 'error' && ls.running) stop(e.msg);
       })
     : () => {};
@@ -771,6 +846,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let stalledMs = 0;
   let longestStall = 0;
   let stallEvents = 0;
+  let lastStallAt = -Infinity;
   const startedAt = performance.now();
   function pump() {
     if (ended || halted || !ls.running) return;
@@ -799,6 +875,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     } else if (steps && stallStart !== null) {
       const d = now - stallStart;
       stalledMs += d;
+      if (d > 300) lastStallAt = now;
       longestStall = Math.max(longestStall, d);
       stallStart = null;
     }
@@ -822,7 +899,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     raf = requestAnimationFrame(frame);
     pump();
     renderer.draw(s, { cursor: input.cursor, charge: input.charge(), showCursor: input.mode === 'mouse', armed: input.armed(), team: me });
-    hud.update(s, input.charge());
+    const charge = input.charge();
+    // Touch pad: the held button fills with the kick's power (as in matchView).
+    const heldPad = section.querySelector<HTMLElement>('.touch-pad .pad-btn.down');
+    if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
+    hud.update(s, charge);
     $('sb-h').textContent = String(s.score[0]);
     $('sb-a').textContent = String(s.score[1]);
     $('sb-min').textContent = `${matchMinute(s)}'`;
@@ -838,7 +919,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
-    const waitText = lost ? (link?.status === 'reconnecting' ? `Connection lost, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';
+    const waitText = lost ? (link && (link.status === 'reconnecting' || (link.status !== 'open' && navigator.onLine === false)) ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you can't get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);
@@ -854,13 +935,21 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       section.dataset.rttMs = ls.rttMs.toFixed(2);
       section.dataset.checks = String(ls.checksPassed);
       if (link) section.dataset.link = link.status;
+      const slow = live && !waiting && (ls.rttMs > 150 || now - lastStallAt < 4000);
+      const chip = $('net-chip');
+      chip.hidden = !slow;
+      if (slow) chip.textContent = ls.rttMs > 150 ? `Slow connection · ${Math.round(ls.rttMs)} ms` : 'Connection hiccup';
+      section.dataset.slow = slow ? '1' : '0';
       $('net-stats').textContent = `${link ? `${link.status === 'open' ? 'Online' : link.status} · ` : ''}Tick ${s.tick} · input delay ${o.start.delay} ticks (${delayMs} ms) · round trip ${ls.rttMs.toFixed(1)} ms · waited ${Math.round(((stalledMs + stallNow) / elapsed) * 100)}% of the time · in sync ×${ls.checksPassed}`;
     }
 
     while (lastEvent < s.events.length) {
-      const w = refereeWord(s, s.events[lastEvent++]);
+      const e = s.events[lastEvent++];
+      const w = refereeWord(s, e);
       if (w?.live) hud.tag(w.word, 1800, w.sub);
       else if (w) banner(w.word, 1500, w.sub);
+      const call = refereeCall(s, e);
+      if (call) announce(call);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
@@ -871,6 +960,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
       banner('Half time', 1800);
+      announce(`Half-time. ${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`);
     }
     if (bannerUntil && now > bannerUntil) bannerUntil = 0;
     if (s.phase === 'fulltime' && !ls.desync && !ended) {

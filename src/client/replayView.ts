@@ -14,6 +14,7 @@ import { announce, hideToast, reducedMotion, showToast } from './a11y.ts';
 import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
+import { EMPTY_ICON, emptyState } from './ui.ts';
 
 const esc = (t: string | number): string =>
   String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -63,12 +64,12 @@ export function recentReplaysHtml(): string {
     .join('');
   return `<div class="replays">
     <h3 class="eyebrow">Recent replays</h3>
-    ${rows ? `<ul class="replay-list">${rows}</ul>` : `<p class="muted small">Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).</p>`}
+    ${rows ? `<ul class="replay-list">${rows}</ul>` : emptyState(`Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).`, EMPTY_ICON.play)}
     <div class="replay-paste">
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">
         <input id="replay-paste" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="DD1.…" aria-describedby="replay-paste-msg">
-        <button class="btn small" data-replay="paste">Play</button>
+        <button class="btn small" data-replay="paste" aria-label="Play pasted replay">Play</button>
       </div>
       <p id="replay-paste-msg" class="small replay-msg" role="status"></p>
     </div>
@@ -146,7 +147,7 @@ function codeBox(code: string, opener: HTMLElement | null) {
   el.className = 'replay-layer';
   el.innerHTML = `<div class="replay-card replay-codebox" role="dialog" aria-modal="true" aria-labelledby="rc-title">
     <h2 id="rc-title" class="rp-title">Replay code</h2>
-    <p class="small">Your browser would not copy it for you. Select all, copy, and send it to a friend: ${formatSize(codeSize(code))}.</p>
+    <p class="small" id="rc-note">Your browser would not copy it for you. Select all, copy, and send it to a friend: ${formatSize(codeSize(code))}.</p>
     <label class="visually-hidden" for="rc-text">Replay code</label>
     <textarea id="rc-text" class="replay-code" readonly rows="5"></textarea>
     <div class="rp-foot"><button class="btn primary" data-rp="done">Done</button></div>
@@ -168,6 +169,7 @@ function copyCode(code: string, opener: HTMLElement | null) {
   const fallback = () => {
     // Older browsers and locked-down iframes: select the text and try the legacy command.
     const ta = codeBox(code, opener);
+    const note = ta.closest('.replay-codebox')?.querySelector<HTMLElement>('#rc-note');
     let ok = false;
     try {
       ok = document.execCommand('copy');
@@ -175,7 +177,8 @@ function copyCode(code: string, opener: HTMLElement | null) {
       /* the box stays open for a manual copy */
     }
     if (ok) {
-      showToast('Replay code copied.');
+      // Only the true outcome shows: the dialog says it was copied, not that it could not be.
+      if (note) note.textContent = `Copied to your clipboard. The code is below if you need it again (${formatSize(codeSize(code))}).`;
       announce('Replay code copied.');
     }
     return ta;
@@ -257,12 +260,18 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     </header>
     <div class="rp-stage">
       <canvas id="rv-canvas" class="pitch-canvas replay-canvas" role="img" aria-label="Replay of the match"></canvas>
-      <span class="rp-tag" aria-hidden="true">Replay</span>
+      <span id="rv-tag" class="rp-tag" aria-hidden="true">Replay</span>
       <span class="rp-word" aria-hidden="true" hidden>Replay</span>
+      <button class="rp-cam" data-rp="cam" aria-keyshortcuts="V" hidden></button>
     </div>
+    <div class="rp-clips" role="group" aria-label="Jump to a moment" ${clips.length > 1 ? '' : 'hidden'}>${clips
+      .map((c, i) => `<button class="btn small" data-rp="clip" data-i="${i}">${c.goal ? `Goal ${c.n} · ${c.goal.minute}'` : 'Full match'}</button>`)
+      .join('')}</div>
     <div class="rp-scrub">
-      <label class="visually-hidden" for="rv-scrub">Replay position</label>
-      <input id="rv-scrub" type="range" min="0" max="1" step="1" value="0">
+      <div class="rp-track">
+        <input id="rv-scrub" type="range" min="0" max="1" step="1" value="0">
+        <div id="rv-marks" class="rp-marks"></div>
+      </div>
       <span id="rv-time" class="rp-time" aria-hidden="true"></span>
     </div>
     <div class="rp-controls">
@@ -275,7 +284,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     <div class="rp-foot">
       <button class="btn small ghost" data-rp="copy">Copy replay code</button>
       <span class="muted small">${formatSize(codeSize(code))}</span>
-      <span class="muted small rp-keys">Space play · ← → step · Shift+← → second · PgUp PgDn goal · S slow-mo · Esc close</span>
+      <span class="muted small rp-keys">Space play · ← → step · Shift+← → second · PgUp PgDn goal · S slow-mo · V camera · Esc close</span>
     </div>
   </div>`;
   const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
@@ -341,6 +350,9 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         case 'S':
           toggleSlow();
           return true;
+        case 'v':
+        case 'V':
+          return toggleCam();
         default:
           return false;
       }
@@ -360,22 +372,57 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     scrub.value = String(pos());
     q('#rv-time').textContent = `${clock(pos())} / ${clock(len())}`;
     scrub.setAttribute('aria-valuetext', `${clock(pos())} of ${clock(len())}`);
+    scrub.style.setProperty('--p', `${(100 * pos()) / Math.max(1, len())}%`);
     const atEnd = seeker.state.tick >= clip.end;
     playBtn.textContent = playing ? 'Pause' : atEnd ? 'Replay' : 'Play';
     slowBtn.setAttribute('aria-pressed', String(slow));
     dirty = true;
   }
 
+  /**
+   * Seek (scrub or goal pip). While the background pass is still filling keyframes, a seek past it would simulate
+   * the whole gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
+   */
+  // A seek held short while loading: finished once the background pass is done (a later seek replaces it).
+  let pendingSeek: { want: number; play?: boolean } | null = null;
+  function seekClamped(want: number, play?: boolean) {
+    const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
+    pendingSeek = null;
+    if (want > ready) {
+      pendingSeek = { want, play };
+      want = ready;
+      status.textContent = 'Still loading the rest of the match…';
+    }
+    seeker.seek(want);
+    acc = 0;
+    if (play !== false) playing = motionOk;
+    sync();
+  }
+
   function setClip(i: number, autoplay: boolean) {
+    pendingSeek = null; // a new clip replaces any held jump
     idx = (i + clips.length) % clips.length;
     clip = clips[idx];
     seeker.seek(clip.start);
     acc = 0;
     scrub.max = String(len());
+    scrub.setAttribute('aria-label', `Position in ${label()}`);
     q('#rv-title').textContent = label();
+    q('#rv-tag').textContent = clip.goal ? `Replay · Goal ${clip.n}/${replay.goals.length}` : 'Replay · Full match';
+    // Goal markers on the timeline: tap one to jump to the build-up to that goal.
+    const marks = q('#rv-marks');
+    const hadFocus = marks.contains(document.activeElement);
+    marks.innerHTML = replay.goals
+      .map((x, i) => [x, i] as const)
+      .filter(([x]) => x.tick >= clip.start && x.tick <= clip.end)
+      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((x.tick - clip.start) / len()).toFixed(4)}" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'"></button>`)
+      .join('');
+    // A rebuild drops focus to the body: keep it on the timeline (the new clip's first goal pip, else the scrub).
+    if (hadFocus) (marks.querySelector<HTMLElement>('.rp-mark') ?? scrub).focus();
+    el.querySelectorAll<HTMLElement>('[data-rp="clip"]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.i) === idx)));
     const g = clip.goal;
     q('#rv-sub').textContent = g
-      ? `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${replay[g.team === 0 ? 'home' : 'away'].name} score`
+      ? `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${replay[g.team === 0 ? 'home' : 'away'].name} scored`
       : `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${clips.length > 1 ? `${replay.goals.length} goal${replay.goals.length === 1 ? '' : 's'}` : 'no goals'}`;
     canvas.setAttribute('aria-label', `Replay: ${label()}. ${names}`);
     // Big "REPLAY" over the picture as each clip starts.
@@ -389,6 +436,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   function togglePlay() {
+    pendingSeek = null; // the user has taken over: no held jump or auto-play later
     if (!playing && seeker.state.tick >= clip.end) {
       seeker.seek(clip.start);
       acc = 0;
@@ -403,7 +451,30 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     announce(slow ? 'Half speed.' : 'Full speed.');
   }
 
+  // Side or end-to-end view, for the 3D renderer only. Kept across clips.
+  type Cam3 = { cameraMode: string; setCameraMode(m: string): void };
+  const camBtn = q('[data-rp="cam"]');
+  const cam3 = () => (renderer && 'setCameraMode' in renderer ? (renderer as unknown as Cam3) : null);
+  function camLabel() {
+    const c = cam3();
+    camBtn.hidden = !c;
+    if (!c) return;
+    const v = c.cameraMode === 'end' ? 'End' : 'Side';
+    camBtn.textContent = `Cam: ${v}`;
+    camBtn.setAttribute('aria-label', `Camera: ${v.toLowerCase()} view. Press V to switch.`);
+  }
+  function toggleCam() {
+    const c = cam3();
+    if (!c) return false;
+    c.setCameraMode(c.cameraMode === 'end' ? 'broadcast' : 'end');
+    camLabel();
+    announce(`${c.cameraMode === 'end' ? 'End' : 'Side'} view.`);
+    dirty = true;
+    return true;
+  }
+
   function nudge(delta: number) {
+    pendingSeek = null;
     playing = false;
     seeker.seek(Math.min(clip.end, Math.max(clip.start, seeker.state.tick + delta)));
     sync();
@@ -432,25 +503,24 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       case 'slow':
         toggleSlow();
         break;
+      case 'cam':
+        toggleCam();
+        break;
+      case 'clip':
+        setClip(Number(b.dataset.i), true);
+        break;
+      case 'mark':
+        // Two seconds of build-up before the goal, then play (unless reduced motion).
+        seekClamped(Math.max(clip.start, Number(b.dataset.tick) - 120));
+        playing = motionOk;
+        sync();
+        break;
       case 'copy':
         copyCode(code, b);
         break;
     }
   });
-  scrub.addEventListener('input', () => {
-    // While the background pass is still filling keyframes, a scrub past it would simulate the whole
-    // gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
-    let want = clip.start + Number(scrub.value);
-    const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
-    if (want > ready) {
-      want = ready;
-      scrub.value = String(Math.max(0, want - clip.start));
-      status.textContent = 'Still loading the rest of the match…';
-    }
-    seeker.seek(want);
-    acc = 0;
-    sync();
-  });
+  scrub.addEventListener('input', () => seekClamped(clip.start + Number(scrub.value), false));
 
   const ro = new ResizeObserver(() => {
     renderer?.resize();
@@ -496,6 +566,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       return;
     }
     if (status.textContent?.startsWith('Still loading')) status.textContent = '';
+    if (pendingSeek) seekClamped(pendingSeek.want, pendingSeek.play);
     if (seeker.verified === false) {
       status.textContent = 'This replay was recorded on a different version of the game, so it may not match what happened.';
       status.classList.add('bad');
@@ -531,6 +602,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       ro.observe(canvas);
       renderer.resize();
       renderer.prepare(seeker.state);
+      camLabel();
       playing = wasPlaying;
       last = performance.now();
       acc = 0;
@@ -539,6 +611,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     },
   });
   setClip(idx, true);
+  camLabel();
   q('#rv-title').focus();
   raf = requestAnimationFrame(frame);
   warmTimer = window.setTimeout(warm, 0);

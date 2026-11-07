@@ -145,7 +145,7 @@ The club opens up as it gains experience. A new player starts with Home and one 
 | 2 | Feature | vs Player: one screen | Two humans, one keyboard, one screen. Nothing recorded. |
 | 2 | Feature | vs Player: two tabs | Two tabs of this browser play each other, in lockstep. Nothing recorded. |
 | 2 | Feature | Practice: Easy | Friendlies against an Easy CPU. No Elo. |
-| 3 | Feature | Ranked matches | Kick off now plays ladder clubs near your Elo, live. |
+| 3 | Feature | Ranked matches | Kick off now plays ladder clubs near your Elo, live. Wins lift your Elo and your place on the ladder. |
 | 3 | Feature | Club | Club news, your club level and every unlock still to come. |
 | 3 | Feature | Replays | Watch your goals again, keep recent replays and share replay codes. |
 | 3 | Feature | Practice skills | The training-ground drills: run, pass, shoot and tackle, any time you like. |

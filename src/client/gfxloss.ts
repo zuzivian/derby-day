@@ -2,7 +2,7 @@
 // graphics…" note over the pitch instead of a blank one, back to normal when the context returns, and
 // a give-up after GFX_RESTORE_MS so the screen can carry on with the 2D renderer on a fresh canvas.
 
-import { announce } from './a11y.ts';
+import { announce, showToast } from './a11y.ts';
 import { PitchRenderer } from './render.ts';
 import type { MatchRenderer } from './renderer.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
@@ -45,6 +45,7 @@ export function watchGfxLoss(r: MatchRenderer, host: HTMLElement, h: { onLost?()
       timer = window.setTimeout(() => {
         lost = false;
         show(false);
+        showToast('Graphics could not be restored, so the view carries on in simple 2D.', true, 6000); // the toast region announces it too
         h.onGiveUp();
       }, GFX_RESTORE_MS);
     };

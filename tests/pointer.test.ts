@@ -218,3 +218,48 @@ describe('touch: a pinch does not steer', () => {
     expect(r.input.cursor).not.toEqual(before);
   });
 });
+
+describe('touch: second-finger tap switches, preview ring hides', () => {
+  const win = () => (globalThis as unknown as { window: EventTarget }).window;
+  const t1 = { pointerType: 'touch', pointerId: 7, isPrimary: true };
+  const t2 = { pointerType: 'touch', pointerId: 8 };
+  test('a quick second tap selects at its own point and leaves the steering target alone', () => {
+    const { s } = setup(23);
+    s.ball.owner = -1;
+    const r = rig(s);
+    for (let i = 0; i < 60; i++) r.frame();
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 500, 400, t1));
+    r.canvas.dispatchEvent(pointerEvent('pointermove', 510, 380, t1));
+    const steer = { ...r.input.cursor! };
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 700, 300, t2));
+    r.canvas.dispatchEvent(pointerEvent('pointermove', 515, 370, t1));
+    win().dispatchEvent(pointerEvent('pointerup', 700, 300, t2));
+    expect(r.input.cursor).toEqual(steer);
+    const inp = r.input.take();
+    expect(inp.select).toBe(true);
+    expect(inp.aim).toBeTruthy();
+    expect(Math.hypot(inp.aim!.x - steer.x, inp.aim!.y - steer.y)).toBeGreaterThan(1);
+  });
+  test('a moved second finger does not select', () => {
+    const { s } = setup(23);
+    s.ball.owner = -1;
+    const r = rig(s);
+    for (let i = 0; i < 60; i++) r.frame();
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 500, 400, t1));
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 700, 300, t2));
+    win().dispatchEvent(pointerEvent('pointerup', 760, 300, t2));
+    expect(r.input.take().select).toBeUndefined();
+  });
+  test('the ring shows while a finger is down and hides after; a mouse keeps it', async () => {
+    const { s } = setup(23);
+    const r = rig(s);
+    r.canvas.dispatchEvent(pointerEvent('pointerdown', 500, 400, t1));
+    expect(r.input.pointerShown()).toBe(true);
+    win().dispatchEvent(pointerEvent('pointerup', 500, 400, t1));
+    expect(r.input.pointerShown()).toBe(true);
+    await new Promise((res) => setTimeout(res, 350));
+    expect(r.input.pointerShown()).toBe(false);
+    r.canvas.dispatchEvent(pointerEvent('pointermove', 400, 400));
+    expect(r.input.pointerShown()).toBe(true);
+  });
+});

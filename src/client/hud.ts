@@ -9,7 +9,8 @@
 
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
-import { keeperHoldLeft } from '../sim/human.ts';
+import { keeperHoldLeft, passIncoming } from '../sim/human.ts';
+import { tension } from './audio.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
@@ -44,8 +45,8 @@ export function hudMarkup(o: HudOptions): string {
     <div class="hud" data-hud>
       <div class="hud-tl">
         <div class="hud-crests" aria-hidden="true">
-          <span class="hud-club">${crestSvg({ ...home, crest: o.crests[0] }, 26)}<b>${code(home)}</b></span>
-          <span class="hud-club">${crestSvg({ ...away, crest: o.crests[1] }, 26)}<b>${code(away)}</b></span>
+          <span class="hud-club">${crestSvg({ ...home, crest: o.crests[0] }, 26)}</span>
+          <span class="hud-club">${crestSvg({ ...away, crest: o.crests[1] }, 26)}</span>
         </div>
         <div class="hud-bars">
           <div class="hud-bar scoreboard" title="${esc(home.name)} v ${esc(away.name)}">
@@ -62,11 +63,11 @@ export function hudMarkup(o: HudOptions): string {
       </div>
       <div class="banner hud-word" id="banner" hidden></div>
       <canvas class="hud-radar" aria-hidden="true" style="aspect-ratio: ${PITCH_W} / ${PITCH_H}"></canvas>
-      <div class="hud-me" aria-hidden="true" hidden><span class="hud-me-no"></span><span class="hud-me-name"></span><span class="hud-me-legs"><i></i></span></div>
+      <div class="hud-me" aria-hidden="true" hidden><span class="hud-me-no"></span><span class="hud-me-name"></span><span class="hud-me-legs"><i></i></span><em class="hud-me-st"></em></div>
       <div class="hud-power" aria-hidden="true"><span class="hud-power-label"></span><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
-      <div class="hud-tag" hidden role="status"></div>
+      <div class="hud-tag" hidden aria-hidden="true"></div>
       <div class="hud-fk" hidden aria-hidden="true"></div>
       <div class="hud-prompt" hidden role="status"></div>
     </div>`;
@@ -84,7 +85,9 @@ export interface Hud {
   /** A small tag at the top for a call made while play goes on (Advantage), for `ms`. */
   tag(text: string, ms: number, sub?: string): void;
   /** Big centre word, with an optional smaller line under it. */
-  word(text: string, ms: number, sub?: string): void;
+  word(text: string, ms: number, sub?: string, tone?: string): void;
+  /** Hide the big centre word now (an instant replay is starting). */
+  clearWord(): void;
   dispose(): void;
 }
 
@@ -92,7 +95,7 @@ export interface Hud {
  * The big HUD word for a referee's call (goals, half and full time are shown by the match view
  * from s.goals and the phase), with a smaller line under it.
  */
-export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string; live?: boolean } | null {
+export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?: string; live?: boolean; tone?: string } | null {
   const name = (i: number) => (i >= 0 && s.players[i] ? s.players[i].name : undefined);
   switch (e.kind) {
     case 'offside':
@@ -103,7 +106,7 @@ export function refereeWord(s: MatchState, e: MatchEvent): { word: string; sub?:
       return e.penalty ? { word: 'Penalty', sub: s.teams[e.team === 0 ? 1 : 0].name } : { word: 'Foul', sub: name(e.player) };
     case 'card':
       // A second yellow is followed by its red in the same tick; the red is the word left showing.
-      return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
+      return { word: e.color === 'yellow' ? 'Yellow card' : 'Red card', tone: e.color, sub: e.secondYellow && e.color === 'red' ? `${e.name}, second yellow` : e.name };
     case 'restart':
       // The advantage came to nothing: play comes back for the foul.
       if (e.reason === 'advantage') return { word: e.restart === 'penalty' ? 'Penalty' : 'Free kick', sub: 'Advantage brought back' };
@@ -167,6 +170,11 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   const meNo = q('.hud-me-no');
   const meName = q('.hud-me-name');
   const meLegs = q('.hud-me-legs');
+  const meSt = q('.hud-me-st');
+  // Touch pads say what the next press does: off the ball Pass switches to the nearest man and Shoot tackles.
+  const padP = wrap.querySelector<HTMLElement>('#pad-pass');
+  const padS = wrap.querySelector<HTMLElement>('#pad-shoot');
+  let lastPad = '';
   const meFill = meLegs.querySelector('i') as HTMLElement;
   let lastMe = '';
   // The human's keeper with the ball in his hands: seconds left to play it (Law 12), src/sim/human.ts.
@@ -246,10 +254,18 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       }
       ctx.fill();
       ctx.stroke();
+      if (ctrl) {
+        // Your man: a bright ring round his dot, so he stands out among the other dots at 72 px.
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = (1.2 * dpr) / k;
+        ctx.beginPath();
+        ctx.arc(p.pos.x, p.pos.y, dot * 2.1, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#ffd60a';
     ctx.beginPath();
-    ctx.arc(s.ball.pos.x, s.ball.pos.y, dot * 0.7, 0, Math.PI * 2);
+    ctx.arc(s.ball.pos.x, s.ball.pos.y, dot * 0.8, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -258,7 +274,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
     const p = team === null ? undefined : s.players[s.controlled[team]];
     // Energy in 5% steps, so the DOM changes a few times a minute, not every frame.
     const legs = p ? Math.round(p.energy * 20) * 5 : 0;
-    const key = p && !p.sentOff ? `${p.i}|${legs}|${p.winded}` : '';
+    const st = p?.winded ? 'Tired' : p?.sprinting ? 'Sprint' : '';
+    const key = p && !p.sentOff ? `${p.i}|${legs}|${p.winded}|${st}` : '';
     if (key === lastMe) return;
     lastMe = key;
     me.hidden = !key;
@@ -270,6 +287,19 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
     meFill.style.width = `${legs}%`;
     meLegs.classList.toggle('low', legs <= 35);
     me.classList.toggle('winded', p.winded);
+    meSt.textContent = st;
+    meSt.hidden = !st;
+  }
+
+  function drawPads(s: MatchState) {
+    if (!padP || !padS) return;
+    const team: 0 | 1 | null = s.humans[0] && !s.humans[1] ? 0 : s.humans[1] && !s.humans[0] ? 1 : null;
+    const me = team === null ? -1 : s.controlled[team];
+    // A pass on its way to him is played first time by either pad (human.ts), so they keep their on-the-ball names.
+    const off = team !== null && s.phase === 'play' && s.ball.owner !== me && !(me >= 0 && passIncoming(s, s.players[me]));
+    if (String(off) === lastPad) return;
+    lastPad = String(off);
+    for (const [b, a, z] of [[padP, 'Pass', 'Switch'], [padS, 'Shoot', 'Tackle']] as const) { b.textContent = off ? z : a; b.setAttribute('aria-label', off ? z : a); }
   }
 
   const hud: Hud = {
@@ -280,12 +310,14 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       if (pr !== lastPrompt) {
         lastPrompt = pr;
         prompt.hidden = !pr;
-        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>the CPU takes it in ${ko.secs} s</small>`;
+        if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>· the CPU takes it in ${ko.secs} s</small>`;
       }
       const c = matchClock(s);
       if (c !== lastClock) {
         clock.textContent = c;
         lastClock = c;
+        // Late drama: the last minutes of a level or one-goal game warm the clock (CSS pulse; static under reduced motion).
+        clock.parentElement?.classList.toggle('late', tension(s) >= 0.75);
       }
       if (gauge !== undefined) {
         // Shown only while a kick charges or a click is queued (power.ts hudGauge); hidden while he dribbles.
@@ -315,6 +347,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         hold.classList.toggle('hot', left !== null && left <= 2);
       }
       drawMe(s);
+      drawPads(s);
       drawRadar(s);
       const fk = freeKickKind(s);
       if (fk !== lastFk) {
@@ -332,8 +365,27 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         until = 0;
       }
     },
-    word(text, ms, sub) {
-      banner.innerHTML = `<span>${esc(text)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}`;
+    clearWord() {
+      banner.hidden = true;
+      until = 0;
+    },
+    word(text, ms, sub, tone) {
+      // A card's colour ('yellow' | 'red') or a team colour (any CSS colour) tints the word; the text stays the cue.
+      delete banner.dataset.tone;
+      banner.style.removeProperty('--tone');
+      if (tone === 'yellow' || tone === 'red') banner.dataset.tone = tone;
+      else if (tone) {
+        banner.dataset.tone = 'team';
+        banner.style.setProperty('--tone', tone);
+      }
+      // Lines of the sub (\n) are a recap (half and full time): one small line each, and the live call tag steps aside.
+      const lines = sub ? sub.split('\n') : [];
+      banner.classList.toggle('recap', lines.length > 1);
+      if (lines.length > 1) {
+        callTag.hidden = true;
+        tagUntil = 0;
+      }
+      banner.innerHTML = `<span>${esc(text)}</span>${lines.map((l) => `<small>${esc(l)}</small>`).join('')}`;
       banner.hidden = false;
       // Restart the pop-in animation.
       banner.style.animation = 'none';

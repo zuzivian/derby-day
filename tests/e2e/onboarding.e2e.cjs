@@ -68,6 +68,7 @@ test('onboarding: leaving or reloading the first match brings the welcome and th
   await page.waitForSelector(SEL.pitch);
   // Esc, Leave match: nothing recorded, and the welcome is back with the same club.
   await page.keyboard.press('Escape');
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.waitForSelector(KICK);
   expect((await page.locator('.ob-versus .side-name').nth(1).innerText()).trim(), 'same opponent after leaving').toBe(opp);
@@ -161,11 +162,21 @@ test('onboarding: a coach tip does not pause play, can be dismissed, and is not 
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
   await page.waitForSelector(TIP, { timeout: 40_000 });
+  // Hold the coach's own tip clock still: frames age the card in wall time, so a slow runner could time it out or replace it
+  // while the test waits for play to move on.
+  await page.evaluate(() => window.__derbyCoach.freeze());
+  expect(await tipId(page), 'the first tip is the pass tip (the kick-off is ours)').toBe('pass');
   const a = await page.evaluate(() => window.__derbyMatch.tick);
   await page.waitForFunction((x) => window.__derbyMatch.tick > x + 20, a, { timeout: 15_000 });
   expect(await page.locator(SEL.pause).isHidden(), 'no pause menu').toBe(true);
-  await page.locator('.coach-x').click();
-  expect(await page.locator('.coach-tip').isHidden(), 'dismissed').toBe(true);
+  // Click and look in the same turn: the next queued tip ('run') is rightly shown on the very next frame after a dismissal,
+  // so a separate round trip to check could find that card instead of an empty slot, depending on how loaded the runner is.
+  const dismissed = await page.evaluate(() => {
+    const el = document.querySelector('.coach-tip');
+    el.querySelector('.coach-x').click();
+    return el.hidden;
+  });
+  expect(dismissed, 'dismissed').toBe(true);
   expect((await prefsOf(page)).coachSeen, '"Got it" counts as read').toContain('pass');
   await page.waitForTimeout(1500);
   expect(await page.locator(`${TIP}[data-coach-tip="pass"]`).count(), 'pass is not shown twice').toBe(0);
@@ -176,6 +187,11 @@ test('onboarding: situational tips fire once each, only while still true: the ba
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
   await page.waitForSelector(TIP, { timeout: 40_000 });
+  // Hold the coach's own tip clock still for the whole test; it is moved only by advance(0) below. Frames age the card in wall
+  // time, and between dismissing the first tip and the first poll (giveBall waits for open play, up to a minute on a slow runner)
+  // the next one ('run') would be shown, counted as read and replaced, by design, before the test looks: it never comes back.
+  await page.evaluate(() => window.__derbyCoach.freeze());
+  expect(await tipId(page), 'the first tip is the pass tip (the kick-off is ours)').toBe('pass');
   await page.locator('.coach-x').click();
   await giveBall(page);
   // Each tip is read, dismissed, and the coach is let look again in the same turn, so the queued tip shows at once.
@@ -282,7 +298,7 @@ test('onboarding: the first match ends in a celebration with XP that names what 
   expect(text, 'XP for the match and the milestone').toMatch(/\+\d+ XP/);
   expect(text, 'first match milestone').toContain('first match 80');
   expect(text, 'no "practice (Easy)" jargon').notToContain('practice');
-  expect(text, 'names what level 2 opens, once').toMatch(/Now open: Squad, vs Player \(one screen and two tabs\) and Practice \(Easy\)\./);
+  expect(text, 'names what level 2 opens, once').toMatch(/Now open: Squad, vs Player and Practice\./);
   await page.waitForFunction(() => /(won|lost|draw)[^.]*\.\s*\d+ XP earned\./i.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
   expect(await page.evaluate(() => document.getElementById('sr-announcer')?.textContent || ''), 'no repeated "full time"').notToContain('Full time');
   const save = await readSave(page);
@@ -516,6 +532,28 @@ async function expectTipClearOfControls(page, label) {
     return { tip: tb, hits, x: box(document.querySelector('.coach-x')) };
   });
   expect(r.hits, `${label}: the tip covers no pitch button`).toEqual([]);
-  expect(r.x.w, `${label}: "Got it" is at least 44 px wide`).toBeGreaterThanOrEqual(44);
-  expect(r.x.h, `${label}: "Got it" is at least 44 px tall`).toBeGreaterThanOrEqual(44);
+  // Rounded to 1/100 px: measured while the card's fade-in transform settles, a 44 px box can read 43.99999.
+  const px = (n) => Math.round(n * 100) / 100;
+  expect(px(r.x.w), `${label}: "Got it" is at least 44 px wide`).toBeGreaterThanOrEqual(44);
+  expect(px(r.x.h), `${label}: "Got it" is at least 44 px tall`).toBeGreaterThanOrEqual(44);
 }
+
+test('onboarding: a revealed tab gives a first-visit hint once, and a waiting tab mark never covers another screen', async (t) => {
+  // Level 4 with the Club mark still waiting: Training's first visit has its hint, Club's mark stays on Home.
+  const prefs = { controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home', 'squad'] };
+  const page = await openApp(t, { xp: totalXp(4), prefs, width: 390, height: 844, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice', 'ranked', 'club', 'replays', 'drills', 'training', 'practice-normal']; } });
+  expect(await page.locator('.tab-mark[data-mark="club"]').count(), 'Club is pointed out on Home').toBe(1);
+  await page.locator(SEL.tabFor('training')).click();
+  await page.waitForSelector(`${SEL.tabFor('training')}[aria-current]`);
+  expect(await page.locator('.tab-mark').count(), "Club's mark does not cover Training").toBe(0);
+  expect(await page.locator('.tab-hint[data-hint="training"]').innerText(), 'says how to start').toMatch(/Train an attribute/);
+  await page.locator('[data-action="trainee"]').nth(1).click(); // an in-screen re-render keeps it
+  expect(await page.locator('.tab-hint').count(), 'still there after a re-render').toBe(1);
+  await page.locator('[data-action="hint-ok"]').click();
+  expect(await page.locator('.tab-hint').count(), 'Got it dismisses').toBe(0);
+  expect((await prefsOf(page)).marks, 'remembered').toContain('hint:training');
+  await page.locator(SEL.tabFor('home')).click();
+  expect(await page.locator('.tab-mark[data-mark="club"]').count(), 'the Club mark is back on Home').toBe(1);
+  await page.locator(SEL.tabFor('training')).click();
+  expect(await page.locator('.tab-hint').count(), 'not shown twice').toBe(0);
+});

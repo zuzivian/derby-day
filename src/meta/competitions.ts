@@ -274,7 +274,7 @@ export const cupWaitLeft = (save: Save): number => Math.max(0, save.cupWait ?? 0
 export const cupWaitText = (n: number): string => `Next cup after ${n} more ranked or league match${n === 1 ? '' : 'es'}.`;
 
 export function canStart(save: Save, kind: 'cup' | 'league' = 'league'): { ok: boolean; message: string } {
-  if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI first.' };
+  if (save.lineup.filter(Boolean).length < TEAM_SIZE) return { ok: false, message: 'Pick a full XI in Squad first.' };
   if (save.ladder.length < COMP_SIZE - 1) return { ok: false, message: 'Not enough clubs on the ladder.' };
   if (kind === 'cup' && cupWaitLeft(save) > 0) return { ok: false, message: cupWaitText(cupWaitLeft(save)) };
   return { ok: true, message: '' };
@@ -534,6 +534,24 @@ function tally(r: TableRow, gf: number, ga: number): void {
     r.drawn++;
     r.points += 1;
   } else r.lost++;
+}
+
+/** Where you stand against the promotion and relegation places mid-season ("2 pts off promotion"); '' once it is over or nothing is at stake. */
+export function seasonStanding(save: Save, season: Season | null | undefined = save.season): string {
+  if (!season || season.done) return '';
+  const rows = seasonTable(save, season);
+  const i = rows.findIndex((r) => r.you);
+  const me = rows[i];
+  const d = season.division ?? DIVISIONS;
+  if (!me || !me.played) return '';
+  const pts = (n: number) => `${n} pt${n === 1 ? '' : 's'}`;
+  const pos = ordinal(i + 1);
+  if (d > 1 && i < 2) return `${pos} · in the promotion places${rows[2].points < me.points ? `, ${pts(me.points - rows[2].points)} clear` : ''}`;
+  if (d < DIVISIONS && i >= rows.length - 2) {
+    const gap = rows[rows.length - 3].points - me.points;
+    return `${pos} · ${gap > 0 ? `${pts(gap)} from safety` : 'level with safety, in the drop places'}`;
+  }
+  return d > 1 ? `${pos} · ${me.points >= rows[1].points ? 'level with 2nd' : `${pts(rows[1].points - me.points)} off promotion`}` : '';
 }
 
 /**

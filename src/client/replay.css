@@ -11,7 +11,7 @@
 .replay-paste-row { display: flex; gap: 8px; }
 .replay-paste input {
   flex: 1 1 auto; min-width: 0; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
-  border: 1.5px solid var(--control-line); border-radius: 6px; padding: 5px 8px;
+  border: 1.5px solid var(--control-line); border-radius: var(--r-sm); padding: 5px 8px;
 }
 .replay-msg { margin: 0; min-height: 1.3em; color: var(--muted); }
 .replay-msg.bad, .rp-status.bad { color: var(--bad); font-weight: 600; }
@@ -22,26 +22,40 @@
   padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
 }
 .replay-card {
-  width: min(880px, 100%); background: var(--surface); color: var(--ink); border-radius: 12px; border: 1px solid var(--line);
-  padding: 16px; display: flex; flex-direction: column; gap: 12px; box-shadow: var(--shadow); font-family: var(--font-body);
+  width: min(880px, 100%); background: var(--surface); color: var(--ink); border-radius: var(--r-xl); border: 1px solid var(--line);
+  padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); box-shadow: var(--shadow-3); font-family: var(--font-body);
 }
 .replay-codebox { width: min(520px, 100%); }
 .rp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .rp-heading { min-width: 0; }
 .rp-heading p { margin: 2px 0 0; }
-.rp-title { font-size: 28px; text-transform: uppercase; }
+.rp-title { font-size: var(--fs-feature); text-transform: uppercase; }
 .rp-title:focus { outline: none; }
-.replay-canvas { cursor: default; width: min(100%, calc((100vh - 300px) * 1.493)); margin: 0 auto; }
+.replay-canvas { cursor: default; width: min(100%, calc((100vh - 300px) * 1.493)); width: min(100%, calc((100dvh - 300px) * 1.493)); margin: 0 auto; }
 .rp-scrub { display: flex; align-items: center; gap: 12px; }
-.rp-scrub input[type="range"] { flex: 1 1 auto; min-width: 0; height: 28px; accent-color: var(--accent); cursor: pointer; }
-.rp-time { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); white-space: nowrap; min-width: 8.5em; text-align: right; }
+.rp-track { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.rp-scrub input[type="range"] { width: 100%; margin: 0; height: 28px; accent-color: var(--accent); cursor: pointer; touch-action: pan-y; }
+/* Goal markers under the track: a pip over a 36 px-tall hit area, lined up with the thumb. */
+.rp-marks { position: relative; height: 12px; margin-top: -4px; }
+.rp-mark { position: absolute; top: -10px; left: calc(8px + (100% - 16px) * var(--p)); width: 32px; height: 36px; margin-left: -16px; padding: 0; border: 0; background: none; cursor: pointer; }
+.rp-mark::before { content: ''; position: absolute; left: 50%; top: 10px; margin-left: -7px; border: 7px solid transparent; border-top: 0; border-bottom: 11px solid var(--muted); }
+.rp-mark.us::before { border-bottom-color: var(--accent); }
+.rp-mark:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 8px; }
+.rp-clips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.rp-clips[hidden] { display: none; }
+.rp-clips .btn { flex: none; min-height: 36px; }
+.rp-clips .btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.rp-cam { position: absolute; right: 8px; top: 8px; min-height: 32px; padding: 3px 10px; font: 700 var(--fs-xs) var(--font-body); color: #fff; background: rgba(8, 12, 11, .6); border: 0; border-radius: 6px; cursor: pointer; }
+.rp-cam:hover, .rp-cam:focus-visible { background: rgba(8, 12, 11, .85); }
+.rp-cam[hidden] { display: none; }
+.rp-time { font-variant-numeric: tabular-nums; font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; min-width: 8.5em; text-align: right; }
 .rp-controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .rp-controls .btn { min-width: 92px; }
 .rp-controls .btn[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
 .rp-status { margin: 0; min-height: 1.3em; color: var(--muted); }
 .rp-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .rp-keys { margin-left: auto; }
-.replay-code { width: 100%; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--control-line); border-radius: 6px; padding: 8px; resize: vertical; word-break: break-all; }
+.replay-code { width: 100%; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: var(--fs-xs); color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--control-line); border-radius: var(--r-sm); padding: 8px; resize: vertical; word-break: break-all; }
 
 @media (max-width: 640px) {
   .replay-card { padding: 12px; gap: 10px; }
@@ -49,7 +63,8 @@
   .replay-canvas { width: 100%; }
   .rp-controls { display: grid; grid-template-columns: 1fr 1fr; }
   .rp-controls .btn { min-width: 0; }
-  .rp-time { min-width: 0; font-size: 12px; }
+  .rp-status:empty { min-height: 0; }
+  .rp-time { min-width: 0; font-size: var(--fs-xs); }
   .rp-keys { display: none; }
   .rp-row { grid-template-columns: 26px 40px minmax(0, 1fr); }
   .rp-btns { grid-column: 1 / -1; }
@@ -57,4 +72,27 @@
 }
 @media (pointer: coarse) {
   .rp-keys { display: none; }
+  .rp-scrub input[type="range"] { height: 44px; }
+  .rp-controls .btn, .rp-head .btn, .rp-clips .btn { min-height: 44px; }
+  /* The camera chip floats over a small picture: it stays compact to look at, and an invisible margin makes the 44px touch target. */
+  .rp-cam { min-height: 28px; }
+  .rp-cam::before { content: ''; position: absolute; inset: -8px -6px; }
+}
+/* A phone on its side: the picture takes the height, everything else stacks beside it. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .replay-layer { padding: 6px max(8px, env(safe-area-inset-right, 0px)) 6px max(8px, env(safe-area-inset-left, 0px)); }
+  .replay-viewer {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); grid-template-rows: auto auto auto auto auto 1fr; gap: 6px 12px; padding: 8px; align-content: start;
+    grid-template-areas: "stage head" "stage clips" "stage scrub" "stage controls" "stage status" "stage foot";
+  }
+  .replay-viewer .rp-head { grid-area: head; } .replay-viewer .rp-stage { grid-area: stage; align-self: center; }
+  .replay-viewer .rp-clips { grid-area: clips; } .replay-viewer .rp-scrub { grid-area: scrub; flex-wrap: wrap; gap: 0 8px; }
+  .replay-viewer .rp-controls { grid-area: controls; } .replay-viewer .rp-status { grid-area: status; } .replay-viewer .rp-foot { grid-area: foot; align-self: end; }
+  .replay-viewer .rp-title { font-size: 17px; line-height: 1.1; }
+  .replay-viewer .rp-heading p { display: none; }
+  .replay-viewer .rp-stage { width: min(100%, calc((100dvh - 28px) * 1.531)); }
+  .replay-viewer .rp-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .replay-viewer .rp-controls .btn { min-height: 38px; padding: 4px 8px; }
+  .replay-viewer .rp-time { width: 100%; text-align: left; min-width: 0; margin-top: -6px; }
+  .replay-viewer .rp-status:empty { display: none; }
 }

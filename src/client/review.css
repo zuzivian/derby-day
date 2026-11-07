@@ -3,6 +3,8 @@
    a card. Only the middle scrolls; the footer button stays in view. */
 .review-card { width: min(680px, 100%); max-height: 100%; padding: 0; gap: 0; overflow: clip; }
 .rv-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* A short fade at the foot so a row cut by the footer reads as "scroll for more". */
+.rv-scroll { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent); }
 .rv-hero {
   position: relative; isolation: isolate; padding: 20px var(--sp-6) 22px; text-align: center; color: #f3f6f1;
   background: radial-gradient(130% 120% at 50% -10%, #2f5f78 0%, #173244 55%, #0b1822 100%);
@@ -12,7 +14,7 @@
   background: radial-gradient(40% 70% at 50% 0%, rgba(255, 214, 10, .22), transparent 70%), repeating-linear-gradient(112deg, rgba(255, 255, 255, .04) 0 2px, transparent 2px 26px);
 }
 .rv-eyebrow { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: #ffd60a; }
-.review-title { margin: 4px 0 16px; font-family: var(--font-display); font-weight: 900; font-size: 44px; line-height: .95; letter-spacing: .04em; text-transform: uppercase; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+.review-title { margin: 4px 0 16px; font-family: var(--font-display); font-weight: 900; font-size: var(--fs-4xl); line-height: .95; letter-spacing: .04em; text-transform: uppercase; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
 .rv-record { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--sp-2); font-variant-numeric: tabular-nums; }
 .rv-tile { padding: 10px 12px; border-radius: var(--r-md); background: rgba(0, 0, 0, .28); border: 1px solid rgba(255, 255, 255, .1); text-align: left; min-width: 0; }
 .rv-tile dt { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: rgba(243, 246, 241, .75); }
@@ -20,8 +22,19 @@
 .rv-tile .rv-tile-sub { font-family: var(--font-body); font-weight: 600; font-size: var(--fs-sm); color: rgba(243, 246, 241, .8); }
 .rv-tile .up { color: #5fd08e; }
 .rv-tile .down { color: #ff9a8a; }
+.rv-tile .rv-tile-sub { white-space: normal; }
 .rv-trophy { grid-column: 1 / -1; border-color: rgba(255, 214, 10, .5); background: rgba(255, 214, 10, .12); }
 .rv-trophy dd { color: #ffd60a; font-size: 22px; }
+.rv-arc { margin: -6px 0 14px; display: flex; flex-direction: column; gap: 2px; }
+.rv-arc b { font-size: var(--fs-lg); font-weight: 800; letter-spacing: .02em; }
+.rv-arc span { font-size: var(--fs-sm); color: rgba(243, 246, 241, .85); }
+.rv-up .rv-arc b { color: #5fd08e; }
+.rv-down .rv-arc b { color: #ffb86b; }
+.rv-up { background: radial-gradient(130% 120% at 50% -10%, #2f7a56 0%, #17433a 55%, #0b1f1a 100%); }
+.rv-down { background: radial-gradient(130% 120% at 50% -10%, #44566a 0%, #26333f 55%, #12181f 100%); }
+.rv-next { margin: 12px 0 0; font-size: var(--fs-sm); font-weight: 700; color: #ffd60a; }
+@media (prefers-reduced-motion: no-preference) { .rv-up .rv-arc b { animation: rv-pop .6s cubic-bezier(.2, 1.4, .4, 1) both; } }
+@keyframes rv-pop { from { transform: scale(.85); opacity: 0; } }
 .rv-record-empty { margin: 0; color: rgba(243, 246, 241, .85); }
 .rv-body { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-6) var(--sp-5); }
 .rv-section { display: flex; flex-direction: column; gap: 8px; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-lg); background: var(--surface-2); border: 1px solid var(--line); }
@@ -37,8 +50,8 @@
 .rv-nums { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rv-status { font-weight: 700; font-size: 14px; }
 .rv-sign { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.rv-release { max-width: 100%; min-width: 0; font-size: 13px; }
-.stars { color: var(--accent); letter-spacing: 2px; white-space: nowrap; font-size: 15px; }
+.rv-release { max-width: 100%; min-width: 0; font-size: var(--fs-sm); }
+.stars { color: var(--accent); letter-spacing: 2px; white-space: nowrap; font-size: var(--fs-md); }
 .rv-panel { gap: 10px; }
 .rv-panel p { margin: 0; }
 
@@ -47,7 +60,10 @@
   .rv-hero { padding: var(--sp-4) var(--sp-3) 18px; }
   .rv-record { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .rv-tile { padding: 8px; }
-  .rv-tile dd { font-size: 20px; }
+  .rv-tile dd { font-size: var(--fs-xl); white-space: nowrap; }
+}
+@media (max-width: 360px) {
+  .rv-tile dd { font-size: var(--fs-lg); }
   .rv-tile .rv-tile-sub { font-size: var(--fs-2xs); }
   .rv-body { padding: var(--sp-3); }
   .rv-section { padding: var(--sp-3); }

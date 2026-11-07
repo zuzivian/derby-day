@@ -6,6 +6,7 @@
 // phone and tablet layouts when the thing a tap changed is below the fold.
 
 let tabsScroll = 0;
+let stripScroll = 0;
 let reveal: string | null = null;
 let xpWatch: IntersectionObserver | null = null;
 
@@ -17,10 +18,18 @@ export function queueReveal(selector: string): void {
 export function beforeRender(root: HTMLElement): void {
   const bar = root.querySelector<HTMLElement>('.tabs');
   if (bar) tabsScroll = bar.scrollLeft;
+  const strip = root.querySelector<HTMLElement>('.status-strip');
+  if (strip) stripScroll = strip.scrollLeft;
 }
 
 export function afterRender(root: HTMLElement): void {
   keepTabInView(root);
+  const strip = root.querySelector<HTMLElement>('.status-strip');
+  if (strip) {
+    strip.scrollLeft = stripScroll;
+    stripFade(strip);
+    strip.addEventListener('scroll', () => stripFade(strip), { passive: true });
+  }
   armXpCard(root);
   const sel = reveal;
   reveal = null;
@@ -28,6 +37,13 @@ export function afterRender(root: HTMLElement): void {
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     root.querySelector<HTMLElement>(sel)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
   }
+}
+
+/** Fade only the edge that has more chips beyond it (the CSS reads --fl and --fr; where the strip doesn't scroll they stay unused). */
+function stripFade(el: HTMLElement): void {
+  const max = el.scrollWidth - el.clientWidth;
+  el.style.setProperty('--fl', el.scrollLeft > 2 ? '24px' : '0px');
+  el.style.setProperty('--fr', max - el.scrollLeft > 2 ? '28px' : '0px');
 }
 
 function keepTabInView(root: HTMLElement): void {

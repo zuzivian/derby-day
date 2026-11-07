@@ -4,10 +4,11 @@
 // Styles are in review.css (appended to the page by scripts/build.ts).
 
 import { signed, type Save } from '../meta/game.ts';
-import { scoutMatchesFor, squadCap } from '../meta/levels.ts';
+import { isUnlocked, scoutMatchesFor, squadCap } from '../meta/levels.ts';
 import { overall, type Player } from '../meta/player.ts';
 import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText, type IntakeEntry, type PlayerChange, type SeasonReview } from '../meta/progression.ts';
-import { divisionName } from '../meta/world.ts';
+import { divisionName, playerDivision } from '../meta/world.ts';
+import { confettiHtml } from './confetti.ts';
 import type { App } from './ui.ts';
 
 const esc = (t: string | number): string =>
@@ -41,7 +42,7 @@ function offerRow(s: Save, p: Player): string {
   const full = s.squad.length >= squadCap(s);
   const v = scoutedPotential(p);
   return `<li class="rv-row rv-offer" data-offer="${esc(p.id)}">
-    <span class="rv-main"><b>${esc(p.first[0])}. ${esc(p.last)}</b>${rolePill(p.role)}<span class="muted">age ${p.age} · OVR ${overall(p)}</span>${stars(v.stars)}<span class="muted">POT ${potentialText(p)}</span></span>
+    <span class="rv-main"><b>${esc(p.first[0])}. ${esc(p.last)}</b>${rolePill(p.role)}<span class="muted">age ${p.age} · <abbr title="Overall rating">OVR</abbr> ${overall(p)}</span>${stars(v.stars)}<span class="muted"><abbr title="Potential">POT</abbr> ${potentialText(p)}</span></span>
     <span class="rv-sign">
       ${full ? `<label class="visually-hidden" for="release-${esc(p.id)}">Release to make room for ${esc(p.last)}</label><select id="release-${esc(p.id)}" class="rv-release">${releaseOptions(s)}</select>` : ''}
       <button class="btn small primary" data-action="review-sign" data-id="${esc(p.id)}">${full ? 'Release and sign' : 'Sign'}</button>
@@ -56,7 +57,7 @@ function intakeRow(s: Save, e: IntakeEntry): string {
   const live = inSquad ? scoutedPotential(inSquad) : null;
   const status = e.joined ? 'Joined the squad' : inSquad ? 'Signed' : 'Moved on';
   return `<li class="rv-row">
-    <span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age} · OVR ${e.overall}</span>${stars(live?.stars ?? e.stars)}<span class="muted">POT ${live ? potentialText(inSquad!) : esc(e.range)}</span></span>
+    <span class="rv-main"><b>${esc(e.name)}</b>${rolePill(e.role)}<span class="muted">age ${e.age} · <abbr title="Overall rating">OVR</abbr> ${e.overall}</span>${stars(live?.stars ?? e.stars)}<span class="muted"><abbr title="Potential">POT</abbr> ${live ? potentialText(inSquad!) : esc(e.range)}</span></span>
     <span class="rv-status${e.joined || inSquad ? ' up' : ' muted'}">${status}</span>
   </li>`;
 }
@@ -74,14 +75,18 @@ export function reviewModal(app: App): string {
   if (!rv || rv.seen) return '';
   // Hero (title and the season in numbers), then each section as a card. The
   // middle scrolls inside the dialog so "Start season" never leaves view.
+  const arc = seasonArc(s, rv);
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
     <div class="modal-card review-card">
       <div class="rv-scroll" tabindex="0" role="region" aria-label="Season review">
-        <header class="rv-hero">
+        <header class="rv-hero${arc.moved ? ` rv-${arc.moved}` : ''}">
+          ${arc.moved === 'up' ? confettiHtml(40) : ''}
           <div class="rv-eyebrow">End of season</div>
           <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
+          ${arc.html}
           ${recordSection(rv)}
+          ${arc.next}
         </header>
         <div class="rv-body">
           ${section('Who changed', changesBody(rv))}
@@ -93,6 +98,24 @@ export function reviewModal(app: App): string {
       <footer class="rv-foot"><button class="btn primary big" data-action="review-close">Start season ${rv.year + 1}</button></footer>
     </div>
   </div>`;
+}
+
+/** The season's place in the climb: a promotion or relegation banner and next season's target, read from the club history and the division. */
+function seasonArc(s: Save, rv: SeasonReview): { moved: 'up' | 'down' | ''; html: string; next: string } {
+  if (!isUnlocked(s, 'league')) return { moved: '', html: '', next: '' };
+  const year = (s.seasons ?? []).find((x) => x.year === rv.year);
+  const note = [...(year?.notes ?? [])].reverse().find((n) => n.startsWith('League'));
+  const moved = note?.includes('promoted') ? 'up' : note?.includes('relegated') ? 'down' : '';
+  const d = year?.division ?? playerDivision(s);
+  const line = moved === 'up' ? `▲ Promoted to ${divisionName(d)}` : moved === 'down' ? `▼ Down to ${divisionName(d)}` : divisionName(d);
+  const sub = moved === 'down' ? 'A setback, not the end. Climb back.' : note ? esc(note.replace(/^League \d+: /, 'League: ').replace(/, (promoted|relegated)$/, '')) : 'No league finish this season.';
+  const now = playerDivision(s);
+  const target = now > 1 ? `Target: League top two go up to ${divisionName(now - 1)}.` : 'Target: stay in the top division.';
+  return {
+    moved,
+    html: `<p class="rv-arc"><b>${line}</b><span>${sub}</span></p>`,
+    next: `<p class="rv-next">${target}</p>`,
+  };
 }
 
 function recordSection(rv: SeasonReview): string {
@@ -136,11 +159,12 @@ function ladderBody(rv: SeasonReview): string {
     ? `<p class="muted small">${w ? 'Squad quality' : 'Elo'}, before → after.</p><ul class="rv-list">${rows.map(({ m, up }) => `<li class="rv-row"><span class="rv-main">${esc(m.name)}</span><span class="rv-nums"><span class="muted">${m.before}</span> → <b>${m.after}</b> <span class="${up ? 'up' : 'down'}">(${signed(m.after - m.before)})</span></span></li>`).join('')}</ul>`
     : '';
   if (!w) return section('Around the ladder', movers);
-  const line = (text: string, cls = '') => `<li class="rv-row"><span class="rv-main${cls}">${esc(text)}</span></li>`;
+  // Only the leading Up / Down word is coloured; the sentence stays in normal ink.
+  const line = (text: string, lead = '', cls = '') => `<li class="rv-row"><span class="rv-main">${lead ? `<b class="${cls}">${lead}</b>` : ''}${esc(text)}</span></li>`;
   const lines = [
     ...w.champions.map((c) => line(`${c.name} top ${divisionName(c.division)}.`)),
-    ...grouped(w.promoted).map(([to, names]) => line(`Up to ${divisionName(to)}: ${names}.`, ' up')),
-    ...grouped(w.relegated).map(([to, names]) => line(`Down to ${divisionName(to)}: ${names}.`, ' down')),
+    ...grouped(w.promoted).map(([to, names]) => line(` to ${divisionName(to)}: ${names}.`, '▲ Up', 'up')),
+    ...grouped(w.relegated).map(([to, names]) => line(` to ${divisionName(to)}: ${names}.`, '▼ Down', 'down')),
     ...w.transfers.map((t) => line(t)),
     ...w.retired.map((t) => line(t)),
   ];

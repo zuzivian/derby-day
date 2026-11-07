@@ -3,6 +3,8 @@
 // back to the same control after a re-render, a focus trap for dialogs, and
 // arrow-key tabs.
 
+import { getSound } from './audio.ts';
+
 // ---------------------------------------------------------------------------
 // Live regions. Both live on <body>, outside #app, so re-rendering the app
 // never recreates them (a recreated region is often not announced).
@@ -55,6 +57,7 @@ let toastTimer = 0;
 let toastShowTimer = 0;
 /** Visible toast inside a persistent polite status region. */
 export function showToast(text: string, ok = true, ms = 3600): void {
+  getSound().ui(ok ? 'ok' : 'warn');
   const el = toastRegion();
   el.replaceChildren();
   clearTimeout(toastTimer);
@@ -65,7 +68,10 @@ export function showToast(text: string, ok = true, ms = 3600): void {
   placeToast(t);
   // Empty first, then fill, so an identical message is announced again.
   toastShowTimer = window.setTimeout(() => el.appendChild(t), 30);
-  toastTimer = window.setTimeout(hideToast, ms);
+  toastTimer = window.setTimeout(() => {
+    t.classList.add('out');
+    toastTimer = window.setTimeout(hideToast, 160);
+  }, ms);
   window.addEventListener('scroll', onToastScroll, { passive: true });
 }
 
@@ -75,7 +81,7 @@ export function showToast(text: string, ok = true, ms = 3600): void {
  * Re-placed on scroll while it shows, because an action can move the page (focus lands lower down).
  */
 function placeToast(t: HTMLElement): void {
-  const bar = document.querySelector('.topbar');
+  const bar = document.querySelector('.tabs') ?? document.querySelector('.topbar');
   const below = bar && !document.querySelector('.modal') ? bar.getBoundingClientRect().bottom : 0;
   t.style.top = below > 0 ? `${Math.round(below + 8)}px` : '';
 }
@@ -113,7 +119,7 @@ export interface FocusKey {
 const ALIASES: Record<string, string[]> = {
   sell: ['sell-confirm'],
   'sell-confirm': ['sell'],
-  reset: ['reset-confirm'],
+  reset: ['reset-cancel'], // arming the confirm focuses the safe 'Keep it', never the destructive button
   'reset-confirm': ['reset'],
   'reset-cancel': ['reset'],
 };
@@ -141,6 +147,26 @@ function visible(el: HTMLElement): boolean {
   return !el.closest('[hidden], [inert]') && el.getClientRects().length > 0;
 }
 
+/**
+ * May the page move focus by itself yet? Not in a frame of another origin before the user has touched it: browsers
+ * refuse there (Chrome logs a permissions-policy violation for focus-without-user-activation), so the call is skipped.
+ */
+export function mayAutoFocus(): boolean {
+  let framed = false;
+  try {
+    framed = window.self !== window.top;
+  } catch {
+    framed = true;
+  }
+  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+  return !framed || !ua || ua.hasBeenActive;
+}
+
+/** Focus `el` unless the page may not move focus by itself yet (mayAutoFocus). */
+export function autoFocus(el: HTMLElement | null | undefined, opts?: FocusOptions): void {
+  if (el && mayAutoFocus()) el.focus(opts);
+}
+
 /** Find the best stand-in for a control that was focused before a re-render, and focus it. */
 export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?: string): void {
   if (!key) return;
@@ -148,7 +174,7 @@ export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?:
   const tries: (() => HTMLElement | undefined)[] = [
     () => (key.elId ? pick(`#${CSS.escape(key.elId)}`)[0] : undefined),
     () => (Object.keys(key.data).length ? pick(selectorFor(key.data))[0] : undefined),
-    () => (key.data.id ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
+    () => (key.data.id && !key.data.action ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
     () => {
       const a = key.data.action;
       if (!a) return undefined;

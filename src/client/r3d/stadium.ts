@@ -8,6 +8,7 @@ import type { TeamSetup } from '../../sim/types.ts';
 import { arcPoints, merge, place, ribbon, type Part } from './geo.ts';
 import { BIG_PITCH, HALF_H, HALF_W, clamp01 } from './space.ts';
 import {
+  AdditiveBlending,
   BackSide,
   BoxGeometry,
   CanvasTexture,
@@ -31,6 +32,7 @@ import {
   SRGBColorSpace,
   ShaderMaterial,
   SphereGeometry,
+  Vector2,
   Vector3,
   type BufferGeometry,
   type Material,
@@ -49,7 +51,8 @@ export interface Stadium {
   stands: Record<'far' | 'near' | 'left' | 'right', Object3D>;
   /** The ad boards along each side, so the camera can hide the ones it looks through (like the stands). */
   boards: Record<'far' | 'near' | 'left' | 'right', Object3D>;
-  update(dt: number, time: number, o: { excite: [number, number]; ball: { x: number; y: number; z: number; speed: number } }): void;
+  /** `still`: reduced motion: the crowd, flags and floodlights hold one pose. */
+  update(dt: number, time: number, o: { excite: [number, number]; still?: boolean; ball: { x: number; y: number; z: number; speed: number } }): void;
   /** A goal went in at this end (0: home goal at x = 0, 1: away goal), ball at scene position. */
   ripple(side: 0 | 1, at: Vector3, strength: number): void;
   dispose(): void;
@@ -112,7 +115,7 @@ function grassTexture(w: number, h: number, quality: 'low' | 'high', aniso: numb
   g.fillStyle = '#86a24c';
   g.fillRect(0, 0, cw, ch);
   for (let i = -6; i < bands + 6; i++) {
-    g.fillStyle = i % 2 === 0 ? '#8cab52' : '#819c48';
+    g.fillStyle = i % 2 === 0 ? '#90b055' : '#7e9945';
     g.fillRect((x0 + i * bw) * k, 0, bw * k + 1, ch);
   }
   // Fine noise and soft wear, so close-ups don't look like flat paint.
@@ -136,14 +139,27 @@ function grassTexture(w: number, h: number, quality: 'low' | 'high', aniso: numb
     g.ellipse(rx, ry, rr, rr * (0.6 + r()), r() * 3, 0, Math.PI * 2);
     g.fill();
   }
-  // Goalmouth wear.
-  g.globalAlpha = 0.12;
-  for (const gx of [x0, x0 + PITCH_W]) {
-    const grd = g.createRadialGradient(gx * k, (h / 2) * k, 0, gx * k, (h / 2) * k, 5 * k);
-    grd.addColorStop(0, '#8a8a4a');
-    grd.addColorStop(1, 'rgba(138,138,74,0)');
+  // Wear: scuffed goalmouths and penalty spots, the centre spot, and the touchlines trodden darker.
+  g.globalAlpha = 1;
+  const wear = (cx: number, cz: number, rad: number, a: number) => {
+    const grd = g.createRadialGradient(cx * k, cz * k, 0, cx * k, cz * k, rad * k);
+    grd.addColorStop(0, `rgba(138,128,72,${a})`);
+    grd.addColorStop(1, 'rgba(138,128,72,0)');
     g.fillStyle = grd;
-    g.fillRect((gx - 6) * k, (h / 2 - 6) * k, 12 * k, 12 * k);
+    g.fillRect((cx - rad) * k, (cz - rad) * k, 2 * rad * k, 2 * rad * k);
+  };
+  for (const s of [-1, 1]) {
+    const gx = x0 + (s < 0 ? 0 : PITCH_W);
+    wear(gx, h / 2, 6, 0.3);
+    wear(gx - s * PENALTY_SPOT, h / 2, 2.4, 0.26);
+  }
+  wear(w / 2, h / 2, 1.8, 0.2);
+  for (const z of [(h - PITCH_H) / 2, (h + PITCH_H) / 2]) {
+    const grd = g.createLinearGradient(0, (z + (z < h / 2 ? 0 : -3)) * k, 0, (z + (z < h / 2 ? 3 : 0)) * k);
+    grd.addColorStop(z < h / 2 ? 0 : 1, 'rgba(70,84,36,0.16)');
+    grd.addColorStop(z < h / 2 ? 1 : 0, 'rgba(70,84,36,0)');
+    g.fillStyle = grd;
+    g.fillRect(x0 * k, (z < h / 2 ? z : z - 3) * k, PITCH_W * k, 3 * k);
   }
   g.globalAlpha = 1;
   return tex(c, aniso);
@@ -187,35 +203,45 @@ function face(g: CanvasRenderingContext2D, x: number, y: number, r: number, skin
   g.restore();
 }
 
-function boardTexture(aniso: number): CanvasTexture {
-  const panels = 8;
-  const pw = 320;
-  const [c, g] = canvas(pw * panels, 64);
-  const schemes = [
-    ['#ff6a00', '#111111', '#ffffff'],
-    ['#111111', '#ff7a1a', '#ffffff'],
-    ['#ffffff', '#ff5a00', '#111111'],
-    ['#ff8c1a', '#ffffff', '#111111'],
-  ];
+/** One board panel: text, background, text colour, accent strip, and whether a cartoon face stands beside the text. */
+type Panel = [string, string, string, string, boolean?];
+const SCHEMES = [
+  ['#ff6a00', '#111111', '#ffffff'],
+  ['#111111', '#ff7a1a', '#ffffff'],
+  ['#ffffff', '#ff5a00', '#111111'],
+  ['#ff8c1a', '#ffffff', '#111111'],
+];
+/** Black or white ink, whichever reads on this colour. */
+const ink = (hex: string) => {
+  const c = new Color(hex);
+  return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.45 ? '#111111' : '#ffffff';
+};
+/** A club's own board panel: its name in its colours. */
+const clubPanel = (t: TeamSetup, flip = false): Panel => (flip ? [t.name.toUpperCase(), t.secondary, ink(t.secondary), t.primary] : [t.name.toUpperCase(), t.primary, ink(t.primary), t.secondary]);
+
+function boardTexture(aniso: number, panels: Panel[], pw: number): CanvasTexture {
+  const [c, g] = canvas(pw * panels.length, 64);
   const skins = ['#f1c9a5', '#c68863', '#8d5a36', '#e8b98f'];
   const hairs = ['#2b1c12', '#111', '#a5733f', '#5a3a20'];
-  for (let i = 0; i < panels; i++) {
-    const [bg, fg, ac] = schemes[i % schemes.length];
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  panels.forEach(([text, bg, fg, ac, withFace], i) => {
     const x = i * pw;
     g.fillStyle = bg;
     g.fillRect(x, 0, pw, 64);
     g.fillStyle = ac;
     g.fillRect(x, 58, pw, 6);
-    const withFace = i % 3 === 1;
     if (withFace) face(g, x + 36, 32, 22, skins[i % 4], hairs[(i + 1) % 4], i);
     g.fillStyle = fg;
-    g.font = `italic 800 ${withFace ? 34 : 38}px 'Big Shoulders Display', 'Arial Narrow', Arial, sans-serif`;
-    g.textAlign = 'center';
-    g.textBaseline = 'middle';
-    g.fillText(SPONSORS[i % SPONSORS.length], x + (withFace ? pw / 2 + 28 : pw / 2), 31);
+    // Long club names shrink to fit their panel.
+    for (let px = withFace ? 34 : 38; px >= 16; px -= 2) {
+      g.font = `italic 800 ${px}px 'Big Shoulders Display', 'Arial Narrow', Arial, sans-serif`;
+      if (g.measureText(text).width <= pw - (withFace ? 110 : 28)) break;
+    }
+    g.fillText(text, x + (withFace ? pw / 2 + 28 : pw / 2), 31, pw - (withFace ? 110 : 28)); // squeezed, never spilling into the next panel
     g.fillStyle = 'rgba(0,0,0,.25)';
     g.fillRect(x + pw - 2, 0, 2, 64);
-  }
+  });
   return tex(c, aniso, true);
 }
 
@@ -271,6 +297,23 @@ function windowTexture(): CanvasTexture {
   return tex(c, 4, true);
 }
 
+/** Profiled steel roof sheeting: mid-grey steel panels (dark enough to read against the sky in a tall portrait frame, where the roof fills the top) with a shadowed rib every repeat (one repeat is about 1.6 m of roof). */
+function roofTexture(): CanvasTexture {
+  const [c, g] = canvas(64, 16);
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, '#98a2ae');
+  grad.addColorStop(0.45, '#adb6c0');
+  grad.addColorStop(0.8, '#a0aab5');
+  grad.addColorStop(1, '#939da9');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 16);
+  g.fillStyle = 'rgba(30,38,50,.5)';
+  g.fillRect(56, 0, 5, 16);
+  g.fillStyle = 'rgba(255,255,255,.4)';
+  g.fillRect(54, 0, 2, 16);
+  return tex(c, 4, true);
+}
+
 function parkingTexture(): CanvasTexture {
   const [c, g] = canvas(256, 256);
   g.fillStyle = '#7d8084';
@@ -304,8 +347,9 @@ function parkingTexture(): CanvasTexture {
 const CROWD_VERT_PARS = `
 attribute float aPart;
 attribute float aSeed;
+attribute float aSide;
 uniform float uTime;
-uniform float uExcite;
+uniform vec2 uExcite;
 `;
 const CROWD_VERT = `
 #include <begin_vertex>
@@ -313,11 +357,14 @@ const CROWD_VERT = `
   float sd = aSeed;
   float ph = uTime * (2.2 + sd * 2.4) + sd * 37.0;
   float keen = step(0.3, fract(sd * 13.7));
-  float ex = uExcite * keen;
+  float exc = aSide > 0.5 ? uExcite.y : uExcite.x;
+  float ex = exc * keen;
   float hop = max(0.0, sin(ph * 1.7)) * (0.03 + 0.3 * ex);
-  transformed.y += hop;
+  // A wave round the stand when the fans are up.
+  float wv = exc * smoothstep(0.3, 1.0, sin(uTime * 4.5 - instanceMatrix[3].x * 0.4));
+  transformed.y += hop + wv * 0.12;
   float arms = step(1.5, aPart);
-  float up = clamp(0.15 + ex * 1.2 + 0.25 * step(0.92, fract(sd * 5.3)), 0.0, 1.0);
+  float up = clamp(0.15 + ex * 1.2 + wv * 0.5 + 0.25 * step(0.92, fract(sd * 5.3)), 0.0, 1.0);
   transformed.y += arms * up * (0.42 + 0.06 * sin(ph * 2.3));
   transformed.x += arms * up * 0.08 * sin(ph * 1.3);
   transformed.x += sin(uTime * 0.6 + sd * 21.0) * 0.035;
@@ -336,8 +383,9 @@ const CROWD_COLOR = `
 
 const FLAG_VERT_PARS = `
 attribute float aSeed;
+attribute float aSide;
 uniform float uTime;
-uniform float uExcite;
+uniform vec2 uExcite;
 `;
 const FLAG_VERT = `
 #include <begin_vertex>
@@ -347,21 +395,22 @@ const FLAG_VERT = `
   float ph = uTime * (3.0 + aSeed * 2.0) + aSeed * 50.0;
   transformed.z += sin(ph + position.x * 3.2) * 0.22 * along;
   transformed.y += sin(ph * 0.7 + position.x * 2.0) * 0.06 * along;
-  float swing = sin(uTime * (1.6 + aSeed) + aSeed * 9.0) * (0.25 + 0.6 * uExcite);
+  float exc = aSide > 0.5 ? uExcite.y : uExcite.x;
+  float swing = sin(uTime * (1.6 + aSeed) + aSeed * 9.0) * (0.25 + 0.6 * exc);
   float c = cos(swing);
   float s = sin(swing);
   transformed.xy = vec2(c * transformed.x - s * transformed.y, s * transformed.x + c * transformed.y);
-  transformed.y += 1.1 + max(0.0, sin(ph * 1.7)) * 0.2 * uExcite;
+  transformed.y += 1.1 + max(0.0, sin(ph * 1.7)) * 0.2 * exc;
 }
 `;
 
-interface CrowdMat {
-  mat: Material;
-  uniforms: { uTime: { value: number }; uExcite: { value: number } };
+/** Shared by every stand: the time and how worked up each club's fans are (home, away). */
+interface CrowdUniforms {
+  uTime: { value: number };
+  uExcite: { value: Vector2 };
 }
 
-function crowdMaterial(kind: 'fan' | 'flag'): CrowdMat {
-  const uniforms = { uTime: { value: 0 }, uExcite: { value: 0 } };
+function crowdMaterial(kind: 'fan' | 'flag', uniforms: CrowdUniforms): Material {
   const mat = new MeshLambertMaterial({ color: '#ffffff', side: kind === 'flag' ? DoubleSide : 0 });
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uTime = uniforms.uTime;
@@ -373,7 +422,7 @@ function crowdMaterial(kind: 'fan' | 'flag'): CrowdMat {
     }
   };
   mat.customProgramCacheKey = () => `crowd-${kind}`;
-  return { mat, uniforms };
+  return mat;
 }
 
 function fanGeometry(): BufferGeometry {
@@ -642,8 +691,16 @@ export function buildStadium(o: StadiumOptions): Stadium {
   const impulses: { at: Vector3; age: number; amp: number }[][] = [[], []];
 
   // --- ad boards -------------------------------------------------------------
-  const boardTex = keep(boardTexture(o.anisotropy));
-  const boardMat = keep(new MeshLambertMaterial({ map: boardTex, emissive: new Color('#ffffff'), emissiveMap: boardTex, emissiveIntensity: 0.45 } as Record<string, unknown>));
+  // Sides: sponsors with both clubs' panels between them; each end carries its own club's name and colours.
+  const boardMatOf = (panels: Panel[], pw: number) => {
+    const map = keep(boardTexture(o.anisotropy, panels, pw));
+    return keep(new MeshLambertMaterial({ map, emissive: new Color('#ffffff'), emissiveMap: map, emissiveIntensity: 0.45 } as Record<string, unknown>));
+  };
+  const boardMats = {
+    far: boardMatOf(Array.from({ length: 8 }, (_, i): Panel => (i % 4 === 1 ? clubPanel(home) : i % 4 === 3 ? clubPanel(away) : [SPONSORS[i % SPONSORS.length], ...(SCHEMES[i % 4] as [string, string, string]), i === 4])), 320),
+    left: boardMatOf([clubPanel(home), clubPanel(home, true), clubPanel(home), clubPanel(home, true)], 640),
+    right: boardMatOf([clubPanel(away), clubPanel(away, true), clubPanel(away), clubPanel(away, true)], 640),
+  };
   const boardBack = keep(new MeshLambertMaterial({ color: '#6b7178' }));
   const boards = { far: new Group(), near: new Group(), left: new Group(), right: new Group() };
   const addBoard = (x0: number, z0: number, x1: number, z1: number) => {
@@ -655,7 +712,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
     const uv = g.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (len / 12), uv.getY(i));
     disposables.push(g);
-    const m = new Mesh(g, [boardBack, boardBack, boardBack, boardBack, boardMat, boardBack] as unknown as Material);
+    const m = new Mesh(g, [boardBack, boardBack, boardBack, boardBack, side === 'left' || side === 'right' ? boardMats[side] : boardMats.far, boardBack] as unknown as Material);
     m.position.set((x0 + x1) / 2, BOARD_H / 2, (z0 + z1) / 2);
     m.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
     m.castShadow = true;
@@ -680,16 +737,26 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
   // --- stands, crowd, flags --------------------------------------------------
   const concrete = keep(new MeshLambertMaterial({ vertexColors: true } as Record<string, unknown>));
-  const roofMat = keep(new MeshStandardMaterial({ color: '#e7e9ec', roughness: 0.6, metalness: 0.2, side: DoubleSide }));
+  // Ribbed steel sheeting on top: a plain pale slab read as a blank grey band across the top of an upright phone's picture.
+  const roofMat = keep(new MeshStandardMaterial({ color: '#ffffff', map: keep(roofTexture()), roughness: 0.6, metalness: 0.2, side: DoubleSide }));
+  // The roof's leading edge: a dark fascia that gives it a crisp front line seen from any camera.
+  const fasciaMat = keep(new MeshStandardMaterial({ color: '#232a36', roughness: 0.5, metalness: 0.3 }));
+  // The underside, seen from the pitch under a tall upright frame (a phone held upright): a shaded steel soffit, not a
+  // flat pale slab that read as a blank band across the top of the picture.
+  const soffitMat = keep(new MeshStandardMaterial({ color: '#3a4250', roughness: 0.8, metalness: 0.25, side: DoubleSide }));
+  // BoxGeometry face order: +x, -x, +y (top), -y (underside), +z, -z.
+  const roofMats = [roofMat, roofMat, roofMat, soffitMat, roofMat, roofMat];
   const steelMat = keep(new MeshStandardMaterial({ color: '#ff7a1a', roughness: 0.55, metalness: 0.2 }));
   const fanGeo = keep(fanGeometry());
   const flagGeo = keep(new PlaneGeometry(1.3, 0.85, 8, 1).translate(0.65, 0.42, 0));
   const poleGeo = keep(new CylinderGeometry(0.02, 0.02, 2.6, 4).translate(0, 1.3, 0));
-  const fanMats: CrowdMat[] = [];
+  const crowdU: CrowdUniforms = { uTime: { value: 0 }, uExcite: { value: new Vector2() } };
+  const lit = new Vector2();
   const stands = {} as Record<'far' | 'near' | 'left' | 'right', Object3D>;
   const density = hi ? 0.86 : 0.32;
   const crowdColor = new Color();
   const tmpM = new Matrix4();
+  const tmpM2 = new Matrix4();
   const tmpQ = new Quaternion();
   const tmpP = new Vector3();
   const tmpS = new Vector3(1, 1, 1);
@@ -698,10 +765,18 @@ export function buildStadium(o: StadiumOptions): Stadium {
   // Crowd colours: very light kits (white, cream) would turn a stand into a white wall, so they are
   // knocked back, and everything is pulled toward a dark grey for less contrast.
   const grey = new Color('#4a4f57');
+  const GREY_K = 0.26;
   const tone = (c: Color) => {
     const l = (c.r + c.g + c.b) / 3;
     if (l > 0.62) c.multiplyScalar(0.62 / l);
-    return c.lerp(grey, 0.38);
+    return c.lerp(grey, GREY_K);
+  };
+  // Which club's fan sits at stand-local x: the left end is the home end, the right the away end, and
+  // the away fans spill into the right-hand corners of the two long stands.
+  const teamAt = (key: 'far' | 'near' | 'left' | 'right', x: number, along: number): 0 | 1 => {
+    if (key === 'left' || key === 'right') return key === 'right' ? 1 : 0;
+    const wf = (key === 'far' ? -x : x) / along + 0.5;
+    return r() < (wf - 0.6) / 0.3 ? 1 : 0;
   };
   const buildStand = (key: 'far' | 'near' | 'left' | 'right', fans: TeamSetup, rows: number, roof: boolean) => {
     const sg = new Group();
@@ -749,8 +824,13 @@ export function buildStadium(o: StadiumOptions): Stadium {
     if (roof) {
       const rh = backH + 4.5;
       const roofG = new BoxGeometry(along + 2, 0.25, depth + 3).translate(0, 0, (depth - 3) / 2);
-      const rm = new Mesh(roofG, roofMat);
-      disposables.push(roofG);
+      // One texture repeat per 1.6 m along the stand, so the ribs keep their spacing on every stand.
+      const uv = roofG.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * ((along + 2) / 1.6));
+      const rm = new Mesh(roofG, roofMats);
+      const fasciaG = new BoxGeometry(along + 2.2, 0.8, 0.3).translate(0, -0.2, -3);
+      rm.add(new Mesh(fasciaG, fasciaMat));
+      disposables.push(roofG, fasciaG);
       rm.position.set(0, rh, 0);
       rm.rotation.x = -0.07;
       rm.castShadow = true;
@@ -770,19 +850,19 @@ export function buildStadium(o: StadiumOptions): Stadium {
 
     // Fans.
     const seatsAlong = Math.floor((along - 1.2) / 0.56);
-    const spots: [number, number, number, number][] = [];
+    const spots: [number, number, number, number, 0 | 1][] = [];
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < seatsAlong; j++) {
         if (r() > density) continue;
         const x = -along / 2 + 0.6 + j * 0.56 + (r() - 0.5) * 0.12;
-        spots.push([x, FRONT + i * RISE, 0.4 + i * ROW_D + ROW_D * 0.55, i]);
+        spots.push([x, FRONT + i * RISE, 0.4 + i * ROW_D + ROW_D * 0.55, i, teamAt(key, x, along)]);
       }
     }
-    const cm = crowdMaterial('fan');
-    fanMats.push(cm);
-    disposables.push(cm.mat);
-    const im = new InstancedMesh(fanGeo, cm.mat, spots.length);
+    const cm = crowdMaterial('fan', crowdU);
+    disposables.push(cm);
+    const im = new InstancedMesh(fanGeo, cm, spots.length);
     const seeds = new Float32Array(spots.length);
+    const sides = new Float32Array(spots.length);
     // A calm crowd (the owner's screenshot read as random bright blocks; then as alternating stripes
     // of primary and secondary sections): fans are mostly in the primary colour, some in the secondary
     // and a few in muted everyday clothes, mixed seat by seat so a stand reads as one mass of its
@@ -790,7 +870,8 @@ export function buildStadium(o: StadiumOptions): Stadium {
     // contrast) and darken toward the back rows, under the roof.
     const casual = ['#30343b', '#3d434c', '#4b4f57', '#5a4a3c', '#2f3c52'];
     const secondTint = new Color();
-    spots.forEach(([x, y, z, row], i) => {
+    spots.forEach(([x, y, z, row, team], i) => {
+      const kit = o.teams[team];
       const sc = 0.92 + r() * 0.16;
       tmpQ.setFromAxisAngle(UP, Math.PI + (r() - 0.5) * 0.5);
       tmpP.set(x, y, z);
@@ -798,19 +879,21 @@ export function buildStadium(o: StadiumOptions): Stadium {
       tmpM.compose(tmpP, tmpQ, tmpS);
       im.setMatrixAt(i, tmpM);
       const pick = r();
-      if (pick < 0.78) crowdColor.set(fans.primary);
+      if (pick < 0.78) crowdColor.set(kit.primary);
       // The secondary colour, part-way to the primary: scattered seat by seat at full contrast it speckled.
-      else if (pick < 0.92) crowdColor.set(fans.secondary).lerp(secondTint.set(fans.primary), 0.4);
+      else if (pick < 0.92) crowdColor.set(kit.secondary).lerp(secondTint.set(kit.primary), 0.4);
       else crowdColor.set(casual[Math.floor(r() * casual.length)]);
       tone(crowdColor);
       // Darker toward the back (under the roof), and only a slight per-fan variation.
       crowdColor.multiplyScalar((1 - 0.5 * (row / Math.max(1, rows - 1))) * (0.95 + r() * 0.06));
       im.setColorAt(i, crowdColor);
       seeds[i] = r();
+      sides[i] = team;
     });
     // Per-instance seed lives on a per-stand geometry clone so stands can differ in size.
     const geo = fanGeo.clone();
     geo.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 1));
+    geo.setAttribute('aSide', new InstancedBufferAttribute(sides, 1));
     disposables.push(geo);
     im.geometry = geo;
     im.receiveShadow = true;
@@ -820,14 +903,13 @@ export function buildStadium(o: StadiumOptions): Stadium {
     // Flags in the fans' colours, one every 8 m or so along random rows (one every 3 m was a wall of
     // waving rectangles over the crowd).
     const nFlags = hi ? Math.round((along / 8) * (rows / 12)) : 0;
-    const fm = crowdMaterial('flag');
-    fanMats.push(fm);
-    disposables.push(fm.mat);
-    const flags = new InstancedMesh(flagGeo.clone(), fm.mat, nFlags);
+    const fm = crowdMaterial('flag', crowdU);
+    disposables.push(fm);
+    const flags = new InstancedMesh(flagGeo.clone(), fm, nFlags);
     disposables.push(flags.geometry);
     const poles = new InstancedMesh(poleGeo, keep(new MeshLambertMaterial({ color: '#d9d9d9' })), nFlags);
     const fseeds = new Float32Array(nFlags);
-    const flagCols = [fans.primary, fans.secondary, fans.primary, fans.primary];
+    const fsides = new Float32Array(nFlags);
     for (let i = 0; i < nFlags; i++) {
       const row = Math.floor(r() * rows);
       const x = -along / 2 + 1 + r() * (along - 2);
@@ -839,11 +921,15 @@ export function buildStadium(o: StadiumOptions): Stadium {
       tmpP.y -= 0.6;
       tmpM.compose(tmpP, tmpQ, tmpS);
       poles.setMatrixAt(i, tmpM);
-      crowdColor.set(flagCols[i % flagCols.length]);
+      const team = teamAt(key, x, along);
+      const kit = o.teams[team];
+      crowdColor.set(i % 4 === 1 ? kit.secondary : kit.primary);
       flags.setColorAt(i, tone(crowdColor));
       fseeds[i] = r();
+      fsides[i] = team;
     }
     flags.geometry.setAttribute('aSeed', new InstancedBufferAttribute(fseeds, 1));
+    flags.geometry.setAttribute('aSide', new InstancedBufferAttribute(fsides, 1));
     flags.frustumCulled = false;
     if (nFlags > 0) sg.add(flags, poles);
 
@@ -862,17 +948,12 @@ export function buildStadium(o: StadiumOptions): Stadium {
     }
     stands[key] = sg;
     group.add(sg);
-    return cm;
   };
   const farRows = BIG_PITCH ? 18 : 13;
-  const crowdHome = [buildStand('far', home, farRows, true), buildStand('near', home, farRows - 2, true), buildStand('left', home, farRows - 4, false)];
-  const crowdAway = [buildStand('right', away, farRows - 4, false)];
-  // Map each crowd material to which team it cheers for.
-  const fanSide = new Map<Material, 0 | 1>();
-  for (const c of crowdHome) fanSide.set(c.mat, 0);
-  for (const c of crowdAway) fanSide.set(c.mat, 1);
-  // Flags follow the fans of their stand: materials were pushed fan, flag, fan, flag...
-  for (let i = 0; i < fanMats.length; i += 2) fanSide.set(fanMats[i + 1].mat, fanSide.get(fanMats[i].mat) ?? 0);
+  buildStand('far', home, farRows, true);
+  buildStand('near', home, farRows - 2, true);
+  buildStand('left', home, farRows - 4, false);
+  buildStand('right', away, farRows - 4, false);
 
   // --- floodlight pylons -----------------------------------------------------
   const lattice = keep(latticeTexture());
@@ -889,6 +970,7 @@ export function buildStadium(o: StadiumOptions): Stadium {
       Array.from({ length: 12 }, (_, n) => ({ geo: new PlaneGeometry(1.1, 0.7).translate(-2.2 + Math.floor(n / 3) * 1.47, -1.05 + (n % 3) * 1.05, 0.31) })),
     ),
   );
+  const heads: Group[] = [];
   for (const sxs of [-1, 1]) {
     for (const szs of [-1, 1]) {
       const pg = new Group();
@@ -908,7 +990,25 @@ export function buildStadium(o: StadiumOptions): Stadium {
       headG.add(new Mesh(lampGeo, lampMat));
       pg.add(headG);
       group.add(pg);
+      pg.updateMatrixWorld(true);
+      heads.push(headG);
     }
+  }
+  // A soft bloom in front of each head (one instanced draw), brighter when the stadium erupts. High quality only.
+  let glowMat: MeshBasicMaterial | null = null;
+  if (hi) {
+    const [gc, gg] = canvas(64, 64);
+    const grd = gg.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,248,220,1)');
+    grd.addColorStop(0.35, 'rgba(255,240,200,.35)');
+    grd.addColorStop(1, 'rgba(255,240,200,0)');
+    gg.fillStyle = grd;
+    gg.fillRect(0, 0, 64, 64);
+    glowMat = keep(new MeshBasicMaterial({ map: keep(tex(gc, 1)), transparent: true, opacity: 0.5, blending: AdditiveBlending, depthWrite: false, fog: false, toneMapped: false }));
+    const glow = new InstancedMesh(keep(new PlaneGeometry(1, 1)), glowMat, heads.length);
+    heads.forEach((h, i) => glow.setMatrixAt(i, tmpM.copy(h.matrixWorld).multiply(tmpM2.makeTranslation(0, 0, 0.6).scale(tmpS.set(15, 11, 1)))));
+    glow.frustumCulled = false;
+    group.add(glow);
   }
 
   // --- outside: cars, trees, buildings ---------------------------------------
@@ -1035,11 +1135,17 @@ export function buildStadium(o: StadiumOptions): Stadium {
     stands,
     boards,
     update(dt, time, s) {
-      for (const m of fanMats) {
-        m.uniforms.uTime.value = time;
-        const side = fanSide.get(m.mat) ?? 0;
-        m.uniforms.uExcite.value = clamp01(s.excite[side]);
+      // The fans rise fast and settle slowly; under reduced motion they hold one still pose.
+      const still = !!s.still;
+      for (const side of [0, 1] as const) {
+        const to = still ? 0 : clamp01(s.excite[side]);
+        const now = side ? lit.y : lit.x;
+        const k = still ? 1 : 1 - Math.exp(-dt * (to > now ? 8 : 0.9));
+        lit.setComponent(side, now + (to - now) * k);
       }
+      crowdU.uTime.value = still ? 0 : time;
+      crowdU.uExcite.value.copy(lit);
+      if (glowMat) glowMat.opacity = 0.45 + 0.4 * Math.max(lit.x, lit.y);
       // Nets: ripples and the ball pressing in.
       const BALL_VIS_R = 0.15;
       for (const side of [0, 1] as const) {

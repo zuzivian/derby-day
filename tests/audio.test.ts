@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { crowdLevel, detectSfx, initialSnapshot, snapshot, type SfxEvent } from '../src/client/audio.ts';
+import { SoundEngine, MIX, busOf, crowdNoise, crowdTarget, kickVoice, softClip, uiNotes, crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -237,5 +237,181 @@ describe('crowdLevel', () => {
     expect(box).toBeGreaterThan(mid);
     expect(mid).toBeGreaterThan(0);
     expect(box).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('detectSfx referee calls', () => {
+  const withEvent = (e: Record<string, unknown>) => {
+    const s = liveMatch();
+    s.ball.pos = { x: 30, y: 20 };
+    const prev = snapshot(s);
+    s.events.push({ tick: s.tick, player: 0, team: 0, ...e } as unknown as MatchEvent);
+    return detectSfx(prev, s);
+  };
+  test('cards, offside and penalties get a call cue', () => {
+    expect(withEvent({ kind: 'card', color: 'yellow', name: 'A', secondYellow: false, reason: 'foul' })).toContainEqual({ type: 'call', kind: 'yellow' });
+    expect(withEvent({ kind: 'card', color: 'red', name: 'A', secondYellow: false, reason: 'foul' })).toContainEqual({ type: 'call', kind: 'red' });
+    expect(withEvent({ kind: 'offside', spot: { x: 1, y: 1 } })).toContainEqual({ type: 'call', kind: 'offside' });
+    expect(withEvent({ kind: 'foul', penalty: true, advantage: false, victim: 1, spot: { x: 1, y: 1 }, severity: 'reckless' })).toContainEqual({ type: 'call', kind: 'penalty' });
+  });
+  test('a second yellow sounds once, as the red', () => {
+    const evs = withEvent({ kind: 'card', color: 'yellow', name: 'A', secondYellow: true, reason: 'foul' });
+    expect(evs.filter((e) => e.type === 'call')).toEqual([]);
+  });
+});
+
+describe('UI stingers', () => {
+  test('a win rises through a major arpeggio; a loss is lower and quieter; a draw is level and soft', () => {
+    const win = stingerNotes('win');
+    expect(win.map((n) => n.f)).toEqual([...win.map((n) => n.f)].sort((a, b) => a - b));
+    const peak = (k: 'win' | 'draw' | 'loss' | 'levelup') => Math.max(...stingerNotes(k).map((n) => n.peak));
+    expect(peak('loss')).toBeLessThan(peak('win'));
+    expect(peak('draw')).toBeLessThan(peak('win'));
+    expect(Math.max(...stingerNotes('loss').map((n) => n.f))).toBeLessThan(Math.min(...win.map((n) => n.f)));
+  });
+  test('the level-up run is longer than the win, and every jingle is short', () => {
+    expect(stingerLength('levelup')).toBeGreaterThan(stingerLength('win'));
+    for (const k of ['win', 'draw', 'loss', 'levelup'] as const) expect(stingerLength(k)).toBeLessThan(2);
+  });
+});
+
+describe('atmosphere helpers', () => {
+  const mk = (): MatchState => createMatch({ seed: 5, ...teams(7), halfSeconds: 30, humanTeam: -1 });
+  test('tension: none early or in a rout, building late in a close second half', () => {
+    const s = mk();
+    expect(tension(s)).toBe(0);
+    s.half = 2;
+    s.clock = Math.floor(s.halfTicks * 2 * 0.95);
+    expect(tension(s)).toBeGreaterThan(0.6);
+    s.score = [3, 0];
+    expect(tension(s)).toBe(0);
+  });
+  test('goalMood and resultMood read the human side', () => {
+    const s = mk();
+    s.humans = [true, false];
+    s.score = [1, 1];
+    expect(goalMood(s, 0)).toEqual({ side: 'for', big: true });
+    expect(goalMood(s, 1).side).toBe('against');
+    s.score = [4, 0];
+    expect(goalMood(s, 0).big).toBe(false);
+    expect(resultMood(s)).toBe('win');
+    s.humans = [false, true];
+    expect(resultMood(s)).toBe('loss');
+  });
+});
+
+describe('mix and envelopes', () => {
+  test('every event type has a bus, and the bus gains are sane', () => {
+    const all: SfxEvent['type'][] = ['kick', 'knock', 'tackle', 'goal', 'whistle', 'ooh', 'catch', 'header', 'call'];
+    for (const t of all) expect(Object.keys(MIX)).toContain(busOf(t));
+    expect(busOf('whistle')).toBe('ref');
+    expect(busOf('call')).toBe('ref');
+    expect(busOf('ooh')).toBe('crowd');
+    expect(busOf('kick')).toBe('ball');
+    for (const g of Object.values(MIX)) expect(g).toBeGreaterThan(0);
+    // Menu sounds sit far below everything in the match.
+    for (const k of ['crowd', 'ball', 'ref', 'stinger'] as const) expect(MIX.ui).toBeLessThan(MIX[k] / 3);
+  });
+
+  test('kick voices get louder, higher and crisper with power; shots outweigh passes', () => {
+    for (const kind of ['pass', 'shot'] as const) {
+      const soft = kickVoice(kind, 0);
+      const hard = kickVoice(kind, 1);
+      expect(hard.body).toBeGreaterThan(soft.body);
+      expect(hard.f0).toBeGreaterThan(soft.f0);
+      expect(hard.snap).toBeGreaterThan(soft.snap);
+      expect(soft.crack).toBe(0);
+      expect(hard.crack).toBeGreaterThan(0);
+      // Out-of-range power is clamped, not extrapolated.
+      expect(kickVoice(kind, 5)).toEqual(hard);
+      expect(kickVoice(kind, -1)).toEqual(soft);
+    }
+    expect(kickVoice('shot', 0.5).body).toBeGreaterThan(kickVoice('pass', 0.5).body);
+    for (const p of [0, 0.3, 0.7, 1]) for (const kind of ['pass', 'shot'] as const) {
+      const v = kickVoice(kind, p);
+      expect(v.body + v.snap + v.thud + v.crack).toBeLessThan(1.5);
+    }
+  });
+
+  test('crowd target rises smoothly with intensity and is clamped', () => {
+    let prev = crowdTarget(0);
+    expect(prev.gain).toBeGreaterThan(0);
+    for (let l = 0.05; l <= 1.0001; l += 0.05) {
+      const c = crowdTarget(l);
+      expect(c.gain).toBeGreaterThan(prev.gain);
+      expect(c.band).toBeGreaterThan(prev.band);
+      expect(c.low).toBeGreaterThan(prev.low);
+      prev = c;
+    }
+    expect(crowdTarget(7)).toEqual(crowdTarget(1));
+    expect(crowdTarget(-1)).toEqual(crowdTarget(0));
+  });
+
+  test('soft clip: identity below the knee, monotonic, odd and never reaches full scale', () => {
+    expect(softClip(0.3)).toBe(0.3);
+    expect(softClip(-0.5)).toBe(-0.5);
+    let prev = -Infinity;
+    for (let x = -50; x <= 50; x += 0.01) {
+      const y = softClip(x);
+      expect(y).toBeGreaterThanOrEqual(prev);
+      expect(Math.abs(y)).toBeLessThan(0.99);
+      expect(softClip(-x)).toBeCloseTo(-y, 12);
+      prev = y;
+    }
+    // No jump at the knee.
+    expect(Math.abs(softClip(0.6001) - softClip(0.6))).toBeLessThan(0.001);
+  });
+
+  test('crowd noise loops without a step at the seam', () => {
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const d = new Float32Array(44100);
+    crowdNoise(d, 2048, rnd);
+    let typical = 0;
+    for (let i = 5000; i < 9000; i++) typical = Math.max(typical, Math.abs(d[i] - d[i - 1]));
+    expect(Math.abs(d[0] - d[d.length - 1])).toBeLessThan(typical * 2);
+    expect(Math.max(...d)).toBeLessThan(4);
+  });
+
+  test('UI sounds are short, quiet in-bus, and cover every kind', () => {
+    for (const k of ['press', 'on', 'off', 'ok', 'warn'] as const) {
+      const notes = uiNotes(k);
+      expect(notes.length).toBeGreaterThan(0);
+      for (const n of notes) {
+        expect(n.at + n.dur).toBeLessThan(0.5);
+        expect(n.peak).toBeLessThanOrEqual(0.6);
+        expect(n.wave).toBe('sine');
+      }
+    }
+    // Switching on rises, switching off falls.
+    const up = uiNotes('on');
+    const down = uiNotes('off');
+    expect(up[1].f).toBeGreaterThan(up[0].f);
+    expect(down[1].f).toBeLessThan(down[0].f);
+  });
+});
+
+describe('SoundEngine ui gating', () => {
+  const peek = (e: SoundEngine) => e as unknown as { held: boolean; lastPlayed: Map<string, number> };
+
+  test('a paused match is silent, and leaving it (stopCrowd) lets the menus sound again', () => {
+    const e = new SoundEngine();
+    e.suspend();
+    e.ui('press');
+    expect(peek(e).lastPlayed.size).toBe(0);
+    e.stopCrowd();
+    expect(peek(e).held).toBe(false);
+    e.ui('press');
+    expect(peek(e).lastPlayed.has('ui:press')).toBe(true);
+  });
+
+  test('the 50 ms ui throttle is per kind: a toast cue in the same gesture as a press is not dropped', () => {
+    const e = new SoundEngine();
+    e.ui('press');
+    e.ui('ok');
+    expect([...peek(e).lastPlayed.keys()].sort()).toEqual(['ui:ok', 'ui:press']);
+    const t = peek(e).lastPlayed.get('ui:ok');
+    e.ui('ok'); // same kind inside the window: throttled
+    expect(peek(e).lastPlayed.get('ui:ok')).toBe(t);
   });
 });

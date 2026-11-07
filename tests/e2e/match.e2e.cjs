@@ -70,6 +70,7 @@ test('forfeiting a ranked match records a loss', async (t) => {
   const before = await readSave(page);
   await startRanked(page);
   await page.keyboard.press('Escape');
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.locator(SEL.modal).waitFor();
 
@@ -257,4 +258,23 @@ test('desktop (1280x800, 3D): the radar sits top left under the score, off the n
   expect(r.radar.top >= r.tl.bottom, 'under the score bar').toBe(true);
   expect(r.radar.bottom < r.pitch.top + r.pitch.height / 3, 'in the top third, clear of the near touchline').toBe(true);
   expect(r.radar.right < r.tr.left, 'clear of the Menu column').toBe(true);
+});
+
+test('screen reader: T says the score and clock, Resume is announced, and the HUD tag is not a second live region', async (t) => {
+  const page = await openApp(t, { e2eHook: true, prefs: { halfSeconds: 60, onboarded: true } });
+  await startRanked(page);
+  await page.locator('#pitch').focus();
+  const said = () => page.locator('#sr-announcer').innerText();
+  await page.keyboard.press('t');
+  await page.waitForFunction(() => /Minute \d+, first half/.test(document.getElementById('sr-announcer').textContent));
+  expect(await said(), 'both sides and the score').toMatch(/\w.* 0, .* 0\. Minute \d+, first half\./);
+  expect(await page.locator('#pitch-help').innerText(), 'the key is in the pitch help').toContain('T for the score');
+  expect(await page.locator('.hud-tag').getAttribute('role'), 'advantage and added time are announced once, by the announcer').toBe(null);
+  await page.keyboard.press('Escape');
+  await page.locator(SEL.pause).waitFor({ state: 'visible' });
+  await page.keyboard.press('t');
+  await page.waitForTimeout(200);
+  expect(/Minute \d+, first half\. Minute/.test(await said()), 'T does nothing while paused').toBe(false);
+  await page.locator(SEL.resume).click();
+  await page.waitForFunction(() => document.getElementById('sr-announcer').textContent.includes('Resumed.'));
 });

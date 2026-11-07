@@ -189,8 +189,10 @@ for (const v of TIP_VIEWS) {
     expect(r.tip.x + r.tip.w, 'inside the screen').toBeLessThanOrEqual(r.vw);
     expect(r.tip.h, `the tip is ${Math.round(r.tip.h)} px tall, under 40% of the pitch (${Math.round(r.wrapH)} px)`).toBeLessThan(r.wrapH * 0.4);
     if (v.touch) {
-      expect(r.x.w, '"Got it" is at least 44 px wide').toBeGreaterThanOrEqual(44);
-      expect(r.x.h, '"Got it" is at least 44 px tall').toBeGreaterThanOrEqual(44);
+      // Rounded to 1/100 px: measured while the card's fade-in transform settles, a 44 px box can read 43.99999 (CI saw it).
+      const px = (n) => Math.round(n * 100) / 100;
+      expect(px(r.x.w), '"Got it" is at least 44 px wide').toBeGreaterThanOrEqual(44);
+      expect(px(r.x.h), '"Got it" is at least 44 px tall').toBeGreaterThanOrEqual(44);
       expect(r.tip.x + r.tip.w, 'clear of the HUD column on the right').toBeLessThanOrEqual(r.rightColumn);
     }
     await shot(page, `first-tip-${v.name}`);

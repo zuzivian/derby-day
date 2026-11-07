@@ -44,7 +44,7 @@ export function showGuardScreen(o: GuardViewOptions): () => void {
         <button class="btn primary" id="guard-here" data-action="guard-here">Play here instead</button>
         <button class="btn ghost" id="guard-guest" data-action="guard-guest">Use as a guest tab</button>
       </div>
-      <p class="guard-note muted small" id="guard-note" role="status" aria-live="polite">A guest tab can join a Link match, but nothing it does is saved.</p>
+      <p class="guard-note muted small" id="guard-note" role="status" aria-live="polite">A guest tab can join a two-tab match, but nothing it does is saved.</p>
     </div>
   </div>`;
   const here = root.querySelector<HTMLButtonElement>('#guard-here')!;

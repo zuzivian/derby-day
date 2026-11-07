@@ -2,14 +2,14 @@
    the result dialog, the level-up dialog and the identity pickers. Colours
    come from the tokens in styles.css (--xp-fill, --tier-*), in both themes. */
 
-.level-chip { display: flex; align-items: center; gap: var(--sp-2, 8px); margin-top: 4px; min-width: 0; }
+.level-chip { display: flex; align-items: center; gap: var(--sp-2); margin-top: 4px; min-width: 0; }
 .level-badge {
   appearance: none; flex: none; display: inline-grid; place-items: center; cursor: pointer; position: relative;
   width: 30px; height: 30px; border-radius: 50%; padding: 0;
   border: 3px solid var(--tier, var(--tier-bronze));
   background: radial-gradient(circle at 50% 30%, var(--surface), var(--surface-2));
   color: var(--ink); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tier, var(--tier-bronze)) 30%, transparent), 0 2px 6px rgba(0, 0, 0, .15);
-  font-family: var(--font-display); font-weight: 900; font-size: 15px; line-height: 1; font-variant-numeric: tabular-nums;
+  font-family: var(--font-display); font-weight: 900; font-size: var(--fs-md); line-height: 1; font-variant-numeric: tabular-nums;
 }
 .level-badge:hover { background: var(--surface-2); }
 .level-badge.big { width: 64px; height: 64px; font-size: 30px; border-width: 4px; cursor: default; }
@@ -19,67 +19,71 @@
 .tier-platinum { --tier: var(--tier-platinum); }
 .tier-legend { --tier: var(--tier-legend); box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tier-gold); }
 .xp { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
-.xp-text { font-size: var(--fs-xs, 12px); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.xp-bar { display: block; width: 100%; min-width: 120px; max-width: 220px; height: 7px; border-radius: 99px; background: var(--surface-3, var(--surface-2)); overflow: hidden; }
-.xp-bar span { display: block; height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 70%, var(--ink)), var(--xp-fill)); border-radius: 99px; }
+.xp-text { font-size: var(--fs-xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xp-bar { display: block; width: 100%; min-width: 120px; max-width: 220px; height: 7px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+.xp-bar span { display: block; height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 70%, var(--ink)), var(--xp-fill)); border-radius: var(--r-pill); }
 
 /* Club level panel (Club screen) */
+.level-meter { display: flex; align-items: center; gap: 10px; }
+.level-meter .level-badge { cursor: default; }
+.level-meter .xp-bar { flex: 1; max-width: none; height: 10px; }
+.level-badge.dim { border-color: var(--control-line); box-shadow: none; color: var(--muted); background: transparent; border-style: dashed; }
 .club-grid .level-panel { grid-column: 1 / -1; }
-.level-next { margin: 0; font-size: var(--fs-lg, 17px); font-weight: 700; }
+.level-next { margin: 0; font-size: var(--fs-lg); font-weight: 700; }
 .level-next-label {
-  display: inline-block; margin-right: 6px; padding: 1px 9px; border-radius: 99px; vertical-align: 2px;
-  font-size: var(--fs-2xs, 11px); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; background: var(--ink); color: var(--surface);
+  display: inline-block; margin-right: 6px; padding: 1px 9px; border-radius: var(--r-pill); vertical-align: 2px;
+  font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; background: var(--ink); color: var(--surface);
 }
 .unlock-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.unlock { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: var(--sp-2, 8px) 10px; border-radius: var(--r-md, 10px); background: var(--surface-2); border: 1px solid var(--line); }
+.unlock { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: var(--sp-2) 10px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
 .unlock-level {
   display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%;
   border: 2px dashed var(--control-line); color: var(--muted); font-family: var(--font-display); font-weight: 800; font-variant-numeric: tabular-nums;
 }
 .unlock-done .unlock-level { border-style: solid; border-color: var(--xp-fill); color: var(--ink); background: color-mix(in srgb, var(--xp-fill) 14%, var(--surface)); }
-.unlock-next { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft, var(--surface-2)); }
+.unlock-next { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
 .unlock-next .unlock-level { border-style: solid; border-color: var(--accent); color: var(--ink); }
 .unlock-later { background: transparent; border-style: dashed; }
 .unlock-body { display: flex; flex-direction: column; min-width: 0; }
 .unlock-name { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; }
-.unlock-status { font-size: var(--fs-xs, 12px); font-weight: 800; color: var(--muted); white-space: nowrap; }
+.unlock-status { font-size: var(--fs-xs); font-weight: 800; color: var(--muted); white-space: nowrap; }
 .unlock-done .unlock-status { color: var(--good); }
 .unlock-next .unlock-status { color: var(--accent); }
 .perk-pill { background: var(--muted); color: var(--surface); }
 .unlock-all summary { cursor: pointer; font-weight: 700; padding: 6px 0; }
 .unlock-all summary:hover { color: var(--accent); }
-.unlock-all[open] summary { margin-bottom: var(--sp-2, 8px); }
+.unlock-all[open] summary { margin-bottom: var(--sp-2); }
 
 /* XP card on the result dialog. The bar fills from where the club was to where
    it is; crossing a level it runs to the end, the badge turns over and the
    "Level up" tag pops. Reduced motion shows the end state at once. */
 .xp-card {
   position: relative; overflow: hidden; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 6px 14px;
-  padding: var(--sp-3, 12px) 14px; border-radius: var(--r-md, 10px);
+  padding: var(--sp-3) 14px; border-radius: var(--r-md);
   background: linear-gradient(135deg, color-mix(in srgb, var(--xp-fill) 13%, var(--surface-2)), var(--surface-2) 70%);
   border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line));
 }
-.xp-card .level-badge { width: 50px; height: 50px; font-size: 24px; cursor: default; overflow: hidden; }
+.xp-card .level-badge { width: 50px; height: 50px; font-size: var(--fs-2xl); cursor: default; overflow: hidden; }
 .xp-card .level-badge > span { grid-area: 1 / 1; }
 .xp-card-body { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.xp-gain { margin: 0; font-size: var(--fs-sm, 13px); line-height: 1.35; font-weight: 600; color: var(--muted); }
+.xp-gain { margin: 0; font-size: var(--fs-sm); line-height: 1.35; font-weight: 600; color: var(--muted); }
 .xp-gain .xp-colon { font-size: 0; }
-.xp-gain .xp-parts { display: block; margin-top: 2px; font-size: var(--fs-xs, 12px); }
-.xp-gain b { font-family: var(--font-display); font-weight: 900; font-size: 24px; line-height: 1; letter-spacing: .02em; color: var(--good); }
+.xp-gain .xp-parts { display: block; margin-top: 2px; font-size: var(--fs-xs); }
+.xp-gain b { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-2xl); line-height: 1; letter-spacing: .02em; color: var(--good); }
 .xp-card.is-empty { background: var(--surface-2); border-color: var(--line); }
 .xp-card.is-empty .level-badge { opacity: .7; }
-.xp-card.is-empty .xp-gain { font-size: var(--fs-md, 15px); color: var(--ink); font-weight: 700; }
-.xp-card-track { display: block; height: 10px; border-radius: 99px; background: var(--surface-3, var(--surface)); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .12); overflow: hidden; }
+.xp-card.is-empty .xp-gain { font-size: var(--fs-md); color: var(--ink); font-weight: 700; }
+.xp-card-track { display: block; height: 10px; border-radius: var(--r-pill); background: var(--surface-3); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .12); overflow: hidden; }
 .xp-card-fill {
-  display: block; height: 100%; width: var(--xp-to); border-radius: 99px;
+  display: block; height: 100%; width: var(--xp-to); border-radius: var(--r-pill);
   background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 75%, var(--ink)), var(--xp-fill) 70%, color-mix(in srgb, var(--xp-fill) 55%, #fff));
-  animation: xp-fill 1s .45s var(--ease-out, ease-out) both;
+  animation: xp-fill 1s .45s var(--ease-out) both;
 }
-.xp-card-level { margin: 0; font-size: var(--fs-xs, 12px); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
+.xp-card-level { margin: 0; font-size: var(--fs-xs); font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 @keyframes xp-fill { from { width: var(--xp-from); } }
 /* Everything in the card waits (held at its first frame) until screenFx.ts sees the card on screen. */
 .xp-card:not(.is-visible) *, .xp-card:not(.is-visible)::after, .xp-card:not(.is-visible) .level-badge { animation-play-state: paused; }
-.is-levelup .xp-card-fill { animation: xp-fill-up 1.7s .45s var(--ease-out, ease-out) both; }
+.is-levelup .xp-card-fill { animation: xp-fill-up 1.7s .45s var(--ease-out) both; }
 @keyframes xp-fill-up {
   0% { width: var(--xp-from); }
   48% { width: 100%; }
@@ -89,15 +93,15 @@
   100% { width: var(--xp-to); }
 }
 .xp-lv-old { animation: lv-out .3s 1.2s ease-in both; }
-.xp-lv-new { animation: lv-in .5s 1.3s var(--ease-spring, ease-out) both; }
+.xp-lv-new { animation: lv-in .5s 1.3s var(--ease-spring) both; }
 @keyframes lv-out { to { transform: translateY(-140%); opacity: 0; } }
 @keyframes lv-in { from { transform: translateY(140%); opacity: 0; } }
 .xp-card.is-levelup .level-badge { animation: lv-ring .9s 1.3s ease-out both; }
 @keyframes lv-ring { 0% { box-shadow: 0 0 0 0 rgba(255, 214, 10, .7); } 100% { box-shadow: 0 0 0 14px rgba(255, 214, 10, 0); } }
-.xp-level { grid-column: 1 / -1; margin: 2px 0 0; display: flex; align-items: center; gap: var(--sp-2, 8px); animation: lv-pop .55s 1.35s var(--ease-spring, ease-out) both; }
+.xp-level { grid-column: 1 / -1; margin: 2px 0 0; display: flex; align-items: center; gap: var(--sp-2); animation: lv-pop .55s 1.35s var(--ease-spring) both; }
 .xp-level-tag {
   font-family: var(--font-display); font-weight: 900; font-size: 16px; line-height: 1; letter-spacing: .1em; text-transform: uppercase;
-  padding: 6px 12px; border-radius: 99px; background: linear-gradient(135deg, #ffe680, #f5b800); color: #2a1d00; box-shadow: 0 4px 14px -4px rgba(245, 184, 0, .7);
+  padding: 6px 12px; border-radius: var(--r-pill); background: linear-gradient(135deg, #ffe680, #f5b800); color: #2a1d00; box-shadow: 0 4px 14px -4px rgba(245, 184, 0, .7);
 }
 .xp-level-nums { font-weight: 800; font-variant-numeric: tabular-nums; color: var(--ink); }
 @keyframes lv-pop { from { transform: scale(.6); opacity: 0; } }
@@ -109,10 +113,10 @@
 @keyframes xp-shine { to { transform: translateX(110%); } }
 
 /* Level-up dialog: a gold burst over the badge, then what just opened. */
-.levelup-card { width: min(480px, 100%); padding: 0; gap: 0; overflow: hidden; text-align: center; }
+.levelup-card { width: min(480px, 100%); padding: 0; gap: 0; overflow: clip; text-align: center; }
 .levelup-hero {
   position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 26px var(--sp-6, 24px) 22px; color: #fff8e1;
+  padding: 26px var(--sp-6) 22px; color: #fff8e1;
   background: radial-gradient(90% 110% at 50% 0%, #6b5410 0%, #2c2408 55%, #15120a 100%);
 }
 .levelup-rays {
@@ -122,23 +126,62 @@
   animation: lv-spin 40s linear infinite;
 }
 @keyframes lv-spin { to { transform: rotate(360deg); } }
-.levelup-eyebrow { font-size: var(--fs-xs, 12px); font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #ffd60a; }
-.levelup-hero .level-badge { color: var(--ink); box-shadow: 0 0 0 6px rgba(255, 214, 10, .18), 0 10px 30px -6px rgba(0, 0, 0, .6); animation: lv-pop .6s .1s var(--ease-spring, ease-out) both; }
-.levelup-title { font-size: var(--fs-4xl, 44px); font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
-.levelup-body { display: flex; flex-direction: column; gap: 14px; padding: 20px var(--sp-6, 24px) var(--sp-6, 24px); text-align: left; }
-.levelup-lede { margin: 0; font-weight: 700; font-size: var(--fs-lg, 17px); text-align: center; }
+.levelup-eyebrow { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .2em; text-transform: uppercase; color: #ffd60a; }
+.levelup-hero .level-badge { color: var(--ink); box-shadow: 0 0 0 6px rgba(255, 214, 10, .18), 0 10px 30px -6px rgba(0, 0, 0, .6); animation: lv-pop .6s .1s var(--ease-spring) both; }
+.levelup-title { font-size: var(--fs-4xl); font-weight: 900; text-transform: uppercase; letter-spacing: .05em; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, .35); }
+.levelup-body { display: flex; flex-direction: column; gap: 14px; padding: 20px var(--sp-6) var(--sp-6); text-align: left; }
+.levelup-lede { margin: 0; font-weight: 700; font-size: var(--fs-lg); text-align: center; }
 .levelup-list .unlock { grid-template-columns: 34px minmax(0, 1fr) auto; }
 .new-pill { background: var(--xp-fill); color: var(--on-status); }
-.levelup-next { margin: 0; font-size: var(--fs-sm, 13px); color: var(--muted); }
-.levelup-actions { display: flex; flex-direction: column; gap: var(--sp-2, 8px); }
+.levelup-next { margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+.levelup-actions { display: flex; flex-direction: column; gap: var(--sp-2); }
+/* Short screens: the buttons stay in reach whatever the unlock list does. */
+@media (max-height: 760px) {
+  .levelup-actions { position: sticky; bottom: calc(-1 * max(var(--sp-4), env(safe-area-inset-bottom, 0px))); z-index: 2; margin: 0 -20px calc(-1 * var(--sp-4)); padding: var(--sp-3) 20px var(--sp-4); background: var(--surface); border-top: 1px solid var(--line); }
+  .levelup-hero { padding: 14px var(--sp-4) 14px; gap: 4px; display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'badge eyebrow' 'badge title'; justify-items: start; align-items: center; column-gap: 14px; text-align: left; }
+  .levelup-hero .level-badge { grid-area: badge; width: 56px; height: 56px; font-size: 26px; }
+  .levelup-eyebrow { grid-area: eyebrow; align-self: end; }
+  .levelup-title { grid-area: title; align-self: start; font-size: 30px; line-height: 1; }
+  .levelup-rays { width: 360px; height: 360px; margin: -180px 0 0 -180px; left: 40px; top: 50%; }
+  .levelup-body { padding-bottom: var(--sp-4); gap: 10px; }
+  .levelup-list .unlock { padding-top: 8px; padding-bottom: 8px; }
+}
 .levelup-actions .btn { width: 100%; }
+/* The new things arrive one after another, then the buttons. */
+.levelup-list .unlock { animation: lv-pop .45s var(--ease-spring) both; }
+.levelup-list .unlock:nth-child(1) { animation-delay: .35s; }
+.levelup-list .unlock:nth-child(2) { animation-delay: .5s; }
+.levelup-list .unlock:nth-child(3) { animation-delay: .65s; }
+.levelup-list .unlock:nth-child(n+4) { animation-delay: .8s; }
 
-/* Crest and kit pickers (Club news) */
-.identity-row { display: flex; flex-wrap: wrap; gap: var(--sp-2, 8px) var(--sp-4, 16px); align-items: center; padding-top: var(--sp-3, 12px); border-top: 1px solid var(--line); }
-.identity-field { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); color: var(--muted); font-size: 14px; font-weight: 600; }
+/* Club identity editor */
+.identity-editor, .identity-set { border: 0; margin: 0; padding: 0; min-width: 0; }
+.identity-editor { display: grid; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.identity-editor > legend { padding: 0; margin-bottom: var(--sp-2); }
+.identity-set > legend { padding: 0; margin-bottom: 6px; color: var(--ink); font-size: 14px; font-weight: 700; }
+.identity-set .muted { margin: 6px 0 0; }
+.identity-preview { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
+.identity-preview .crest { flex: none; color: var(--ink); }
+.identity-meta { display: grid; gap: 4px; min-width: 0; }
+.identity-saved { font-size: 13px; color: var(--muted); }
+.identity-preview.fresh { border-color: var(--good); animation: id-pop .5s ease-out; }
+.identity-preview.fresh .identity-saved { color: var(--good); font-weight: 700; }
+@keyframes id-pop { 0% { transform: scale(.97); } 60% { transform: scale(1.015); } }
+.crest-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.crest-opt { display: grid; justify-items: center; gap: 2px; padding: 8px 4px 6px; min-height: 44px; border: 2px solid var(--line); border-radius: var(--r-md); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.crest-opt .crest { color: var(--ink); }
+.crest-opt:has(:checked) { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.crest-opt:has(:focus-visible), .sw:has(:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.sw { position: relative; display: grid; place-items: center; min-height: 44px; cursor: pointer; }
+.sw-chip { --r: inset 0 0 0 1px #8888; width: 34px; height: 34px; border-radius: 50%; background: var(--c); box-shadow: var(--r); }
+.sw:has(:checked) .sw-chip { box-shadow: var(--r), 0 0 0 3px var(--surface), 0 0 0 5px var(--ink); }
+.sw:has(:checked)::after { content: "✓"; position: absolute; color: #fff; font-weight: 800; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.sw:has(:disabled) .sw-chip { opacity: .3; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .identity-preview.fresh { animation: none; } }
 
 /* Onboarding: the level note on the last step */
-.ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3, 12px) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md, 10px); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
+.ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
 .ob-level p { margin: 0; }
 
 @media (max-width: 640px) {
@@ -147,7 +190,20 @@
   .unlock-status { grid-column: 2; }
   .levelup-list .unlock { grid-template-columns: 30px minmax(0, 1fr) auto; }
   .levelup-title { font-size: 36px; }
-  .levelup-body { padding: var(--sp-4, 16px) 20px 20px; }
-  .xp-card { padding: 10px var(--sp-3, 12px); gap: 6px var(--sp-3, 12px); }
-  .xp-card .level-badge { width: 44px; height: 44px; font-size: 20px; }
+  .levelup-body { padding: var(--sp-4) 20px 20px; }
+  .xp-card { padding: 10px var(--sp-3); gap: 6px var(--sp-3); }
+  .xp-card .level-badge { width: 44px; height: 44px; font-size: var(--fs-xl); }
 }
+.xp-card-next { margin: 2px 0 0; font-size: var(--fs-xs); color: var(--muted); }
+
+/* Forced colors (#507): the XP bars are gradient fills on a background track. */
+@media (forced-colors: active) {
+  .xp-bar, .xp-card-track { border: 1px solid CanvasText; }
+  .xp-bar span, .xp-card-fill { background: Highlight; forced-color-adjust: none; }
+}
+
+/* Danger zone */
+.danger-zone { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: var(--r-md); background: color-mix(in srgb, var(--bad) 6%, var(--surface)); }
+.danger-zone h3 { margin: 0; color: var(--bad); }
+.danger-zone p { margin: 0; }
+.dz-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

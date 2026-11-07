@@ -27,6 +27,7 @@ test('cup: forfeiting a quarter-final knocks you out, the rest simulates, Elo dr
   await page.waitForSelector(SEL.pitch);
   await page.keyboard.press('Escape');
   expect(await page.locator(SEL.forfeit).innerText(), 'forfeit warns about the score').toMatch(/0–3/);
+  await page.locator(SEL.forfeit).click(); // arm; the second press confirms
   await page.locator(SEL.forfeit).click();
   await page.locator(SEL.modal).waitFor();
   expect(await page.locator(SEL.modal).innerText(), 'result names the round').toMatch(/quarter-final/i);

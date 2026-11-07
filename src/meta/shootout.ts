@@ -159,6 +159,20 @@ export function recordKick(s: Shootout, side: 0 | 1, taker: string, outcome: Kic
   return rec;
 }
 
+/** What the coming kick means for its taker: does a goal win it outright, and does a miss lose it outright? (Pure read.) */
+export function kickStakes(s: Shootout): { scoreWins: boolean; missLoses: boolean } {
+  const turn = nextTurn(s);
+  if (!turn) return { scoreWins: false, missLoses: false };
+  const decided = (scored: boolean) => {
+    const c: Shootout = { ...s, score: [...s.score] as [number, number], taken: [...s.taken] as [number, number], done: false, winner: null };
+    c.taken[turn.side]++;
+    if (scored) c.score[turn.side]++;
+    settle(c);
+    return c.done ? c.winner : null;
+  };
+  return { scoreWins: decided(true) === turn.side, missLoses: decided(false) === 1 - turn.side };
+}
+
 export interface KickPlan {
   turn: Turn;
   /** What a CPU taker would do. Used when the taker is a CPU. */

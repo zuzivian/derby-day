@@ -1,4 +1,4 @@
-import { autoLineup, generateSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { autoLineup, generateSquad, teamStrength, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
 import { ensureSkill, learnSkill, opponentSetup } from '../meta/skill.ts';
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
@@ -13,10 +13,10 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import type { Role } from '../sim/constants.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { competitionAction, competitionsScreen } from './competitions.ts';
-import { announce, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
+import { announce, autoFocus, reducedMotion, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
-import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
+import { flagIdentitySaved, levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
 import { avoidClash } from './kits.ts';
 import { mountMatch } from './matchView.ts';
@@ -29,16 +29,18 @@ import { isBenign } from './errors.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
-import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
+import { acknowledge, hintHtml, markHtml, openTabs, pendingHint, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { openSettings } from './settings.ts';
+import { getSound } from './audio.ts';
 import { telemetry } from './telemetry.ts';
 import { clubLevel } from '../meta/levels.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
-import { clubScreen, ladderScreen, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { introLine } from './stakes.ts';
+import { fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -84,11 +86,14 @@ else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
 // A first match already recorded means setup is over, whatever the flag says (a reload on the celebration screen).
 if (existing && app.prefs.onboarded === false && app.save.history.length > 0) app.prefs.onboarded = true;
 writePrefs(app.prefs);
-let saved = writeSaveResult(app.save) !== 'blocked';
+const bootWrite = writeSaveResult(app.save);
+let saved = bootWrite !== 'blocked' && bootWrite !== 'quota';
 /** True while a match, setup or the training ground owns #app. */
 let takeover = false;
 /** Where focus goes after the next render, when it isn't simply "where it was". */
 let pendingFocus: FocusKey | null = null;
+/** Selectors that get a one-shot flash class after the next render (a trained stat row, the money chip). */
+let flash: string[] | null = null;
 /** The control that started the last match, to return focus to after the result dialog. */
 let matchOrigin: FocusKey | null = null;
 /** Where focus goes back to when the level-up dialog closes. */
@@ -98,9 +103,12 @@ let lastBuyAt = -Infinity;
 
 const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0 });
 
+// A problem stays up long enough to read and act on; a confirmation does not need to.
 function toast(text: string, ok = true) {
-  showToast(text, ok);
+  showToast(text, ok, ok ? undefined : 9000);
 }
+const BLOCKED_MSG = 'This browser blocked storage, so progress will be lost when you close the tab. You can still play.';
+const QUOTA_MSG = 'This browser is out of storage space, so your latest progress is not saved. Free some space, or back up your club (Club, then Back up or restore).';
 
 // A crash mid-match (errors.ts draws its panel) marks the match, so the reload that follows voids it instead of
 // counting it as a forfeit (pending.ts, at most once in VOID_EVERY matches).
@@ -124,8 +132,8 @@ function persist() {
   app.nextOpp = offeredOpponent(app.save);
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
-  if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
-  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is NOT saved. Free some space, or back up your club in Club > Back up.', false);
+  if (r === 'blocked') toast(BLOCKED_MSG, false);
+  else if (r === 'quota') toast(QUOTA_MSG, false);
   telemetry.level(clubLevel(app.save));
 }
 
@@ -146,21 +154,44 @@ function render() {
   const hadResult = !!root.querySelector('#result-title');
   const hadReview = !!root.querySelector('#review-title');
   const hadLevelUp = !!root.querySelector('#levelup-title');
+  const modalId = root.querySelector('.modal [id$="-title"]')?.id;
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   beforeRender(root);
   root.innerHTML = shell(app, screens[app.screen](app));
+  // The same dialog as before this render: no second entrance (styles.css .modal.seen).
+  if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');
+  // A short entry fade only when the section changed, not on in-screen actions (Sell, Sign, Train).
+  const entered = root.dataset.shown !== app.screen;
+  if (entered) root.querySelector('#panel')?.classList.add('enter');
+  root.dataset.shown = app.screen;
+  // A new section opens at its title: the page isn't left at the last screen's scroll (a short page clamps it to a few px,
+  // clipping the heading). Before focus is restored, so a focus target further down still scrolls itself into view.
+  if (entered && app.screen !== 'ladder') window.scrollTo(0, 0);
+  // The ladder opens on your own row (on entry only, so a re-render never moves the page).
+  if (entered && app.screen === 'ladder') root.querySelector('tr.you')?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+  if (flash) {
+    for (const sel of flash) root.querySelector(sel)?.classList.add('flash');
+    flash = null;
+  }
   const levelUp = !app.result && levelUpOpen(app.save);
   syncMark(!app.result && !levelUp && !reviewOpen(app.save));
   // The scrolling part of the result takes focus (it is labelled by the title), so the arrow and Page keys scroll it at once.
-  if (app.result && !hadResult) root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
-  else if (levelUp && !hadLevelUp) {
+  if (app.result && !hadResult) {
+    root.querySelector<HTMLElement>('.modal .rs-scroll')?.focus();
+    // Reward jingle: a win, a softer one for a draw, a low gentle one for a loss; nothing when the match was forfeited or abandoned.
+    const outcome = root.querySelector<HTMLElement>('.result-card')?.dataset.outcome;
+    if (!app.result.abandoned && !app.result.forfeited && (outcome === 'win' || outcome === 'draw' || outcome === 'loss')) getSound().stinger(outcome === 'win' && app.result.headline ? 'cup' : outcome);
+  } else if (levelUp && !hadLevelUp) {
+    getSound().stinger('levelup');
     levelOrigin = key;
     root.querySelector<HTMLElement>('#levelup-title')?.focus();
     announce(levelUpAnnouncement(app.save));
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
   afterRender(root);
+  if (revealMark) placeMark(root, true);
+  revealMark = false;
 }
 
 /**
@@ -170,29 +201,47 @@ function render() {
  * into view only when it first appears (never on scroll), and is announced once per mark, not once per render.
  */
 let spokenMark: string | null = null;
+let revealMark = false;
 function syncMark(clear: boolean) {
   const marks = app.prefs.marks;
   if (!marks || !clear) return;
   if (acknowledge(marks, app.screen)) writePrefs(app.prefs);
-  const mark = pendingMark(app.save, marks, app.screen);
+  syncHint(marks);
+  // Only on Home: its card would cover the top of whichever screen a level-up just sent you to.
+  const mark = app.screen === 'home' ? pendingMark(app.save, marks, app.screen) : null;
   if (!mark) {
     spokenMark = null;
     return;
   }
   root.querySelector('.tabs')?.insertAdjacentHTML('afterend', markHtml(mark));
   const first = spokenMark !== mark.screen;
-  placeMark(root, first);
+  placeMark(root, false);
+  // Scrolling the tab bar to it waits until afterRender has put the bar's old scroll position back (see render).
+  revealMark = first;
   if (first) {
     spokenMark = mark.screen;
     announce(`${mark.title}. ${mark.text}`);
   }
+}
+/** First visit to a revealed tab: its hint stays on screen for the whole visit and counts as read when you leave or press Got it. */
+let hintOn: string | null = null;
+function syncHint(marks: string[]) {
+  if (hintOn && hintOn !== app.screen) {
+    if (!marks.includes(`hint:${hintOn}`)) marks.push(`hint:${hintOn}`);
+    writePrefs(app.prefs);
+    hintOn = null;
+  }
+  const text = pendingHint(marks, app.screen, clubLevel(app.save));
+  if (!text) return;
+  hintOn = app.screen;
+  root.querySelector('#panel, main')?.insertAdjacentHTML('afterbegin', hintHtml(app.screen, text));
 }
 window.addEventListener('resize', () => placeMark(root, false));
 window.addEventListener('scroll', () => placeMark(root, false), { passive: true });
 
 /** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
 function focusMain(keepScroll = false) {
-  root.querySelector<HTMLElement>('#main')?.focus({ preventScroll: keepScroll });
+  autoFocus(root.querySelector<HTMLElement>('#main'), { preventScroll: keepScroll });
   if (keepScroll) window.scrollTo({ top: 0 });
 }
 
@@ -245,6 +294,7 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
     persist();
     writePrefs(app.prefs);
     takeover = true;
+    if (gf > ga) getSound().stinger('win');
     const stop = mountAfterMatch(root, {
       save: s,
       opp: opp.id,
@@ -286,7 +336,7 @@ function tutorialXp(): string {
 function startTraining() {
   const s = app.save;
   if (!lineupReady(s)) {
-    toast('Pick a full XI first.', false);
+    toast('Pick a full XI in Squad first.', false);
     return;
   }
   takeover = true;
@@ -296,9 +346,11 @@ function startTraining() {
     home: clubTeam(s, 0.6),
     controls: app.prefs.controls,
     headingLevel: 1,
-    onDone: (completed) => {
+    offerMatch: true,
+    onDone: (completed, next) => {
       stop();
       takeover = false;
+      if (next === 'match') app.screen = 'home';
       pendingFocus = keyFor({ action: 'replay-tutorial' });
       const xp = completed ? tutorialXp() : '';
       render();
@@ -327,9 +379,11 @@ function playLive(
 ): boolean {
   const s = app.save;
   if (!lineupReady(s)) {
-    toast('Pick a full XI first.', false);
+    toast('Pick a full XI in Squad first.', false);
     return false;
   }
+  const rival = pending && s.ladder.find((c) => c.id === pending.opponentId);
+  const intro = rival ? introLine(s, rival) : undefined; // before beginMatch: this match is not yet a meeting
   if (pending) {
     beginMatch(s, pending);
     persist();
@@ -349,6 +403,7 @@ function playLive(
     humanTeam: 0,
     crests: [s.club.crest, crest],
     label,
+    intro,
     forfeitText,
     controls: app.prefs.controls,
     // The input mode the player settled on becomes their preference (the first-run flow no longer asks).
@@ -416,6 +471,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
     save: app.save,
     prefs: app.prefs,
     avoidClash,
+    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp })),
     onDone: (result) => {
       stop();
       takeover = false;
@@ -436,11 +492,13 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
   const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
+  const rankBefore = rankOf(s);
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, warmup, forfeited, practice);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
+    label: warmup,
     forfeited,
     gf,
     ga,
@@ -452,6 +510,8 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     possession: possessionShare(m),
     scorersFor,
     scorersAgainst,
+    rankBefore,
+    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
   persist();
@@ -462,9 +522,51 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
 // ---------------------------------------------------------------------------
 // Events
 
+/** True from a Kick off tap until the match has been mounted, so a second tap cannot start a second one. */
+let launching = false;
+
+/**
+ * Building a match takes a few hundred ms of uninterrupted work (players, shaders, a first draw), so the tap
+ * is acknowledged first: the button shows it is busy (aria-busy plus a label change, announced politely) and
+ * two frames are allowed to paint before the build starts.
+ */
+function launch(btn: HTMLElement, start: () => void) {
+  if (launching) return;
+  launching = true;
+  const label = btn.querySelector('span');
+  const was = label?.textContent ?? '';
+  btn.classList.add('busy');
+  btn.setAttribute('aria-busy', 'true');
+  if (label && btn.classList.contains('kickoff')) label.textContent = 'Getting ready\u2026';
+  announce('Getting the match ready.');
+  const frames = new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  const cap = new Promise<void>((r) => setTimeout(r, 250)); // a hidden tab never fires frames
+  void Promise.race([frames, cap]).then(() => {
+    try {
+      start();
+    } finally {
+      launching = false;
+      if (btn.isConnected) {
+        btn.classList.remove('busy');
+        btn.removeAttribute('aria-busy');
+        if (label) label.textContent = was;
+      }
+    }
+  });
+}
+
+// Quiet tick for switches and pickers (settings, pause menu, forms); mute and volume apply.
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement)) return;
+  if (t.type === 'checkbox') getSound().ui(t.checked ? 'on' : 'off');
+  else if (t.type === 'radio' || t.type === 'range') getSound().ui('press');
+});
+
 root.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
-  if (!el || takeover) return;
+  if (!el || takeover || launching) return;
+  getSound().ui('press');
   const s = app.save;
   const id = el.dataset.id ?? '';
   const action = el.dataset.action;
@@ -518,6 +620,14 @@ root.addEventListener('click', (e) => {
       } else pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     }
+    case 'hint-ok':
+      if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(`hint:${el.dataset.screen}`)) {
+        app.prefs.marks.push(`hint:${el.dataset.screen}`);
+        writePrefs(app.prefs);
+      }
+      hintOn = null;
+      pendingFocus = { elId: `tab-${el.dataset.screen}`, data: {}, index: 0 };
+      break;
     case 'mark-ok':
       if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(el.dataset.screen)) {
         app.prefs.marks.push(el.dataset.screen);
@@ -529,14 +639,14 @@ root.addEventListener('click', (e) => {
       startTraining();
       return;
     case 'play-ranked':
-      if (isUnlocked(s, 'ranked')) startMatch(true, app.nextOpp);
+      if (isUnlocked(s, 'ranked')) launch(el, () => startMatch(true, app.nextOpp));
       return;
     case 'play-warmup':
-      startWarmup();
+      launch(el, startWarmup);
       return;
     case 'play-practice': {
       const level = PRACTICE.find((p) => p.id === el.dataset.level);
-      if (level && practiceUnlocked(s, level.id)) startMatch(false, null, level);
+      if (level && practiceUnlocked(s, level.id)) launch(el, () => startMatch(false, null, level));
       return;
     }
     case 'play-local2p':
@@ -549,21 +659,35 @@ root.addEventListener('click', (e) => {
       if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
       return;
     case 'auto-lineup':
-      s.lineup = autoLineup(s.squad, s.formation);
-      toast('Best XI picked.');
+      {
+        const before = teamStrength(s.squad, s.lineup, s.formation);
+        s.lineup = autoLineup(s.squad, s.formation);
+        const after = teamStrength(s.squad, s.lineup, s.formation);
+        toast(after === before ? 'Best XI picked. Already your strongest.' : after > before ? `Best XI picked. XI strength ${before} → ${after}.` : `XI picked by natural positions. XI strength ${before} → ${after}.`);
+      }
       persist();
       break;
     case 'market-role':
       app.marketRole = el.dataset.role as Role | 'ALL';
+      {
+        const n = s.market.filter((p) => app.marketRole === 'ALL' || p.role === app.marketRole).length;
+        announce(`Showing ${n} ${app.marketRole === 'ALL' ? '' : app.marketRole + ' '}player${n === 1 ? '' : 's'}.`);
+      }
       break;
     case 'buy': {
       // The table re-renders after a signing, so a double-click would land on the
       // next row's Sign button and buy a second player by accident.
       if (performance.now() - lastBuyAt < 500) return;
       lastBuyAt = performance.now();
+      const bp = s.market.find((x) => x.id === id);
+      const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.message, r.ok);
-      if (r.ok) persist();
+      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put him in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      if (r.ok) {
+        persist();
+        getSound().stinger('train');
+        flash = ['.stat.money', '.tab[data-screen="squad"]'];
+      }
       break;
     }
     case 'sell':
@@ -581,17 +705,24 @@ root.addEventListener('click', (e) => {
       queueReveal('.panel.trainee');
       break;
     case 'train': {
+      app.trainee = id; // keep this player selected, rather than the fallback re-picking after his gain
       const r = train(s, id, el.dataset.attr as AttrKey);
       toast(r.message, r.ok);
-      if (r.ok) persist();
+      if (r.ok) {
+        persist();
+        getSound().stinger('train');
+        flash = [`li:has([data-action="train"][data-id="${id}"][data-attr="${el.dataset.attr}"])`, '.stat.sessions'];
+      }
       break;
     }
     case 'reroll':
       rerollIdentity(s);
       persist();
+      toast(`Now ${s.club.name}.`);
       break;
     case 'reset':
       app.confirmReset = true;
+      announce('Delete this club and start over? Keep it is selected; choose Delete to confirm.');
       break;
     case 'reset-confirm':
       clearSave();
@@ -605,6 +736,17 @@ root.addEventListener('click', (e) => {
       break;
     case 'reset-cancel':
       break;
+    case 'rematch': {
+      const again = app.result?.again;
+      app.result = null;
+      if (again) {
+        const origin = matchOrigin; // the new match would otherwise return focus to this (removed) Rematch button
+        again.run();
+        if (origin) matchOrigin = origin;
+        return;
+      }
+      break;
+    }
     case 'close-result':
       app.result = null;
       pendingFocus = matchOrigin ?? keyFor({ action: 'play-ranked' });
@@ -618,25 +760,37 @@ root.addEventListener('click', (e) => {
 root.addEventListener('change', (e) => {
   const el = e.target as HTMLSelectElement;
   if (el.dataset.change === 'slot') {
+    const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
+    const af = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
+    toast(af === b4 ? 'Lineup changed.' : `Lineup changed. XI strength ${b4} → ${af}.`);
     persist();
     render();
   } else if (el.dataset.change === 'formation') {
+    const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setFormation(app.save, el.value as FormationId);
     persist();
+    announce(`Formation ${el.value}. Best XI re-picked. XI strength ${b4} to ${teamStrength(app.save.squad, app.save.lineup, app.save.formation)}.`);
     render();
   } else if (el.dataset.change === 'mentality') {
     setMentality(app.save, el.value as Mentality);
     persist();
     render();
   } else if (el.dataset.change === 'crest') {
-    if (setCrest(app.save, el.value as CrestPattern)) persist();
+    if (setCrest(app.save, el.value as CrestPattern)) {
+      persist();
+      flagIdentitySaved();
+      toast(`Crest saved: ${el.value}.`);
+    }
     render();
   } else if (el.dataset.change === 'kit-primary' || el.dataset.change === 'kit-secondary') {
     const c = app.save.club;
     const [primary, secondary] = el.dataset.change === 'kit-primary' ? [el.value, c.secondary] : [c.primary, el.value];
-    if (setKit(app.save, primary, secondary)) persist();
-    else toast('Pick two different colours.', false);
+    if (setKit(app.save, primary, secondary)) {
+      persist();
+      flagIdentitySaved();
+      toast(`${el.dataset.change === 'kit-primary' ? 'Kit' : 'Trim'} colour saved.`);
+    } else toast('Pick two different colours.', false);
     render();
   }
 });
@@ -676,6 +830,14 @@ root.addEventListener('submit', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
+  // Esc backs out of "Delete this club?" (the safe choice).
+  if (!takeover && e.key === 'Escape' && app.confirmReset && root.querySelector('[data-action="reset-cancel"]')) {
+    e.preventDefault();
+    app.confirmReset = false;
+    pendingFocus = keyFor({ action: 'reset' });
+    render();
+    return;
+  }
   // Esc dismisses a tab mark (it counts as seen), when no dialog is open.
   const markEl = root.querySelector<HTMLElement>('.tab-mark');
   if (!takeover && e.key === 'Escape' && markEl && !root.querySelector('.modal') && app.prefs.marks) {
@@ -738,7 +900,7 @@ function openInvite(): boolean {
   if (!code || app.prefs.onboarded === false) return false;
   dropInvite();
   if (!isUnlocked(app.save, 'link')) {
-    toast(`A friend invited you to an online friendly, but vs Player opens at club level ${unlockLevel(app.save, 'link')}. Ask them for a new link once you're there.`, false);
+    toast(`A friend invited you to an online friendly. vs Player opens at club level ${unlockLevel(app.save, 'link')}, so ask them for a new link then.`, false);
     return false;
   }
   startVersus((r, o) => mountOnline(r, { ...o, joinCode: code }));
@@ -750,7 +912,7 @@ if (app.prefs.onboarded === false) {
   if (pendingJoin) toast('A friend invited you to an online friendly. Play your first match, then you will join them.');
 } else if (!openInvite()) render();
 if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
-else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
-else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club > Back up or restore).', false);
-else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload to update. This tab will not overwrite it.', false);
+else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The old save is kept in this browser, and a backup file can bring that club back (Club, then Back up or restore).', false);
+else if (!saved) toast(bootWrite === 'quota' ? QUOTA_MSG : BLOCKED_MSG, false);
 else if (abandoned) toast(abandoned, false);

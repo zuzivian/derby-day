@@ -7,6 +7,7 @@ import {
   cpuKeeperDive,
   cpuTakerAim,
   finalScore,
+  kickStakes,
   forfeitShootout,
   marks,
   nextTurn,
@@ -332,5 +333,39 @@ describe('cup integration', () => {
     const t = cup.rounds[0].find((x) => x.a === s.club.id || x.b === s.club.id)!;
     expect(t.pens).toBeUndefined();
     expect(t.winner).toBe(s.club.id);
+  });
+});
+
+describe('kickStakes', () => {
+  const side = (n: string) => ({ name: n, takers: Array.from({ length: 6 }, (_, i) => ({ name: `${n}${i}`, shooting: 0.5 })), keeper: { name: `${n}K`, goalkeeping: 0.5 } });
+  const run = (seq: [0 | 1, boolean][]) => {
+    const s = createShootout(7, side('A'), side('B'));
+    for (const [sd, g] of seq) recordKick(s, sd, 'x', g ? 'goal' : 'saved');
+    return s;
+  };
+  test('a fresh shootout has nothing decisive', () => {
+    expect(kickStakes(run([]))).toEqual({ scoreWins: false, missLoses: false });
+  });
+  test('the second taker of the fifth round must score when level on a deficit', () => {
+    const s = createShootout(7, side('A'), side('B'));
+    const order: [0 | 1, boolean][] = [];
+    for (let r = 0; r < 4; r++) order.push([s.first, true], [s.first === 0 ? 1 : 0, true]);
+    order.push([s.first, true]);
+    for (const [sd, g] of order) recordKick(s, sd, 'x', g ? 'goal' : 'saved');
+    // the trailing side kicks last: a miss loses, a goal only levels it
+    expect(kickStakes(s)).toEqual({ scoreWins: false, missLoses: true });
+  });
+  test('sudden death: the first taker of a round is not decisive, the second can win or lose', () => {
+    const s = createShootout(7, side('A'), side('B'));
+    for (let r = 0; r < 5; r++) recordKick(s, s.first, 'x', 'goal'), recordKick(s, s.first === 0 ? 1 : 0, 'x', 'goal');
+    expect(kickStakes(s)).toEqual({ scoreWins: false, missLoses: false });
+    recordKick(s, s.first, 'x', 'goal');
+    expect(kickStakes(s)).toEqual({ scoreWins: false, missLoses: true });
+  });
+  test('a goal that leaves the other side out of reach wins it', () => {
+    const s = createShootout(7, side('A'), side('B'));
+    const o = s.first === 0 ? 1 : 0;
+    for (let r = 0; r < 4; r++) recordKick(s, s.first, 'x', 'goal'), recordKick(s, o, 'x', r === 3 ? 'saved' : 'goal');
+    expect(kickStakes(s)).toEqual({ scoreWins: true, missLoses: false });
   });
 });

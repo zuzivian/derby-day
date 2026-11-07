@@ -20,6 +20,7 @@ import {
   finalScore,
   forfeitShootout,
   marks,
+  kickStakes,
   planKick,
   playKick,
   type Aim,
@@ -31,6 +32,7 @@ import {
 } from '../meta/shootout.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { crestSvg } from './crest.ts';
+import { getSound } from './audio.ts';
 
 export interface ShootoutClub {
   name: string;
@@ -79,11 +81,13 @@ const RUNUP_MS = 1500;
 const WINDUP_MS = 240;
 const FLIGHT_MS = 520;
 const RESULT_MS = 1600;
+const RESULT_FINAL_MS = 2400; // the deciding kick lingers before the verdict
+const SETUP_MS = 700; // the stand-off before your own kick; any input skips it
 const SKIP_AFTER_MS = 450;
 const QUICK_POWER = 0.62;
 const KEEPER_KITS = ['#f2c230', '#3fb7c9'];
 
-type Phase = 'intro' | 'aim' | 'charge' | 'telegraph' | 'flight' | 'result' | 'done';
+type Phase = 'intro' | 'setup' | 'aim' | 'charge' | 'telegraph' | 'flight' | 'result' | 'done';
 
 const DIVE_NAME: Record<number, string> = { [-1]: 'left', 0: 'centre', 1: 'right' };
 
@@ -94,6 +98,18 @@ function meterZones(): string {
     + `<span class="so-zone so-zone-risky" style="${pct(SWEET_HI / POWER_CAP, MAX_POWER / POWER_CAP)}"></span>`
     + `<span class="so-zone so-zone-sky" style="${pct(MAX_POWER / POWER_CAP, 1)}"></span>`;
 }
+
+/** A touch or pen screen: wording and aiming change (the finger hides what it points at). */
+const coarsePointer = (): boolean => {
+  try {
+    return window.matchMedia('(pointer: coarse)').matches;
+  } catch {
+    return false;
+  }
+};
+
+/** The aim point sits this far above a touch (CSS px), so the finger does not hide the crosshair. */
+const TOUCH_AIM_LIFT = 64;
 
 const OUTCOME_BANNER: Record<KickOutcome, string> = {
   goal: 'Goal!',
@@ -109,12 +125,40 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   const sides = [o.you, o.opp];
   const reduced = reducedMotion();
   const sideLabel = (i: number) => (i === 0 ? 'You' : sides[i].name);
+  const coarse = coarsePointer();
+  /** Brief vibration on touch phones; never under reduced motion or when muted. No-op where unsupported (iOS). */
+  const buzz = (pattern: number | number[]) => {
+    try {
+      if (coarse && !reduced && !getSound().muted) navigator.vibrate?.(pattern);
+    } catch {
+      /* no vibration API */
+    }
+  };
+  const TXT = coarse
+    ? {
+        canvas: 'The goal, seen from the penalty spot. Touch and hold to aim, lift to strike.',
+        howTake: '<b>Taking a kick:</b> touch the goal to aim (the target sits above your finger), hold to build power, drag to adjust and lift to strike. Hit it too hard and it sails over the bar; the corners are riskier.',
+        howKeep: "<b>Keeping:</b> watch the taker's run-up, then tap the left, middle or right of the goal, or a dive button, before he strikes.",
+        aim: 'Touch where to shoot, hold to build power, lift to strike. Stay in the green; too hard flies over the bar.',
+        dive: 'Tap left, middle or right of the goal to dive.',
+        cont: 'Tap the pitch to continue',
+        leaveArmed: 'Really forfeit? Tap again to confirm',
+      }
+    : {
+        canvas: 'The goal, seen from the penalty spot. Aim with the mouse or the arrow keys.',
+        howTake: '<b>Taking a kick:</b> move the mouse to aim, hold the left button to build power and let go to strike. Hit it too hard and it sails over the bar; the corners are riskier. <b>Keys:</b> arrows aim, hold Space and release to strike.',
+        howKeep: "<b>Keeping:</b> watch the taker's run-up, then click the left, middle or right of the goal to dive before he strikes. <b>Keys:</b> arrows pick a side, Space dives.",
+        aim: 'Aim with the mouse or arrow keys. Hold the left button or Space to build power, release to strike. Strike in the green; too hard flies over the bar.',
+        dive: 'Click the left, middle or right of the goal to dive, or use the arrow keys and Space.',
+        cont: 'Click or press Space to continue',
+        leaveArmed: 'Really forfeit? Click again to confirm',
+      };
 
   root.innerHTML = `
   <section class="shootout" aria-label="Penalty shootout">
     <header class="so-board" id="so-board"></header>
     <div class="so-stage">
-      <canvas id="so-canvas" role="img" aria-label="The goal, seen from the penalty spot. Aim with the mouse or the arrow keys."></canvas>
+      <canvas id="so-canvas" role="img" aria-label="${TXT.canvas}"></canvas>
       <div class="so-banner" id="so-banner" hidden></div>
       <div class="so-meter" id="so-meter" hidden aria-hidden="true">${meterZones()}<span class="so-fill" id="so-fill"></span></div>
       <div class="so-overlay" id="so-intro">
@@ -122,8 +166,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
           <h2>Penalty shootout</h2>
           <p>${esc(o.label)} finished level. Best of five kicks each, then sudden death.</p>
           <ul class="so-howto">
-            <li><b>Taking a kick:</b> move the mouse to aim, hold the left button to build power and let go to strike. Hit it too hard and it sails over the bar; the corners are riskier. <b>Keys:</b> arrows aim, hold Space and release to strike.</li>
-            <li><b>Keeping:</b> watch the taker's run-up, then click the left, middle or right of the goal to dive before he strikes. <b>Keys:</b> arrows pick a side, Space dives.</li>
+            <li>${TXT.howTake}</li>
+            <li>${TXT.howKeep}</li>
           </ul>
           <button class="btn primary big" id="so-start" type="button">Start the shootout</button>
         </div>
@@ -139,6 +183,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     <div class="so-info">
       <p class="so-who" id="so-who"></p>
       <p class="so-help" id="so-help"></p>
+      <p class="so-skip" id="so-skip" aria-hidden="true">${TXT.cont}</p>
     </div>
     <div class="so-actions">
       <div class="so-dive" id="so-dive" hidden role="group" aria-label="Dive">
@@ -147,7 +192,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
         <button class="btn" type="button" data-dive="1">Dive right</button>
       </div>
       <button class="btn" type="button" id="so-quick" hidden>Strike at medium power</button>
-      <button class="btn ghost" type="button" id="so-leave">Leave shootout (counts as a loss)</button>
+      <button class="btn ghost" type="button" id="so-leave" aria-label="Forfeit shootout (counts as a loss)" title="Forfeiting counts as a loss">Forfeit</button>
     </div>
     <p class="visually-hidden" id="so-live" role="status" aria-live="polite"></p>
   </section>`;
@@ -184,9 +229,24 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   let resultStart = 0;
   let bannerTimer = 0;
   let leaveTimer = 0;
+  let skipTimer = 0;
+  /** The last pointer to aim was a finger or pen: the crosshair is lifted above it and drawn larger. */
+  let touchAim = false;
   let confirmLeave = false;
+  /** On-canvas lines for the stand-off before a kick: [headline, taker], and whether it is a decisive kick. */
+  let caption: [string, string, boolean] | null = null;
 
   // --- scoreboard ----------------------------------------------------------
+  /** A decisive kick, in your words: [text, tone]. Null for an ordinary one. */
+  function stakeOf(side: 0 | 1): [string, 'good' | 'bad'] | null {
+    const k = kickStakes(sh);
+    if (side === 0) return k.missLoses ? ['Must score', 'bad'] : k.scoreWins ? ['Score to win', 'good'] : null;
+    return k.scoreWins ? ['Save or lose', 'bad'] : k.missLoses ? ['Save to win', 'good'] : null;
+  }
+  const stakePill = (side: 0 | 1) => {
+    const s = stakeOf(side);
+    return s ? ` <span class="so-stake" data-tone="${s[1]}">${s[0]}</span>` : '';
+  };
   function renderBoard() {
     const turn = sh.done ? null : planKick(sh)?.turn;
     const suddenDeath = !sh.done && sh.taken[0] >= KICKS_PER_SIDE && sh.taken[1] >= KICKS_PER_SIDE;
@@ -201,9 +261,9 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
           return `<li class="so-mark ${m === null ? 'pending' : m ? 'scored' : 'missed'}"${k === nextIdx ? ' aria-current="step"' : ''}><span aria-hidden="true">${sym}</span><span class="visually-hidden">Kick ${k + 1}: ${word}</span></li>`;
         })
         .join('');
-      return `<div class="so-row${turn && turn.side === side ? ' kicking' : ''}">
+      return `<div class="so-row${turn && turn.side === side ? ` kicking${stakeOf(side) ? ' decisive' : ''}` : ''}">
         ${crestSvg(clubs[i], 26)}
-        <span class="so-name">${esc(clubs[i].name)}${i === 0 ? ' <span class="so-you">you</span>' : ''}</span>
+        <span class="so-name"><span class="so-name-t">${esc(clubs[i].name)}</span>${i === 0 ? '<span class="so-you">you</span>' : ''}</span>
         <ol class="so-marks" aria-label="${esc(sideLabel(i))} kicks">${list}</ol>
         <span class="so-total" aria-label="${sh.score[i]} scored">${sh.score[i]}</span>
       </div>`;
@@ -221,15 +281,39 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   };
   const scoreText = () => `${o.youClub.name} ${sh.score[0]}, ${o.oppClub.name} ${sh.score[1]}.`;
 
-  function setBanner(text: string | null) {
+  function setBanner(text: string | null, outcome?: KickOutcome, good = false) {
     const b = $('so-banner');
     clearTimeout(bannerTimer);
     if (text === null) {
       b.hidden = true;
+      delete b.dataset.outcome;
+      delete b.dataset.tone;
       return;
     }
     b.textContent = text;
+    // Green when the kick went your way (you scored, or they missed or you saved), coral when it did not.
+    b.dataset.outcome = outcome ?? '';
+    b.dataset.tone = good ? 'good' : 'bad';
     b.hidden = false;
+  }
+
+  /** The "continue" hint under the result text fades in once a tap or Space can actually skip it. */
+  function setSkipHint(on: boolean) {
+    const el = $('so-skip');
+    clearTimeout(skipTimer);
+    el.classList.remove('on');
+    if (on) skipTimer = window.setTimeout(() => el.classList.add('on'), SKIP_AFTER_MS);
+  }
+
+  /** A flash (and, for a goal, a shake) over the goal when a kick is decided: green if it went your way. */
+  function fx(tone: 'good' | 'bad' | null, shake = false) {
+    const st = $('so-canvas').parentElement!;
+    delete st.dataset.fx;
+    delete st.dataset.shake;
+    if (reduced || !tone) return;
+    void st.offsetWidth; // restart the animation
+    st.dataset.fx = tone;
+    if (shake) st.dataset.shake = '1';
   }
 
   function setInfo(who: string, help: string) {
@@ -252,12 +336,19 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     if (!plan) return finishShootout();
     renderBoard();
     setBanner(null);
+    setSkipHint(false);
+    fx(null);
     played = null;
     kickStart = now;
     const { turn } = plan;
     const takerSide = turn.side;
+    const stake = stakeOf(takerSide);
+    const n = turn.round + 1;
+    caption = [stake ? stake[0] : n > KICKS_PER_SIDE ? 'Sudden death' : `Kick ${n} of ${KICKS_PER_SIDE}`, turn.taker.name, !!stake];
+    if (stake) section.dataset.stakes = '1';
+    else delete section.dataset.stakes;
     if (takerSide === 0) {
-      phase = 'aim';
+      phase = reduced ? 'aim' : 'setup';
       power = 0;
       chargeBy = null;
       sel = null;
@@ -266,9 +357,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showMeter(null);
       showDive(false);
       showQuick(true);
-      const n = turn.round + 1;
-      setInfo(`<b>Your kick</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)}, shooting ${Math.round(turn.taker.shooting * 100)}`, 'Aim with the mouse or arrow keys. Hold the left button or Space to build power, release to strike. Strike in the green; too hard flies over the bar.');
-      say(`Your kick, ${turn.taker.name}. Facing ${turn.keeper.name} in goal. Aim, hold to build power, release to strike.`);
+      setInfo(`<b>Your kick</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)}, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(0)}`, TXT.aim);
+      say(`${stakeOf(0)?.[0] ? `${stakeOf(0)![0]}. ` : ''}Your kick, ${turn.taker.name}. Facing ${turn.keeper.name} in goal. Aim, hold to build power, release to strike.`);
     } else {
       phase = 'telegraph';
       tellDive = plan.tell;
@@ -276,9 +366,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showQuick(false);
       showDive(true);
       showMeter('timer');
-      const n = turn.round + 1;
-      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. Click the left, middle or right of the goal to dive, or use the arrow keys and Space.`);
-      say(`${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
+      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(1)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. ${TXT.dive}`);
+      say(`${stakeOf(1)?.[0] ? `${stakeOf(1)![0]}. ` : ''}${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
     }
   }
 
@@ -293,6 +382,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   }
 
   function strike(now: number, p: number) {
+    if (phase === 'setup') phase = 'aim';
     if (phase !== 'aim' && phase !== 'charge') return;
     chargeBy = null;
     showMeter(null);
@@ -309,6 +399,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   function launch(now: number, choice: { aim?: Aim; power?: number; dive?: Dive }) {
     played = playKick(sh, choice);
+    getSound().play({ type: 'kick', kind: 'shot', power: choice.power ?? 0.7 });
     phase = 'flight';
     flightStart = now;
     flightDelay = reduced ? 0 : WINDUP_MS;
@@ -322,11 +413,31 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     const p = played;
     const keeperName = p.turn.keeper.name;
     const text = describeKick(p.turn.taker.name, keeperName, p.result.outcome);
-    setBanner(OUTCOME_BANNER[p.result.outcome]);
+    // Good for you: you scored, or they failed to.
+    const good = (p.turn.side === 0) === p.result.scored;
+    setBanner(OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
+    setSkipHint(true);
+    buzz(p.result.scored ? [20, 40, 20] : 30);
+    const snd = getSound();
+    const oc = p.result.outcome;
+    if (oc === 'goal') snd.play({ type: 'goal', team: 0 });
+    else if (oc === 'saved') snd.play({ type: 'catch', power: 0.8 });
+    else if (oc === 'post') snd.play({ type: 'knock', kind: 'post', power: 0.9 });
+    else snd.play({ type: 'ooh', power: 0.6 });
+    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2]);
+    fx(good ? 'good' : 'bad', p.result.scored);
+    delete section.dataset.stakes;
+    if (sh.done) section.dataset.final = sh.winner === 0 ? 'win' : 'lose';
     const extra = p.turn.side === 1 ? ` You dived ${DIVE_NAME[p.result.dive]}.` : '';
     setInfo(`<b>${esc(text)}.</b> ${esc(scoreText())}`, extra.trim());
     say(`${text}.${extra} ${scoreText()}`);
     renderBoard();
+    if (!reduced) {
+      // Pop the total and flash the new mark on the side that just kicked.
+      const row = $('so-board').querySelectorAll('.so-row')[p.turn.side];
+      if (p.result.scored) row?.querySelector('.so-total')?.classList.add('pop');
+      row?.querySelectorAll('.so-mark')[sh.taken[p.turn.side] - 1]?.classList.add('fresh');
+    }
   }
 
   function afterResult(now: number) {
@@ -337,19 +448,29 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   function finishShootout() {
     phase = 'done';
     setBanner(null);
+    setSkipHint(false);
     showDive(false);
     showQuick(false);
     showMeter(null);
     renderBoard();
     const [a, b] = finalScore(sh);
     const won = sh.winner === 0;
-    $('so-end-title').textContent = won ? `You win ${a}–${b} on penalties` : `You lose ${a}–${b} on penalties`;
+    // The score never breaks at the dash on a narrow screen.
+    $('so-end-title').innerHTML = `You ${won ? 'win' : 'lose'} <span class="so-nowrap">${a}–${b}</span> on penalties`;
     $('so-end-text').textContent = sh.coinToss
       ? 'It went to a coin toss after a very long sudden death.'
       : won
         ? `${o.youClub.name} go through.`
         : `${o.oppClub.name} go through.`;
+    $('so-end').dataset.won = won ? '1' : '0';
     $('so-end').hidden = false;
+    delete section.dataset.stakes;
+    getSound().react(won ? 'win' : 'loss');
+    buzz(won ? [30, 60, 30, 60, 90] : [90]);
+    // The shootout is decided: Leave is dead (a second press would record the tie as a forfeit).
+    clearTimeout(leaveTimer);
+    confirmLeave = false;
+    $('so-leave').hidden = true;
     setInfo(`<b>${won ? 'Shootout won' : 'Shootout lost'}</b> ${a}–${b}`, '');
     say(`${won ? 'You win' : 'You lose'} the shootout ${a} to ${b}.`);
     $('so-continue').focus();
@@ -390,27 +511,32 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     last += away;
   });
 
-  function pointerToAim(e: PointerEvent): Aim {
+  /** Where the pointer is in goal units. lift: raise the point by this many CSS px (a finger hides what is under it). */
+  function pointerToAim(e: PointerEvent, lift = 0): Aim {
     const r = canvas.getBoundingClientRect();
     const g = goalRect();
     const px = ((e.clientX - r.left) / r.width) * W;
-    const py = ((e.clientY - r.top) / r.height) * H;
+    const py = ((e.clientY - lift - r.top) / r.height) * H;
     return { x: clamp((px - (g.l + g.w / 2)) / (g.w / 2), -1.45, 1.45), y: clamp((g.b - py) / g.h, 0, 1.45) };
   }
 
   on(canvas, 'contextmenu', (e: Event) => e.preventDefault());
+  const isTouch = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
   on(canvas, 'pointermove', (e: PointerEvent) => {
-    const a = pointerToAim(e);
-    if (phase === 'aim' || phase === 'charge') {
+    const a = pointerToAim(e, isTouch(e) && (phase === 'aim' || phase === 'charge' || phase === 'setup') ? TOUCH_AIM_LIFT : 0);
+    if (phase === 'aim' || phase === 'charge' || phase === 'setup') {
+      touchAim = isTouch(e);
       aim.x = a.x;
       aim.y = a.y;
     } else if (phase === 'telegraph') sel = diveFromX(a.x);
   });
   on(canvas, 'pointerdown', (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const a = pointerToAim(e);
+    if (phase === 'setup') phase = 'aim'; // a touch skips the stand-off and starts the kick
+    const a = pointerToAim(e, isTouch(e) && phase === 'aim' ? TOUCH_AIM_LIFT : 0);
     const now = performance.now();
     if (phase === 'aim') {
+      touchAim = isTouch(e);
       aim.x = a.x;
       aim.y = a.y;
       try {
@@ -440,9 +566,14 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const onButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
     const now = performance.now();
+    // An arrow skips the stand-off from anywhere (it aims, as before the beat); Space only off a button, where it presses it.
+    if (phase === 'setup' && (ARROWS.includes(e.key) || ((e.key === ' ' || e.key === 'Spacebar') && !onButton))) phase = 'aim';
     if (ARROWS.includes(e.key)) {
       e.preventDefault();
-      if (phase === 'aim' || phase === 'charge') keys.add(e.key);
+      if (phase === 'aim' || phase === 'charge') {
+        keys.add(e.key);
+        touchAim = false;
+      }
       else if (phase === 'telegraph' && !e.repeat) {
         if (e.key === 'ArrowLeft') sel = ((sel ?? 0) <= 0 ? -1 : 0) as Dive;
         else if (e.key === 'ArrowRight') sel = ((sel ?? 0) >= 0 ? 1 : 0) as Dive;
@@ -477,15 +608,18 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   });
   on($('so-continue'), 'click', () => end(false));
   on($('so-leave'), 'click', () => {
+    if (sh.done || phase === 'done') return;
     const btn = $('so-leave');
     if (!confirmLeave) {
       confirmLeave = true;
-      btn.textContent = 'Really leave? Click again to lose the shootout';
+      btn.textContent = TXT.leaveArmed;
+      btn.removeAttribute('aria-label');
       btn.classList.add('danger');
-      say('Leaving counts as a loss. Activate the button again to confirm.');
+      say('Forfeiting counts as a loss. Press the button again to confirm.');
       leaveTimer = window.setTimeout(() => {
         confirmLeave = false;
-        btn.textContent = 'Leave shootout (counts as a loss)';
+        btn.textContent = 'Forfeit';
+        btn.setAttribute('aria-label', 'Forfeit shootout (counts as a loss)');
         btn.classList.remove('danger');
       }, 4000);
       return;
@@ -497,7 +631,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   // --- geometry --------------------------------------------------------------
   function goalRect() {
-    const w = Math.min(W * 0.66, H * 1.3);
+    const w = Math.min(W * (W < 520 ? 0.78 : 0.66), H * 1.3); // a phone gets a bigger goal to aim at
     const h = w * 0.42;
     const l = (W - w) / 2;
     const t = H * 0.09;
@@ -524,6 +658,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   // --- frame loop ----------------------------------------------------------------
   function update(now: number, dt: number) {
+    if (phase === 'setup' && now - kickStart >= SETUP_MS) phase = 'aim';
     if (phase === 'aim' || phase === 'charge') {
       const sp = keys.has('Shift') ? 1.8 : 1;
       if (keys.has('ArrowLeft')) aim.x -= 1.1 * sp * dt;
@@ -548,7 +683,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     } else if (phase === 'flight') {
       if (now - flightStart >= flightDelay + (reduced ? 0 : FLIGHT_MS)) showResult(now);
     } else if (phase === 'result') {
-      if (now - resultStart >= RESULT_MS) afterResult(now);
+      if (now - resultStart >= (sh.done ? RESULT_FINAL_MS : RESULT_MS)) afterResult(now);
     }
   }
 
@@ -585,6 +720,10 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
     if (phase === 'telegraph') drawDiveZones(c, g);
     if (phase === 'aim' || phase === 'charge') drawCrosshair(c, g);
+    if (caption && !reduced) {
+      const k = phase === 'setup' ? 1 : phase === 'telegraph' ? 1 - (now - kickStart) / 1100 : 0;
+      if (k > 0) drawCaption(c, caption, k, now);
+    }
 
     // Taker figure while you keep
     if (turn && turn.side === 1 && phase !== 'intro' && phase !== 'done') drawTaker(c, now, t);
@@ -807,7 +946,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   function drawBall(c: CanvasRenderingContext2D, g: ReturnType<typeof goalRect>, flightP: number) {
     const s = spot();
-    const r0 = Math.max(9, H * 0.034);
+    const r0 = Math.max(10, H * 0.04);
     let x = s.x;
     let y = s.y;
     let r = r0;
@@ -817,7 +956,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       const e = flightP;
       x = s.x + (target.x - s.x) * e;
       y = s.y + (target.y - s.y) * e - Math.sin(e * Math.PI) * H * 0.05;
-      r = r0 * (1 - 0.6 * e);
+      r = r0 * (1 - 0.4 * e); // stays readable on a phone
       // After the whistle: a save drops, the woodwork bounces out.
       if (flightP >= 1 && !reduced) {
         const after = clamp((performance.now() - flightStart - flightDelay - FLIGHT_MS) / 420, 0, 1);
@@ -860,7 +999,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     const col = phase === 'charge' ? (power >= SKY_START ? '#ff7b5f' : power >= SWEET_LO ? '#5fd08e' : '#ffd60a') : '#ffd60a';
     c.strokeStyle = col;
     c.lineWidth = 2.5;
-    const rr = 14 + (phase === 'charge' ? power * 6 : 0);
+    const rr = (touchAim ? 20 : 14) + (phase === 'charge' ? power * 6 : 0);
     c.beginPath();
     c.arc(x, y, rr, 0, Math.PI * 2);
     c.moveTo(x - rr - 8, y);
@@ -880,6 +1019,36 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     }
   }
 
+  /** The stand-off: a hush over the pitch with the stakes in big letters, fading as the run-up gets going. */
+  function drawCaption(c: CanvasRenderingContext2D, cap: [string, string, boolean], k: number, now: number) {
+    const x = W / 2;
+    const y = H * 0.56;
+    c.save();
+    c.globalAlpha = Math.min(1, k * 1.5);
+    if (phase === 'setup') {
+      c.fillStyle = 'rgba(8,14,12,.45)';
+      c.fillRect(0, 0, W, H);
+    }
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.translate(x, y);
+    const beat = cap[2] ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
+    c.scale(beat, beat);
+    c.lineWidth = 5;
+    c.strokeStyle = 'rgba(8,14,12,.85)';
+    c.fillStyle = cap[2] ? '#ff8a7a' : '#ffd60a';
+    c.font = `900 ${Math.max(24, H * 0.1)}px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
+    c.strokeText(cap[0].toUpperCase(), 0, 0);
+    c.fillText(cap[0].toUpperCase(), 0, 0);
+    c.font = `700 ${Math.max(13, H * 0.045)}px 'Barlow', system-ui, sans-serif`;
+    c.lineWidth = 3;
+    c.fillStyle = '#f3f6f1';
+    c.strokeText(cap[1], 0, H * 0.085);
+    c.fillText(cap[1], 0, H * 0.085);
+    c.restore();
+  }
+
   function drawDiveZones(c: CanvasRenderingContext2D, g: ReturnType<typeof goalRect>) {
     const third = g.w / 3;
     for (let k = 0; k < 3; k++) {
@@ -887,10 +1056,19 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       const on = sel === d;
       c.fillStyle = on ? 'rgba(255,214,10,.28)' : 'rgba(255,255,255,.05)';
       c.fillRect(g.l + third * k + 2, g.t + 2, third - 4, g.h - 2);
-      c.fillStyle = on ? '#ffd60a' : 'rgba(243,246,241,.7)';
+      // Labels sit on the grass below the goal line: behind the keeper they were hidden by his arms and head.
       c.font = `800 ${Math.max(12, H * 0.034)}px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
       c.textAlign = 'center';
-      c.fillText(['LEFT', 'CENTRE', 'RIGHT'][k], g.l + third * (k + 0.5), g.t + g.h * 0.55);
+      c.textBaseline = 'middle';
+      const lx = g.l + third * (k + 0.5);
+      const ly = g.b + Math.max(14, g.h * 0.2);
+      c.lineJoin = 'round';
+      c.lineWidth = 3;
+      c.strokeStyle = 'rgba(8,14,12,.75)';
+      c.strokeText(['LEFT', 'CENTRE', 'RIGHT'][k], lx, ly);
+      c.fillStyle = on ? '#ffd60a' : 'rgba(243,246,241,.85)';
+      c.fillText(['LEFT', 'CENTRE', 'RIGHT'][k], lx, ly);
+      c.textBaseline = 'alphabetic';
     }
   }
 
@@ -906,6 +1084,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     cancelAnimationFrame(raf);
     clearTimeout(bannerTimer);
     clearTimeout(leaveTimer);
+    clearTimeout(skipTimer);
     ro.disconnect();
     for (const f of cleanup) f();
   }

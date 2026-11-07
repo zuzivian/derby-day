@@ -432,3 +432,8 @@ export function runRollover(save: Save): SeasonReview {
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return review;
 }
+
+/** A young player with real headroom: 21 or under and at least 6 points of (scouted, lowest) potential above their overall. Display only. */
+export function isRising(p: Player): boolean {
+  return p.age <= 21 && scoutedPotential(p).lo - overall(p) >= 6;
+}

@@ -5,6 +5,7 @@
 // Styles are in levels.css (appended to the page by scripts/build.ts).
 
 import type { Save } from '../meta/game.ts';
+import { crestSvg } from './crest.ts';
 import { KIT_PALETTE } from '../meta/identity.ts';
 import {
   badgeTier,
@@ -57,7 +58,8 @@ function statusOf(s: Save, u: Unlock, nextLevel: number | null): 'done' | 'next'
 
 function unlockRow(s: Save, u: Unlock, nextLevel: number | null): string {
   const st = statusOf(s, u, nextLevel);
-  const status = st === 'done' ? 'Unlocked' : st === 'next' ? 'Next' : `Level ${unlockLevel(s, u.id)}`;
+  const toGo = fmt(Math.max(0, totalXpForLevel(unlockLevel(s, u.id)) - (s.xp ?? 0)));
+  const status = st === 'done' ? 'Unlocked' : `${st === 'next' ? 'Next' : `Level ${unlockLevel(s, u.id)}`} · ${toGo} XP to go`;
   return `<li class="unlock unlock-${st}">
     <span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span>
     <span class="unlock-body"><span class="unlock-name"><b>${esc(u.name)}</b>${u.kind === 'perk' ? ' <span class="pill perk-pill">perk</span>' : ''}</span><span class="muted small">${esc(u.text)}</span></span>
@@ -79,6 +81,7 @@ export function levelPanel(s: Save): string {
       <h2 id="level-title" class="eyebrow" tabindex="-1">Club level</h2>
       <span class="level-total muted small">${fmt(s.xp ?? 0)} XP in total${p.level < 99 ? ` · ${fmt(toNext)} to level ${p.level + 1}` : ''}</span>
     </div>
+    <div class="level-meter"><span class="level-badge tier-${badgeTier(p.level)}" aria-hidden="true">${p.level}</span><span class="xp-bar" role="img" aria-label="${esc(levelText(p))}"><span style="width:${p.maxed ? 100 : Math.round((p.intoLevel / p.needed) * 100)}%"></span></span>${p.level < 99 ? `<span class="level-badge tier-${badgeTier(p.level + 1)} dim" aria-hidden="true">${p.level + 1}</span>` : ''}</div>
     ${teaser
       ? `<p class="level-next" id="next-unlock"><span class="level-next-label">Next unlock</span> ${esc(teaser)}</p>`
       : `<p class="level-next" id="next-unlock"><span class="level-next-label">Everything unlocked</span> ${p.maxed ? 'Max level. Your XP keeps counting.' : 'Keep going: level 99 is the cap.'}</p>`}
@@ -116,12 +119,14 @@ export function xpCardHtml(s: Save, gain: XpGain | undefined, forfeited: boolean
   const [head, ...rest] = xpSummary(gain).split(': ');
   const lvFrom = Math.min(gain.levelBefore, before.level);
   const lvTo = Math.max(gain.levelAfter, after.level);
+  const next = nextUnlockText(s);
   return `<div class="xp-card${up ? ' is-levelup' : ''}" style="--xp-from:${pct(before).toFixed(1)}%;--xp-to:${to.toFixed(1)}%;--xp-start:${from.toFixed(1)}%">
     <span class="level-badge tier-${badgeTier(after.level)}" aria-hidden="true">${up ? `<span class="xp-lv-old">${before.level}</span><span class="xp-lv-new">${after.level}</span>` : `<span>${after.level}</span>`}</span>
     <div class="xp-card-body">
       <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(rest.join(': '))}</span></p>
       <span class="xp-card-track" aria-hidden="true"><span class="xp-card-fill"></span></span>
       <p class="xp-card-level">${esc(levelText(after))}</p>
+      ${up || after.maxed || !next ? '' : `<p class="xp-card-next">Next: ${esc(next)}</p>`}
     </div>
     ${up ? `<p class="xp-level"><span class="xp-level-tag">Level up</span> <span class="xp-level-nums">${lvFrom} → ${lvTo}</span></p>` : ''}
   </div>`;
@@ -144,11 +149,11 @@ export function levelUpModal(s: Save): string {
         <h2 id="levelup-title" class="levelup-title" tabindex="-1">Level ${level}</h2>
       </div>
       <div class="levelup-body">
-        <p id="levelup-lede" class="levelup-lede">Unlocked: ${esc(fresh.map((u) => u.name).join(', '))}.</p>
+        <p id="levelup-lede" class="levelup-lede">${fresh.length === 1 ? 'You unlocked something new' : `You unlocked ${fresh.length} new things`}<span class="visually-hidden">: ${esc(fresh.map((u) => u.name).join(', '))}.</span></p>
         <ul class="unlock-list levelup-list">${fresh.map((u) => `<li class="unlock unlock-done"><span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span><span class="unlock-body"><b>${esc(u.name)}</b><span class="muted small">${esc(u.text)}</span></span>${u.kind === 'perk' ? '<span class="pill perk-pill">perk</span>' : '<span class="pill new-pill">new</span>'}</li>`).join('')}</ul>
         ${next ? `<p class="levelup-next"><span class="level-next-label">Next</span> ${esc(next)}</p>` : ''}
         <div class="levelup-actions">
-          ${target ? `<button class="btn primary big" data-action="levelup-go" data-id="${esc(target.id)}">${esc(target.go!.label)}</button>` : ''}
+          ${target ? `<button class="btn primary big" data-action="levelup-go" data-id="${esc(target.id)}">${esc(target.go!.label === 'Show me' ? `Try ${target.name}` : target.go!.label)}</button>` : ''}
           <button class="btn${target ? ' ghost' : ' primary big'}" data-action="levelup-close">${target ? 'Later' : 'Back to the club'}</button>
         </div>
       </div>
@@ -162,17 +167,29 @@ export function levelUpAnnouncement(s: Save): string {
   return `Level ${clubLevel(s)}. Unlocked: ${fresh.map((u) => u.name).join(', ')}.`;
 }
 
-/** Crest and kit pickers for Club news, once those perks are unlocked. */
+let identityFresh = false;
+/** The next render plays the "saved" moment. */
+export const flagIdentitySaved = (): void => void (identityFresh = true);
+
+/** Crest, kit and trim pickers for Club news, once those perks are unlocked: a live preview and radio swatches. */
 export function identityControls(s: Save): string {
   const crest = isUnlocked(s, 'crest');
   const kit = isUnlocked(s, 'kit');
   if (!crest && !kit) return '';
   const c = s.club;
-  const colour = (id: string, value: string, label: string) => `<label class="identity-field" for="${id}">${label}
-    <select id="${id}" data-change="${id}">${KIT_PALETTE.map((k) => `<option value="${k.hex}"${k.hex === value ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}${KIT_PALETTE.some((k) => k.hex === value) ? '' : `<option value="${esc(value)}" selected>Current</option>`}</select></label>`;
-  return `<div class="identity-row" role="group" aria-label="Club identity">
-    ${crest ? `<label class="identity-field" for="crest-select">Crest
-      <select id="crest-select" data-change="crest">${CREST_PATTERNS.map((p) => `<option value="${p}"${p === c.crest ? ' selected' : ''}>${p[0].toUpperCase()}${p.slice(1)}</option>`).join('')}</select></label>` : ''}
-    ${kit ? `${colour('kit-primary', c.primary, 'Kit')}${colour('kit-secondary', c.secondary, 'Trim')}` : ''}
-  </div>`;
+  const fresh = identityFresh;
+  identityFresh = false;
+  const cap = (p: string) => p[0].toUpperCase() + p.slice(1);
+  const swatches = (key: string, label: string, hint: string, value: string, other: string) => `<fieldset class="identity-set"><legend>${label}</legend>
+    <div class="swatches">${KIT_PALETTE.map((k) => {
+      const same = k.hex === other;
+      return `<label class="sw" style="--c:${k.hex}" title="${esc(k.name)}${same ? '' : ''}"><input type="radio" class="sr-only" name="${key}" id="${key}-${k.hex.slice(1)}" value="${k.hex}" data-change="${key}"${k.hex === value ? ' checked' : ''}${same ? ' disabled' : ''}><span class="sw-chip" aria-hidden="true"></span><span class="sr-only">${esc(k.name)}</span></label>`;
+    }).join('')}</div><p class="muted small">${hint}</p></fieldset>`;
+  return `<fieldset class="identity-editor"><legend class="eyebrow">Club identity</legend>
+    <div class="identity-preview${fresh ? ' fresh' : ''}">${crestSvg(c, 76)}
+      <div class="identity-meta"><strong>${esc(c.name)}</strong>
+        <span class="identity-saved" aria-hidden="true">${fresh ? '✓ Saved' : 'Saves as you pick'}</span></div></div>
+    ${crest ? `<fieldset class="identity-set"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
+    ${kit ? `${swatches('kit-primary', 'Kit colour', 'Shirt and crest.', c.primary, c.secondary)}${swatches('kit-secondary', 'Trim colour', 'Must differ from the kit.', c.secondary, c.primary)}` : ''}
+  </fieldset>`;
 }

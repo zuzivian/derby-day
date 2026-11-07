@@ -26,6 +26,8 @@ export interface Highlight {
   goalX: number;
   /** Line under REPLAY, e.g. "Goal · R. Smith 34'". */
   label: string;
+  /** Goals: the tick of the strike that scored (the replay's slow-motion starts there), when the shot was seen. */
+  shot?: number;
 }
 
 /** Higher is more worth a replay; a better moment replaces a pending one. */
@@ -75,7 +77,7 @@ export class HighlightSpotter {
     // Goals.
     while (this.goals < s.goals.length) {
       const g = s.goals[this.goals++];
-      out.push({ kind: 'goal', tick: s.tick, goalX: oppGoal(s, g.team).x, label: `Goal · ${g.scorer} ${g.minute}'` });
+      out.push({ kind: 'goal', tick: s.tick, goalX: oppGoal(s, g.team).x, label: `Goal · ${g.scorer} ${g.minute}'`, shot: this.watch && this.watch.team === g.team ? this.watch.tick : undefined });
       this.watch = null;
     }
     // Cards: replay the challenge behind it (the last foul by that player), not the referee.

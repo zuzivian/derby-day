@@ -129,7 +129,7 @@ test('shootout: leaving counts as a loss and knocks you out', async (t) => {
   await page.locator(S.start).click();
   await waitPhase(page, ['aim', 'telegraph']);
   await page.locator(S.leave).click();
-  expect(await page.locator(S.leave).innerText(), 'asks to confirm').toMatch(/Really leave/);
+  expect(await page.locator(S.leave).innerText(), 'asks to confirm').toMatch(/Really forfeit/);
   expect(await page.locator(SEL.modal).count(), 'one click does not leave').toBe(0);
   await page.locator(S.leave).click();
   await page.locator(SEL.modal).waitFor();

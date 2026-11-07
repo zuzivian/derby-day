@@ -6,7 +6,7 @@
 // play resumes exactly where it stopped.
 
 import { DT, TICK_HZ } from '../sim/constants.ts';
-import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
+import { createMatch, matchMinute, possessionShare, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
@@ -24,12 +24,14 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
-import { quickTacticsMarkup } from './tactics.ts';
+import { MENTALITY_NOTE, quickTacticsMarkup } from './tactics.ts';
 import { MENTALITY_IDS, MENTALITY_LABEL, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
   crests: [CrestPattern, CrestPattern];
   label: string;
+  /** Opening banner: the stakes of this match (stakes.ts introLine). */
+  intro?: { title: string; sub: string };
   /** Pause-menu text for leaving early. Defaults by label (ranked forfeits count as 0–3). */
   forfeitText?: string;
   /** Preferred control style; the input still follows whatever the player touches. */
@@ -129,6 +131,7 @@ export function refereeCall(s: MatchState, e: MatchEvent): string | null {
   }
 }
 
+const reducedMotion = (): boolean => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 /** The controls line: the essentials (always shown whole) and the detail behind "All controls" (hud.css). */
 const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
@@ -138,8 +141,8 @@ const TOUCH_HINT = hint(
   `Your player runs toward your finger, faster the further it is.`,
 );
 const MOUSE_HINT = hint(
-  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot`,
-  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. <b>Mouse:</b> your player runs to the pointer, faster the further it is. <b>Keys:</b> WASD run · Space pass / tackle · hold F shoot · hold C loft · Shift sprint · E switch. <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
+  `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot · <b>V</b> camera · <b>Esc</b> pause`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. Your player runs to the pointer, faster the further it is. Also: hold <b>C</b> loft · <b>Shift</b> sprint · <b>E</b> switch · <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -161,7 +164,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="${coarsePointer() ? 'Pitch. Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Pitch. Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, Esc to pause.'}"></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, T for the score and time, Esc to pause.'}</span>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -176,9 +179,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
-      <div class="touch-pad" aria-hidden="true">
-        <button class="pad-btn" id="pad-pass" tabindex="-1">Pass</button>
-        <button class="pad-btn shoot" id="pad-shoot" tabindex="-1">Shoot</button>
+      <div class="touch-pad" role="group" aria-label="Kick buttons">
+        <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
+        <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
     </div>
     <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : MOUSE_HINT)}</p>
@@ -200,6 +203,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (done || v === paused) return;
     if (v && (ending || s.phase === 'fulltime')) return;
     paused = v;
+    if (!v) disarmForfeit();
     input.reset?.();
     $('pause').hidden = !v;
     coach?.setPaused(v);
@@ -210,6 +214,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       announce('Paused.');
     } else {
       (focusBeforePause && root.contains(focusBeforePause) ? focusBeforePause : canvas).focus();
+      announce('Resumed.');
     }
   };
   let input: MatchInputSource = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
@@ -219,7 +224,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     c.paused = () => paused;
     c.setPiece = () => setPieceSpot(s, 0);
     c.bindTouchButtons($('pad-pass'), $('pad-shoot'));
-    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse', armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
+    return { take: () => c.take(), waiting: () => c.waiting(), mode: () => c.mode, reset: () => c.reset(), extras: () => ({ cursor: c.cursor, charge: c.charge(), showCursor: c.mode === 'mouse' && c.pointerShown(), armed: c.armed(), switchTo: c.switchCandidate(s) }), dispose: () => c.dispose() };
   }
   // The controls line is one line until asked for (the drills taught them); the button opens it all.
   $('hint-more').addEventListener('click', (e) => {
@@ -230,8 +235,29 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   $('pause-btn').addEventListener('click', () => setPaused(true));
   $('resume').addEventListener('click', () => setPaused(false));
+  // Arm-then-confirm (as the shootout's Leave): one stray Enter after Resume must not end the match.
+  let forfeitArmed = false;
+  let forfeitTimer = 0;
+  const forfeitLabel = $('forfeit').textContent ?? '';
+  const disarmForfeit = () => {
+    clearTimeout(forfeitTimer);
+    if (!forfeitArmed) return;
+    forfeitArmed = false;
+    $('forfeit').textContent = forfeitLabel;
+    $('forfeit').classList.remove('danger');
+  };
   $('forfeit').addEventListener('click', () => {
-    if (!ending && s.phase !== 'fulltime') finish(true);
+    if (ending || s.phase === 'fulltime') return;
+    if (!forfeitArmed) {
+      forfeitArmed = true;
+      $('forfeit').textContent = `${coarsePointer() ? 'Tap' : 'Click'} again to ${/forfeit/i.test(forfeitLabel) ? 'forfeit' : 'leave'}`;
+      $('forfeit').classList.add('danger');
+      announce(`${forfeitLabel}. Press the button again to confirm.`);
+      forfeitTimer = window.setTimeout(disarmForfeit, 4000);
+      return;
+    }
+    disarmForfeit();
+    finish(true);
   });
   const onVis = () => document.hidden && setPaused(true);
   document.addEventListener('visibilitychange', onVis);
@@ -285,10 +311,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   // A mentality picked in the pause menu goes to the sim with the next tick's input.
   let pendingTactic = 0;
+  /** A pause-menu pick waits for resume: the HUD names it then, as the keys do at once. */
+  let resumeTag: Mentality | null = null;
+  const qtNote = (m: Mentality, tail = '') => {
+    const n = root.querySelector('#qt-note');
+    if (n) n.textContent = MENTALITY_NOTE[m] + tail;
+  };
   root.querySelector('#quick-tactics')?.addEventListener('change', (e) => {
     const v = (e.target as HTMLInputElement).value as Mentality;
     pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
-    announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
+    resumeTag = v;
+    qtNote(v, ' Applies when you resume.'); // #qt-note is a polite live region: it says this once
   });
   // Quick tactics from the keyboard while playing: 1 Park the bus ... 5 High press, as in the pause menu.
   // By key position (Digit1-5, Numpad1-5), so the top row works on AZERTY too.
@@ -301,6 +334,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     pendingTactic = Number(n);
     const radio = root.querySelector<HTMLInputElement>(`#quick-tactics input[value="${m}"]`);
     if (radio) radio.checked = true;
+    resumeTag = null;
+    qtNote(m);
     hud.tag(MENTALITY_LABEL[m], 1600, 'Mentality');
     announce(`Mentality: ${MENTALITY_LABEL[m]}.`);
   };
@@ -316,12 +351,15 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     state: MatchState;
     step: () => boolean;
     end: number;
+    /** The tick the slow-motion finish begins at (the strike, for a goal). */
+    slowFrom: number;
     acc: number;
     started: number;
     skip: HTMLButtonElement;
   } | null = null;
   const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
+  const padEl = root.querySelector<HTMLElement>('.touch-pad')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
 
   // WebGL context loss (a GPU or driver reset): hold the match under a calm note instead of playing on
@@ -350,7 +388,6 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       renderer.prepare(s);
       last = performance.now();
       acc = 0;
-      announce('The graphics could not be restored, so the match carries on in the 2D view.');
     },
   });
 
@@ -375,10 +412,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     });
     skip.addEventListener('contextmenu', (e) => e.preventDefault());
     wrapEl.appendChild(skip);
+    juice.clear();
+    hud.clearWord();
+    bannerUntil = 0;
     wrapEl.classList.add('replaying');
     hudEl.classList.add('replaying');
     input.reset?.();
-    replay = { h, state: opened.state, step: opened.step, end: Math.min(buffer.latest, h.tick + REPLAY_TAIL), acc: 0, started: performance.now(), skip };
+    const end = Math.min(buffer.latest, h.tick + REPLAY_TAIL);
+    // A goal's slow-motion starts as the shot is struck (a beat before it), so the swing and the flight to the net
+    // are the slow part, capped at 2.2 s of clip; the rest keep the plain last 1.5 s.
+    const slowFrom = h.shot !== undefined ? Math.max(h.shot - 9, end - Math.round(2.2 * TICK_HZ), from) : end - REPLAY_SLOW_TICKS;
+    replay = { h, state: opened.state, step: opened.step, end, slowFrom: Math.min(slowFrom, end - REPLAY_SLOW_TICKS), acc: 0, started: performance.now(), skip };
     // Goals and big chances from behind the goal for the slow-motion finish; cards from the low side.
     r3.replayShot = { kind: 'low', goalX: h.goalX };
     hud.replay(`${h.label} · ${coarsePointer() ? 'tap to skip' : hotseat ? 'click or Esc to skip' : 'click, Space or Esc to skip'}`);
@@ -407,8 +451,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   /** Advance the replay by `elapsed` seconds of wall time; false once it has finished. */
   function stepReplay(elapsed: number): boolean {
     const r = replay!;
-    const slow = r.state.tick >= r.end - REPLAY_SLOW_TICKS;
-    r.acc += elapsed * (slow ? 0.5 : 1);
+    const slow = r.state.tick >= r.slowFrom;
+    // Slow-motion is for those who haven't asked for less motion; the closer angle on the goal stays.
+    r.acc += elapsed * (slow && !reducedMotion() ? 0.5 : 1);
     if (slow && r.h.kind !== 'red' && r.h.kind !== 'yellow') (renderer as Renderer3D).replayShot = { kind: 'goal', goalX: r.h.goalX };
     while (r.acc >= DT) {
       r.acc -= DT;
@@ -444,17 +489,50 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let lastEvent = 0;
   let bannerUntil = 0;
   let shownHalftime = false;
+  let endSkip = () => {};
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
-  function banner(text: string, ms: number, sub?: string) {
-    hud.word(text, ms, sub);
+  // T: the score and the clock, said on request (the scoreboard is a picture to a screen reader on the canvas).
+  const onScoreKey = (e: KeyboardEvent) => {
+    if (e.code !== 'KeyT' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || paused || replay || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    announce(`${scoreLine()} ${s.phase === 'halftime' ? 'Half-time.' : s.phase === 'fulltime' ? 'Full-time.' : `Minute ${matchMinute(s)}, ${s.half === 1 ? 'first' : 'second'} half.`}`);
+  };
+  document.addEventListener('keydown', onScoreKey);
+
+  // The break recap, as banner lines: score, each side's scorers with minutes, then what the sim already counts.
+  const recap = (hint?: string) => {
+    const [h, a] = [home.short, away.short];
+    const side = (t: 0 | 1) => {
+      const by = new Map<string, string[]>();
+      for (const g of s.goals) if (g.team === t) by.set(g.scorer, [...(by.get(g.scorer) ?? []), `${g.minute}'`]);
+      const all = [...by].map(([n, m]) => `${n} ${m.join(' ')}`);
+      return all.length ? `${(t ? a : h)}: ${all.slice(0, 3).join(', ')}${all.length > 3 ? ` +${all.length - 3}` : ''}` : '';
+    };
+    const [x, y] = s.stats;
+    const [pa, pb] = possessionShare(s);
+    const p = pa + pb ? pa : 50;
+    const cards = x.yellows + x.reds + y.yellows + y.reds;
+    return [`${h} ${s.score[0]}–${s.score[1]} ${a}`, side(0), side(1), `Shots ${x.shots}–${y.shots} · Possession ${p}–${100 - p}%${cards ? ` · Cards ${x.yellows + x.reds}–${y.yellows + y.reds}` : ''}`, hint].filter(Boolean).join('\n');
+  };
+
+  function banner(text: string, ms: number, sub?: string, tone?: string) {
+    hud.word(text, ms, sub, tone);
     bannerUntil = performance.now() + ms;
+  }
+
+  if (o.intro) {
+    // Higher and smaller than the goal words, clear of the kick-off prompt in the middle of the pitch.
+    const el = root.querySelector<HTMLElement>('#banner')!;
+    banner(o.intro.title, 2600, o.intro.sub);
+    el.classList.add('intro');
+    setTimeout(() => el.classList.remove('intro'), 2700);
   }
 
   function finish(forfeited: boolean) {
     if (done) return;
     done = true;
     cancelAnimationFrame(raf);
+    endSkip();
     dispose();
     if (input.mode) o.onControls?.(input.mode());
     if (forfeited) clearLastReplay();
@@ -484,12 +562,28 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
             pendingTactic = 0;
+            if (resumeTag) {
+              hud.tag(MENTALITY_LABEL[resumeTag], 1600, 'Mentality');
+              qtNote(resumeTag); // in effect now: the note drops 'Applies when you resume'
+            }
+            resumeTag = null;
           }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
+          const before = s.controlled[0];
           step(s, used);
+          if (!Array.isArray(used) && (used.select || used.switchPlayer) && s.controlled[0] !== before) juice.buzz(10);
           juice.tick(s);
           buffer.push(used, s);
-          for (const h of spotter.update(s)) consider(h);
+          for (const h of spotter.update(s)) {
+            // The near things get their word as they happen, replay or not.
+            if (h.kind === 'woodwork' || h.kind === 'miss') {
+              const word = h.kind === 'miss' ? 'So close!' : 'Off the woodwork!';
+              const who = h.label.split(' · ')[1];
+              hud.tag(word, 1700, who);
+              announce(who ? `${word} ${who}` : word); // the tag itself is aria-hidden
+            }
+            consider(h);
+          }
           acc -= DT;
           steps++;
           if (live()) shownThisStop = false;
@@ -513,6 +607,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
         renderer.draw(s, extras);
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
+        // Touch pads: the held button fills with the kick's power.
+        const heldPad = padEl.querySelector<HTMLElement>('.pad-btn.down');
+        if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
         hud.update(s, charge, extras.charges ? undefined : hudGauge(s, extras));
       }
     }
@@ -531,19 +628,28 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const e = s.events[lastEvent++];
       const w = refereeWord(s, e);
       if (w?.live) hud.tag(w.word, 1800, w.sub);
-      else if (w) banner(w.word, 1500, w.sub);
+      else if (w) banner(w.word, 1500, w.sub, w.tone);
       const call = refereeCall(s, e);
       if (call) announce(call);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
-      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
+      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      // A quick white flash over the pitch as the net moves (CSS drops it under reduced motion).
+      wrapEl.classList.remove('goal-flash');
+      void wrapEl.offsetWidth;
+      wrapEl.classList.add('goal-flash');
+      // The scorer's number pops (the sides' own score cells, not the HUD's text writes below).
+      const cell = ev.team === 0 ? sbH : sbA;
+      cell.classList.remove('bump');
+      void cell.offsetWidth;
+      cell.classList.add('bump');
       announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
-      banner('Half time', 1800);
+      banner('Half time', 2600, recap());
       announce(`Half-time. ${scoreLine()}`);
     }
     if (bannerUntil && now > bannerUntil) {
@@ -553,9 +659,23 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       ending = true;
       // Law 3: abandoned, the awarded result stands.
       if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
-      else banner('Full time', 99999);
+      else banner('Full time', 99999, recap('Tap or press Space for the result'));
       announce(`Full-time. ${scoreLine()}`);
-      setTimeout(() => finish(false), 1100);
+      // A beat for the whistle and the score before the result dialog; a tap, click or Space/Enter/Esc moves on.
+      const timer = window.setTimeout(() => finish(false), 2000);
+      const t0 = performance.now();
+      const skipEnd = (e: Event) => {
+        if (performance.now() - t0 < REPLAY_SKIP_AFTER_MS || (e instanceof KeyboardEvent && !['Escape', ' ', 'Enter'].includes(e.key))) return;
+        clearTimeout(timer);
+        finish(false);
+      };
+      wrapEl.addEventListener('pointerdown', skipEnd);
+      window.addEventListener('keydown', skipEnd);
+      endSkip = () => {
+        wrapEl.removeEventListener('pointerdown', skipEnd);
+        window.removeEventListener('keydown', skipEnd);
+        clearTimeout(timer);
+      };
       cancelAnimationFrame(raf);
     }
   }
@@ -590,7 +710,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onTacticKey);
+    document.removeEventListener('keydown', onScoreKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    endSkip();
     if (guardingBack) {
       window.removeEventListener('popstate', onPop);
       guardingBack = false;

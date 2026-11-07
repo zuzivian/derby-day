@@ -171,3 +171,15 @@ test('home: an unlocked Cup card opens Competitions', async (t) => {
   expect(await page.evaluate(() => document.activeElement.id), 'focus on the Competitions tab').toBe('tab-competitions');
   expect(await page.locator('[data-action="comp-start-cup"]').count(), 'the cup can start').toBe(1);
 });
+
+test('home: the ranked hero says why this match matters: head-to-head and what a win does', async (t) => {
+  const page = await openApp(t, { level: 12, mutateSave: (save) => {
+    const c = save.ladder[0];
+    save.nextOpp = c.id;
+    save.history.push({ opponent: c.name, opponentShort: c.short, goalsFor: 2, goalsAgainst: 1, ranked: true, eloBefore: 1000, eloAfter: 1010, scorers: [] });
+  } });
+  expect(await page.locator(`${SEL.hero} .story-h2h`).innerText(), 'head-to-head').toMatch(/Last time you won 2–1/);
+  expect(await page.locator(`${SEL.hero} .story-win`).innerText(), 'what a win does').toMatch(/^Win: \+\d+ Elo/);
+  const fresh = await openApp(t, { level: 12 });
+  expect(await fresh.locator(`${SEL.hero} .story-h2h`).innerText(), 'first meeting').toMatch(/First meeting/);
+});

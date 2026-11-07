@@ -109,3 +109,16 @@ test('tactics board: formation and mentality are radio groups that save, survive
     expect(scrollWidth, `no horizontal scroll at ${width}px`).toBeLessThan(innerWidth + 1);
   }
 });
+
+test('screen reader: Ladder and Sell headings are short, the paste-replay button says what it plays', async (t) => {
+  const page = await openApp(t);
+  await goTab(page, 'ladder');
+  expect(await page.getByRole('heading', { name: 'Ladder', exact: true }).count(), 'a short Ladder heading').toBe(1);
+  expect(await page.getByRole('table', { name: 'Ladder', exact: true }).count(), 'the table is named Ladder').toBe(1);
+  expect(await page.locator('#ladder-more').textContent(), 'the detail is kept').toContain('ranked by Elo');
+  expect(await page.getByRole('table', { name: 'Ladder' }).getAttribute('aria-describedby'), 'and reachable as the description').toBe('ladder-more');
+  await goTab(page, 'transfers');
+  expect(await page.getByRole('heading', { name: 'Sell', exact: true }).count(), 'a short Sell heading').toBe(1);
+  await goTab(page, 'club');
+  expect(await page.getByRole('button', { name: 'Play pasted replay' }).count(), 'the Play button names its job').toBe(1);
+});

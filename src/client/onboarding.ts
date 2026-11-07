@@ -10,9 +10,10 @@ import type { ClubIdentity } from '../meta/club.ts';
 import type { Save } from '../meta/game.ts';
 import { NAME_MAX, NAME_MIN, renameClub, rerollColours, rerollName, validateClubName } from '../meta/identity.ts';
 import { levelForXp, nextUnlockText, type XpGain } from '../meta/levels.ts';
-import { announce, captureFocus, restoreFocus } from './a11y.ts';
+import { announce, autoFocus, captureFocus, restoreFocus } from './a11y.ts';
 import { xpCardHtml } from './levels.ts';
 import { crestSvg } from './crest.ts';
+import { confettiHtml } from './confetti.ts';
 import { armXpCard } from './screenFx.ts';
 import { esc } from './ui.ts';
 
@@ -44,7 +45,7 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
     <main id="main" class="ob-main" tabindex="-1">
       <section class="panel ob-card ob-welcome" aria-labelledby="ob-title">
         <h2 id="ob-title" class="ob-title" tabindex="-1">Welcome, coach</h2>
-        <p class="ob-lede">Run a football club and play every match yourself. Your first game is against ${esc(o.opp.name)}, a friendly one: about six minutes, and the coach will show you the controls as you go.</p>
+        <p class="ob-lede">Run a club and play every match yourself. First up: a friendly against ${esc(o.opp.name)}, about six minutes. The coach shows the controls as you go.</p>
         <div class="versus ob-versus">
           <div class="side">${crestSvg(c, 64)}<div class="side-name">${esc(c.name)}</div>${kit(c)}</div>
           <div class="vs" aria-hidden="true">vs</div>
@@ -61,7 +62,7 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
     else if (el?.dataset.action === 'skip-onboarding') o.onSkip();
   };
   root.addEventListener('click', onClick);
-  root.querySelector<HTMLElement>('#ob-kickoff')?.focus();
+  autoFocus(root.querySelector<HTMLElement>('#ob-kickoff'));
   return () => root.removeEventListener('click', onClick);
 }
 
@@ -75,17 +76,9 @@ export function celebrationWords(gf: number, ga: number): { title: string; sub: 
   return { title: 'Good effort', sub: 'Everyone loses a first game. Now you know the controls.' };
 }
 
-/** "Squad, vs Player (one screen and two tabs) and Practice (Easy)": names like "Practice: Easy" are grouped, so a sentence has no stray colons. */
+/** "Squad, vs Player and Practice": the menu names only. Variants such as "Practice: Easy" fold into their head, so a sentence has no colons or brackets. */
 function listNames(names: string[]): string {
-  const groups = new Map<string, string[]>();
-  for (const n of names) {
-    const [head, ...rest] = n.split(': ');
-    groups.set(head, [...(groups.get(head) ?? []), ...(rest.length ? [rest.join(': ')] : [])]);
-  }
-  const items = [...groups].map(([head, parts]) => {
-    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : (parts[0] ?? '');
-    return list ? `${head} (${list})` : head;
-  });
+  const items = [...new Set(names.map((n) => n.split(': ')[0]))];
   return items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
 }
 
@@ -124,22 +117,24 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
       const w = celebrationWords(o.gf, o.ga);
       const p = levelForXp(o.save.xp ?? 0);
       const next = nextUnlockText(o.save);
-      return `<section class="panel ob-card ob-celebrate" aria-labelledby="ob-title">
+      return `<section class="panel ob-card ob-celebrate${o.gf > o.ga ? ' won' : ''}" aria-labelledby="ob-title">
+        ${o.gf > o.ga ? confettiHtml() : ''}
         <p class="eyebrow">Full time</p>
         <h2 id="ob-title" class="ob-title" tabindex="-1">${w.title}</h2>
         <div class="versus ob-versus">
           <div class="side">${crestSvg(c, 56)}<div class="side-name">${esc(c.name)}</div></div>
-          <div class="ob-score" role="img" aria-label="Final score: ${o.gf} to ${o.ga}"><span aria-hidden="true">${o.gf} – ${o.ga}</span></div>
+          <div class="ob-score" role="img" aria-label="Final score: ${o.gf} to ${o.ga}"><span aria-hidden="true"><span>${o.gf}</span> – <span>${o.ga}</span></span></div>
           <div class="side">${crestSvg(o.opp, 56)}<div class="side-name">${esc(o.opp.name)}</div></div>
         </div>
         <p class="ob-lede">${w.sub}</p>
         <div class="ob-xp" aria-labelledby="ob-xp-title">
           <h3 id="ob-xp-title" class="eyebrow">Club level ${p.level}</h3>
           ${xpCardHtml(o.save, o.xp, false)}
-          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.` : 'The club opens up as it levels.'}</p>` : ''}
+          ${o.xp.levelAfter > o.xp.levelBefore ? `<p><b>Level ${o.xp.levelAfter}!</b> ${o.opened.length ? `Now open: ${esc(listNames(o.opened))}.${o.opened.some((n) => n.startsWith('Squad')) ? ' Pick your XI in Squad, or play on in Practice at no risk to your Elo.' : ''}` : 'The club opens up as it levels.'}</p>` : ''}
           ${next ? `<p class="muted small">Next: ${esc(next)}.</p>` : ''}
         </div>
-        <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Skip, go to the club</button><button class="btn primary big" data-ob="next" type="button">Name your club</button></div>
+        <p class="ob-whatsnext">On Home, press Kick off to play again.</p>
+        <div class="ob-nav"><button class="btn ghost" data-ob="next" type="button">Name your club</button><button class="btn primary big" data-ob="skip" type="button">Go to Home</button></div>
       </section>`;
     }
     return `<section class="panel ob-card" aria-labelledby="ob-title">
@@ -166,7 +161,7 @@ export function mountAfterMatch(root: HTMLElement, o: AfterMatchOptions): () => 
         <p id="ob-name-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
         ${nameError ? `<p id="ob-name-error" class="ob-error" role="alert">${esc(nameError)}</p>` : ''}
       </form>
-      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Skip</button><button class="btn primary big" data-ob="done" type="button">Go to the club</button></div>
+      <div class="ob-nav"><button class="btn ghost" data-ob="skip" type="button">Keep this club</button><button class="btn primary big" data-ob="done" type="button">Go to Home</button></div>
     </section>`;
   }
 

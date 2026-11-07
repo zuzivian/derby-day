@@ -25,7 +25,9 @@ import {
   recordSeasonMatch,
   SEASON_PRIZES,
   seasonOpponent,
+  seasonStanding,
   seasonTable,
+  MAX_SEASON_FORFEITS,
   seasonVerdict,
   simulateRestOfCup,
   startCup,
@@ -51,7 +53,8 @@ import { hashString } from '../sim/rng.ts';
 import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
-import { esc, type App } from './ui.ts';
+import { storyHtml } from './stakes.ts';
+import { CUP_ICON, emptyState, esc, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -65,8 +68,7 @@ export interface CompContext {
 
 const ROUND_PLURAL = ['Quarter-finals', 'Semi-finals', 'Final'];
 
-const CUP_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V6h3V3Zm0 5H6a2 2 0 0 0 1 1.7V8Zm10 0v1.7A2 2 0 0 0 18 8h-1Z" fill="currentColor"/></svg>`;
-const SHIELD_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 5 1.5 3.1 3.4.5-2.5 2.4.6 3.4L12 14.8 9 16.4l.6-3.4-2.5-2.4 3.4-.5L12 7Z" fill="currentColor"/></svg>`;
+export const SHIELD_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Zm0 5 1.5 3.1 3.4.5-2.5 2.4.6 3.4L12 14.8 9 16.4l.6-3.4-2.5-2.4 3.4-.5L12 7Z" fill="currentColor"/></svg>`;
 
 // ---------------------------------------------------------------------------
 // Rendering
@@ -101,9 +103,15 @@ function cabinet(s: Save): string {
     <h2 id="cabinet-title" class="eyebrow">Trophy cabinet</h2>
     ${t.length
       ? `<ul class="trophies">${t.map((x) => `<li class="trophy trophy-${x.kind}">${x.kind === 'cup' ? CUP_ICON : SHIELD_ICON}<span>${esc(x.title)}</span></li>`).join('')}</ul>`
-      : `<p class="muted">Empty for now. Win the cup or the league to put something in it.</p>`}
-    <p class="muted small">Cup and league matches pay prize money and an extra training session, and move your Elo (not your ladder record). Forfeiting counts as a 0–3 defeat.</p>
+      : emptyState('Empty for now. Win the cup or the league to put something in it.', CUP_ICON)}
+    <p class="muted small">Cup and league matches pay prize money and an extra training session, and change your Elo rating (not your ladder record). Forfeiting counts as a 0–3 defeat.</p>
   </article>`;
+}
+
+/** What winning the tie is worth: the next round, or the cup itself. */
+function cupWinLine(s: Save): string {
+  const r = s.cup?.round ?? 0;
+  return `Win: ${r >= CUP_ROUNDS.length - 1 ? 'lift the cup' : `through to the ${CUP_ROUNDS[r + 1].toLowerCase()}`}`;
 }
 
 /** The "next match" strip shared by both panels. */
@@ -114,13 +122,14 @@ function nextMatch(s: Save, opp: LadderClub, label: string, kind: 'cup' | 'seaso
   const right = { c: opp, n: opp.name, x: theirs };
   const [a, b] = home ? [left, right] : [right, left];
   return `
-    <div class="comp-next">
-      <div class="comp-next-label eyebrow">Next: ${esc(label)} · ${home ? 'home' : 'away'}</div>
+    <div class="comp-next${kind === 'cup' && s.cup?.round === CUP_ROUNDS.length - 1 ? ' final' : ''}">
+      <div class="comp-next-label eyebrow">${kind === 'cup' && s.cup?.round === CUP_ROUNDS.length - 1 ? `${CUP_ICON} ` : ''}Next: ${esc(label)} · ${home ? 'home' : 'away'}</div>
       <div class="comp-versus">
         <div class="side">${crestSvg(a.c, 44)}<div class="comp-side-name">${esc(a.n)}</div><div class="side-elo">XI ${a.x}</div></div>
         <div class="vs" aria-hidden="true">vs</div>
         <div class="side">${crestSvg(b.c, 44)}<div class="comp-side-name">${esc(b.n)}</div><div class="side-elo">XI ${b.x}</div></div>
       </div>
+      ${storyHtml(s, opp, kind === 'cup' ? cupWinLine(s) : undefined)}
       <button class="btn primary big" data-action="comp-play" data-kind="${kind}">Play ${esc(label.toLowerCase())}</button>
     </div>`;
 }
@@ -138,7 +147,7 @@ function cupPanel(s: Save): string {
       <div class="board-head"><h2 id="cup-title" class="comp-title">The Cup</h2><span class="eyebrow">Knockout · ${COMP_SIZE} clubs · ${divisionName(d)} prizes</span></div>
       <p>${field}, seeded by Elo. Quarter-final, semi-final, final. One match a round; a draw goes to penalties.</p>
       <dl class="facts comp-prizes">
-        <div><dt>Quarter-final</dt><dd>${formatMoney(prizeIn(CUP_PRIZES[0], d))}</dd></div>
+        <div><dt>Quarter-final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[0], d))}</dd></div>
         <div><dt>Semi-final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[1], d))}</dd></div>
         <div><dt>Final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[2], d))}</dd></div>
         <div><dt>Winner</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[3], d))}</dd></div>
@@ -155,10 +164,10 @@ function cupPanel(s: Save): string {
   if (tie && opp) status = nextMatch(s, opp, `Cup ${CUP_ROUNDS[cup.round].toLowerCase()}`, 'cup', tie.a === s.club.id);
   else if (cup.done) {
     const won = cup.winner === s.club.id;
-    status = `<div class="comp-status ${won ? 'good' : ''}" role="status"><b>${won ? 'Cup winners!' : `${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.`}</b> You earned ${formatMoney(cup.earned)}.</div>
-      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Done: clear the bracket</button></div>`;
+    status = `<div class="comp-status ${won ? 'good lift' : out ? 'out' : ''}" role="status">${won ? `${CUP_ICON} ` : ''}${out ? '<b>Out of the cup.</b> ' : ''}${won ? '<b>Cup winners!</b>' : `${out ? `${knockedOut(s, cup)} ` : ''}<b>${esc(clubById(s, cup.winner!)?.name ?? '')} won the cup.</b>`}${cup.earned > 0 ? ` You earned ${formatMoney(cup.earned)}.` : ' No prize money this time.'}</div>
+      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="cup">Finish the cup</button></div>`;
   } else {
-    status = `<div class="comp-status" role="status">${out ? 'You are out of the cup.' : ''} The other ties are still to play.</div>
+    status = `<div class="comp-status${out ? ' out' : ''}" role="status">${out ? `<b>Out of the cup.</b> ${knockedOut(s, cup)} ` : ''}The other ties are still to play.</div>
       <div class="actions"><button class="btn primary" data-action="comp-sim-cup">Simulate the rest of the cup</button></div>`;
   }
   return `
@@ -169,12 +178,23 @@ function cupPanel(s: Save): string {
   </article>`;
 }
 
+/** "Beaten by X in the semi-finals." for a club that has lost its tie. */
+function knockedOut(s: Save, cup: Cup): string {
+  for (let r = 0; r < CUP_ROUNDS.length; r++) {
+    const t = cup.rounds[r].find((x) => (x.a === s.club.id || x.b === s.club.id) && x.winner && x.winner !== s.club.id);
+    if (t) return `Beaten by ${esc(clubById(s, t.winner!)?.name ?? '')} in the ${CUP_ROUNDS[r].toLowerCase()}${t.pens ? ' on penalties' : ''}.`;
+  }
+  return '';
+}
+
 function bracket(s: Save, cup: Cup): string {
+  // Your road to the cup: the tie you play next, and the empty ties it feeds.
+  const mine = cup.done ? -1 : cup.rounds[cup.round].findIndex((t) => (t.a === s.club.id || t.b === s.club.id) && t.winner === undefined);
   const cols = CUP_ROUNDS.map((_, r) => {
     const ties = cup.rounds[r].length ? cup.rounds[r] : placeholderTies(r);
     return `<section class="round" aria-labelledby="round-${r}">
       <h3 id="round-${r}" class="round-title">${ROUND_PLURAL[r]}</h3>
-      <ol class="ties">${ties.map((t, k) => tieCard(s, t, r, k)).join('')}</ol>
+      <ol class="ties">${ties.map((t, k) => tieCard(s, t, r, k, mine < 0 ? '' : r === cup.round && k === mine ? 'Next up' : r > cup.round && k === mine >> (r - cup.round) ? 'Your path' : '')).join('')}</ol>
     </section>`;
   });
   return `<div class="bracket">${cols.join('')}</div>`;
@@ -182,14 +202,14 @@ function bracket(s: Save, cup: Cup): string {
 
 const placeholderTies = (r: number): Tie[] => Array.from({ length: [4, 2, 1][r] }, () => ({ a: '', b: '' }));
 
-function tieCard(s: Save, t: Tie, round: number, k: number): string {
+function tieCard(s: Save, t: Tie, round: number, k: number, flag = ''): string {
   const played = t.winner !== undefined;
   const row = (id: string, goals: number | undefined, pens: number | undefined, from: string) => {
     if (!id) return `<div class="tie-row tbc"><span class="tie-name">${from}</span></div>`;
     const c = clubById(s, id);
     const you = id === s.club.id;
     const win = played && t.winner === id;
-    return `<div class="tie-row${win ? ' win' : ''}${played && !win ? ' lose' : ''}${you ? ' you' : ''}">
+    return `<div class="tie-row${win ? ' win' : ''}${win && round === ROUND_PLURAL.length - 1 ? ' champ' : ''}${played && !win ? ' lose' : ''}${you ? ' you' : ''}">
       ${c ? kit(c) : ''}<span class="tie-name">${esc(c?.name ?? '?')}${you ? ' <span class="pill">you</span>' : ''}</span>
       <span class="tie-score">${goals ?? ''}${pens !== undefined ? `<small> (${pens})</small>` : ''}</span>
     </div>`;
@@ -200,10 +220,10 @@ function tieCard(s: Save, t: Tie, round: number, k: number): string {
   const label = t.a && t.b
     ? `${clubById(s, t.a)?.name} ${played ? `${t.ga}–${t.gb}${t.pens ? `, ${t.pens[0]}–${t.pens[1]} on penalties` : ''}` : 'versus'} ${clubById(s, t.b)?.name}`
     : 'To be decided';
-  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ' mine' : ''}" aria-label="${esc(label)}">
+  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ` mine${played ? (t.winner === s.club.id ? ' won' : ' lost') : ''}` : ''}${flag ? ' flag' : ''}${flag === 'Your path' ? ' path' : ''}" aria-label="${esc(label)}${flag ? `. ${flag}` : ''}${played && (t.a === s.club.id || t.b === s.club.id) ? (t.winner === s.club.id ? '. You won' : '. You lost') : ''}">
     ${row(t.a, t.ga, t.pens?.[0], fromA)}
     ${row(t.b, t.gb, t.pens?.[1], fromB)}
-    ${t.pens ? `<div class="tie-note">on penalties</div>` : ''}
+    ${t.pens ? `<div class="tie-note">on penalties</div>` : flag ? `<div class="tie-note tie-flag" aria-hidden="true">${flag}</div>` : ''}
   </li>`;
 }
 
@@ -219,10 +239,10 @@ function seasonPanel(s: Save): string {
       <div class="board-head"><h2 id="season-title" class="comp-title">The League</h2><span class="eyebrow">${divisionName(d)} · ${COMP_SIZE} clubs · ${COMP_SIZE - 1} matchdays</span></div>
       <p>Play the rest of ${divisionName(d)} once. Three points for a win, one for a draw; goal difference, then goals scored, split ties. ${moves[0].toUpperCase()}${moves.slice(1)}. Prize money for every place, paid for the matchdays you play.</p>
       <dl class="facts comp-prizes">
-        <div><dt>Champions</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[0], d))}</dd></div>
-        <div><dt>2nd</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[1], d))}</dd></div>
-        <div><dt>3rd</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[2], d))}</dd></div>
-        <div><dt>8th</dt><dd>${formatMoney(prizeIn(SEASON_PRIZES[7], d))}</dd></div>
+        <div><dt>Champions</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[0], d))}</dd></div>
+        <div><dt>2nd</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[1], d))}</dd></div>
+        <div><dt>3rd</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[2], d))}</dd></div>
+        <div><dt>8th</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[7], d))}</dd></div>
       </dl>
       <div class="actions"><button class="btn primary big" id="comp-start-season" data-action="comp-start-season">Start a season</button></div>
     </article>`;
@@ -234,12 +254,16 @@ function seasonPanel(s: Save): string {
   if (f && opp) status = nextMatch(s, opp, `Matchday ${season.matchday + 1}`, 'season', f.home === s.club.id);
   else {
     const pos = season.finish ?? 0;
-    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))} You earned ${formatMoney(season.earned)}.</div>
-      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Done: clear the table</button></div>`;
+    // Too many forfeits wins no title and no promotion (meta/competitions.ts): no champions' shield or lift then.
+    const honest = (season.forfeits ?? 0) <= MAX_SEASON_FORFEITS;
+    const head = pos === 1 && honest ? 'Champions' : season.moved === 'up' ? 'Promoted' : season.moved === 'down' ? 'Relegated' : pos === 1 ? 'Top of the table' : 'Stayed up';
+    status = `<div class="comp-status end ${season.moved === 'down' ? 'bad' : honest && pos <= 2 ? 'good lift' : ''}" role="status">${pos === 1 && honest ? `${SHIELD_ICON} ` : ''}<b class="end-head">${head}</b><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
+      <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Finish the season</button></div>`;
   }
   return `
   <article class="panel comp-panel" aria-labelledby="season-title">
     <div class="board-head"><h2 id="season-title" class="comp-title">League ${season.edition}</h2><span class="eyebrow">${divisionName(season.division ?? DIVISIONS)} · ${season.done ? 'Finished' : `Matchday ${season.matchday + 1} of ${days}`}</span></div>
+    ${seasonStanding(s) ? `<p class="league-standing">${esc(seasonStanding(s))}</p>` : ''}
     ${status}
     <div class="league-body">
       <div>${leagueTable(s, season)}</div>
@@ -250,6 +274,8 @@ function seasonPanel(s: Save): string {
 
 function leagueTable(s: Save, season: Season): string {
   const rows = seasonTable(s, season);
+  // The fixture grid abbreviates clubs; show the same code beside each name so the two can be matched up.
+  const codes = fixtureCodes(s, season.entrants);
   const started = rows.some((r) => r.played > 0);
   const d = season.division ?? DIVISIONS;
   const up = d > 1;
@@ -264,9 +290,9 @@ function leagueTable(s: Save, season: Season): string {
       <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
     </tr></thead>
     <tbody>${rows
-      .map((r, i) => `<tr class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
+      .map((r, i) => `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
         <td class="num">${i + 1}</td>
-        <th scope="row" class="name">${kit(r)}${esc(r.name)}${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
+        <th scope="row" class="name">${kit(r)}${esc(r.name)} <span class="club-code" aria-hidden="true">${esc(codes.get(r.id) ?? '')}</span>${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
         <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd ? signed(r.gd) : '0'}</td><td class="num ovr">${r.points}</td>
       </tr>`)
@@ -304,7 +330,9 @@ function fixtureList(s: Save, season: Season): string {
             const mine = f.home === s.club.id || f.away === s.club.id;
             const score = f.hg !== undefined ? `${f.hg}–${f.ag}` : 'v';
             const full = `${clubById(s, f.home)?.name} ${f.hg !== undefined ? `${f.hg}–${f.ag}` : 'versus'} ${clubById(s, f.away)?.name}`;
-            return `<li class="fx${mine ? ' mine' : ''}" aria-label="${esc(full)}"><span class="fx-team">${esc(nameOf(f.home))}</span><span class="fx-score">${score}</span><span class="fx-team away">${esc(nameOf(f.away))}</span></li>`;
+            const me = f.home === s.club.id ? 1 : -1;
+            const r = mine && f.hg !== undefined ? ((f.hg - f.ag!) * me > 0 ? 'W' : f.hg === f.ag ? 'D' : 'L') : '';
+            return `<li class="fx${mine ? ' mine' : ''}"${r ? ` data-r="${r}"` : ''} aria-label="${esc(full)}${r ? `. ${{ W: 'Win', D: 'Draw', L: 'Defeat' }[r]}` : ''}"><span class="fx-team">${esc(nameOf(f.home))}</span><span class="fx-score"${r ? ` data-r="${r}"` : ''}>${score}</span><span class="fx-team away">${esc(nameOf(f.away))}</span></li>`;
           })
           .join('')}</ul>
       </section>`;
@@ -354,12 +382,20 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
   }
 }
 
+/** What the result's close button says, since it lands on the bracket or table: the next round while the cup is live, otherwise back to the competition. */
+export function closeLabelFor(kind: 'cup' | 'season', s: Save): string {
+  if (kind === 'season') return 'Back to the league';
+  const cup = s.cup;
+  if (!cup || cup.done || isOut(s, cup)) return 'Back to the cup';
+  return cup.round >= CUP_ROUNDS.length - 1 ? 'On to the final' : `Next: ${CUP_ROUNDS[cup.round].toLowerCase()}`;
+}
+
 /** Launch your next cup tie or league fixture live. Returns true if a match started. */
 function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean {
   const s = ctx.app.save;
   const opp = kind === 'cup' ? (s.cup ? cupOpponent(s, s.cup) : null) : s.season ? seasonOpponent(s, s.season) : null;
   if (!opp) {
-    ctx.toast('No match to play right now.', false);
+    ctx.toast('Nothing to play right now. Start a cup or season first.', false);
     return false;
   }
   const label = kind === 'cup' ? `Cup ${CUP_ROUNDS[s.cup!.round].toLowerCase()}` : `League matchday ${s.season!.matchday + 1}`;
@@ -399,6 +435,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
     const scorersFor = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 0).map((e) => `${e.scorer} ${e.minute}'`);
     const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
     const eloBefore = s.club.elo;
+    const rankBefore = rankOf(s);
     // Quick-simulating the rest of the round happens here (~250 ms).
     const outcome: CompOutcome = kind === 'cup' ? recordCupMatch(s, gf, ga, scorersFor, undefined, forfeited, pens) : recordSeasonMatch(s, gf, ga, scorersFor, undefined, forfeited);
     maybeRollover(s); // after the whole round is recorded, so the CPU ties used this year's squads
@@ -418,6 +455,9 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
       label,
       note: outcome.note,
       pens,
+      rankBefore,
+      headline: outcome.trophy ? (outcome.trophy.kind === 'cup' ? 'Cup winners' : 'Champions') : undefined,
+      closeLabel: closeLabelFor(kind, s),
     };
     ctx.persist();
     ctx.app.screen = 'competitions';
