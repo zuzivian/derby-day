@@ -128,6 +128,8 @@ export interface Player3D {
 const RIM_DARK = 0.9;
 const RIM_FROM = 0.3;
 const RIM_TO = 0.62;
+/** Brightness of a surface touching the grass (1 = none), rising to full by 0.24 m up. */
+const FOOT_DARK = 0.6;
 
 // ---------------------------------------------------------------------------
 // Shared resources: geometries and materials are cached and shared by every
@@ -168,17 +170,25 @@ export class PlayerKit {
     let m = this.mats.get(key);
     if (!m) {
       const sm = new MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 } as Record<string, unknown>);
-      if (rim) {
-        sm.onBeforeCompile = (shader) => {
-          shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <opaque_fragment>',
-            `float rimEdge = 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) );
+      // Contact: boots, socks and anything lying on the grass darken toward it (world height), which
+      // roots the player without a shadow-map pixel or a mesh. Shirts sit well above it, so kits are untouched.
+      sm.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', 'varying float vFootY;\n#include <common>')
+          .replace('#include <project_vertex>', '#include <project_vertex>\nvFootY = ( modelMatrix * vec4( transformed, 1.0 ) ).y;');
+        shader.fragmentShader = shader.fragmentShader.replace('#include <common>', 'varying float vFootY;\n#include <common>').replace(
+          '#include <opaque_fragment>',
+          `outgoingLight *= mix( ${FOOT_DARK.toFixed(2)}, 1.0, smoothstep( 0.0, 0.24, vFootY ) );
+${
+  rim
+    ? `float rimEdge = 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) );
 outgoingLight *= 1.0 - ${RIM_DARK.toFixed(2)} * smoothstep( ${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, rimEdge );
-#include <opaque_fragment>`,
-          );
-        };
-        sm.customProgramCacheKey = () => 'player-rim';
-      }
+`
+    : ''
+}#include <opaque_fragment>`,
+        );
+      };
+      sm.customProgramCacheKey = () => (rim ? 'player-rim-foot' : 'player-foot');
       m = sm;
       this.mats.set(key, m);
     }
@@ -194,11 +204,11 @@ outgoingLight *= 1.0 - ${RIM_DARK.toFixed(2)} * smoothstep( ${RIM_FROM.toFixed(2
       c.width = 128;
       c.height = 128;
       const g = c.getContext('2d')!;
-      g.font = `800 ${num >= 10 ? 92 : 108}px 'Big Shoulders Display', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif`;
+      g.font = `800 ${num >= 10 ? 100 : 116}px 'Big Shoulders Display', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.lineJoin = 'round';
-      g.lineWidth = 10;
+      g.lineWidth = 14;
       g.strokeStyle = outline;
       g.strokeText(String(num), 64, 70);
       g.fillStyle = color;
@@ -481,8 +491,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 
   if (look.number !== null) {
     const outline = look.trim === '#111111' ? '#f5f5f5' : '#111111';
-    const num = new Mesh(kit.geo('numplane', () => new PlaneGeometry(0.2, 0.2)), kit.numberMat(look.number, look.trim, outline));
-    num.position.set(0, 0.27, -0.128);
+    const num = new Mesh(kit.geo('numplane', () => new PlaneGeometry(0.25, 0.25)), kit.numberMat(look.number, look.trim, outline));
+    num.position.set(0, 0.26, -0.13);
     num.rotation.set(-0.08, Math.PI, 0);
     spine.add(num);
   }
@@ -513,6 +523,8 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let yaw: number | null = null;
   let speedS = 0;
   let sideS = 0;
+  /** Smoothed turn rate, rad/s (+ = turning left), for banking into a turn. */
+  let turnS = 0;
   let fwdS = 0;
   let keeperW = 0;
   let windedW = 0;
@@ -596,7 +608,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       P.add('shL', 0.03 * Math.sin(t * 0.8) * idle, 0, 0.06 * idle);
       P.add('shR', -0.03 * Math.sin(t * 0.8) * idle, 0, -0.06 * idle);
     }
-    P.body(0, bob - 0.02 * idle, 0);
+    // Bank into the turn, about the feet: a runner turning at speed leans in.
+    const bank = reduced ? 0 : Math.max(-0.2, Math.min(0.2, -turnS * speed * 0.02)) * gait;
+    P.body(0, bob - 0.02 * idle, 0, 0, 0, bank);
   }
 
   // Stances layered over locomotion with their own smoothed weights.
@@ -884,8 +898,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       // Turn quickly, but never snap: max ~11 rad/s.
       const d = angleDelta(yaw, target);
       const maxTurn = 11 * dt;
+      const yaw0 = yaw;
       yaw += Math.abs(d) < maxTurn ? d : Math.sign(d) * maxTurn;
       yaw = damp(yaw, yaw + angleDelta(yaw, target), 14, dt);
+      if (dt > 0) turnS = damp(turnS, ctx.dtSim > 0 ? angleDelta(yaw0, yaw) / dt : 0, 8, dt);
       root.rotation.y = yaw;
 
       // Velocity in the player's frame, smoothed so the gait never jumps.

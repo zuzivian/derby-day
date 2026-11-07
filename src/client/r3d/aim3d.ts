@@ -599,6 +599,7 @@ export class AimLayer {
       mk.position.set(head.x, head.y + 0.55 * k + bob, head.z);
       mk.scale.set(0.55 * k, 0.46 * k, 1);
       rg.position.set(head.x, 0.035, head.z);
+      rg.scale.setScalar(1 + (f.reduced ? 0 : Math.sin(f.time * 4 + 1.2) * 0.05));
     }
 
     // Stamina bars over the human team(s); names over the controlled player and whoever is near the ball.
