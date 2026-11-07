@@ -105,3 +105,6 @@
 /* The welcome card is a dark felt card, but its club panel is the theme's light surface: the club names inherited the card's
    near-white text and vanished in the light theme (1.01:1). Ink on the panel is right in both themes. (Kept here, not in styles.css.) */
 .ob-welcome .ob-versus { color: var(--ink); }
+
+/* A goal, a card or the half/full-time words take the middle of the pitch for a couple of seconds: the tip steps aside rather than sit on them. */
+.pitch-wrap:has(.hud-word[data-tone]:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap:has(.hud-word.recap:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap.replaying :is(.coach-tip, .coach-intro) { visibility: hidden; }
