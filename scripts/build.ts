@@ -76,10 +76,13 @@ function headMeta(js: string): string {
   return [
     `<meta http-equiv="Content-Security-Policy" content="${esc(csp(js))}">`,
     `<title>Derby Day</title>`,
+    // The canvas takes the page colour (and dark-mode form controls/scrollbars) before the 1.3 MB of inline CSS and JS has parsed: no white flash in dark mode. Same colours as --bg in styles.css.
+    `<meta name="color-scheme" content="light dark">`,
+    `<style>html{background:#eaefed}@media(prefers-color-scheme:dark){html{background:#0c1311}}</style>`,
     `<meta name="description" content="${esc(DESCRIPTION)}">`,
     `<link rel="canonical" href="${SITE}">`,
-    `<meta name="theme-color" content="#e9eeec" media="(prefers-color-scheme: light)">`,
-    `<meta name="theme-color" content="#18211f" media="(prefers-color-scheme: dark)">`,
+    `<meta name="theme-color" content="#eaefed" media="(prefers-color-scheme: light)">`,
+    `<meta name="theme-color" content="#0c1311" media="(prefers-color-scheme: dark)">`,
     `<link rel="manifest" href="/manifest.webmanifest">`,
     `<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">`,
     `<link rel="icon" href="/icons/icon-192.png" type="image/png" sizes="192x192">`,
