@@ -181,8 +181,6 @@
 @media (prefers-reduced-motion: reduce) { .identity-preview.fresh { animation: none; } }
 
 /* Onboarding: the level note on the last step */
-.ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
-.ob-level p { margin: 0; }
 
 @media (max-width: 640px) {
   .xp-bar { min-width: 96px; }

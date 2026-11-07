@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { minifyGlslStrings, minifyGlslTemplates } from '../scripts/glsl-min';
+import { minifyGlslStrings, minifyGlslTemplates, squeezeGlslStrings } from '../scripts/glsl-min';
 
 describe('build-time GLSL shrink', () => {
   test('strips indentation after escaped newlines in GLSL string constants only', () => {
@@ -16,5 +16,18 @@ describe('build-time GLSL shrink', () => {
   });
   test('trims lines and drops blank ones in a plain glsl template', () => {
     expect(minifyGlslTemplates('x = /* glsl */`\n\tvoid main() {\n\n\t\tgl_FragColor = c;\n\t}\n`;')).toBe('x = /* glsl */`\nvoid main() {\ngl_FragColor = c;\n}\n`;');
+  });
+  test('squeezes spaces between GLSL tokens that cannot fuse, and nothing else', () => {
+    const src = 'const a = "#define sat( a ) clamp( a, 0.0, 1.0 )\\nfloat y = - x;\\nz = a - -b;\\nuniform vec3 c;\\nif ( a < b ) i ++;\\n#include <foo>";';
+    const out = squeezeGlslStrings(src);
+    expect(out).toContain('#define sat( a ) clamp( a, 0.0, 1.0 )'); // preprocessor lines untouched
+    expect(out).toContain('float y=-x;');
+    expect(out).toContain('z=a- -b;'); // "- -" must not become "--"
+    expect(out).toContain('uniform vec3 c;'); // words keep their space
+    expect(out).toContain('if(a<b)i++;');
+  });
+  test('leaves a GLSL string alone when it holds a comment', () => {
+    const src = 'const a = "float x = 1.0; // note\\nfloat y = 2.0;";';
+    expect(squeezeGlslStrings(src)).toBe(src);
   });
 });

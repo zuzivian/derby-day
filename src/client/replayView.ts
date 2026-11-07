@@ -15,9 +15,8 @@ import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
 import { EMPTY_ICON, emptyState } from './ui.ts';
+import { esc } from './html.ts';
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const FOCUSABLE = 'a[href], button:not([disabled]):not([aria-disabled="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 

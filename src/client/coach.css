@@ -96,8 +96,6 @@
 @media (prefers-reduced-motion: reduce) { .ob-score > span > span { animation: none; } }
 .ob-score { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-4xl); line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ob-xp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: var(--surface-2); }
-.ob-xp-bar { height: 8px; border-radius: var(--r-xs); background: var(--line); overflow: hidden; }
-.ob-xp-bar i { display: block; height: 100%; background: var(--accent); }
 .ob-welcome .kickoff { display: flex; width: 100%; justify-content: center; }
 .ob-welcome .ob-kit { justify-content: center; }
 
