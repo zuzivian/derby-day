@@ -1660,3 +1660,21 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .mk-note { display: block; font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); white-space: nowrap; }
 .mk-note.up { color: var(--good); }
 .mk-note.short { color: var(--bad); }
+
+/* Ladder story: your place, the gap to the club above, form; neighbours (the derby places) tinted; the form line on Club */
+.ladder-story { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-3); margin: 0 0 var(--sp-3); }
+.ladder-rank { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-xl); color: var(--accent); }
+.ladder-line { flex: 1 1 200px; min-width: 0; }
+.ladder-move { font-weight: 700; white-space: nowrap; }
+.ladder-move.up { color: var(--good); }
+.ladder-move.down { color: var(--bad); }
+.form-pips { display: inline-flex; gap: 4px; vertical-align: middle; }
+.form-line { margin: 0 0 var(--sp-2); display: flex; align-items: center; gap: var(--sp-2); font-weight: 700; color: var(--muted); }
+.tbl tr.near td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.tbl .pill.pill-derby { background: transparent; border: 1px solid var(--line-strong); color: var(--muted); }
+.cabinet { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.cabinet li { display: grid; justify-items: center; gap: 2px; min-width: 84px; padding: 8px 10px; border-radius: var(--r-md, 10px); border: 1px solid var(--line-strong); background: var(--surface-2); font-weight: 700; font-size: var(--fs-sm); text-align: center; }
+.cabinet .trophy-icon { width: 32px; height: 32px; color: var(--warn); }
+.cabinet li.season .trophy-icon { color: var(--good); }
+.cabinet li.empty { border-style: dashed; color: var(--muted); font-weight: 600; }
+.cabinet li.empty .trophy-icon { color: var(--line-strong); }

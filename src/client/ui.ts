@@ -13,6 +13,7 @@ import { isRising, potentialText, scoutedPotential, SEASON_WEEKS, weekOfYear } f
 import { DIVISIONS, divisionName, playerDivision } from '../meta/world.ts';
 import { ordinal } from '../meta/competitions.ts';
 import { historyPanel } from './history.ts';
+import { DERBY_PLACES } from './stakes.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
 import { confettiHtml } from './confetti.ts';
@@ -247,6 +248,7 @@ export function clubScreen(app: App): string {
       <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
       ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
       <h3 class="eyebrow">Recent</h3>
+      ${s.history.length > 1 ? `<p class="form-line">Form ${formPips(s, 8)}</p>` : ''}
       ${formChips(s)}
       ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
     </article>
@@ -449,18 +451,44 @@ function ladderDivision(s: Save, rows: ReturnType<typeof ladderTable>): string {
   return at ? `<p class="ladder-div"><b>${divisionName(d)}</b> · ${ordinal(at)} of ${mine.length} by Elo.${rule}</p>` : '';
 }
 
+/** The last `n` rated results (ranked, cup, league) as W/D/L tiles, newest first, with one sentence for screen readers. */
+export function formPips(s: Save, n = 5): string {
+  const last = s.history.filter((m) => m.ranked || m.competition).slice(-n).reverse();
+  if (!last.length) return '';
+  const r = (m: Save['history'][number]) => (m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L');
+  const word = { W: 'won', D: 'drew', L: 'lost' };
+  return `<span class="form-pips" role="img" aria-label="${esc(`Form, newest first: ${last.map((m) => word[r(m)]).join(', ')}`)}">${last.map((m) => `<span class="res res-${r(m)}" aria-hidden="true">${r(m)}</span>`).join('')}</span>`;
+}
+
+/** Your place, form and the gap to the club above, from the table itself. An invitation to play before the first match. */
+function ladderStory(s: Save, rows: ReturnType<typeof ladderTable>): string {
+  const at = rows.findIndex((r) => r.you);
+  const me = rows[at];
+  if (!s.club.played) return emptyState(`You start at #${at + 1} on ${me.elo} Elo. Play a ranked match from Home to start climbing.`, EMPTY_ICON.play);
+  const up = rows[at - 1];
+  const gap = up ? `<b>${up.elo - me.elo + 1} Elo</b> to pass ${esc(up.name)} (#${at})` : '<b>Top of the ladder.</b> Hold it';
+  const rated = [...s.history].reverse().find((m) => m.ranked || m.competition);
+  const d = rated ? rated.eloAfter - rated.eloBefore : 0;
+  const move = rated && d ? ` <span class="ladder-move ${d > 0 ? 'up' : 'down'}"><span aria-hidden="true">${d > 0 ? '▲' : '▼'}</span> ${esc(signed(d))} last match</span>` : '';
+  return `<div class="ladder-story"><span class="ladder-rank">#${at + 1}<span class="sr-only"> of ${rows.length}</span></span><span class="ladder-line">${gap}.${move}</span>${formPips(s)}</div>`;
+}
+
 export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
   const mydiv = playerDivision(app.save);
+  const at = rows.findIndex((r) => r.you);
   return `
   <article class="panel">
     <h2 class="eyebrow" id="ladder-title">Ladder<span class="eyebrow-more" id="ladder-more" aria-hidden="true"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
+    ${ladderStory(app.save, rows)}
     ${ladderDivision(app.save, rows)}
     <div class="table-scroll"><table class="tbl ladder" aria-labelledby="ladder-title" aria-describedby="ladder-more">
       <thead><tr><th class="num pos-col">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num rec opt-narrow">P</th><th class="num rec opt-narrow">W</th><th class="num rec opt-narrow">D</th><th class="num rec opt-narrow">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => {
         const rec = (n: number) => `<td class="num rec opt-narrow${n ? '' : ' zero'}">${n || '–'}</td>`;
-        return `<tr${r.you ? ' class="you" aria-current="true"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num${r.division === mydiv ? ' mydiv' : ''}">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
+        const near = !r.you && Math.abs(i - at) <= DERBY_PLACES;
+        const cls = r.you ? ' class="you" aria-current="true"' : near ? ' class="near"' : '';
+        return `<tr${cls}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : near ? ` <span class="pill pill-derby" aria-hidden="true">${i < at ? 'above' : 'below'}</span><span class="sr-only"> (derby: within ${DERBY_PLACES} places of you)</span>` : ''}</td><td class="num${r.division === mydiv ? ' mydiv' : ''}">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
       }).join('')}</tbody>
     </table></div>
   </article>`;
