@@ -310,7 +310,7 @@ export class Renderer3D implements MatchRenderer {
   private axis = new Vector3();
   private pctx: PlayerContext = { time: 0, dtSim: 0, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: false };
   private refBody: SimBody = { pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } };
-  private stadiumFrame = { excite: [0, 0] as [number, number], ball: { x: 0, y: 0, z: 0, speed: 0 } };
+  private stadiumFrame = { excite: [0, 0] as [number, number], still: false, ball: { x: 0, y: 0, z: 0, speed: 0 } };
   private focus: CameraFocus = { x: 0, z: 0, vx: 0, vz: 0, air: 0, attack: 0, phase: '', close: null, humanDir: 1, long: null, replay: null };
   private aimFrame = { heads: [] } as unknown as AimFrame;
   private feet: InstancedMesh | null = null;
@@ -887,6 +887,7 @@ export class Renderer3D implements MatchRenderer {
       const nearGoal = owner === team && Math.abs(b.pos.x - oppGoal(s, team).x) < 18;
       st.excite[team] = celebrating === team ? 1 : nearGoal ? 0.45 : 0.08;
     }
+    st.still = this.reduced;
     st.ball.x = this.ball.position.x;
     st.ball.y = this.ball.position.z;
     st.ball.z = h;
