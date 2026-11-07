@@ -248,7 +248,7 @@
   .pitch-wrap .juice-mute { width: 44px; height: 44px; }
 }
 /* Phones held sideways: the pitch fills the screen and the HUD keeps to its edges. */
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 520px) {
   #app:has(> .match) { padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); gap: 0; min-height: 0; }
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
