@@ -3,7 +3,7 @@ import { autoLineup } from '../src/meta/club.ts';
 import { eloDelta, expectedScore, goalDiffMultiplier } from '../src/meta/elo.ts';
 import { applyResult, askingPrice, buyPlayer, ensureElevenASide, ladderTable, MAX_SQUAD, MIN_SQUAD, newGame, salePrice, sellPlayer, setFormation, setLineupSlot, train, forfeitCost, rankedScale } from '../src/meta/game.ts';
 import { clubName } from '../src/meta/names.ts';
-import { overall } from '../src/meta/player.ts';
+import { overall, trainingGain, trainingRange } from '../src/meta/player.ts';
 import { makeRng } from '../src/sim/rng.ts';
 
 describe('elo', () => {
@@ -18,6 +18,26 @@ describe('elo', () => {
     expect(goalDiffMultiplier(1)).toBe(1);
     expect(goalDiffMultiplier(2)).toBe(1.5);
     expect(goalDiffMultiplier(4)).toBeCloseTo(15 / 8);
+  });
+});
+
+describe('training preview', () => {
+  test('trainingRange brackets every real gain', () => {
+    const s = newGame(7);
+    const r = makeRng(3);
+    for (const p of s.squad) {
+      for (const age of [18, 23, 27, 33]) {
+        for (const pot of [p.potential, 1]) {
+          const q = { ...p, age, potential: pot, attrs: { ...p.attrs } };
+          const { lo, hi } = trainingRange(q, 'passing');
+          for (let i = 0; i < 200; i++) {
+            const g = trainingGain(r, q, 'passing');
+            expect(g).toBeGreaterThanOrEqual(lo);
+            expect(g).toBeLessThanOrEqual(hi);
+          }
+        }
+      }
+    }
   });
 });
 

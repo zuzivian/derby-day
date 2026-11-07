@@ -5,7 +5,7 @@ import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
-import type { AttrKey } from '../meta/player.ts';
+import { overall, type AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { scoreAwarded } from '../sim/rules.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -705,13 +705,19 @@ root.addEventListener('click', (e) => {
       break;
     case 'trainee':
       app.trainee = id;
+      app.gain = null;
       queueReveal('.panel.trainee');
       break;
     case 'train': {
       app.trainee = id; // keep this player selected, rather than the fallback re-picking after his gain
-      const r = train(s, id, el.dataset.attr as AttrKey);
+      const attr = el.dataset.attr as AttrKey;
+      const tp = s.squad.find((x) => x.id === id);
+      if (tp && tp.attrs[attr] >= 99) return; // already maxed: a session would be spent for nothing
+      const was = tp ? [tp.attrs[attr], overall(tp)] : [0, 0];
+      const r = train(s, id, attr);
       toast(r.message, r.ok);
       if (r.ok) {
+        if (tp) app.gain = { id, attr, n: tp.attrs[attr] - was[0], up: overall(tp) > was[1] };
         persist();
         getSound().stinger('train');
         flash = [`li:has([data-action="train"][data-id="${id}"][data-attr="${el.dataset.attr}"])`, '.stat.sessions'];

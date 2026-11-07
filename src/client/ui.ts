@@ -7,7 +7,7 @@ import { autoLineup, teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
-import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
+import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, trainingRange, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { isRising, potentialText, scoutedPotential, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
@@ -76,6 +76,8 @@ export interface App {
   confirmReset: boolean;
   prefs: Prefs;
   result: ResultView | null;
+  /** The last training gain, for the badge on its row. */
+  gain?: { id: string; attr: AttrKey; n: number; up: boolean } | null;
 }
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
@@ -452,7 +454,7 @@ export function trainingScreen(app: App): string {
   return `
   <div class="training-grid">
     <article class="panel roster">
-      <h2 class="eyebrow train-head">Training<span class="train-left">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
+      <h2 class="eyebrow train-head">Training<span class="train-left${s.trainingPoints ? '' : ' none'}">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
         ${chip(x, 'roster-name')}<span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
@@ -462,16 +464,27 @@ export function trainingScreen(app: App): string {
       <div class="trainee-head">
         <span class="magnet big">${p.number}</span>
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
-        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : '<span class="room done">at potential</span>'; })()}</div>
+        <div class="ovr-block"><span class="ovr-big${app.gain?.up && app.gain.id === p.id ? ' tick' : ''}">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : `<span class="room done">${scoutedPotential(p).exact ? 'at potential' : 'near potential'}</span>`; })()}</div>
       </div>
       <div class="prof-info">${profileInfo(s, p)}</div>
-      <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
+      ${(() => {
+        const r = trainingRange(p, 'pace');
+        const say = !s.trainingPoints ? 'No sessions left. Play a match to earn more.'
+          : r.odds < 1 ? `At potential: a session adds +1 about ${Math.round(r.odds * 100)}% of the time, otherwise nothing.`
+          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `${r.lo} to +${r.hi}`} to the attribute you pick.`;
+        return `<p class="train-preview${s.trainingPoints ? '' : ' none'}">${say}</p>`;
+      })()}
+      <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => {
+        const g = app.gain && app.gain.id === p.id && app.gain.attr === k ? app.gain : null;
+        const max = p.attrs[k] >= 99;
+        return `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>
         <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>
-        <span class="attr-val">${p.attrs[k]}</span>
-        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="Train ${ATTR_NAME[k].toLowerCase()}"${s.trainingPoints > 0 ? '' : ' aria-disabled="true"'}>Train</button>
-      </li>`).join('')}</ul>
-      <p class="muted small">Under-21s grow fastest. A player at their potential rarely improves, so spend sessions on the young ones.</p>
+        <span class="attr-val${g?.n ? ' tick' : ''}">${p.attrs[k]}${g ? `<b class="gain${g.n ? '' : ' zero'}" aria-hidden="true">${g.n ? '+' + g.n : '+0'}</b>` : ''}</span>
+        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
+      </li>`;
+      }).join('')}</ul>
+      <p class="muted small">Under-21s grow fastest, and a player at their potential rarely improves.</p>
     </article>
   </div>`;
 }
