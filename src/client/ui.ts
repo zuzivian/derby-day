@@ -69,6 +69,8 @@ export interface App {
   screen: Screen;
   nextOpp: LadderClub;
   trainee: string | null;
+  /** Squad row opened to its profile (display only). */
+  profile?: string | null;
   marketRole: Role | 'ALL';
   confirmSell: string | null;
   confirmReset: boolean;
@@ -302,10 +304,42 @@ const RISING = '<span class="rise-tag" title="Young, with room to grow"><span ar
 const nameCell = (p: Player): string =>
   `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>${isRising(p) ? RISING : ''}`;
 
-function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
+/** Compact player chip: position tag, name, rising mark. Used by the squad lists and the training roster. */
+const chip = (p: Player, cls = ''): string => `<span class="pchip ${cls}"><span class="pos pos-${p.role}">${p.role}</span><span class="pchip-name">${isRising(p) ? RISING : ''}${esc(fullName(p))}</span></span>`;
+
+/** Goals in the recorded matches, matched on the scorer line ("J. Smith 23'"); null when two squad players share the name. */
+function goalsOf(s: Save, p: Player): number | null {
+  const n = shortName(p) + ' ';
+  if (s.squad.some((x) => x !== p && shortName(x) === shortName(p))) return null;
+  return s.history.reduce((a, m) => a + m.scorers.filter((x) => x.startsWith(n)).length, 0);
+}
+
+/** Potential against current, the best-suited role, strengths and recorded goals; prose first so the visual is a bonus. */
+function profileInfo(s: Save, p: Player): string {
+  const ovr = overall(p);
+  const v = scoutedPotential(p);
+  const gap = v.lo - ovr;
+  const roles = (['GK', 'DEF', 'MID', 'FWD'] as Role[]).map((r) => [r, ratingAs(p, r)] as const).sort((a, b) => b[1] - a[1]);
+  const keys = ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').sort((a, b) => p.attrs[b] - p.attrs[a]);
+  const hi = keys[0], lo = keys[keys.length - 1];
+  const g = goalsOf(s, p);
+  const growth = gap > 0 ? `${gap} to grow` : p.age >= 30 ? 'past peak: expect decline' : 'at potential';
+  const txt = `Overall ${ovr}, potential ${potentialText(p)}: ${growth}.`;
+  return `<div class="pot-meter" role="img" aria-label="${esc(txt)}"><span class="pot-now" style="width:${ovr}%"></span><span class="pot-max" style="left:${v.hi}%"></span></div>
+  <p class="prof-line">${txt}</p>
+  <p class="prof-line muted">Best suited: <b>${roles[0][0]}</b> ${roles[0][1]}${roles[0][0] !== p.role ? ` (listed ${p.role}, ${ovr})` : ''} · next ${roles[1][0]} ${roles[1][1]}. Strongest ${ATTR_NAME[hi].toLowerCase()} ${p.attrs[hi]}, weakest ${ATTR_NAME[lo].toLowerCase()} ${p.attrs[lo]}.${g === null ? '' : ` ${g} goal${g === 1 ? '' : 's'} in recorded matches.`}</p>`;
+}
+
+/** Read-only attribute bars, each with its number as text. */
+const attrBars = (p: Player): string => `<ul class="attr-list ro">${ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').map((k) => `<li><span class="attr-name">${ATTR_NAME[k]}</span><span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span><span class="attr-val">${p.attrs[k]}</span></li>`).join('')}</ul>`;
+
+function playerRow(p: Player, extra: string, starter = false, showNumber = true, prof?: { s: Save; open: boolean }): string {
+  const name = prof
+    ? `<button class="name-btn" data-action="profile" data-id="${p.id}" aria-expanded="${prof.open}" aria-controls="prof-${p.id}">${nameCell(p)}</button>`
+    : nameCell(p);
   return `<tr${starter ? ' class="starter"' : ''}>
     ${showNumber ? `<td class="num">${p.number}</td>` : ''}
-    <td class="name">${nameCell(p)}${starter ? ' <span class="pill">XI</span>' : ''}</td>
+    <td class="name">${name}${starter ? ' <span class="pill">XI</span>' : ''}</td>
     <td class="opt">${esc(nation(p))}</td>
     <td class="num opt">${p.age}</td>
     <td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td>
@@ -313,7 +347,7 @@ function playerRow(p: Player, extra: string, starter = false, showNumber = true)
     <td class="num muted opt">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
     ${extra}
-  </tr>`;
+  </tr>${prof?.open ? `<tr class="prof-row"><td colspan="15" id="prof-${p.id}"><div class="prof"><div>${attrBars(p)}</div><div>${profileInfo(prof.s, p)}</div></div></td></tr>` : ''}`;
 }
 
 const attrHead = ATTR_KEYS.map((k) => `<th class="num opt" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
@@ -362,7 +396,7 @@ export function squadScreen(app: App): string {
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
-        <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
+        <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id), true, { s, open: app.profile === p.id })).join('')}</tbody>
       </table></div>
     </article>
   </div>`;
@@ -420,7 +454,7 @@ export function trainingScreen(app: App): string {
     <article class="panel roster">
       <h2 class="eyebrow train-head">Training<span class="train-left">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
-        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${isRising(x) ? RISING : ''}${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
+        ${chip(x, 'roster-name')}<span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
       <p class="muted small train-rule">Sessions earned per match: ranked win +3, other results +2, friendlies +1.</p>
     </article>
@@ -430,6 +464,7 @@ export function trainingScreen(app: App): string {
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
         <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : '<span class="room done">at potential</span>'; })()}</div>
       </div>
+      <div class="prof-info">${profileInfo(s, p)}</div>
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>
         <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>

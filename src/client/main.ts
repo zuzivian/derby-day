@@ -700,6 +700,9 @@ root.addEventListener('click', (e) => {
       if (r.ok) persist();
       break;
     }
+    case 'profile':
+      app.profile = app.profile === id ? null : id;
+      break;
     case 'trainee':
       app.trainee = id;
       queueReveal('.panel.trainee');
