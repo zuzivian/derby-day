@@ -45,7 +45,7 @@ export function watchGfxLoss(r: MatchRenderer, host: HTMLElement, h: { onLost?()
       timer = window.setTimeout(() => {
         lost = false;
         show(false);
-        showToast('Graphics could not be restored, so the match carries on in simple 2D.', true, 6000);
+        showToast('Graphics could not be restored, so the view carries on in simple 2D.', true, 6000); // the toast region announces it too
         h.onGiveUp();
       }, GFX_RESTORE_MS);
     };

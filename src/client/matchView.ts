@@ -379,7 +379,6 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       renderer.prepare(s);
       last = performance.now();
       acc = 0;
-      announce('The graphics could not be restored, so the match carries on in the 2D view.');
     },
   });
 

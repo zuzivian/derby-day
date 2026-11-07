@@ -793,7 +793,6 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       ro.observe(canvas);
       renderer.resize();
       renderer.prepare(s);
-      announce('The graphics could not be restored, so the match carries on in the 2D view.');
     },
   });
 
