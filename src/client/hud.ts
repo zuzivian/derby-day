@@ -34,6 +34,8 @@ export interface HudOptions {
   /** Menu button: id and text. */
   menuId?: string;
   menuText?: string;
+  /** Hot-seat: each human's marker colour; the scoreboard then tags the codes P1 / P2. */
+  marks?: [string, string];
 }
 
 const code = (t: TeamSetup) => esc((t.short || t.name.slice(0, 3)).toUpperCase().slice(0, 3));
@@ -41,6 +43,7 @@ const code = (t: TeamSetup) => esc((t.short || t.name.slice(0, 3)).toUpperCase()
 /** Markup for inside .pitch-wrap, after the canvas. */
 export function hudMarkup(o: HudOptions): string {
   const [home, away] = o.teams;
+  const pm = (n: 0 | 1) => (o.marks ? `<i class="hud-pm" style="background:${o.marks[n]}">P${n + 1}</i>` : '');
   return `
     <div class="hud" data-hud>
       <div class="hud-tl">
@@ -50,9 +53,9 @@ export function hudMarkup(o: HudOptions): string {
         </div>
         <div class="hud-bars">
           <div class="hud-bar scoreboard" title="${esc(home.name)} v ${esc(away.name)}">
-            <span class="visually-hidden">${esc(home.name)}</span><span aria-hidden="true">${code(home)}</span>
+            <span class="visually-hidden">${esc(home.name)}</span><span aria-hidden="true">${pm(0)}${code(home)}</span>
             <span class="hud-goals"><span id="sb-h">0</span><span class="hud-dash">-</span><span id="sb-a">0</span></span>
-            <span aria-hidden="true">${code(away)}</span><span class="visually-hidden">${esc(away.name)}</span>
+            <span aria-hidden="true">${code(away)}${pm(1)}</span><span class="visually-hidden">${esc(away.name)}</span>
           </div>
           <div class="hud-bar hud-clock"><span id="sb-clock">00:00</span><span class="visually-hidden"> · <span id="sb-min">1'</span> · <span id="sb-phase">${esc(o.label)}</span></span></div>
         </div>
