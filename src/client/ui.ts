@@ -11,6 +11,7 @@ import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { isRising, potentialText, scoutedPotential, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
 import { DIVISIONS, divisionName, playerDivision } from '../meta/world.ts';
+import { ordinal } from '../meta/competitions.ts';
 import { historyPanel } from './history.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
@@ -415,16 +416,27 @@ export function trainingScreen(app: App): string {
 
 // ---------------------------------------------------------------------------
 
+/** Your place among the clubs of your own division, and what the League decides about it. */
+function ladderDivision(s: Save, rows: ReturnType<typeof ladderTable>): string {
+  const d = playerDivision(s);
+  const mine = rows.filter((r) => r.division === d);
+  const at = mine.findIndex((r) => r.you) + 1;
+  const rule = isUnlocked(s, 'league') ? ` ${d > 1 ? `Finish the League in the top two to go up to ${divisionName(d - 1)}.` : 'The top division: finish the League in the bottom two and you drop.'}` : '';
+  return at ? `<p class="ladder-div"><b>${divisionName(d)}</b> · ${ordinal(at)} of ${mine.length} by Elo.${rule}</p>` : '';
+}
+
 export function ladderScreen(app: App): string {
   const rows = ladderTable(app.save);
+  const mydiv = playerDivision(app.save);
   return `
   <article class="panel">
     <h2 class="eyebrow" id="ladder-title">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
+    ${ladderDivision(app.save, rows)}
     <div class="table-scroll"><table class="tbl ladder" aria-labelledby="ladder-title">
       <thead><tr><th class="num pos-col">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num rec opt-narrow">P</th><th class="num rec opt-narrow">W</th><th class="num rec opt-narrow">D</th><th class="num rec opt-narrow">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => {
         const rec = (n: number) => `<td class="num rec opt-narrow${n ? '' : ' zero'}">${n || '–'}</td>`;
-        return `<tr${r.you ? ' class="you" aria-current="true"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
+        return `<tr${r.you ? ' class="you" aria-current="true"' : ''}><td class="num pos-col">${i + 1}</td><td class="name"><span class="kit" style="--p:${r.primary};--s:${r.secondary}"></span>${esc(r.name)}${r.you ? ' <span class="pill">you</span>' : ''}</td><td class="num${r.division === mydiv ? ' mydiv' : ''}">${r.division}</td>${rec(r.played)}${rec(r.won)}${rec(r.drawn)}${rec(r.lost)}<td class="num ovr">${r.elo}</td></tr>`;
       }).join('')}</tbody>
     </table></div>
   </article>`;

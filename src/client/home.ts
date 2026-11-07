@@ -13,7 +13,7 @@
 // lives on the Club tab (clubScreen in ui.ts). Styles: the "Home" section of
 // styles.css.
 
-import { CUP_ROUNDS, cupOpponent, seasonOpponent } from '../meta/competitions.ts';
+import { CUP_ROUNDS, cupOpponent, seasonOpponent, seasonStanding } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import { winChance, type Save } from '../meta/game.ts';
 import { clubLevel, isUnlocked, nextUnlocks, unlockLevel, type UnlockId } from '../meta/levels.ts';
@@ -248,7 +248,7 @@ function leagueCard(s: Save): string {
     : `<button class="mode-btn" data-action="go" data-screen="competitions" aria-label="${season ? 'Open the league' : 'Start a league season'}">${ICON.arrow}<span>${season ? 'Open' : 'Start'}</span></button>`;
   return `
   <article class="mode-card" data-mode="league" aria-labelledby="mode-league">
-    <div class="mode-top"><span class="mode-icon">${ICON.league}</span><div><h3 id="mode-league" class="mode-title">League</h3><p class="mode-sub">${opp ? `vs ${esc(opp.short)}` : '7 matchdays'}</p></div></div>
+    <div class="mode-top"><span class="mode-icon">${ICON.league}</span><div><h3 id="mode-league" class="mode-title">League</h3><p class="mode-sub">${opp ? `vs ${esc(opp.short)}` : '7 matchdays'}</p>${seasonStanding(s) ? `<p class="mode-sub mode-standing">${esc(seasonStanding(s))}</p>` : ''}</div></div>
     <div class="mode-actions">${action}</div>
   </article>`;
 }
