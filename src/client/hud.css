@@ -270,6 +270,10 @@
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
   #pitch.pitch-3d { aspect-ratio: auto; height: calc(100dvh - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px))); }
+  /* The 2D pitch is fitted whole: the same height, its width from its shape (never wider than the page), centred on a dark
+     surround that the HUD and pads sit on. Its coordinates come from the canvas's own box, so taps stay exact. */
+  #pitch[data-renderer="2d"] { width: auto; margin: 0 auto; height: min(calc(100dvh - max(8px, env(safe-area-inset-top, 0px)) - max(8px, env(safe-area-inset-bottom, 0px))), calc((100vw - 32px) / 1.493)); }
+  .match .pitch-wrap:has(> #pitch[data-renderer="2d"]) { background: #12281c; border-radius: var(--r-md); }
   .hud-tr { flex-direction: row; align-items: flex-start; }
 }
 /* On touch the Pass/Shoot pads stand in for the controls line, and the power bar clears them. A mouse or keyboard keeps its line. */

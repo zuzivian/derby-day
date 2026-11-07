@@ -189,3 +189,48 @@ test('phone: at 320x568 the XP card and its Level up are on screen when the resu
   expect(box.levelUp, 'this result levels up').toBe(true);
   expect(box.cardTop >= box.viewTop && box.cardBottom <= box.viewBottom, `XP card fully visible (${JSON.stringify(box)})`).toBe(true);
 });
+
+// 2D on a landscape phone (the pitch used to be taller than the screen, with the Pass/Shoot pads below the fold):
+// the whole pitch and both pads are on screen at once, and a finger on the pitch still steers to the spot under it.
+for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }, { width: 568, height: 320 }]) {
+  test(`2D landscape phone ${size.width}x${size.height}: the whole pitch and both pads fit the screen, and a touch steers to the spot under the finger`, async (t) => {
+    const page = await openApp(t, { ...size, hasTouch: true, prefs: { halfSeconds: 120, controls: 'touch', onboarded: true }, e2eHook: true, renderer: '2d' });
+    await startRanked(page);
+    await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 20_000 });
+    const boxes = await page.evaluate(() => {
+      const r = (s) => [...document.querySelectorAll(s)].map((e) => { const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; });
+      return { vp: { w: innerWidth, h: innerHeight }, pitch: r('#pitch'), pads: r('.touch-pad .pad-btn'), scroll: document.documentElement.scrollHeight };
+    });
+    expect(boxes.pitch.length, 'one pitch').toBe(1);
+    expect(boxes.pads.length, 'Pass and Shoot').toBe(2);
+    for (const [what, b] of [['pitch', boxes.pitch[0]], ['left pad', boxes.pads[0]], ['right pad', boxes.pads[1]]]) {
+      const inside = b.l >= -0.5 && b.t >= -0.5 && b.r <= boxes.vp.w + 0.5 && b.b <= boxes.vp.h + 0.5;
+      expect(inside, `${what} inside the ${boxes.vp.w}x${boxes.vp.h} screen ${JSON.stringify(b)}`).toBe(true);
+    }
+    expect(boxes.scroll <= boxes.vp.h, 'the page does not scroll').toBe(true);
+    const pw = boxes.pitch[0].r - boxes.pitch[0].l;
+    expect(Math.abs(pw / (boxes.pitch[0].b - boxes.pitch[0].t) - 112 / 75) < 0.02, 'the pitch keeps its shape').toBe(true);
+    expect(pw > 400, `the pitch is big enough to play on (${Math.round(pw)} px wide)`).toBe(true);
+
+    // He is alone with the ball at (50, 40). A finger down at world (62, 52) must send him that way (down-right on screen), not up or left.
+    await page.evaluate(() => {
+      const s = window.__derbyMatch;
+      const me = s.players[s.controlled[0]];
+      for (const p of s.players) if (p !== me) p.stun = 1e7;
+      s.switchTimer[0] = 1e9;
+      Object.assign(me, { stun: 0, pos: { x: 50, y: 40 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } });
+      Object.assign(s.ball, { owner: me.i, pos: { x: 51, y: 40 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1, touch: 0 });
+    });
+    const b = boxes.pitch[0];
+    const at = { x: b.l + ((62 + 3.5) / 112) * (b.r - b.l), y: b.t + ((52 + 3.5) / 75) * (b.b - b.t) };
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
+    await page.waitForTimeout(900);
+    const me = await page.evaluate(() => { const s = window.__derbyMatch; return s.players[s.controlled[0]].pos; });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    const [dx, dy] = [me.x - 50, me.y - 40];
+    const cos = (dx * 12 + dy * 12) / (Math.hypot(dx, dy) * Math.hypot(12, 12));
+    expect(Math.hypot(dx, dy) > 2, `he ran (${dx.toFixed(1)}, ${dy.toFixed(1)})`).toBe(true);
+    expect(cos > 0.9, `towards the finger: cos ${cos.toFixed(2)} (${dx.toFixed(1)}, ${dy.toFixed(1)})`).toBe(true);
+  });
+}
