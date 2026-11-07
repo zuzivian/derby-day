@@ -97,6 +97,11 @@
   font: 900 14px/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
 }
 .hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display); color: #ffb35c; }
+.hud .hud-me { grid-template-columns: auto minmax(0, 1fr) 3.5em; grid-template-rows: auto 10px; }
+.hud-me-name { grid-column: 2 / 4; }
+.hud-me-legs { grid-column: 2; }
+.hud-me-st { grid-column: 3; text-align: right; font: italic 800 10px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: #5fd08e; }
+.hud-me.winded .hud-me-st { color: #ff8a73; }
 .hud-me-legs { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .18); overflow: hidden; }
 .hud-me-legs i { display: block; height: 100%; width: 100%; background: #5fd08e; transition: width .4s; }
 .hud-me-legs.low i { background: #f0b35a; }
@@ -177,6 +182,8 @@
   .hud-menu { font-size: var(--fs-2xs); padding: 3px 6px; gap: 4px; }
   .hud-menu kbd { font-size: var(--fs-2xs); padding: 2px 3px; }
   .hud-mode { display: none; }
+  /* Over a dark crowd the 60% panels sank into it: firmer plates on a small screen. */
+  .hud-bar, .hud-menu, .pitch-cam, .pitch-zoom button { background: rgba(8, 12, 11, .82); }
   .pitch-cam { font-size: var(--fs-2xs); padding: 3px 5px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
@@ -205,6 +212,7 @@
    radar moves to the left, beside the mute button, out of the buttons' way. After the size rules
    above, so it wins the cascade. */
 @media (pointer: coarse) {
+  .hud-hold { bottom: 108px; right: 10px; }
   .hud-power { bottom: 86px; right: 10px; }
   .hud-me { bottom: 114px; right: 10px; }
   .hud-radar { left: 60px; transform: none; }
@@ -344,6 +352,7 @@
 }
 /* Large touch screens: the power gauge and player card follow the bigger Pass / Shoot pads inboard. */
 @media (pointer: coarse) and (min-width: 768px) and (min-height: 521px) {
+  .hud-hold { bottom: 142px; right: 28px; }
   .hud-power { bottom: 118px; right: 28px; }
   .hud-me { bottom: 146px; right: 28px; }
   .pitch-wrap .juice-mute { left: 16px; bottom: 16px; }
