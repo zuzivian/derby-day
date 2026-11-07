@@ -551,7 +551,7 @@ export function applyResult(
   return { eloDelta: delta, money, trainingPoints: tp, developments, xp, ...(fine || owed ? { fine, owed } : {}) };
 }
 
-/** The club's own line for a finished match: the result, who scored, the Elo it moved and and a first ranked win. */
+/** The club's own line for a finished match: the result, who scored, the Elo it moved and a first ranked win. */
 function matchNews(opp: string, gf: number, ga: number, scorers: string[], where: string, delta: number | null, firstWin: boolean): string {
   const d = gf - ga;
   const score = `${gf}–${ga}`;
