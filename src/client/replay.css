@@ -73,7 +73,10 @@
 @media (pointer: coarse) {
   .rp-keys { display: none; }
   .rp-scrub input[type="range"] { height: 44px; }
-  .rp-controls .btn, .rp-cam, .rp-head .btn, .rp-clips .btn { min-height: 44px; }
+  .rp-controls .btn, .rp-head .btn, .rp-clips .btn { min-height: 44px; }
+  /* The camera chip floats over a small picture: it stays compact to look at, and an invisible margin makes the 44px touch target. */
+  .rp-cam { min-height: 28px; }
+  .rp-cam::before { content: ''; position: absolute; inset: -8px -6px; }
 }
 /* A phone on its side: the picture takes the height, everything else stacks beside it. */
 @media (orientation: landscape) and (max-height: 520px) {
