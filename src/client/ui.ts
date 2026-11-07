@@ -371,8 +371,8 @@ export function transfersScreen(app: App): string {
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
     </article>
     <article class="panel">
-      <h2 class="eyebrow">Sell<span class="eyebrow-more"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
-      <div class="table-scroll"><table class="tbl compact has-action">
+      <h2 class="eyebrow">Sell<span class="eyebrow-more" id="sell-more" aria-hidden="true"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
+      <div class="table-scroll"><table class="tbl compact has-action" aria-label="Sell" aria-describedby="sell-more">
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
         <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
@@ -432,9 +432,9 @@ export function ladderScreen(app: App): string {
   const mydiv = playerDivision(app.save);
   return `
   <article class="panel">
-    <h2 class="eyebrow" id="ladder-title">Ladder<span class="eyebrow-more"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
+    <h2 class="eyebrow" id="ladder-title">Ladder<span class="eyebrow-more" id="ladder-more" aria-hidden="true"> · ranked by Elo · all ${rows.length} clubs in ${DIVISIONS} divisions · CPU clubs also play each other between your matches</span></h2>
     ${ladderDivision(app.save, rows)}
-    <div class="table-scroll"><table class="tbl ladder" aria-labelledby="ladder-title">
+    <div class="table-scroll"><table class="tbl ladder" aria-labelledby="ladder-title" aria-describedby="ladder-more">
       <thead><tr><th class="num pos-col">Pos</th><th>Club</th><th class="num"><abbr title="Division">Div</abbr></th><th class="num rec opt-narrow">P</th><th class="num rec opt-narrow">W</th><th class="num rec opt-narrow">D</th><th class="num rec opt-narrow">L</th><th class="num">Elo</th></tr></thead>
       <tbody>${rows.map((r, i) => {
         const rec = (n: number) => `<td class="num rec opt-narrow${n ? '' : ' zero'}">${n || '–'}</td>`;

@@ -69,7 +69,7 @@ export function recentReplaysHtml(): string {
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">
         <input id="replay-paste" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="DD1.…" aria-describedby="replay-paste-msg">
-        <button class="btn small" data-replay="paste">Play</button>
+        <button class="btn small" data-replay="paste" aria-label="Play pasted replay">Play</button>
       </div>
       <p id="replay-paste-msg" class="small replay-msg" role="status"></p>
     </div>

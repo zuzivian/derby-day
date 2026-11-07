@@ -67,7 +67,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-power" aria-hidden="true"><span class="hud-power-label"></span><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
-      <div class="hud-tag" hidden role="status"></div>
+      <div class="hud-tag" hidden aria-hidden="true"></div>
       <div class="hud-fk" hidden aria-hidden="true"></div>
       <div class="hud-prompt" hidden role="status"></div>
     </div>`;
