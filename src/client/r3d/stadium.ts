@@ -297,19 +297,19 @@ function windowTexture(): CanvasTexture {
   return tex(c, 4, true);
 }
 
-/** Profiled steel roof sheeting: light panels with a shadowed rib every repeat (one repeat is about 1.6 m of roof). */
+/** Profiled steel roof sheeting: mid-grey steel panels (dark enough to read against the sky in a tall portrait frame, where the roof fills the top) with a shadowed rib every repeat (one repeat is about 1.6 m of roof). */
 function roofTexture(): CanvasTexture {
   const [c, g] = canvas(64, 16);
   const grad = g.createLinearGradient(0, 0, 64, 0);
-  grad.addColorStop(0, '#c9ced5');
-  grad.addColorStop(0.45, '#dde1e6');
-  grad.addColorStop(0.8, '#cfd4da');
-  grad.addColorStop(1, '#c4c9d0');
+  grad.addColorStop(0, '#98a2ae');
+  grad.addColorStop(0.45, '#adb6c0');
+  grad.addColorStop(0.8, '#a0aab5');
+  grad.addColorStop(1, '#939da9');
   g.fillStyle = grad;
   g.fillRect(0, 0, 64, 16);
-  g.fillStyle = 'rgba(40,48,60,.38)';
+  g.fillStyle = 'rgba(30,38,50,.5)';
   g.fillRect(56, 0, 5, 16);
-  g.fillStyle = 'rgba(255,255,255,.55)';
+  g.fillStyle = 'rgba(255,255,255,.4)';
   g.fillRect(54, 0, 2, 16);
   return tex(c, 4, true);
 }
