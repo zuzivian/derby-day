@@ -24,7 +24,7 @@ import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import { Renderer3D } from './r3d/renderer3d.ts';
-import { quickTacticsMarkup } from './tactics.ts';
+import { MENTALITY_NOTE, quickTacticsMarkup } from './tactics.ts';
 import { MENTALITY_IDS, MENTALITY_LABEL, type Mentality } from '../sim/constants.ts';
 
 export interface MatchViewOptions extends MatchOptions {
@@ -311,9 +311,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   });
   // A mentality picked in the pause menu goes to the sim with the next tick's input.
   let pendingTactic = 0;
+  /** A pause-menu pick waits for resume: the HUD names it then, as the keys do at once. */
+  let resumeTag: Mentality | null = null;
+  const qtNote = (m: Mentality, tail = '') => {
+    const n = root.querySelector('#qt-note');
+    if (n) n.textContent = MENTALITY_NOTE[m] + tail;
+  };
   root.querySelector('#quick-tactics')?.addEventListener('change', (e) => {
     const v = (e.target as HTMLInputElement).value as Mentality;
     pendingTactic = MENTALITY_IDS.indexOf(v) + 1;
+    resumeTag = v;
+    qtNote(v, ' Applies when you resume.');
     announce(`Mentality: ${(e.target as HTMLInputElement).nextElementSibling?.textContent ?? v}. It applies when you resume.`);
   });
   // Quick tactics from the keyboard while playing: 1 Park the bus ... 5 High press, as in the pause menu.
@@ -327,6 +335,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     pendingTactic = Number(n);
     const radio = root.querySelector<HTMLInputElement>(`#quick-tactics input[value="${m}"]`);
     if (radio) radio.checked = true;
+    resumeTag = null;
+    qtNote(m);
     hud.tag(MENTALITY_LABEL[m], 1600, 'Mentality');
     announce(`Mentality: ${MENTALITY_LABEL[m]}.`);
   };
@@ -537,6 +547,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           if (pendingTactic && !Array.isArray(raw)) {
             raw = { ...raw, tactic: pendingTactic };
             pendingTactic = 0;
+            if (resumeTag) hud.tag(MENTALITY_LABEL[resumeTag], 1600, 'Mentality');
+            resumeTag = null;
           }
           const used: TickInput = rec && !Array.isArray(raw) ? rec.push(raw) : raw;
           const before = s.controlled[0];

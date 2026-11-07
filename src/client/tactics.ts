@@ -22,11 +22,11 @@ export const FORMATION_NOTE: Record<FormationId, string> = {
 
 /** Plain-language descriptions of each mentality step, for the selector. */
 export const MENTALITY_NOTE: Record<Mentality, string> = {
-  park: 'A deep, narrow low block: nobody goes in until the ball is about 35 m out, bodies step in front of shots, only the strikers go forward. Best when you are the underdog.',
-  defensive: 'A low, compact block that engages about 40 m from goal and blocks shots; full-backs stay home, safe passes. Fewer goals both ways.',
-  balanced: 'A mid block. Press the ball, full-backs overlap on the ball side, short passing mixed with runs in behind.',
-  attacking: 'A higher line, more players in the box, riskier forward passes. Hunts the ball for a moment after losing it. For when you are the stronger side.',
-  press: 'A high line, and from midfield up two more players hunt the ball with the man closing it down. Wins it back high, but more fouls, more running, space behind.',
+  park: 'Deep, narrow block. Nobody presses until the ball is within about 35 m of goal, two players screen shots, and only the strikers go forward. Clears long under pressure. Best as the underdog.',
+  defensive: 'Low, compact block: presses within about 40 m of goal and screens shots. Full-backs join late, passes are safer, and it clears more often when pressed.',
+  balanced: 'Mid block. One player closes the ball down wherever it is, full-backs overlap on the ball side, normal passing risk.',
+  attacking: 'Higher line, midfielders run into the box, riskier forward passes. One extra player presses in their half, and one more hunts the ball for 1.5 s after losing it.',
+  press: 'Highest line. Two extra players press with the chaser once the ball is past about 40 m from your goal, and two hunt it for 3 s after losing it. Wins it high, but more fouls and space behind.',
 };
 
 /** Shape icon: the formation's slots as dots on a small pitch, attacking to the right. */
@@ -80,7 +80,7 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
       <fieldset class="tac-group">
         <legend class="tac-legend">Formation</legend>
         <div class="tac-cards">${cards}</div>
-        <p class="muted small tac-hint">${FORMATION_NOTE[f]} Changing it re-picks your best XI for the new slots.</p>
+        <p class="muted small tac-hint">${FORMATION_NOTE[f]} XI is your lineup's strength (yours as set, others as auto-picked for that shape). Changing shape re-picks your best XI.</p>
       </fieldset>
       <fieldset class="tac-group">
         <legend class="tac-legend">Mentality <span class="muted">· how your CPU teammates defend, press and attack</span></legend>
@@ -96,10 +96,11 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
  */
 export function quickTacticsMarkup(current: Mentality | undefined): string {
   const m = mentalityOf(current);
-  return `<fieldset class="pause-tactics" id="quick-tactics">
-    <legend>Mentality</legend>
+  return `<fieldset class="pause-tactics" id="quick-tactics" aria-describedby="qt-note">
+    <legend>Mentality <span>· CPU teammates</span></legend>
     <div class="qt-steps">${MENTALITY_IDS.map(
       (id) => `<label class="qt-step"><input type="radio" name="quick-mentality" value="${id}"${id === m ? ' checked' : ''}><span>${MENTALITY_LABEL[id]}</span></label>`,
     ).join('')}</div>
+    <p class="qt-note" id="qt-note" aria-live="polite">${MENTALITY_NOTE[m]}</p>
   </fieldset>`;
 }
