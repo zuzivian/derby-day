@@ -256,7 +256,7 @@ export function clubScreen(app: App): string {
 
     <article class="panel news">
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
-      <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+      <ul class="news-list">${s.news.slice(-8).reverse().map((n, i) => `<li${i ? '' : ' class="latest"'}>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
         ${reviewButton(app)}
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}

@@ -1,29 +1,48 @@
-// The controls reference card, for setup and the training ground.
+// The controls reference: touch, mouse and keyboard, one short table each. A native <details> so it
+// sits inside the pause menus and Settings without a dialog of its own. Keep it in step with input.ts.
 
-import type { ControlStyle } from './store.ts';
+type Row = [action: string, how: string];
 
-const ROWS: { action: string; mouse: string; keys: string }[] = [
-  { action: 'Run', mouse: 'Move the pointer. Your player runs to it: slow when it is close, a sprint when it is far.', keys: 'WASD or arrow keys, hold Shift to sprint' },
-  { action: 'Pass', mouse: 'Left click: always along the ground, firm to the teammate at (or toward) the pointer, else it rolls to the pointer', keys: 'Space' },
-  { action: 'Lofted pass', mouse: 'Hold the left button until the bar fills, release: lands at the pointer, a longer hold goes higher and further', keys: 'Hold C, release' },
-  { action: 'Shoot', mouse: 'Right click, or hold the right button for power and release', keys: 'Hold F, release' },
-  { action: 'Switch player', mouse: 'Left click a teammate (or toward one) without the ball', keys: 'E' },
-  { action: 'Tackle', mouse: 'Right click without the ball: a slide if the pointer is far', keys: 'Space without the ball' },
-  { action: 'Keeper', mouse: 'Yours when he has the ball: left click rolls it out, hold left throws it, right click punts it. Six seconds, then he plays it himself.', keys: 'Space roll out, hold C throw, hold F punt' },
-  { action: 'Mentality', mouse: 'Pause menu, or keys 1-5 during a match', keys: '1-5 during a match (1 Park the bus, 3 Balanced, 5 High press), or the pause menu' },
-  { action: 'Pause', mouse: 'Esc or P', keys: 'Esc or P' },
+const TOUCH: Row[] = [
+  ['Run', 'Drag on the pitch: you run toward your finger.'],
+  ['Pass', 'Tap Pass, hold to loft.'],
+  ['Shoot', 'Tap Shoot, or hold for power and release.'],
+  ['Switch', 'Tap a player.'],
+  ['Tackle', 'Tap Shoot without the ball.'],
+  ['Keeper', 'Tap Pass rolls it out, hold Pass throws, Shoot punts.'],
+];
+const MOUSE: Row[] = [
+  ['Run', 'Move the pointer: you run to it, a sprint when it is far.'],
+  ['Pass', 'Left click, to the pointer.'],
+  ['Loft', 'Hold left until the bar fills, release.'],
+  ['Shoot', 'Right click, or hold right for power.'],
+  ['Switch', 'Left click a teammate without the ball.'],
+  ['Tackle', 'Right click without the ball: a slide if far.'],
+  ['Keeper', 'Left click rolls it out, hold left throws, right click punts.'],
+  ['Other', 'V view, wheel or + / − zoom, 1-5 mentality, Esc or P pause.'],
+];
+const KEYS: Row[] = [
+  ['Run', 'WASD or arrows, hold Shift to sprint.'],
+  ['Pass', 'Space.'],
+  ['Loft', 'Hold C, release.'],
+  ['Shoot', 'Hold F, release.'],
+  ['Switch', 'E or Q.'],
+  ['Tackle', 'Space without the ball.'],
+  ['Keeper', 'Space rolls it out, hold C throws, hold F punts.'],
+  ['Other', 'V view, + / − zoom, T score and time, 1-5 mentality, Esc or P pause.'],
 ];
 
-const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|F|C|E|P|Esc|1-5)\b/g, '<kbd>$1</kbd>');
+const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|[FCEQVT0]|P|Esc|1-5)\b/g, '<kbd>$1</kbd>');
 
-export function controlsCard(mode: ControlStyle, headingLevel: 2 | 3 = 3): string {
-  const h = `h${headingLevel}`;
-  const label = mode === 'mouse' ? 'Mouse controls' : 'Keyboard controls';
-  return `<div class="controls-card">
-    <${h} class="controls-title">${label}</${h}>
-    <table class="tbl compact controls-table">
-      <thead><tr><th scope="col">Action</th><th scope="col">${mode === 'mouse' ? 'Mouse' : 'Keys'}</th></tr></thead>
-      <tbody>${ROWS.map((r) => `<tr><th scope="row">${r.action}</th><td>${kbd(mode === 'mouse' ? r.mouse : r.keys)}</td></tr>`).join('')}</tbody>
-    </table>
-  </div>`;
+const coarse = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+/** "Controls and help" disclosure, the likeliest device first. `id` keeps two on one page apart. */
+export function controlsHelp(id: string): string {
+  const t: [string, Row[]] = ['Touch', TOUCH];
+  const sets: [string, Row[]][] = coarse() ? [t, ['Mouse', MOUSE], ['Keyboard', KEYS]] : [['Mouse', MOUSE], ['Keyboard', KEYS], t];
+  return `<details class="help-controls" id="${id}"><summary>Controls and help</summary>${sets
+    .map(([name, rows]) => `<div class="controls-card"><h3 class="controls-title">${name}</h3><table class="tbl compact controls-table">${rows
+      .map(([a, h]) => `<tr><th scope="row">${a}</th><td>${name === 'Touch' ? h : kbd(h)}</td></tr>`)
+      .join('')}</table></div>`)
+    .join('')}</details>`;
 }

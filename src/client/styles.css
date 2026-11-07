@@ -440,6 +440,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .news-list li:first-child::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .news-list li:not(:last-child)::after { content: ''; position: absolute; left: 7px; top: 20px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--line); }
 .news-list li:last-child { padding-bottom: 0; }
+.news-list li:not(.latest) { font-size: var(--fs-sm); color: var(--muted); padding-bottom: var(--sp-2); }
+.news-list li.latest { font-size: var(--fs-lg); font-weight: 600; padding-bottom: var(--sp-4); }
 .news-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 
 /* Tables --------------------------------------------------------------------- */
@@ -961,6 +963,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .ob-error { color: var(--bad); font-weight: 700; }
 .ob-error::before { content: '! '; }
 .ob-nav { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-4); border-top: 1px solid var(--line); }
+.help-controls { text-align: left; min-width: 0; }
+.help-controls summary { cursor: pointer; font-weight: 700; padding: 12px 0; display: list-item; list-style-position: inside; }
+.help-controls .controls-card { margin-top: var(--sp-3); }
+.pause-card .help-controls { grid-column: 1 / -1; }
 .controls-card { display: flex; flex-direction: column; gap: 6px; }
 .controls-title { font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .controls-table { white-space: normal; }

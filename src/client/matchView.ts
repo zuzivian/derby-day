@@ -9,6 +9,7 @@ import { DT, TICK_HZ } from '../sim/constants.ts';
 import { createMatch, matchMinute, possessionShare, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
+import { controlsHelp } from './controls.ts';
 import { getSound } from './audio.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
@@ -177,6 +178,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
           <label class="pause-opt pause-volume">Sound <input type="range" id="opt-volume" min="0" max="100" step="5" aria-label="Sound volume"><output id="opt-volume-out" for="opt-volume"></output></label>
+          ${controlsHelp('help-match')}
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>

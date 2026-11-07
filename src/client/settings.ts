@@ -10,6 +10,7 @@ import { showToast } from './a11y.ts';
 import { expectRestore } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
 import { esc } from './html.ts';
+import { controlsHelp } from './controls.ts';
 
 
 export interface SettingsHooks {
@@ -66,6 +67,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     ${prev ? `<div class="bk-prev"><p class="muted small">A safety copy of an earlier club is kept: <strong>${esc(prev.name)}</strong> (${prev.played} played).</p><button class="btn small" id="bk-undo" type="button">Swap back to ${esc(prev.name)}</button></div>` : ''}`}
     </section>
     ${telemetry.enabled ? `<section class="settings-sec" aria-labelledby="pv-h"><h3 class="eyebrow" id="pv-h">Privacy</h3><label class="check"><input type="checkbox" id="tl-off"${telemetry.optedOut() ? ' checked' : ''}> Don't send anonymous usage counts</label></section>` : ''}
+    <section class="settings-sec">${controlsHelp('help-settings')}</section>
     <div class="settings-foot"><button class="btn ghost" id="settings-close" type="button">Done</button></div>
   </div>`;
   document.body.appendChild(wrap);
@@ -88,7 +90,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       e.stopPropagation();
       close();
     } else if (e.key === 'Tab') {
-      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden])')].filter((x) => x.offsetParent !== null);
+      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden]),summary')].filter((x) => x.offsetParent !== null);
       if (!f.length) return;
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());

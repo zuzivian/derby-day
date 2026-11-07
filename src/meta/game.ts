@@ -521,7 +521,8 @@ export function applyResult(
     }
   }
   award(save, parts, xp);
-  if (ranked && win && !forfeited) award(save, [claimMilestone(save, 'first-win')], xp);
+  const firstWin = ranked && win && !forfeited ? claimMilestone(save, 'first-win') : null;
+  award(save, [firstWin], xp);
 
   // One week passes per ranked or competition match played once the season
   // calendar is unlocked (club level 10); friendlies and forfeits never move it.
@@ -545,10 +546,18 @@ export function applyResult(
   }
 
   pushHistory(save, { opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}), ...(forfeited ? { forfeited } : {}) });
-  const verb = goalsFor > goalsAgainst ? 'beat' : goalsFor === goalsAgainst ? 'drew with' : 'lost to';
-  save.news.push(`${ranked ? 'Ranked' : competition ?? 'Friendly'}: ${verb} ${opponentName.name} ${goalsFor}–${goalsAgainst}${rated ? ` (Elo ${signed(delta)})` : ''}.`);
+  save.news.push(matchNews(opponentName.name, goalsFor, goalsAgainst, scorers, ranked ? 'the ranked ladder' : competition ? (/^Cup/.test(competition) ? `the ${competition}` : /^Warm/.test(competition) ? 'a warm-up friendly' : competition) : 'a friendly', rated ? delta : null, !!firstWin));
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { eloDelta: delta, money, trainingPoints: tp, developments, xp, ...(fine || owed ? { fine, owed } : {}) };
+}
+
+/** The club's own line for a finished match: the result, who scored, the Elo it moved and and a first ranked win. */
+function matchNews(opp: string, gf: number, ga: number, scorers: string[], where: string, delta: number | null, firstWin: boolean): string {
+  const d = gf - ga;
+  const score = `${gf}–${ga}`;
+  const head = d >= 3 ? `Thrashed ${opp} ${score}` : d > 0 ? (d === 1 ? `Edged ${opp} ${score}` : `Beat ${opp} ${score}`) : d === 0 ? (gf ? `Shared the points with ${opp}, ${score}` : `Goalless against ${opp}`) : d === -1 ? `Beaten by ${opp}, ${score}` : `Lost to ${opp} ${score}`;
+  const goals = scorers.length ? ` ${scorers.slice(0, 3).join(', ')}${scorers.length > 3 ? ` and ${scorers.length - 3} more` : ''}.` : '';
+  return `${head} in ${where}.${goals}${delta === null ? '' : ` Elo ${signed(delta)}.`}${firstWin ? ' First ranked win!' : ''}`;
 }
 
 function tallyRecord(r: ClubRecord, gf: number, ga: number): void {

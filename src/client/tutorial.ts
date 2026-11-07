@@ -7,6 +7,7 @@ import { step } from '../sim/match.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import { announce, reducedMotion, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
+import { controlsHelp } from './controls.ts';
 import { checkDrill, createTraining, CARRIER, DRILLS, filterInput, holdFrozen, HUMAN, MARKER_R, stageDrill, type DrillId, type Hint, type Retry } from './drills.ts';
 import { InputController } from './input.ts';
 import { PitchRenderer } from './render.ts';
@@ -148,6 +149,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
             <button class="btn primary" id="tr-resume" type="button">Resume</button>
             <button class="btn" id="tr-skip-2" type="button">Leave practice</button>
           </div>
+          ${controlsHelp('help-train')}
           <p class="hint">Esc or P pauses and resumes.</p>
         </div>
       </div>
