@@ -16,7 +16,9 @@ async function openMatch(t) {
   // The 2D view: these tests place the pointer by world metres, and the 3D camera follows play.
   const page = await openApp(t, { prefs: PREFS, e2eHook: true, renderer: '2d' });
   await startRanked(page);
-  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 15_000 });
+  // The kick-off is taken by the CPU after five seconds of sim time (300 ticks) if nobody clicks; a loaded machine steps
+  // 15 to 20 ticks a second, so that can take longer than 15 s of wall time (seen at 244 ticks after 15 s).
+  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
   return page;
 }
 
@@ -309,60 +311,91 @@ test('mouse without the ball: left click on a teammate switches to him, elsewher
 
 test('mouse without the ball: right click tackles toward the pointer, and slides when the pointer is far', async (t) => {
   const page = await openMatch(t);
-  const setup = (gap) =>
-    page.evaluate((gap) => {
-      const s = window.__derbyMatch;
-      const me = s.players[s.controlled[0]];
-      const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
-      for (const p of s.players) p.stun = 1e7;
-      // kickCd too: when nobody clicks at the kick-off the CPU takes it for our man after five seconds
-      // (Law 8: it is a kick), and a right click straight after his own kick is never a tackle.
-      Object.assign(me, { stun: 0, tackleCd: 0, kickCd: 0, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
-      // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
-      Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
-      opp.attrs.dribbling = 0;
-      me.attrs.defending = 1;
-      Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, receiver: -1 });
-      s.switchTimer[0] = 1e9;
-      // He is the human's man now, not one handed over by the kick-off pass: no hold waiting for the
-      // pointer to move (MatchState.ctlHold), which under load can outlast the click.
-      s.ctlHold = [false, false];
-      // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
-      // 1000 headless), and a right click during the restart that follows is not a tackle.
-      Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });
-      window.__cd = 0;
-      // Every value the sim writes, not one sample a frame (a slow frame steps several ticks).
-      if (!me.__cdHooked) {
-        let cd = me.tackleCd;
-        Object.defineProperty(me, 'tackleCd', {
-          configurable: true,
-          enumerable: true,
-          get: () => cd,
-          set: (v) => {
-            cd = v;
-            window.__cd = Math.max(window.__cd, v);
-          },
-        });
-        Object.defineProperty(me, '__cdHooked', { value: true });
-      }
-      return opp.i;
-    }, gap);
+  // The scene is set up and the right click delivered in ONE page turn, so no frame can run in between. Set up in one
+  // round trip and clicked in the next, the match kept playing on real frames in the gap (which grows with the load on
+  // the machine): his man walked toward the pointer and the carrier moved on, so the gap to him drifted across the
+  // stand/slide line (STAND_TACKLE_R, 2 m), and once within RUN_IN_R of the carrier he went in on his own (a standing
+  // tackle, cooldown 45) before the click; the click was then ignored (tackleCd > 0) and the test read the wrong tackle.
+  // The events are real PointerEvents on the pitch through the same listeners as a mouse; the real mouse is moved there
+  // first so the latched pointer is where the click lands.
+  const challenge = async (gap, world) => {
+    const to = await screen(page, world);
+    await page.mouse.move(to.x, to.y);
+    await frames(page);
+    return page.evaluate(
+      ({ gap, to }) => {
+        const s = window.__derbyMatch;
+        const me = s.players[s.controlled[0]];
+        const opp = s.players.find((p) => p.team === 1 && p.role === 'MID');
+        for (const p of s.players) p.stun = 1e7;
+        // kickCd too: when nobody clicks at the kick-off the CPU takes it for our man after five seconds
+        // (Law 8: it is a kick), and a right click straight after his own kick is never a tackle.
+        Object.assign(me, { stun: 0, tackleCd: 0, kickCd: 0, slide: null, pos: { x: 30, y: 20 }, vel: { x: 0, y: 0 } });
+        // Facing the tackler: a challenge from the front (one from behind is harder and riskier, Law 12).
+        Object.assign(opp, { stun: 0, pos: { x: 30 + gap, y: 20 }, vel: { x: 0, y: 0 }, facing: { x: -1, y: 0 } });
+        opp.attrs.dribbling = 0;
+        me.attrs.defending = 1;
+        Object.assign(s.ball, { owner: opp.i, pos: { x: 30 + gap - 0.9, y: 20 }, vel: { x: 0, y: 0 }, z: 0, vz: 0, receiver: -1 });
+        s.switchTimer[0] = 1e9;
+        // He is the human's man now, not one handed over by the kick-off pass: no hold waiting for the
+        // pointer to move (MatchState.ctlHold), which under load can outlast the click.
+        s.ctlHold = [false, false];
+        // Back to open play: the first challenge is sometimes a foul or knocks the ball out (23 seeds in
+        // 1000 headless), and a right click during the restart that follows is not a tackle.
+        Object.assign(s, { phase: 'play', restart: null, advantage: null, offside: null });
+        window.__cd = 0;
+        window.__slid = false;
+        // Every value the sim writes, not one sample a frame (a slow frame steps several ticks).
+        if (!me.__hooked) {
+          let cd = me.tackleCd;
+          let slide = me.slide;
+          Object.defineProperty(me, 'tackleCd', {
+            configurable: true,
+            enumerable: true,
+            get: () => cd,
+            set: (v) => {
+              cd = v;
+              window.__cd = Math.max(window.__cd, v);
+            },
+          });
+          Object.defineProperty(me, 'slide', {
+            configurable: true,
+            enumerable: true,
+            get: () => slide,
+            set: (v) => {
+              slide = v;
+              if (v) window.__slid = true;
+            },
+          });
+          Object.defineProperty(me, '__hooked', { value: true });
+        }
+        const canvas = document.querySelector('#pitch, #tr-pitch');
+        const ev = { pointerType: 'mouse', pointerId: 1, isPrimary: true, bubbles: true, cancelable: true, clientX: to.x, clientY: to.y };
+        canvas.dispatchEvent(new PointerEvent('pointermove', { ...ev, button: -1, buttons: 0 }));
+        canvas.dispatchEvent(new PointerEvent('pointerdown', { ...ev, button: 2, buttons: 2 }));
+        canvas.dispatchEvent(new PointerEvent('pointerup', { ...ev, button: 2, buttons: 0 }));
+      },
+      { gap, to },
+    );
+  };
   // Wait for the challenge itself rather than a fixed time: under load (software 3D on a busy runner)
   // 250 ms of wall time can pass before the sim has stepped the click at all (CI saw 0 once).
   const challenged = () => page.waitForFunction(() => window.__cd > 0, null, { timeout: 15_000, polling: 20 }).then(() => page.waitForTimeout(100));
-  await setup(1.3);
-  await click(page, { x: 31.5, y: 20 }, 'right');
+  const result = () => page.evaluate(() => ({ cd: window.__cd, slid: window.__slid }));
+  await challenge(1.3, { x: 31.5, y: 20 });
   await challenged();
-  const stand = await page.evaluate(() => window.__cd);
-  // A standing tackle sets a 36-tick cooldown, or 50 if it fails (it wins at most 88% of the
-  // time), so accept either outcome; a slide is 70 or 90, which is what tells the two apart.
-  expect(stand, 'a close pointer is a standing tackle').toBeGreaterThan(30);
-  expect(stand, 'standing tackle cooldown (won or lost), shorter than any slide').toBeLessThan(55);
-  const opp = await setup(2.6);
-  await click(page, { x: 36, y: 20 }, 'right');
+  const stand = await result();
+  // A standing tackle sets a 45-tick cooldown (STAND_CD), or 26 + 40 = 66 when it fails (STAND_MISS_DOWN + STAND_MISS_CD;
+  // it wins at most 88% of the time), so accept either outcome. What tells it from a slide is the slide itself: a
+  // slide's cooldown starts at 106, but a failed standing tackle's 66 is no clue by itself.
+  expect(stand.slid, 'a close pointer is not a slide').toBe(false);
+  expect(stand.cd, 'a close pointer is a standing tackle').toBeGreaterThan(30);
+  expect(stand.cd, 'standing tackle cooldown (won or lost), shorter than a slide start').toBeLessThanOrEqual(66);
+  await challenge(2.6, { x: 36, y: 20 });
   await challenged();
-  expect(await page.evaluate(() => window.__cd), 'a far pointer slides: a longer recovery').toBeGreaterThan(60);
-  void opp;
+  const far = await result();
+  expect(far.slid, 'a far pointer slides').toBe(true);
+  expect(far.cd, 'a slide: a longer recovery').toBeGreaterThan(66);
 });
 
 test('mouse: right click opens no context menu, and the hint text describes the new controls', async (t) => {
