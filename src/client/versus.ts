@@ -45,6 +45,10 @@ export interface VersusOptions {
   prefs: Prefs;
   /** Away kit swap when the colours are too close (lives in main.ts). */
   avoidClash: (home: TeamSetup, away: TeamSetup) => TeamSetup;
+  /** Preselect this ladder club on One screen (a rematch). */
+  opp?: string;
+  /** Reopen this mode's setup or lobby, for the result's rematch button. */
+  again?: (opp?: string) => void;
   /** Called once: a result to show in the usual dialog, or null to go straight back to the club. */
   onDone: (result: ResultView | null) => void;
 }
@@ -57,11 +61,11 @@ const CSS = `
 .vs-setup { max-width: 760px; margin: 0 auto; min-width: 0; }
 .vs-setup h1 { margin: 0; font-family: var(--font-display); font-size: 34px; }
 .vs-setup p { margin: 0; }
-.vs-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; }
+.vs-sides { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: start; }
 .vs-player { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .vs-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; box-shadow: 0 0 0 2px rgba(0,0,0,.25); vertical-align: -1px; margin-right: 2px; }
 .vs-setup th .vs-dot { vertical-align: middle; }
-.vs-setup .vs { justify-self: center; }
+.vs-setup .vs { justify-self: center; align-self: center; }
 .vs-tablewrap { overflow-x: auto; min-width: 0; border: 1px solid var(--line); border-radius: var(--r-md); }
 .vs-tablewrap .tbl { white-space: normal; }
 .vs-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
@@ -86,6 +90,13 @@ const CSS = `
 .invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
 .invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
+.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; }
+.vs-setup th[data-pc] { border-bottom: 3px solid var(--pc); }
+.link-wait { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted); }
+.link-wait::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: link-pulse 1.2s ease-in-out infinite; }
+@keyframes link-pulse { 50% { transform: scale(.55); opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .link-wait::before { animation: none; } }
+.vs-setup [role="status"].link-go { border-color: var(--accent); font-weight: 800; font-size: 16px; }
 @media (max-width: 640px) { .link-cols, .vs-sides { grid-template-columns: 1fr; } }
 `;
 
@@ -140,19 +151,19 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   let stopMatch: (() => void) | null = null;
   const home = ownTeam(o.save);
   const ladder = [...o.save.ladder].sort((a, b) => b.elo - a.elo);
-  const near = [...ladder].sort((a, b) => Math.abs(a.elo - o.save.club.elo) - Math.abs(b.elo - o.save.club.elo))[0];
+  const near = ladder.find((c) => c.id === o.opp) ?? [...ladder].sort((a, b) => Math.abs(a.elo - o.save.club.elo) - Math.abs(b.elo - o.save.club.elo))[0];
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="l2p-title">
     <h1 id="l2p-title" tabindex="-1">Two players, one screen</h1>
     <p>Two players, one keyboard. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
     <div class="vs-sides">
-      <div class="side">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
+      <div class="side" style="--pc:${HUMAN_COLORS[0]}">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
       <div class="vs">vs</div>
-      <div class="side"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
+      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
         <select id="l2p-opp">${ladder.map((c) => `<option value="${esc(c.id)}"${c === near ? ' selected' : ''}>${esc(c.name)} (Elo ${c.elo})</option>`).join('')}</select>
       </div>
     </div>
-    <div class="vs-tablewrap"><table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col">${dot(0)} Player 1</th><th scope="col">${dot(1)} Player 2</th></tr></thead>
+    <div class="vs-tablewrap"><table class="tbl compact"><thead><tr><th scope="col">Action</th><th scope="col" data-pc style="--pc:${HUMAN_COLORS[0]}">${dot(0)} Player 1</th><th scope="col" data-pc style="--pc:${HUMAN_COLORS[1]}">${dot(1)} Player 2</th></tr></thead>
       <tbody>${BINDINGS.map((b) => `<tr><th scope="row">${b.action}</th><td>${kbd(esc(b.p1))}</td><td>${kbd(esc(b.p2))}</td></tr>`).join('')}</tbody></table></div>
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="vs-actions">
@@ -201,7 +212,12 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       onEnd: (m, left) => {
         stopMatch?.();
         stopMatch = null;
-        o.onDone(left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`));
+        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
+        if (r) {
+          r.headline = m.score[0] === m.score[1] ? 'Honours even' : `Player ${m.score[0] > m.score[1] ? '1 (yellow)' : '2 (cyan)'} wins`;
+          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id) };
+        }
+        o.onDone(r);
       },
     });
   }
@@ -246,10 +262,10 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     <p class="muted small">Tip: put the two windows side by side. A hidden tab keeps playing, but only while the other tab is sending.</p>
   </section>`;
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)!;
-  const status = (t: string, bad = false) => {
+  const status = (t: string, bad = false, go = false) => {
     const el = $('link-status');
     el.textContent = t;
-    el.className = bad ? 'link-warn' : '';
+    el.className = bad ? 'link-warn' : go ? 'link-go' : '';
   };
   $('link-title').focus();
 
@@ -276,7 +292,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
     $('link-code').hidden = false;
     $<HTMLButtonElement>('link-host').disabled = true;
     $<HTMLButtonElement>('link-join').disabled = true;
-    status(`Waiting for the other tab to join with code ${code}…`);
+    status(`Waiting for your friend… In the other tab choose Two tabs, then Join with code ${code}.`);
     let start: StartInfo | null = null;
     let guest: string | null = null;
     const seed = clientSeed();
@@ -286,7 +302,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
         if (!start) return;
         guest = m.id;
         tr.send({ t: 'start', to: guest, host: id, start });
-        status('Guest found. Starting…');
+        status('Connected — kick off!', false, true);
       } else if (m.t === 'ready' && m.id === guest && start) {
         off();
         tr.peer = guest;
@@ -334,6 +350,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
           transport = null;
           $<HTMLButtonElement>('link-host').disabled = false;
           $<HTMLButtonElement>('link-join').disabled = false;
+          $('link-join').textContent = 'Try again';
           status(
             `No host answered on code ${code}. Check the code, and that the host tab is this same page (same file or address) in the same browser. Embedded viewers can block tabs from talking; if so, open dist/index.html directly in two tabs.`,
             true,
@@ -371,6 +388,12 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
 
 /** The result dialog for a finished or abandoned two-human match (null: straight back to the club). */
 function netResult(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o: VersusOptions, label: string): ResultView | null {
+  const r = netResultView(m, end, start, side, o, label);
+  if (r && o.again) r.again = { label: 'Play again', run: () => o.again!() };
+  return r;
+}
+
+function netResultView(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1, o: VersusOptions, label: string): ResultView | null {
   clearLastReplay(); // linked and online matches aren't recorded; don't offer the previous replay
   if (end === 'left') return null;
   const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
@@ -427,11 +450,12 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         <h2>Invite a friend</h2>
         <label>Input delay <select id="online-delay">${[3, 4, 5, 6, 8].map((d) => `<option value="${d}"${d === DEFAULT_DELAY ? ' selected' : ''}>${d} ticks (${Math.round((d * 1000) / 60)} ms)</option>`).join('')}</select></label>
         <button class="btn primary" id="online-host"${cfg && home ? '' : ' disabled'}>Create a match</button>
+        <div class="link-wait" id="online-wait" aria-hidden="true" hidden>Waiting for your friend…</div>
         <div class="link-code" id="online-code" aria-live="polite" hidden></div>
         <div class="invite" id="online-invite" hidden>
           <input id="online-link" readonly aria-label="Invite link">
-          <button class="btn" id="online-copy">Copy link</button>
-          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn" id="online-share">Share</button>' : ''}
+          <button class="btn primary" id="online-copy">Copy invite link</button>
+          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn" id="online-share">Share…</button>' : ''}
         </div>
       </div>
       <div class="link-col">
@@ -449,7 +473,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
   const status = (t: string, bad = false, state = '') => {
     const el = $('online-status');
     el.textContent = t;
-    el.className = bad ? 'link-warn' : '';
+    el.className = bad ? 'link-warn' : state === 'pairing' ? 'link-go' : '';
     lobby.dataset.state = state;
   };
   const buttons = (enabled: boolean) => {
@@ -464,14 +488,17 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     for (const f of offLink) f();
     offLink = [];
   };
+  let retryId = 'online-host';
   /** Back to the lobby's start, keeping the message on screen. */
   const reset = () => {
     cleanup();
     link?.close();
     link = null;
     $('online-code').hidden = true;
+    $('online-wait').hidden = true;
     $('online-invite').hidden = true;
     $('online-host').hidden = false;
+    $(retryId).textContent = 'Try again';
     buttons(true);
   };
   const leave = () => {
@@ -482,13 +509,19 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     o.onDone(null);
   };
   $('online-back').addEventListener('click', leave);
+  let copyTimer = 0;
   $('online-copy').addEventListener('click', async () => {
     const input = $<HTMLInputElement>('online-link');
+    const btn = $('online-copy');
     try {
       await navigator.clipboard.writeText(input.value);
-      status('Link copied. Send it to your friend; this page waits for them.', false, lobby.dataset.state);
+      btn.textContent = 'Copied ✓';
+      clearTimeout(copyTimer);
+      copyTimer = window.setTimeout(() => (btn.textContent = 'Copy invite link'), 2500);
+      status('Link copied. Send it to your friend; this page waits for them to join.', false, lobby.dataset.state);
     } catch {
       input.select();
+      status('Press Ctrl+C (or ⌘C) to copy the selected link, then send it to your friend.', false, lobby.dataset.state);
     }
   });
   root.querySelector('#online-share')?.addEventListener('click', () => {
@@ -517,6 +550,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
   $('online-host').addEventListener('click', () => {
     if (link || !home || !cfg) return;
     buttons(false);
+    retryId = 'online-host';
     const delay = Number($<HTMLSelectElement>('online-delay').value) || DEFAULT_DELAY;
     const tr = connect(cfg, { host: true });
     status('Connecting to the match server…', false, 'connecting');
@@ -530,11 +564,15 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
           const url = inviteLink(e.code, cfg);
           $('online-code').textContent = e.code;
           $('online-code').hidden = false;
+          $('online-wait').hidden = false;
           $('online-host').hidden = true;
           $<HTMLInputElement>('online-link').value = url;
           $('online-invite').hidden = false;
           status(`Send your friend the link or the code ${e.code}. Waiting for them to join…`, false, 'waiting');
-        } else if (e.type === 'peer' && e.s === 'joined') status('Friend connected. Setting up the match…', false, 'pairing');
+        } else if (e.type === 'peer' && e.s === 'joined') {
+          $('online-wait').hidden = true;
+          status('Connected — kick off!', false, 'pairing');
+        }
       }),
       tr.onMessage((m) => {
         if (m.t === 'join' && typeof m.id === 'string' && (guestId === null || guestId === m.id)) {
@@ -560,13 +598,14 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     buttons(false);
     const id = peerId();
     const tr = connect(cfg, { join: code });
+    retryId = 'online-join';
     status(`Joining ${code}…`, false, 'connecting');
     let started = false;
     const hello = () => tr.send({ t: 'join', id, team: home, crest: o.save.club.crest });
     offLink.push(
       tr.onEvent((e) => {
         if (e.type !== 'room' || started) return;
-        status('Connected. Waiting for the match to start…', false, 'pairing');
+        status('Connected — kick off!', false, 'pairing');
         hello();
         timers.push(setInterval(() => !started && hello(), 700));
       }),
