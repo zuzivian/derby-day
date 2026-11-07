@@ -242,15 +242,15 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     a.onfinish = () => anims.splice(anims.indexOf(a), 1);
   };
 
-  function shake() {
+  function shake(peak = 5, ms = 520) {
     const frames: Keyframe[] = [];
-    const steps = 12;
+    const steps = ms > 300 ? 12 : 6;
     for (let i = 0; i <= steps; i++) {
-      const amp = 5 * (1 - i / steps) ** 1.5;
+      const amp = peak * (1 - i / steps) ** 1.5;
       frames.push({ transform: `translate(${(i % 2 ? 1 : -1) * amp}px, ${((i % 3) - 1) * amp * 0.6}px)` });
     }
     // Only the pitch moves: the HUD, Menu and Pass/Shoot buttons stay put under the thumb. (Looked up each time: a lost WebGL context swaps the canvas.)
-    animate(root.querySelector<HTMLElement>('#pitch') ?? wrap, frames, { duration: 520, easing: 'linear' });
+    animate(root.querySelector<HTMLElement>('#pitch') ?? wrap, frames, { duration: ms, easing: 'linear' });
   }
 
   /** A short buzz on touch phones; never under reduced motion or when muted. No-op where unsupported (iOS). */
@@ -271,6 +271,9 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
       return;
     }
     shake();
+    // A white-hot flash on the whistle-less instant the ball hits the net, then the confetti.
+    if (flash) flash.style.background = '#fff';
+    animate(flash, [{ opacity: 0 }, { opacity: 0.34, offset: 0.12 }, { opacity: 0 }], { duration: 420, easing: 'ease-out' });
     confetti(team);
   }
 
@@ -283,9 +286,15 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
   let cur = s;
   const handle = (ev: SfxEvent) => {
     sound.play(ev);
-    if (ev.type === 'kick' && ev.power > 0.7) buzz(12);
-    else if (ev.type === 'call' && ev.kind === 'red') buzz(60);
-    else if (ev.type === 'tackle') buzz(ev.won ? 25 : 8);
+    if (ev.type === 'kick' && ev.power > 0.7) {
+      buzz(12);
+      // A thump through the pitch on a hard strike, scaled to the power; none under reduced motion.
+      if (ev.power > 0.85 && !reducedMotion()) shake(1.6, 160);
+    } else if (ev.type === 'call' && ev.kind === 'red') buzz(60);
+    else if (ev.type === 'tackle') {
+      buzz(ev.won ? 25 : 8);
+      if (ev.won && !reducedMotion()) shake(1.3, 140);
+    }
     if (ev.type === 'goal') {
       goal(ev.team);
       const m = goalMood(cur, ev.team);

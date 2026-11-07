@@ -205,6 +205,14 @@ export class MatchCamera {
     this.replayKind = null;
   }
 
+  /** A push-in of this fraction of the frame width (a goal: 0.08) that settles in under a second. Not under reduced motion. */
+  punch(amount: number): void {
+    this.punchAmt = amount;
+    this.punchAge = 0;
+  }
+  private punchAmt = 0;
+  private punchAge = 0;
+
   update(dt: number, f: CameraFocus, aspect: number, cssWidth: number, reduced: boolean): void {
     const cam = this.camera;
     cam.aspect = aspect;
@@ -346,7 +354,15 @@ export class MatchCamera {
 
     const vfov = (VFOV * Math.PI) / 180;
     const hfov = 2 * Math.atan(Math.tan(vfov / 2) * aspect);
-    const dist = this.width.x / 2 / Math.tan(hfov / 2);
+    // The goal punch: in fast over about 50 ms, then back out with a little overshoot.
+    let pk = 1;
+    if (this.punchAmt > 0) {
+      this.punchAge += dt;
+      const a = this.punchAge;
+      pk = 1 - this.punchAmt * Math.min(1, a / 0.05) * Math.exp(-a * 5) * Math.cos(a * 3);
+      if (a > 1.2 || reduced) this.punchAmt = 0;
+    }
+    const dist = (this.width.x * pk) / 2 / Math.tan(hfov / 2);
     const e = (this.elev.x * Math.PI) / 180;
     this.target.set(this.tx.x, 0, this.tz.x);
     const endOn = this.penaltyDir || (this.mode === 'end' ? f.humanDir : 0);

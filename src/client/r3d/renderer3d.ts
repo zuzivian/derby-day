@@ -14,6 +14,7 @@ import { MatchCamera, ZOOM_STEP, clampZoom, type CameraFocus, type CameraMode } 
 import { AnimDirector, inWall, keeperLook, keeperSet } from './director.ts';
 import { mobBody, planMob, scorerAt, scorerBody, type MobPlan } from './celebration3d.ts';
 import { PlayerDots, playerPx } from './dots3d.ts';
+import { GroundFx } from './groundfx3d.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
@@ -301,6 +302,10 @@ export class Renderer3D implements MatchRenderer {
   private trail: InstancedMesh;
   private trailPts: Vector3[] = [];
   private trailSpare: Vector3[] = [];
+  /** The ball's halo and the impact rings (groundfx3d.ts). */
+  private gfx = new GroundFx();
+  /** Last frame's camera distance, for sizing the ball so it reads (the camera moves after the ball is placed). */
+  private camDistPrev = 60;
   // Scratch objects refilled every frame, so the render loop doesn't allocate them (GC pauses).
   private axis = new Vector3();
   private pctx: PlayerContext = { time: 0, dtSim: 0, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: false };
@@ -420,7 +425,7 @@ export class Renderer3D implements MatchRenderer {
     this.trail = new InstancedMesh(new IcosahedronGeometry(BALL_VIS_R, 1), new MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.28, depthWrite: false, toneMapped: false }), 10);
     this.trail.frustumCulled = false;
     this.trail.count = 0;
-    scene.add(this.ball, this.blob, this.trail);
+    scene.add(this.ball, this.blob, this.trail, this.gfx.halo, this.gfx.rings);
 
     const onLost = (e: Event) => {
       e.preventDefault();
@@ -697,6 +702,7 @@ export class Renderer3D implements MatchRenderer {
     if (!jumped) clock = Math.max(prevClock, clock);
     this.clock = clock;
     const dtSim = jumped ? 0 : clock - prevClock;
+    // The camera's goal punch is decided below, once the director has said whether a goal just went in.
     // How far past the tick to draw things (extrapolated by velocity): the match loop's exact time since
     // the tick when it gives one (RenderExtras.since), else this clock's estimate.
     const lead = Math.max(-1 / 60, Math.min(1 / 60, x.since ?? clock - tickTime));
@@ -704,6 +710,19 @@ export class Renderer3D implements MatchRenderer {
     this.lastState = s;
 
     const dir = this.director.update(s, clock);
+    // Impact rings where a tackle bites or a hard shot is struck (not for a seek or replay jump, under reduced motion, or on a slow machine).
+    if (!jumped && !this.reduced && (this.governor?.level ?? 0) < 2) {
+      for (let i = 0; i < dir.events.length; i++) {
+        for (const ev of dir.events[i]) {
+          const q = s.players[i];
+          if (ev.kind === 'tackle' && !ev.failed) this.gfx.spawn(sx(q.pos.x), sz(q.pos.y), ev.slide ? 4.2 : 3, '#ffe9c4');
+          else if (ev.kind === 'kick' && ev.style === 'shot' && ev.power > 0.6) this.gfx.spawn(sx(s.ball.pos.x), sz(s.ball.pos.y), 2 + 3 * ev.power, '#ffffff');
+        }
+      }
+    }
+    this.gfx.update(dt);
+    // A goal: the camera snaps in a touch and settles (camera3d.ts punch), a beat before the close framing eases in.
+    if (dir.goal && !jumped && !this.reduced && !this.replayShot) this.cam.punch(0.08);
     const restart = s.restart;
     const b = s.ball;
     // Who has the ball in his hands: a keeper holding it (ball.inHands), the thrower at a throw-in,
@@ -813,6 +832,12 @@ export class Renderer3D implements MatchRenderer {
     // Ball: in someone's hands (see handsOf), or where the sim has it.
     const holder = b.owner >= 0 ? s.players[b.owner] : null;
     const inHands = handsOf >= 0;
+    // Drawn larger the further out the camera is, so it stays a findable few pixels across (about 7 CSS px,
+    // at most 2.4x): on an upright phone the true ball is two or three.
+    const pxPerM = this.cssH / (2 * this.camDistPrev * Math.tan((20 * Math.PI) / 180));
+    const ballK = Math.max(1, Math.min(inHands ? 1.4 : 2.4, 7 / (2 * BALL_VIS_R * pxPerM)));
+    const ballR = BALL_VIS_R * ballK;
+    this.ball.scale.setScalar(ballK);
     if (inHands) {
       this.players[handsOf].handsWorld(this.ball.position);
       this.ball.position.y += 0.02;
@@ -821,7 +846,7 @@ export class Renderer3D implements MatchRenderer {
       const v = holder ? holder.vel : b.vel;
       const bx = b.pos.x + v.x * lead;
       const by = b.pos.y + v.y * lead;
-      this.ball.position.set(sx(bx), BALL_VIS_R + b.z, sz(by));
+      this.ball.position.set(sx(bx), ballR + b.z, sz(by));
     }
     // Spin: roll with ground speed; keep a gentle spin in the air.
     const sp = Math.hypot(b.vel.x, b.vel.y);
@@ -840,14 +865,16 @@ export class Renderer3D implements MatchRenderer {
     for (let i = 0; i < this.trailPts.length; i++) {
       const p = this.trailPts[i];
       const k = 1 - i / 11;
-      this.m4.makeScale(k, k, k).setPosition(p.x, p.y, p.z);
+      this.m4.makeScale(k * ballK, k * ballK, k * ballK).setPosition(p.x, p.y, p.z);
       this.trail.setMatrixAt(i, this.m4);
     }
     this.trail.count = Math.max(0, this.trailPts.length - 1);
     this.trail.instanceMatrix.needsUpdate = true;
-    const h = Math.max(0, this.ball.position.y - BALL_VIS_R);
+    const h = Math.max(0, this.ball.position.y - ballR);
     this.blob.position.set(this.ball.position.x, 0.02, this.ball.position.z);
-    this.blob.scale.setScalar(0.5 + h * 0.12);
+    this.blob.scale.setScalar((0.5 + h * 0.12) * Math.sqrt(ballK));
+    // The halo: stronger on a loose ball (where the eye goes), faint at a player's feet, off in someone's hands.
+    this.gfx.setHalo(this.ball.position.x, this.ball.position.z, Math.max(0.9, 18 / pxPerM) * (1 + h * 0.08), inHands ? 0 : b.owner < 0 && s.phase === 'play' ? 0.5 : 0.22);
     (this.blob.material as MeshBasicMaterial).opacity = Math.max(0.15, 0.9 - h * 0.18);
 
     const tStadium = performance.now();
@@ -946,6 +973,7 @@ export class Renderer3D implements MatchRenderer {
     );
     const camPos = this.cam.camera.position;
     const camDist = camPos.distanceTo(this.cam.target);
+    this.camDistPrev = camDist;
     if (this.stadium) {
       const st = this.stadium.stands;
       // A stand the camera sits in or looks through goes to layer 1: still casting its
@@ -1150,6 +1178,7 @@ export class Renderer3D implements MatchRenderer {
     this.trail.geometry.dispose();
     (this.trail.material as MeshBasicMaterial).dispose();
     this.trail.dispose();
+    this.gfx.dispose();
     (this.blob.material as MeshBasicMaterial).dispose();
     this.blobMat.map?.dispose();
     this.blobMat.dispose();
