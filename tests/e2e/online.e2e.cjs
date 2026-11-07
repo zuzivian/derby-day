@@ -149,7 +149,7 @@ test('Online: two browsers pair by invite link, stay in sync through a dropped s
     const cdp = await guest.context().newCDPSession(guest);
     // The crashed renderer never answers this command, so don't wait for it.
     cdp.send('Page.crash').catch(() => {});
-    await host.waitForFunction((sel) => /Opponent disconnected, waiting \d+ s/.test(document.getElementById('net-wait')?.textContent || '') && !document.getElementById('net-wait').hidden, SEL.netMatch, { timeout: 10_000 });
+    await host.waitForFunction((sel) => /disconnected\. The match is paused: waiting \d+ s/.test(document.getElementById('net-wait')?.textContent || '') && !document.getElementById('net-wait').hidden, SEL.netMatch, { timeout: 10_000 });
     step('countdown visible');
     const c1 = await net(host);
     await host.waitForTimeout(2200);

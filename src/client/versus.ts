@@ -87,6 +87,8 @@ const CSS = `
 .net-stats { margin: 0; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; text-align: center; }
 .net-banner { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; padding: 6px 12px; border-radius: 8px; background: rgba(15,21,19,.85); color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap; }
 .net-banner.lost { background: #8a5a00; }
+.net-banner:not(.bad) { white-space: normal; text-align: center; max-width: calc(100% - 24px); top: 60px; }
+.net-chip { position: absolute; right: 8px; bottom: 8px; z-index: 3; padding: 2px 8px; border-radius: 99px; background: rgba(15,21,19,.78); color: #ffd27a; font-size: 12px; font-weight: 700; pointer-events: none; }
 .invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
 .invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
@@ -397,8 +399,8 @@ function netResultView(m: MatchState, end: NetEnd, start: StartInfo, side: 0 | 1
   clearLastReplay(); // linked and online matches aren't recorded; don't offer the previous replay
   if (end === 'left') return null;
   const opp = side === 0 ? oppOf(start.away, start.crests[1]) : oppOf(start.home, start.crests[0]);
-  if (end === 'abandoned') {
-    const note = `Your opponent disconnected and did not come back within 20 seconds. Stopped at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
+  if (end === 'abandoned' || end === 'gone') {
+    const note = `${opp.name} ${end === 'gone' ? 'left the match' : 'disconnected and did not come back within 20 seconds'}. Stopped at ${start.home.short} ${m.score[0]}–${m.score[1]} ${start.away.short}, minute ${matchMinute(m)}.`;
     return { ...resultFor(m, side, opp, o.save.club.elo, label, note), abandoned: true, unrecorded: 'Abandoned friendly: no result, no Elo, no money, no training.' };
   }
   const hash = syncHash(m).toString(16).padStart(8, '0');
@@ -442,7 +444,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="online-title" id="online-lobby">
     <h1 id="online-title" tabindex="-1">Online</h1>
-    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team. No Elo, no rewards.</p>
+    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); the match starts by itself once they open it. Each of you steers your own team. No Elo, no rewards.</p>
     ${cfg ? '' : '<p class="link-warn" role="alert" id="online-off">Online play is not switched on for this copy of the game.</p>'}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -454,8 +456,8 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         <div class="link-code" id="online-code" aria-live="polite" hidden></div>
         <div class="invite" id="online-invite" hidden>
           <input id="online-link" readonly aria-label="Invite link">
-          <button class="btn primary" id="online-copy">Copy invite link</button>
-          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn" id="online-share">Share…</button>' : ''}
+          ${typeof navigator !== 'undefined' && 'share' in navigator ? '<button class="btn primary" id="online-share">Share invite…</button>' : ''}
+          <button class="btn${typeof navigator !== 'undefined' && 'share' in navigator ? '' : ' primary'}" id="online-copy">Copy invite link</button>
         </div>
       </div>
       <div class="link-col">
@@ -577,7 +579,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
           status(`Send your friend the link or the code ${e.code}. Waiting for them to join…`, false, 'waiting');
         } else if (e.type === 'peer' && e.s === 'joined') {
           $('online-wait').hidden = true;
-          status('Connected — kick off!', false, 'pairing');
+          status('Your friend joined. Starting the match…', false, 'pairing');
         }
       }),
       tr.onMessage((m) => {
@@ -612,7 +614,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     offLink.push(
       tr.onEvent((e) => {
         if (e.type !== 'room' || started) return;
-        status('Connected — kick off!', false, 'pairing');
+        status(`Found match ${code}. Waiting for the host to start…`, false, 'pairing');
         hello();
         timers.push(setInterval(() => !started && hello(), 700));
       }),
@@ -669,7 +671,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 // Linked and online matches
 
 /** How a two-human match ended: full-time, someone left (or desync), or the opponent never came back. */
-type NetEnd = 'full' | 'left' | 'abandoned';
+type NetEnd = 'full' | 'left' | 'abandoned' | 'gone';
 
 interface NetMatchOptions {
   start: StartInfo;
@@ -691,6 +693,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   const s = matchFromStart(o.start);
   const [home, away] = s.teams;
   const me = o.side;
+  const them = (me === 0 ? away : home).name;
   // End-to-end tests set window.__e2e before the page loads to read the live state back (as matchView does).
   if ((globalThis as { __e2e?: boolean }).__e2e) (globalThis as { __derbyMatch?: MatchState }).__derbyMatch = s;
   const delayMs = Math.round(o.start.delay * FRAME_MS);
@@ -706,6 +709,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
       <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
+      <div class="net-chip" id="net-chip" role="status" hidden></div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="net-menu-title">
@@ -752,7 +756,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     ls.leave();
     finish('left');
   });
-  $('net-stop-back').addEventListener('click', () => finish('left'));
+  $('net-stop-back').addEventListener('click', () => finish(gone ? 'gone' : 'left'));
   const onKey = (e: KeyboardEvent) => menuOpen && trapTab($('net-menu'), e);
   document.addEventListener('keydown', onKey);
   // Back from the back-forward cache (or a phone app switch): reconnect now rather than after the backoff.
@@ -798,9 +802,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
 
   /** Stopped with a message (desync, the opponent left, the link died): the match no longer moves. */
   let halted = false;
-  const stop = (text: string) => {
+  let gone = false;
+  const stop = (text: string, left = false) => {
     if (ended || halted) return;
     halted = true;
+    gone = left;
+    $('net-stop-back').textContent = left ? 'See result' : 'Back to the club';
     $('net-wait').hidden = true;
     $('net-stop-text').textContent = text;
     $('net-stop').hidden = false;
@@ -812,10 +819,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     section.dataset.desync = String(d.tick);
     stop(`Desync at tick ${d.tick}: the two tabs no longer agree on the match (#${d.mine.toString(16)} vs #${d.theirs.toString(16)}). Stopped.`);
   };
-  ls.onPeerLeft = () => stop('Your opponent left the match.');
+  const left = () => stop(`${them} left the match. Nothing is recorded.`, true);
+  ls.onPeerLeft = left;
   const offLink = o.link
     ? o.link.onEvent((e) => {
-        if (e.type === 'peer' && e.s === 'left' && ls.running) stop('Your opponent left the match.');
+        if (e.type === 'peer' && e.s === 'left' && ls.running) left();
         else if (e.type === 'error' && ls.running) stop(e.msg);
       })
     : () => {};
@@ -838,6 +846,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let stalledMs = 0;
   let longestStall = 0;
   let stallEvents = 0;
+  let lastStallAt = -Infinity;
   const startedAt = performance.now();
   function pump() {
     if (ended || halted || !ls.running) return;
@@ -866,6 +875,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     } else if (steps && stallStart !== null) {
       const d = now - stallStart;
       stalledMs += d;
+      if (d > 300) lastStallAt = now;
       longestStall = Math.max(longestStall, d);
       stallStart = null;
     }
@@ -909,7 +919,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
-    const waitText = lost ? (link?.status === 'reconnecting' ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';
+    const waitText = lost ? (link?.status === 'reconnecting' || navigator.onLine === false ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you can't get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);
@@ -925,6 +935,11 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       section.dataset.rttMs = ls.rttMs.toFixed(2);
       section.dataset.checks = String(ls.checksPassed);
       if (link) section.dataset.link = link.status;
+      const slow = live && !waiting && (ls.rttMs > 150 || now - lastStallAt < 4000);
+      const chip = $('net-chip');
+      chip.hidden = !slow;
+      if (slow) chip.textContent = ls.rttMs > 150 ? `Slow connection · ${Math.round(ls.rttMs)} ms` : 'Connection hiccup';
+      section.dataset.slow = slow ? '1' : '0';
       $('net-stats').textContent = `${link ? `${link.status === 'open' ? 'Online' : link.status} · ` : ''}Tick ${s.tick} · input delay ${o.start.delay} ticks (${delayMs} ms) · round trip ${ls.rttMs.toFixed(1)} ms · waited ${Math.round(((stalledMs + stallNow) / elapsed) * 100)}% of the time · in sync ×${ls.checksPassed}`;
     }
 
