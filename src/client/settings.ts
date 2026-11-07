@@ -180,7 +180,16 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     const f = (e.target as HTMLInputElement).files?.[0];
     if (!f) return;
     if (f.size > 5_000_000) preview.innerHTML = '<p class="bk-bad" role="alert">That file is too big to be a Derby Day backup.</p>';
-    else await show(await f.text());
+    else {
+      let text = '';
+      try {
+        text = await f.text();
+      } catch {
+        preview.innerHTML = '<p class="bk-bad" role="alert">That file could not be read. Try choosing it again, or paste the backup code instead.</p>';
+        return;
+      }
+      await show(text);
+    }
   });
   $<HTMLTextAreaElement>('bk-paste').addEventListener('input', (e) => {
     const v = (e.target as HTMLTextAreaElement).value;

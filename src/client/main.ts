@@ -86,7 +86,8 @@ else if (app.prefs.onboarded === undefined) app.prefs.onboarded = true;
 // A first match already recorded means setup is over, whatever the flag says (a reload on the celebration screen).
 if (existing && app.prefs.onboarded === false && app.save.history.length > 0) app.prefs.onboarded = true;
 writePrefs(app.prefs);
-let saved = writeSaveResult(app.save) !== 'blocked';
+const bootWrite = writeSaveResult(app.save);
+let saved = bootWrite !== 'blocked' && bootWrite !== 'quota';
 /** True while a match, setup or the training ground owns #app. */
 let takeover = false;
 /** Where focus goes after the next render, when it isn't simply "where it was". */
@@ -102,9 +103,12 @@ let lastBuyAt = -Infinity;
 
 const keyFor = (data: FocusKey['data']): FocusKey => ({ elId: '', data, index: 0 });
 
+// A problem stays up long enough to read and act on; a confirmation does not need to.
 function toast(text: string, ok = true) {
-  showToast(text, ok);
+  showToast(text, ok, ok ? undefined : 9000);
 }
+const BLOCKED_MSG = 'This browser blocked storage, so progress will be lost when you close the tab. You can still play.';
+const QUOTA_MSG = 'This browser is out of storage space, so your latest progress is not saved. Free some space, or back up your club (Club, then Back up or restore).';
 
 // A crash mid-match (errors.ts draws its panel) marks the match, so the reload that follows voids it instead of
 // counting it as a forfeit (pending.ts, at most once in VOID_EVERY matches).
@@ -128,8 +132,8 @@ function persist() {
   app.nextOpp = offeredOpponent(app.save);
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
-  if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
-  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is not saved. Free some space, or back up your club (Club, then Back up or restore).', false);
+  if (r === 'blocked') toast(BLOCKED_MSG, false);
+  else if (r === 'quota') toast(QUOTA_MSG, false);
   telemetry.level(clubLevel(app.save));
 }
 
@@ -884,5 +888,5 @@ if (app.prefs.onboarded === false) {
 if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
 else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload to update. This tab will not overwrite it.', false);
 else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The old save is kept in this browser, and a backup file can bring that club back (Club, then Back up or restore).', false);
-else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
+else if (!saved) toast(bootWrite === 'quota' ? QUOTA_MSG : BLOCKED_MSG, false);
 else if (abandoned) toast(abandoned, false);

@@ -489,6 +489,9 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     offLink = [];
   };
   let retryId = 'online-host';
+  /** The device itself has no network (the browser knows before any socket fails). */
+  const offline = () => navigator.onLine === false;
+  const OFFLINE = "You're offline. Check your Wi-Fi or mobile data, then try again.";
   /** Back to the lobby's start, keeping the message on screen. */
   const reset = () => {
     cleanup();
@@ -500,6 +503,8 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
     $('online-host').hidden = false;
     $(retryId).textContent = 'Try again';
     buttons(true);
+    // The button that was just disabled held focus: put it back on the way to retry instead of losing it to the page.
+    if (!document.activeElement || document.activeElement === document.body) $(retryId).focus();
   };
   const leave = () => {
     if (closed) return;
@@ -536,7 +541,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       tr.onEvent((e) => {
         if (stopMatch || closed) return;
         if (e.type === 'error') {
-          status(e.msg, true, e.code);
+          status(e.code === 'network' && offline() ? OFFLINE : e.msg, true, e.code);
           reset();
         } else if (e.type === 'peer' && e.s === 'left') {
           status('Your friend left before kick-off.', true, 'peer-left');
@@ -549,6 +554,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
 
   $('online-host').addEventListener('click', () => {
     if (link || !home || !cfg) return;
+    if (offline()) return status(OFFLINE, true, 'offline');
     buttons(false);
     retryId = 'online-host';
     const delay = Number($<HTMLSelectElement>('online-delay').value) || DEFAULT_DELAY;
@@ -595,6 +601,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
       status('Type the code your friend sees on their screen.', true, 'bad-code');
       return;
     }
+    if (offline()) return status(OFFLINE, true, 'offline');
     buttons(false);
     const id = peerId();
     const tr = connect(cfg, { join: code });
@@ -903,7 +910,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
-    const waitText = lost ? (link?.status === 'reconnecting' ? `Connection lost, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';
+    const waitText = lost ? (link?.status === 'reconnecting' ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s` : `Opponent disconnected, waiting ${lost} s`) : 'Waiting for opponent…';
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);
