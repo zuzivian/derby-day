@@ -255,21 +255,26 @@ export function clubScreen(app: App): string {
         ${reviewButton(app)}
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
         <button class="btn small" data-action="open-backup">Back up or restore</button>
-        ${app.confirmReset
-          ? `<button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button><button class="btn small" data-action="reset-cancel">Keep it</button>`
-          : `<button class="btn small ghost" data-action="reset">Start a new club</button>`}
       </div>
       ${identityControls(s)}
       <form class="rename-form" data-form="rename" novalidate>
-        <label for="club-rename">Rename your club</label>
+        <label for="club-rename">Club name</label>
         <div class="rename-row">
           <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
-          <button class="btn small" type="submit">Rename</button>
+          <button class="btn small" type="submit">Save name</button>
           ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
         </div>
         <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
       </form>
       <p class="muted small">Saved in this browser only. Use Back up or restore to keep a copy.</p>
+      <div class="danger-zone" role="group" aria-labelledby="dz-title">
+        <h3 id="dz-title" class="eyebrow">Danger zone</h3>
+        ${app.confirmReset
+          ? `<p><strong>Delete ${esc(s.club.name)}?</strong> Its squad and ${s.club.played} matches are removed from this browser. Back it up first if you might want it back. This cannot be undone.</p>
+        <div class="dz-actions"><button class="btn small" data-action="reset-cancel">Keep it</button><button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button></div>`
+          : `<p class="muted small">Begin again with a new club. You will be asked to confirm.</p>
+        <div class="dz-actions"><button class="btn small danger" data-action="reset">Start a new club</button></div>`}
+      </div>
     </article>
 
     ${levelPanel(s)}

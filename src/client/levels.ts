@@ -5,6 +5,7 @@
 // Styles are in levels.css (appended to the page by scripts/build.ts).
 
 import type { Save } from '../meta/game.ts';
+import { crestSvg } from './crest.ts';
 import { KIT_PALETTE } from '../meta/identity.ts';
 import {
   badgeTier,
@@ -164,17 +165,29 @@ export function levelUpAnnouncement(s: Save): string {
   return `Level ${clubLevel(s)}. Unlocked: ${fresh.map((u) => u.name).join(', ')}.`;
 }
 
-/** Crest and kit pickers for Club news, once those perks are unlocked. */
+let identityFresh = false;
+/** The next render plays the "saved" moment. */
+export const flagIdentitySaved = (): void => void (identityFresh = true);
+
+/** Crest, kit and trim pickers for Club news, once those perks are unlocked: a live preview and radio swatches. */
 export function identityControls(s: Save): string {
   const crest = isUnlocked(s, 'crest');
   const kit = isUnlocked(s, 'kit');
   if (!crest && !kit) return '';
   const c = s.club;
-  const colour = (id: string, value: string, label: string) => `<label class="identity-field" for="${id}">${label}
-    <select id="${id}" data-change="${id}">${KIT_PALETTE.map((k) => `<option value="${k.hex}"${k.hex === value ? ' selected' : ''}>${esc(k.name)}</option>`).join('')}${KIT_PALETTE.some((k) => k.hex === value) ? '' : `<option value="${esc(value)}" selected>Current</option>`}</select></label>`;
-  return `<div class="identity-row" role="group" aria-label="Club identity">
-    ${crest ? `<label class="identity-field" for="crest-select">Crest
-      <select id="crest-select" data-change="crest">${CREST_PATTERNS.map((p) => `<option value="${p}"${p === c.crest ? ' selected' : ''}>${p[0].toUpperCase()}${p.slice(1)}</option>`).join('')}</select></label>` : ''}
-    ${kit ? `${colour('kit-primary', c.primary, 'Kit')}${colour('kit-secondary', c.secondary, 'Trim')}` : ''}
-  </div>`;
+  const fresh = identityFresh;
+  identityFresh = false;
+  const cap = (p: string) => p[0].toUpperCase() + p.slice(1);
+  const swatches = (key: string, label: string, hint: string, value: string, other: string) => `<fieldset class="identity-set"><legend>${label}</legend>
+    <div class="swatches">${KIT_PALETTE.map((k) => {
+      const same = k.hex === other;
+      return `<label class="sw" style="--c:${k.hex}" title="${esc(k.name)}${same ? '' : ''}"><input type="radio" class="sr-only" name="${key}" id="${key}-${k.hex.slice(1)}" value="${k.hex}" data-change="${key}"${k.hex === value ? ' checked' : ''}${same ? ' disabled' : ''}><span class="sw-chip" aria-hidden="true"></span><span class="sr-only">${esc(k.name)}</span></label>`;
+    }).join('')}</div><p class="muted small">${hint}</p></fieldset>`;
+  return `<fieldset class="identity-editor"><legend class="eyebrow">Club identity</legend>
+    <div class="identity-preview${fresh ? ' fresh' : ''}">${crestSvg(c, 76)}
+      <div class="identity-meta"><strong>${esc(c.name)}</strong>
+        <span class="identity-saved" aria-hidden="true">${fresh ? '✓ Saved' : 'Saves as you pick'}</span></div></div>
+    ${crest ? `<fieldset class="identity-set"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
+    ${kit ? `${swatches('kit-primary', 'Kit colour', 'Shirt and crest.', c.primary, c.secondary)}${swatches('kit-secondary', 'Trim colour', 'Must differ from the kit.', c.secondary, c.primary)}` : ''}
+  </fieldset>`;
 }

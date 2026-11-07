@@ -144,13 +144,31 @@
 }
 .levelup-actions .btn { width: 100%; }
 
-/* Crest and kit pickers (Club news) */
-/* Three fields, one grid: label above, control filling its cell, so the selects share x and width. */
-.identity-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2) var(--sp-4); align-items: center; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
-.identity-field { display: flex; flex-direction: column; align-items: stretch; gap: 4px; min-width: 0; color: var(--muted); font-size: 14px; font-weight: 600; }
-
-.identity-field select { width: 100%; min-width: 0; }
-@media (max-width: 420px) { .identity-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* Club identity editor */
+.identity-editor, .identity-set { border: 0; margin: 0; padding: 0; min-width: 0; }
+.identity-editor { display: grid; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
+.identity-editor > legend { padding: 0; margin-bottom: var(--sp-2); }
+.identity-set > legend { padding: 0; margin-bottom: 6px; color: var(--ink); font-size: 14px; font-weight: 700; }
+.identity-set .muted { margin: 6px 0 0; }
+.identity-preview { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3); border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--line); }
+.identity-preview .crest { flex: none; color: var(--ink); }
+.identity-meta { display: grid; gap: 4px; min-width: 0; }
+.identity-saved { font-size: 13px; color: var(--muted); }
+.identity-preview.fresh { border-color: var(--good); animation: id-pop .5s ease-out; }
+.identity-preview.fresh .identity-saved { color: var(--good); font-weight: 700; }
+@keyframes id-pop { 0% { transform: scale(.97); } 60% { transform: scale(1.015); } }
+.crest-opts { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; }
+.crest-opt { display: grid; justify-items: center; gap: 2px; padding: 8px 4px 6px; min-height: 44px; border: 2px solid var(--line); border-radius: var(--r-md); color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.crest-opt .crest { color: var(--ink); }
+.crest-opt:has(:checked) { border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.crest-opt:has(:focus-visible), .sw:has(:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.sw { position: relative; display: grid; place-items: center; min-height: 44px; cursor: pointer; }
+.sw-chip { --r: inset 0 0 0 1px #8888; width: 34px; height: 34px; border-radius: 50%; background: var(--c); box-shadow: var(--r); }
+.sw:has(:checked) .sw-chip { box-shadow: var(--r), 0 0 0 3px var(--surface), 0 0 0 5px var(--ink); }
+.sw:has(:checked)::after { content: "✓"; position: absolute; color: #fff; font-weight: 800; text-shadow: 0 0 2px #000, 0 0 3px #000, 0 0 3px #000; pointer-events: none; }
+.sw:has(:disabled) .sw-chip { opacity: .3; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .identity-preview.fresh { animation: none; } }
 
 /* Onboarding: the level note on the last step */
 .ob-level { display: flex; flex-direction: column; gap: 4px; padding: var(--sp-3) 14px; border: 1px solid color-mix(in srgb, var(--xp-fill) 35%, var(--line)); border-radius: var(--r-md); background: color-mix(in srgb, var(--xp-fill) 8%, var(--surface)); }
@@ -173,3 +191,9 @@
   .xp-bar, .xp-card-track { border: 1px solid CanvasText; }
   .xp-bar span, .xp-card-fill { background: Highlight; forced-color-adjust: none; }
 }
+
+/* Danger zone */
+.danger-zone { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: var(--r-md); background: color-mix(in srgb, var(--bad) 6%, var(--surface)); }
+.danger-zone h3 { margin: 0; color: var(--bad); }
+.danger-zone p { margin: 0; }
+.dz-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }

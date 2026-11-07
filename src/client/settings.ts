@@ -37,26 +37,33 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
   const prev = previousClub();
   wrap.innerHTML = `
   <div class="modal-card settings-card">
-    <h2 id="settings-title" tabindex="-1">Back up your club</h2>
-    <p class="muted">${esc(save.club.name)} lives in this browser only. A backup lets you move it to another device or keep it safe.</p>
-    <div class="settings-actions">
-      <button class="btn primary" id="bk-download">Download backup file</button>
-      <button class="btn" id="bk-code">Show copyable code</button>
-    </div>
-    <div id="bk-code-out" hidden>
-      <textarea id="bk-code-text" readonly rows="4" aria-label="Backup code"></textarea>
-      <button class="btn small" id="bk-copy">Copy code</button>
-    </div>
-    <h3 class="eyebrow">Restore a backup</h3>
+    <h2 id="settings-title" tabindex="-1">Back up or restore</h2>
+    <p class="muted">${esc(save.club.name)} is saved in this browser only. A backup lets you move it to another device or keep a copy safe.</p>
+    <section class="settings-sec" aria-labelledby="bk-h">
+      <h3 class="eyebrow" id="bk-h">Back up</h3>
+      <div class="settings-actions">
+        <button class="btn primary" id="bk-download" type="button">Download backup file</button>
+        <button class="btn" id="bk-code" type="button" aria-expanded="false" aria-controls="bk-code-out">Show copyable code</button>
+      </div>
+      <p class="muted small">The file is the safest copy. The code is the same backup as text.</p>
+      <div id="bk-code-out" hidden>
+        <textarea id="bk-code-text" readonly rows="4" aria-label="Backup code"></textarea>
+        <button class="btn small" id="bk-copy" type="button">Copy code</button>
+      </div>
+    </section>
+    <section class="settings-sec" aria-labelledby="rs-h">
+      <h3 class="eyebrow" id="rs-h">Restore a backup</h3>
     ${guestTab
       ? '<p class="muted">This is a guest tab, so it cannot change your club. Open this dialog in the tab that owns the club to restore a backup.</p>'
-      : `<button class="btn" id="bk-choose" type="button">Choose a backup file…</button>
+      : `<p class="muted small">You will see what is inside before anything is replaced.</p>
+    <button class="btn" id="bk-choose" type="button">Choose a backup file…</button>
     <input type="file" id="bk-file" accept=".json,application/json,text/plain" hidden tabindex="-1">
     <textarea id="bk-paste" rows="2" placeholder="…or paste a backup code here" aria-label="Paste a backup code"></textarea>
     <div id="bk-preview" role="status" aria-live="polite"></div>
     ${prev ? `<div class="bk-prev"><p class="muted small">A safety copy of an earlier club is kept: <strong>${esc(prev.name)}</strong> (${prev.played} played).</p><button class="btn small" id="bk-undo" type="button">Swap back to ${esc(prev.name)}</button></div>` : ''}`}
-    ${telemetry.enabled ? `<h3 class="eyebrow">Privacy</h3><label class="check"><input type="checkbox" id="tl-off"${telemetry.optedOut() ? ' checked' : ''}> Don't send anonymous usage counts</label>` : ''}
-    <div class="settings-foot"><button class="btn ghost" id="settings-close">Close</button></div>
+    </section>
+    ${telemetry.enabled ? `<section class="settings-sec" aria-labelledby="pv-h"><h3 class="eyebrow" id="pv-h">Privacy</h3><label class="check"><input type="checkbox" id="tl-off"${telemetry.optedOut() ? ' checked' : ''}> Don't send anonymous usage counts</label></section>` : ''}
+    <div class="settings-foot"><button class="btn ghost" id="settings-close" type="button">Done</button></div>
   </div>`;
   document.body.appendChild(wrap);
   // Everything behind the dialog is inert while it is open (as the result and level-up dialogs do).
@@ -70,7 +77,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     wrap.remove();
     document.removeEventListener('keydown', onKey, true);
     if (!wasInert) appEl?.removeAttribute('inert');
-    opener?.isConnected ? opener.focus() : document.getElementById('main')?.focus();
+    (opener?.isConnected ? opener : document.querySelector<HTMLElement>('[data-action="open-backup"]') ?? document.getElementById('main'))?.focus();
   };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -99,7 +106,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    showToast('Backup downloaded.');
+    showToast('Backup file downloaded.');
   });
 
   $('bk-code').addEventListener('click', async () => {
@@ -110,8 +117,10 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       return;
     }
     out.hidden = false;
+    $('bk-code').setAttribute('aria-expanded', 'true');
     const ta = $<HTMLTextAreaElement>('bk-code-text');
     ta.value = code;
+    ta.focus();
     ta.select();
   });
   $('bk-copy').addEventListener('click', async () => {
@@ -141,8 +150,8 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     const when = p.exportedAt ? ` · saved ${esc(new Date(p.exportedAt).toLocaleDateString('en-GB'))}` : '';
     preview.innerHTML = `
       <div class="bk-found"><strong>${esc(p.name)}</strong> · Level ${p.level} · ${p.played} played · Elo ${p.elo}${when}</div>
-      <p class="muted small">Restoring replaces <strong>${esc(hooks.getSave().club.name)}</strong> in this browser. Your current club is kept as a safety copy.</p>
-      <button class="btn danger" id="bk-confirm">Replace my club with this backup</button>`;
+      <p class="muted small">Restoring replaces <strong>${esc(hooks.getSave().club.name)}</strong> in this browser, and the page reloads. Your current club is kept as a safety copy you can swap back to.</p>
+      <button class="btn danger" id="bk-confirm" type="button">Replace my club with this backup</button>`;
     preview.querySelector('#bk-confirm')?.addEventListener('click', () => {
       const res = replaceSave(r.save);
       if (res !== 'ok') {

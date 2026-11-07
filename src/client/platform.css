@@ -13,6 +13,8 @@
 .settings-card h3 { margin: 6px 0 0; }
 .settings-card p { margin: 0; }
 .settings-card label.btn { align-self: flex-start; cursor: pointer; }
+.settings-sec { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.settings-sec h3 { margin: 0; }
 .settings-foot { display: flex; justify-content: flex-end; }
 .bk-found { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg); }
 .bk-bad { color: var(--bad); font-weight: 600; }

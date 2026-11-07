@@ -16,7 +16,7 @@ import { competitionAction, competitionsScreen } from './competitions.ts';
 import { announce, autoFocus, reducedMotion, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
-import { levelUpAnnouncement, levelUpOpen } from './levels.ts';
+import { flagIdentitySaved, levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
 import { avoidClash } from './kits.ts';
 import { mountMatch } from './matchView.ts';
@@ -767,13 +767,20 @@ root.addEventListener('change', (e) => {
     persist();
     render();
   } else if (el.dataset.change === 'crest') {
-    if (setCrest(app.save, el.value as CrestPattern)) persist();
+    if (setCrest(app.save, el.value as CrestPattern)) {
+      persist();
+      flagIdentitySaved();
+      toast(`Crest saved: ${el.value}.`);
+    }
     render();
   } else if (el.dataset.change === 'kit-primary' || el.dataset.change === 'kit-secondary') {
     const c = app.save.club;
     const [primary, secondary] = el.dataset.change === 'kit-primary' ? [el.value, c.secondary] : [c.primary, el.value];
-    if (setKit(app.save, primary, secondary)) persist();
-    else toast('Pick two different colours.', false);
+    if (setKit(app.save, primary, secondary)) {
+      persist();
+      flagIdentitySaved();
+      toast(`${el.dataset.change === 'kit-primary' ? 'Kit' : 'Trim'} colour saved.`);
+    } else toast('Pick two different colours.', false);
     render();
   }
 });
