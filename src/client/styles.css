@@ -1121,8 +1121,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .league-table tr.zone-up td:first-child { box-shadow: inset 4px 0 0 var(--good); }
 .league-table tr.zone-down td:first-child { box-shadow: inset 4px 0 0 var(--bad); }
 /* A shape as well as a colour: up and down arrows in the zone rows and the key. */
-.league-table tr.zone-up td:first-child::before, .key-up::before { content: '\25B2'; }
-.league-table tr.zone-down td:first-child::before, .key-down::before { content: '\25BC'; }
+.league-table tr.zone-up td:first-child::before, .key-up::before { content: '\25B2'; content: '\25B2' / ''; }
+.league-table tr.zone-down td:first-child::before, .key-down::before { content: '\25BC'; content: '\25BC' / ''; }
 .league-table tr[class*="zone-"] td:first-child::before { font-size: 8px; margin-right: 3px; vertical-align: 1px; }
 .league-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
 .key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; color: var(--on-status); font-size: 8px; line-height: 12px; text-align: center; vertical-align: 1px; }

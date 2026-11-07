@@ -290,12 +290,15 @@ function leagueTable(s: Save, season: Season): string {
       <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
     </tr></thead>
     <tbody>${rows
-      .map((r, i) => `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
-        <td class="num">${i + 1}</td>
+      .map((r, i) => {
+        const zone = !started ? '' : up && i < 2 ? 'up' : down && i >= rows.length - 2 ? 'down' : '';
+        return `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${zone ? ` zone-${zone}` : ''}">
+        <td class="num">${i + 1}${zone ? `<span class="visually-hidden">, ${zone === 'up' ? 'promotion' : 'relegation'} place</span>` : ''}</td>
         <th scope="row" class="name">${kit(r)}${esc(r.name)} <span class="club-code" aria-hidden="true">${esc(codes.get(r.id) ?? '')}</span>${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
         <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd ? signed(r.gd) : '0'}</td><td class="num ovr">${r.points}</td>
-      </tr>`)
+      </tr>`;
+      })
       .join('')}</tbody>
   </table></div>
   ${up || down ? `<p class="muted small league-key">${up ? `<span class="key key-up" aria-hidden="true"></span>Promotion to ${divisionName(d - 1)} ` : ''}${down ? `<span class="key key-down" aria-hidden="true"></span>Relegation to ${divisionName(d + 1)}` : ''}</p>` : ''}`;
