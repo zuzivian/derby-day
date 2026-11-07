@@ -536,6 +536,21 @@ function tally(r: TableRow, gf: number, ga: number): void {
   } else r.lost++;
 }
 
+/** Where you stand against the promotion and relegation places mid-season ("2 pts off promotion"); '' once it is over or nothing is at stake. */
+export function seasonStanding(save: Save, season: Season | null | undefined = save.season): string {
+  if (!season || season.done) return '';
+  const rows = seasonTable(save, season);
+  const i = rows.findIndex((r) => r.you);
+  const me = rows[i];
+  const d = season.division ?? DIVISIONS;
+  if (!me || !me.played) return '';
+  const pts = (n: number) => `${n} pt${n === 1 ? '' : 's'}`;
+  const pos = ordinal(i + 1);
+  if (d > 1 && i < 2) return `${pos} · in the promotion places${rows[2].points < me.points ? `, ${pts(me.points - rows[2].points)} clear` : ''}`;
+  if (d < DIVISIONS && i >= rows.length - 2) return `${pos} · ${pts(rows[rows.length - 3].points - me.points)} from safety`;
+  return d > 1 ? `${pos} · ${me.points >= rows[1].points ? 'level with 2nd' : `${pts(rows[1].points - me.points)} off promotion`}` : '';
+}
+
 /**
  * One line on a finish in `division`. `moved` is where it took you
  * (applyLeagueFinish); without it, the line says what the place normally means.

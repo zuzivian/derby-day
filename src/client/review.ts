@@ -4,10 +4,11 @@
 // Styles are in review.css (appended to the page by scripts/build.ts).
 
 import { signed, type Save } from '../meta/game.ts';
-import { scoutMatchesFor, squadCap } from '../meta/levels.ts';
+import { isUnlocked, scoutMatchesFor, squadCap } from '../meta/levels.ts';
 import { overall, type Player } from '../meta/player.ts';
 import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText, type IntakeEntry, type PlayerChange, type SeasonReview } from '../meta/progression.ts';
-import { divisionName } from '../meta/world.ts';
+import { divisionName, playerDivision } from '../meta/world.ts';
+import { confettiHtml } from './confetti.ts';
 import type { App } from './ui.ts';
 
 const esc = (t: string | number): string =>
@@ -74,14 +75,18 @@ export function reviewModal(app: App): string {
   if (!rv || rv.seen) return '';
   // Hero (title and the season in numbers), then each section as a card. The
   // middle scrolls inside the dialog so "Start season" never leaves view.
+  const arc = seasonArc(s, rv);
   return `
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
     <div class="modal-card review-card">
       <div class="rv-scroll" tabindex="0" role="region" aria-label="Season review">
-        <header class="rv-hero">
+        <header class="rv-hero${arc.moved ? ` rv-${arc.moved}` : ''}">
+          ${arc.moved === 'up' ? confettiHtml(40) : ''}
           <div class="rv-eyebrow">End of season</div>
           <h2 id="review-title" class="review-title" tabindex="-1">Season ${rv.year} review</h2>
+          ${arc.html}
           ${recordSection(rv)}
+          ${arc.next}
         </header>
         <div class="rv-body">
           ${section('Who changed', changesBody(rv))}
@@ -93,6 +98,24 @@ export function reviewModal(app: App): string {
       <footer class="rv-foot"><button class="btn primary big" data-action="review-close">Start season ${rv.year + 1}</button></footer>
     </div>
   </div>`;
+}
+
+/** The season's place in the climb: a promotion or relegation banner and next season's target, read from the club history and the division. */
+function seasonArc(s: Save, rv: SeasonReview): { moved: 'up' | 'down' | ''; html: string; next: string } {
+  if (!isUnlocked(s, 'league')) return { moved: '', html: '', next: '' };
+  const year = (s.seasons ?? []).find((x) => x.year === rv.year);
+  const note = [...(year?.notes ?? [])].reverse().find((n) => n.startsWith('League'));
+  const moved = note?.includes('promoted') ? 'up' : note?.includes('relegated') ? 'down' : '';
+  const d = year?.division ?? playerDivision(s);
+  const line = moved === 'up' ? `▲ Promoted to ${divisionName(d)}` : moved === 'down' ? `▼ Down to ${divisionName(d)}` : divisionName(d);
+  const sub = moved === 'down' ? 'A setback, not the end. Climb back.' : note ? esc(note.replace(/^League \d+: /, 'League: ').replace(/, (promoted|relegated)$/, '')) : 'No League finish this season.';
+  const now = playerDivision(s);
+  const target = now > 1 ? `Target: League top two go up to ${divisionName(now - 1)}.` : 'Target: stay in the top division.';
+  return {
+    moved,
+    html: `<p class="rv-arc"><b>${line}</b><span>${sub}</span></p>`,
+    next: `<p class="rv-next">${target}</p>`,
+  };
 }
 
 function recordSection(rv: SeasonReview): string {

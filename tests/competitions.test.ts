@@ -14,6 +14,7 @@ import {
   recordCupMatch,
   recordSeasonMatch,
   roundRobin,
+  seasonStanding,
   seasonTable,
   simulateRestOfCup,
   startCup,
@@ -200,6 +201,37 @@ describe('season', () => {
     const t = seasonTable(s, season);
     expect(t[0].id).toBe(y);
     expect(t[1].id).toBe(x);
+  });
+});
+
+describe('seasonStanding', () => {
+  const play = (n: number, you: [number, number]) => {
+    const s = newGame(21);
+    const season = startSeason(s);
+    for (let d = 0; d < n; d++) recordSeasonMatch(s, you[0], you[1], [], fakeSim);
+    return { s, season };
+  };
+  test('is empty before a match and after the season', () => {
+    const s = newGame(22);
+    expect(seasonStanding(s)).toBe('');
+    startSeason(s);
+    expect(seasonStanding(s)).toBe('');
+    for (let d = 0; d < 7; d++) recordSeasonMatch(s, 2, 0, [], fakeSim);
+    expect(seasonStanding(s)).toBe('');
+  });
+  test('winning puts you in the promotion places, losing in the drop zone with the gap to safety', () => {
+    expect(seasonStanding(play(3, [2, 0]).s)).toContain('in the promotion places');
+    const lost = play(4, [0, 3]);
+    lost.season.division = 3; // a division with a drop and a promotion
+    expect(seasonStanding(lost.s)).toMatch(/th · \d+ pts? from safety|off promotion/);
+  });
+  test('the top division has no promotion line; the bottom has no drop line', () => {
+    const top = play(3, [0, 3]);
+    top.season.division = 1;
+    expect(seasonStanding(top.s)).not.toContain('promotion');
+    const win = play(3, [2, 0]);
+    win.season.division = 4;
+    expect(seasonStanding(win.s)).not.toContain('safety');
   });
 });
 

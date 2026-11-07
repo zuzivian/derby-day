@@ -22,8 +22,19 @@
 .rv-tile .rv-tile-sub { font-family: var(--font-body); font-weight: 600; font-size: var(--fs-sm); color: rgba(243, 246, 241, .8); }
 .rv-tile .up { color: #5fd08e; }
 .rv-tile .down { color: #ff9a8a; }
+.rv-tile .rv-tile-sub { white-space: normal; }
 .rv-trophy { grid-column: 1 / -1; border-color: rgba(255, 214, 10, .5); background: rgba(255, 214, 10, .12); }
 .rv-trophy dd { color: #ffd60a; font-size: 22px; }
+.rv-arc { margin: -6px 0 14px; display: flex; flex-direction: column; gap: 2px; }
+.rv-arc b { font-size: var(--fs-lg, 18px); font-weight: 800; letter-spacing: .02em; }
+.rv-arc span { font-size: var(--fs-sm); color: rgba(243, 246, 241, .85); }
+.rv-up .rv-arc b { color: #5fd08e; }
+.rv-down .rv-arc b { color: #ffb86b; }
+.rv-up { background: radial-gradient(130% 120% at 50% -10%, #2f7a56 0%, #17433a 55%, #0b1f1a 100%); }
+.rv-down { background: radial-gradient(130% 120% at 50% -10%, #44566a 0%, #26333f 55%, #12181f 100%); }
+.rv-next { margin: 12px 0 0; font-size: var(--fs-sm); font-weight: 700; color: #ffd60a; }
+@media (prefers-reduced-motion: no-preference) { .rv-up .rv-arc b { animation: rv-pop .6s cubic-bezier(.2, 1.4, .4, 1) both; } }
+@keyframes rv-pop { from { transform: scale(.85); opacity: 0; } }
 .rv-record-empty { margin: 0; color: rgba(243, 246, 241, .85); }
 .rv-body { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4) var(--sp-6) var(--sp-5); }
 .rv-section { display: flex; flex-direction: column; gap: 8px; padding: var(--sp-3) var(--sp-4); border-radius: var(--r-lg); background: var(--surface-2); border: 1px solid var(--line); }

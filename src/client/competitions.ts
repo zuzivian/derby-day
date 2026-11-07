@@ -25,6 +25,7 @@ import {
   recordSeasonMatch,
   SEASON_PRIZES,
   seasonOpponent,
+  seasonStanding,
   seasonTable,
   seasonVerdict,
   simulateRestOfCup,
@@ -258,6 +259,7 @@ function seasonPanel(s: Save): string {
   return `
   <article class="panel comp-panel" aria-labelledby="season-title">
     <div class="board-head"><h2 id="season-title" class="comp-title">League ${season.edition}</h2><span class="eyebrow">${divisionName(season.division ?? DIVISIONS)} · ${season.done ? 'Finished' : `Matchday ${season.matchday + 1} of ${days}`}</span></div>
+    ${seasonStanding(s) ? `<p class="league-standing">${esc(seasonStanding(s))}</p>` : ''}
     ${status}
     <div class="league-body">
       <div>${leagueTable(s, season)}</div>
