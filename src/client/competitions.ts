@@ -219,7 +219,7 @@ function tieCard(s: Save, t: Tie, round: number, k: number, flag = ''): string {
   const label = t.a && t.b
     ? `${clubById(s, t.a)?.name} ${played ? `${t.ga}–${t.gb}${t.pens ? `, ${t.pens[0]}–${t.pens[1]} on penalties` : ''}` : 'versus'} ${clubById(s, t.b)?.name}`
     : 'To be decided';
-  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ' mine' : ''}${flag ? ' flag' : ''}${flag === 'Your path' ? ' path' : ''}" aria-label="${esc(label)}${flag ? `. ${flag}` : ''}">
+  return `<li class="tie${t.a === s.club.id || t.b === s.club.id ? ` mine${played ? (t.winner === s.club.id ? ' won' : ' lost') : ''}` : ''}${flag ? ' flag' : ''}${flag === 'Your path' ? ' path' : ''}" aria-label="${esc(label)}${flag ? `. ${flag}` : ''}${played && (t.a === s.club.id || t.b === s.club.id) ? (t.winner === s.club.id ? '. You won' : '. You lost') : ''}">
     ${row(t.a, t.ga, t.pens?.[0], fromA)}
     ${row(t.b, t.gb, t.pens?.[1], fromB)}
     ${t.pens ? `<div class="tie-note">on penalties</div>` : flag ? `<div class="tie-note tie-flag" aria-hidden="true">${flag}</div>` : ''}
@@ -253,7 +253,8 @@ function seasonPanel(s: Save): string {
   if (f && opp) status = nextMatch(s, opp, `Matchday ${season.matchday + 1}`, 'season', f.home === s.club.id);
   else {
     const pos = season.finish ?? 0;
-    status = `<div class="comp-status ${pos <= 2 ? 'good' : pos >= 7 ? 'bad' : ''}" role="status"><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
+    const head = pos === 1 && season.moved !== null ? 'Champions' : season.moved === 'up' ? 'Promoted' : season.moved === 'down' ? 'Relegated' : pos === 1 ? 'Champions' : 'Stayed up';
+    status = `<div class="comp-status end ${season.moved === 'down' ? 'bad' : pos <= 2 ? 'good lift' : ''}" role="status">${pos === 1 ? `${SHIELD_ICON} ` : ''}<b class="end-head">${head}</b><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Finish the season</button></div>`;
   }
   return `
@@ -286,7 +287,7 @@ function leagueTable(s: Save, season: Season): string {
       <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
     </tr></thead>
     <tbody>${rows
-      .map((r, i) => `<tr class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
+      .map((r, i) => `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
         <td class="num">${i + 1}</td>
         <th scope="row" class="name">${kit(r)}${esc(r.name)} <span class="club-code" aria-hidden="true">${esc(codes.get(r.id) ?? '')}</span>${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
@@ -326,7 +327,9 @@ function fixtureList(s: Save, season: Season): string {
             const mine = f.home === s.club.id || f.away === s.club.id;
             const score = f.hg !== undefined ? `${f.hg}–${f.ag}` : 'v';
             const full = `${clubById(s, f.home)?.name} ${f.hg !== undefined ? `${f.hg}–${f.ag}` : 'versus'} ${clubById(s, f.away)?.name}`;
-            return `<li class="fx${mine ? ' mine' : ''}" aria-label="${esc(full)}"><span class="fx-team">${esc(nameOf(f.home))}</span><span class="fx-score">${score}</span><span class="fx-team away">${esc(nameOf(f.away))}</span></li>`;
+            const me = f.home === s.club.id ? 1 : -1;
+            const r = mine && f.hg !== undefined ? ((f.hg - f.ag!) * me > 0 ? 'W' : f.hg === f.ag ? 'D' : 'L') : '';
+            return `<li class="fx${mine ? ' mine' : ''}"${r ? ` data-r="${r}"` : ''} aria-label="${esc(full)}${r ? `. ${{ W: 'Win', D: 'Draw', L: 'Defeat' }[r]}` : ''}"><span class="fx-team">${esc(nameOf(f.home))}</span><span class="fx-score"${r ? ` data-r="${r}"` : ''}>${score}</span><span class="fx-team away">${esc(nameOf(f.away))}</span></li>`;
           })
           .join('')}</ul>
       </section>`;
