@@ -10,6 +10,7 @@
 
 import { watch } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { glslMinPlugin } from './glsl-min';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -174,6 +175,7 @@ async function build(): Promise<void> {
     entrypoints: [`${root}src/client/boot.ts`],
     target: 'browser',
     minify: true,
+    plugins: [glslMinPlugin],
     format: 'esm',
     define: {
       __BUILD_ID__: JSON.stringify(id),
