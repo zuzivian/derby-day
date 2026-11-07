@@ -9,11 +9,50 @@ import { freeKickPlan, setPieceDelivery } from '../sim/match.ts';
 import type { MatchPlayer, MatchState } from '../sim/types.ts';
 import type { Vec } from '../sim/vec.ts';
 import { GAUGE_COLORS, shotGauge, shotGoalCross } from './power.ts';
+import { AnimDirector } from './r3d/director.ts';
 
 export const MARGIN = 3.5;
 // Drawn larger than their physical size so players read at a glance.
 const PLAYER_R = 0.95;
 const BALL_R = 0.3;
+/** Smallest drawn sizes in CSS pixels, so a phone's 3 px per metre still shows discs and a ball you can follow. */
+const MIN_PLAYER_PX = 4.4;
+const MIN_BALL_PX = 2.3;
+/** Impact rings: how long one lives (s) and how many at once. Same feel as the 3D view's (r3d/groundfx3d.ts). */
+const RING_LIFE = 0.42;
+const RING_MAX = 6;
+
+/** Text colour for a number on a kit: its second colour when that stands out, else black or white. */
+const inkCache = new Map<string, string>();
+function luma(c: string): number {
+  const h = c.replace('#', '');
+  const v = h.length === 3 ? h.replace(/./g, '$&$&') : h;
+  const n = parseInt(v.slice(0, 6), 16);
+  if (!(n >= 0)) return 0.5;
+  return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+}
+function ink(on: string, want: string): string {
+  const key = on + want;
+  let r = inkCache.get(key);
+  if (!r) inkCache.set(key, (r = Math.abs(luma(on) - luma(want)) > 0.3 ? want : luma(on) > 0.5 ? '#111418' : '#ffffff'));
+  return r;
+}
+
+let haloSprite: HTMLCanvasElement | null = null;
+/** A soft white disc, drawn scaled under the ball (cheaper than a gradient per frame). */
+function halo(): HTMLCanvasElement {
+  if (haloSprite) return haloSprite;
+  const c = (haloSprite = document.createElement('canvas'));
+  c.width = c.height = 64;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(32, 32, 4, 32, 32, 31);
+  grd.addColorStop(0, 'rgba(255,255,255,.95)');
+  grd.addColorStop(0.45, 'rgba(255,255,255,.4)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  return c;
+}
 export const VIEW_W = PITCH_W + MARGIN * 2;
 export const VIEW_H = PITCH_H + MARGIN * 2;
 
@@ -71,6 +110,16 @@ export class PitchRenderer {
   }
 
   private dpr: PixelRatioWatch;
+  /** The pitch, drawn once per size into its own canvas and blitted each frame. */
+  private pitch: HTMLCanvasElement | null = null;
+  /** CSS pixels per metre, and the player disc radius that gives (metres). */
+  private ppm = 10;
+  private pr = PLAYER_R;
+  private director = new AnimDirector();
+  private rings: { x: number; y: number; age: number; reach: number; tint: string }[] = [];
+  private punchAge = 9;
+  private lastT = 0;
+  private reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d')!;
@@ -79,10 +128,14 @@ export class PitchRenderer {
 
   resize(): void {
     const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // Up to 3x on phones (their canvas is small), but never more than ~4.5 M pixels to fill on a big screen.
+    const dpr = Math.min(3, window.devicePixelRatio || 1, Math.sqrt(4.5e6 / Math.max(1, rect.width * rect.height)));
     this.canvas.width = Math.round(rect.width * dpr);
     this.canvas.height = Math.round(rect.height * dpr);
     this.k = this.canvas.width / VIEW_W;
+    this.ppm = rect.width / VIEW_W;
+    this.pr = Math.min(1.5, Math.max(PLAYER_R, MIN_PLAYER_PX / this.ppm));
+    this.pitch = null;
   }
 
   /** CSS pixel position inside the canvas to world metres. */
@@ -108,8 +161,20 @@ export class PitchRenderer {
     this.dpr.check();
     this.since = x.since ?? 0;
     const { ctx, k } = this;
-    ctx.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
-    this.drawPitch();
+    const PLAYER_R = this.pr;
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(0, (now - this.lastT) / 1000));
+    this.lastT = now;
+    const still = !!this.reduce?.matches;
+    this.juice(s, dt, still);
+    // A goal's push-in: the picture swells a few percent about its centre and settles (not under reduced motion).
+    const a = this.punchAge;
+    const z = 1 + 0.05 * Math.max(0, Math.min(1, a / 0.05) * Math.exp(-a * 5) * Math.cos(a * 3));
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+    ctx.setTransform(z, 0, 0, z, cx * (1 - z), cy * (1 - z));
+    ctx.drawImage(this.pitchImage(), 0, 0);
+    ctx.setTransform(k * z, 0, 0, k * z, cx + (MARGIN * k - cx) * z, cy + (MARGIN * k - cy) * z);
     this.drawOfficials(s);
 
     // Aim feedback. With the ball: where a click would pass to, or the landing ring and arc of a
@@ -277,16 +342,25 @@ export class PitchRenderer {
       if (p.team === 1) ctx.setLineDash([0.34, 0.2]);
       ctx.stroke();
       ctx.setLineDash([]);
+      // A soft highlight on the shoulder so the disc reads as a round kit, not a flat dot.
+      ctx.fillStyle = 'rgba(255,255,255,.1)';
+      ctx.beginPath();
+      ctx.arc(q.x - PLAYER_R * 0.22, q.y - PLAYER_R * 0.28, PLAYER_R * 0.5, 0, Math.PI * 2);
+      ctx.fill();
       // Facing notch
       ctx.fillStyle = ctx.strokeStyle;
       ctx.beginPath();
       ctx.arc(q.x + p.facing.x * PLAYER_R * 0.78, q.y + p.facing.y * PLAYER_R * 0.78, 0.15, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = p.role === 'GK' ? team.primary : team.secondary;
-      ctx.font = `800 1.05px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(String(p.number), q.x, q.y + 0.04);
+      // Shirt numbers only where they can be read (a phone's 5 px type is a smudge), in a colour that stands out on the kit.
+      if (PLAYER_R * this.ppm >= 8) {
+        const [bg, fg] = p.role === 'GK' ? [team.secondary, team.primary] : [team.primary, team.secondary];
+        ctx.fillStyle = ink(bg, fg);
+        ctx.font = `800 1.05px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(p.number), q.x, q.y + 0.04);
+      }
       ctx.globalAlpha = 1;
       if (p.yellow > 0) {
         // Booked: a small yellow card by the shoulder.
@@ -304,9 +378,14 @@ export class PitchRenderer {
         ctx.lineTo(q.x + 0.38, q.y - PLAYER_R - 0.95);
         ctx.closePath();
         ctx.fill();
-        ctx.font = `600 0.8px 'Barlow', system-ui, sans-serif`;
-        ctx.fillStyle = 'rgba(255,255,255,.92)';
-        ctx.fillText(p.name, q.x, q.y + PLAYER_R + 0.75);
+        // The name tag is for screens where it is legible (on a phone the player card shows the name).
+        if (this.ppm >= 6) {
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `600 0.8px 'Barlow', system-ui, sans-serif`;
+          ctx.fillStyle = 'rgba(255,255,255,.92)';
+          ctx.fillText(p.name, q.x, q.y + PLAYER_R + 0.75);
+        }
       }
     }
 
@@ -320,7 +399,8 @@ export class PitchRenderer {
     const bp = drawnAt(this.ballAt, b.pos, carrier ? carrier.vel : b.vel, this.since);
     const bx = bp.x;
     const by = bp.y - lift;
-    const br = BALL_R * (1 + b.z * 0.09);
+    const bR = Math.max(BALL_R, MIN_BALL_PX / this.ppm);
+    const br = bR * (1 + b.z * 0.09);
 
     // Trail behind fast shots, fading out.
     if (speed > 13 && b.owner < 0 && s.phase === 'play') {
@@ -341,13 +421,20 @@ export class PitchRenderer {
       ctx.lineCap = 'butt';
     }
 
+    // The halo (as in 3D): stronger on a loose ball where the eye goes, faint at a player's feet, off in a keeper's hands.
+    const hd = Math.max(0.9, 18 / this.ppm) * (1 + b.z * 0.08);
+    if (!b.inHands) {
+      ctx.globalAlpha = b.owner < 0 && s.phase === 'play' ? 0.5 : 0.22;
+      ctx.drawImage(halo(), bp.x - hd / 2, bp.y - hd / 2, hd, hd);
+      ctx.globalAlpha = 1;
+    }
     ctx.fillStyle = `rgba(0,0,0,${Math.max(0.12, 0.3 - b.z * 0.05).toFixed(3)})`;
     ctx.beginPath();
-    ctx.ellipse(bp.x + 0.12 + b.z * 0.1, bp.y + 0.14 + b.z * 0.06, BALL_R * (1 + b.z * 0.03), BALL_R * 0.8 * (1 + b.z * 0.03), 0, 0, Math.PI * 2);
+    ctx.ellipse(bp.x + 0.12 + b.z * 0.1, bp.y + 0.14 + b.z * 0.06, bR * (1 + b.z * 0.03), bR * 0.8 * (1 + b.z * 0.03), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#fbfbf7';
     ctx.strokeStyle = '#1b1f24';
-    ctx.lineWidth = 0.06;
+    ctx.lineWidth = 0.06 * (bR / BALL_R) ** 0.5;
     ctx.beginPath();
     ctx.arc(bx, by, br, 0, Math.PI * 2);
     ctx.fill();
@@ -356,6 +443,18 @@ export class PitchRenderer {
     ctx.beginPath();
     ctx.arc(bx + Math.cos(this.ballSpin) * 0.09 * (br / BALL_R), by + Math.sin(this.ballSpin) * 0.09 * (br / BALL_R), 0.075 * (br / BALL_R), 0, Math.PI * 2);
     ctx.fill();
+
+    // Impact rings (tackles, hard shots, goals), expanding and fading on the grass.
+    for (const r of this.rings) {
+      const t = r.age / RING_LIFE;
+      ctx.globalAlpha = 0.75 * (1 - t) ** 2;
+      ctx.strokeStyle = r.tint;
+      ctx.lineWidth = 0.28 * (1 - t) + 0.06;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, (r.reach / 2) * (0.25 + 0.75 * (1 - (1 - t) ** 3)), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
 
     // Stamina under each controlled player: fills as they recover, red when winded.
     for (const ctrl of ctrls) {
@@ -408,19 +507,81 @@ export class PitchRenderer {
     }
   }
 
-  private drawPitch(): void {
-    const { ctx } = this;
+  /** Impact rings and the goal push-in, from what changed since the last frame (r3d/director.ts reads the state only). */
+  private juice(s: MatchState, dt: number, still: boolean): void {
+    const dir = this.director.update(s, performance.now() / 1000);
+    this.punchAge += dt;
+    const rings = this.rings;
+    for (let i = rings.length - 1; i >= 0; i--) if ((rings[i].age += dt) >= RING_LIFE) rings.splice(i, 1);
+    const spawn = (x: number, y: number, reach: number, tint: string) => {
+      if (rings.length >= RING_MAX) rings.shift();
+      rings.push({ x, y, age: 0, reach, tint });
+    };
+    if (still) {
+      rings.length = 0;
+      this.punchAge = 9;
+    } else {
+      for (let i = 0; i < dir.events.length; i++) {
+        for (const ev of dir.events[i]) {
+          if (ev.kind === 'tackle' && !ev.failed) spawn(s.players[i].pos.x, s.players[i].pos.y, ev.slide ? 4.2 : 3, '#ffe9c4');
+          else if (ev.kind === 'kick' && ev.style === 'shot' && ev.power > 0.6) spawn(s.ball.pos.x, s.ball.pos.y, 2 + 3 * ev.power, '#ffffff');
+        }
+      }
+      if (dir.goal) {
+        this.punchAge = 0;
+        spawn(s.ball.pos.x, s.ball.pos.y, 6, '#ffffff');
+        spawn(s.ball.pos.x, s.ball.pos.y, 10, s.teams[s.goals[s.goals.length - 1]?.team ?? 0].primary);
+      }
+    }
+  }
+
+  /** The pitch as a bitmap the size of the canvas, rebuilt only when that changes. */
+  private pitchImage(): HTMLCanvasElement {
+    if (this.pitch) return this.pitch;
+    const c = (this.pitch = document.createElement('canvas'));
+    c.width = this.canvas.width;
+    c.height = this.canvas.height;
+    const g = c.getContext('2d')!;
+    const k = this.k;
+    g.setTransform(k, 0, 0, k, MARGIN * k, MARGIN * k);
+    this.drawPitch(g);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    // Light falls off toward the edges: a gentle vignette over the whole picture.
+    const w = c.width;
+    const h = c.height;
+    const v = g.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.35, w / 2, h / 2, Math.hypot(w, h) * 0.55);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,12,4,.18)');
+    g.fillStyle = v;
+    g.fillRect(0, 0, w, h);
+    return c;
+  }
+
+  private drawPitch(ctx: CanvasRenderingContext2D): void {
     // Surround: the grass outside the lines.
     ctx.fillStyle = '#245a3a';
     ctx.fillRect(-MARGIN, -MARGIN, VIEW_W, VIEW_H);
     const bands = 14;
     for (let i = 0; i < bands; i++) {
-      ctx.fillStyle = i % 2 ? '#2f7d4a' : '#348752';
-      ctx.fillRect((PITCH_W / bands) * i, 0, PITCH_W / bands + 0.01, PITCH_H);
+      // Mown stripes, each a touch lighter toward one side as the sun catches the cut blades.
+      const x0 = (PITCH_W / bands) * i;
+      const gr = ctx.createLinearGradient(x0, 0, x0 + PITCH_W / bands, 0);
+      gr.addColorStop(0, i % 2 ? '#2f7d4a' : '#368a54');
+      gr.addColorStop(1, i % 2 ? '#33824e' : '#318450');
+      ctx.fillStyle = gr;
+      ctx.fillRect(x0, 0, PITCH_W / bands + 0.01, PITCH_H);
     }
-    const line = 'rgba(243,246,241,.85)';
+    // Grass grain: a few thousand faint flecks, the same every time.
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+    for (let i = 0; i < 700; i++) {
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,.035)' : 'rgba(0,30,10,.05)';
+      ctx.fillRect(rnd() * PITCH_W, rnd() * PITCH_H, 0.5 + rnd() * 1.2, 0.12);
+    }
+    const line = 'rgba(243,246,241,.9)';
     ctx.strokeStyle = line;
-    ctx.lineWidth = 0.18;
+    // Whole device pixels wide, so the lines stay crisp at any pixel ratio.
+    ctx.lineWidth = Math.max(1, Math.round(0.18 * this.k)) / this.k;
     ctx.strokeRect(0, 0, PITCH_W, PITCH_H);
     ctx.beginPath();
     ctx.moveTo(PITCH_W / 2, 0);
