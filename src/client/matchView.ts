@@ -363,13 +363,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   // follows the pointer while a kick charges, and a strip of key caps shows while the keys are in use, then fades.
   const ringEl = wrapEl.querySelector<HTMLElement>('.aim-charge')!;
   const keyEl = wrapEl.querySelector<HTMLElement>('.key-hint')!;
-  const mouse = { x: 0, y: 0, in: true };
+  // Only a real mouse moves this: a finger on the canvas never shows the charge ring (it would sit at 0,0).
+  const mouse = { x: 0, y: 0, in: false, seen: false };
   const onMove = (e: PointerEvent) => {
     if (e.pointerType !== 'mouse') return;
     const r = wrapEl.getBoundingClientRect();
     mouse.x = e.clientX - r.left;
     mouse.y = e.clientY - r.top;
-    mouse.in = true;
+    mouse.in = mouse.seen = true;
     keyEl.classList.remove('on');
   };
   const onOut = (e: PointerEvent) => e.pointerType === 'mouse' && (mouse.in = false);
@@ -629,13 +630,16 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       }
       if (replay) {
         renderer.draw((replay as { state: MatchState; acc: number }).state, { cursor: null, charge: 0, showCursor: false, noAim: true, since: (replay as { acc: number }).acc });
+        // Nothing of the live controls over a replay.
+        keyEl.classList.remove('on');
+        ringEl.classList.remove('on');
         hud.update((replay as { state: MatchState }).state, 0, null);
       } else {
         const extras = input.extras();
         // Time since the last tick, so positions are drawn between ticks (RenderExtras.since). Held
         // (paused, graphics lost) or capped at 12 ticks a frame, the picture stays on the tick.
         extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
-        if (!mouse.in) extras.showCursor = false;
+        if (mouse.seen && !mouse.in) extras.showCursor = false;
         renderer.draw(s, extras);
         if (performance.now() > keyUntil) keyEl.classList.remove('on');
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
@@ -645,7 +649,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         const gauge = extras.charges ? undefined : hudGauge(s, extras);
         hud.update(s, charge, gauge);
         // The charge at the pointer, where the eye is (a mouse kick: a shot or a loft being held).
-        const ring = !!extras.armed?.kind && extras.showCursor && !!gauge;
+        const ring = mouse.seen && mouse.in && !!extras.armed?.kind && extras.showCursor && !!gauge;
         ringEl.classList.toggle('on', ring);
         if (ring) {
           ringEl.style.transform = `translate(${mouse.x}px,${mouse.y}px)`;
