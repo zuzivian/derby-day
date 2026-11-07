@@ -29,7 +29,7 @@ import { isBenign } from './errors.ts';
 import { reviewAction, reviewOpen } from './review.ts';
 import { initReplayUi } from './replayView.ts';
 import { mountAfterMatch, mountWelcome } from './onboarding.ts';
-import { acknowledge, markHtml, openTabs, pendingMark, placeMark } from './coach.ts';
+import { acknowledge, hintHtml, markHtml, openTabs, pendingHint, pendingMark, placeMark } from './coach.ts';
 import { clearSave, loadPrefs, loadSaveChecked, setSaveGuest, writePrefs, writeSaveResult } from './store.ts';
 import { openSettings } from './settings.ts';
 import { getSound } from './audio.ts';
@@ -193,7 +193,9 @@ function syncMark(clear: boolean) {
   const marks = app.prefs.marks;
   if (!marks || !clear) return;
   if (acknowledge(marks, app.screen)) writePrefs(app.prefs);
-  const mark = pendingMark(app.save, marks, app.screen);
+  syncHint(marks);
+  // Only on Home: its card would cover the top of whichever screen a level-up just sent you to.
+  const mark = app.screen === 'home' ? pendingMark(app.save, marks, app.screen) : null;
   if (!mark) {
     spokenMark = null;
     return;
@@ -205,6 +207,19 @@ function syncMark(clear: boolean) {
     spokenMark = mark.screen;
     announce(`${mark.title}. ${mark.text}`);
   }
+}
+/** First visit to a revealed tab: its hint stays on screen for the whole visit and counts as read when you leave or press Got it. */
+let hintOn: string | null = null;
+function syncHint(marks: string[]) {
+  if (hintOn && hintOn !== app.screen) {
+    if (!marks.includes(`hint:${hintOn}`)) marks.push(`hint:${hintOn}`);
+    writePrefs(app.prefs);
+    hintOn = null;
+  }
+  const text = pendingHint(marks, app.screen, clubLevel(app.save));
+  if (!text) return;
+  hintOn = app.screen;
+  root.querySelector('#panel, main')?.insertAdjacentHTML('afterbegin', hintHtml(app.screen, text));
 }
 window.addEventListener('resize', () => placeMark(root, false));
 window.addEventListener('scroll', () => placeMark(root, false), { passive: true });
@@ -577,6 +592,14 @@ root.addEventListener('click', (e) => {
       } else pendingFocus = levelOrigin ?? matchOrigin ?? keyFor({ action: 'play-ranked' });
       break;
     }
+    case 'hint-ok':
+      if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(`hint:${el.dataset.screen}`)) {
+        app.prefs.marks.push(`hint:${el.dataset.screen}`);
+        writePrefs(app.prefs);
+      }
+      hintOn = null;
+      pendingFocus = { elId: `tab-${el.dataset.screen}`, data: {}, index: 0 };
+      break;
     case 'mark-ok':
       if (app.prefs.marks && el.dataset.screen && !app.prefs.marks.includes(el.dataset.screen)) {
         app.prefs.marks.push(el.dataset.screen);

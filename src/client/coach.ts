@@ -406,6 +406,23 @@ const MARKS: { screen: string; unlock: UnlockId; title: string; text: string }[]
   { screen: 'ladder', unlock: 'ladder', title: 'New: Ladder', text: 'See where your club stands against all 32.' },
 ];
 
+/** First-visit hints: a tab's one-line "why you'll like it" and how to start, shown above its content until you leave or press Got it (kept in `marks` as hint:<screen>). */
+const HINTS: Record<string, string> = {
+  squad: 'Your starting eleven: a stronger XI wins more. Swap players into slots, or let Pick my best XI do it.',
+  club: 'Home base: your Elo history, replays of your matches, Practice skills drills and every unlock still to come.',
+  training: 'Tap a player, then Train an attribute. Every match earns sessions, and young ▲ Rising players grow fastest.',
+  transfers: 'Spend your budget on better players, or sell spares for 80% of their value. A signing can walk into your XI.',
+};
+
+/** The hint for `screen` if this is its first visit (club level 12 and under). `marks` undefined means the player predates the coach: none. */
+export function pendingHint(marks: string[] | undefined, screen: string, level: number): string | null {
+  return marks && level < 12 && !marks.includes(`hint:${screen}`) ? (HINTS[screen] ?? null) : null;
+}
+
+export function hintHtml(screen: string, text: string): string {
+  return `<p class="tab-hint" role="note" data-hint="${screen}"><span>${text}</span><button class="btn small ghost" type="button" data-action="hint-ok" data-screen="${screen}">Got it</button></p>`;
+}
+
 /** The first revealed tab that has not been pointed out yet, or null. `marks` undefined means the player predates marks: none. */
 export function pendingMark(save: Save, marks: string[] | undefined, current: string): TabMark | null {
   if (!marks) return null;

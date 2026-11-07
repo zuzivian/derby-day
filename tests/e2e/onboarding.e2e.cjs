@@ -522,3 +522,23 @@ async function expectTipClearOfControls(page, label) {
   expect(px(r.x.w), `${label}: "Got it" is at least 44 px wide`).toBeGreaterThanOrEqual(44);
   expect(px(r.x.h), `${label}: "Got it" is at least 44 px tall`).toBeGreaterThanOrEqual(44);
 }
+
+test('onboarding: a revealed tab gives a first-visit hint once, and a waiting tab mark never covers another screen', async (t) => {
+  // Level 4 with the Club mark still waiting: Training's first visit has its hint, Club's mark stays on Home.
+  const prefs = { controls: 'mouse', onboarded: true, coachSeen: [], marks: ['home', 'squad'] };
+  const page = await openApp(t, { xp: totalXp(4), prefs, width: 390, height: 844, mutateSave: (save) => { save.unlocksSeen = ['home', 'squad', 'local2p', 'link', 'practice', 'ranked', 'club', 'replays', 'drills', 'training', 'practice-normal']; } });
+  expect(await page.locator('.tab-mark[data-mark="club"]').count(), 'Club is pointed out on Home').toBe(1);
+  await page.locator(SEL.tabFor('training')).click();
+  await page.waitForSelector(`${SEL.tabFor('training')}[aria-current]`);
+  expect(await page.locator('.tab-mark').count(), "Club's mark does not cover Training").toBe(0);
+  expect(await page.locator('.tab-hint[data-hint="training"]').innerText(), 'says how to start').toMatch(/Train an attribute/);
+  await page.locator('[data-action="trainee"]').nth(1).click(); // an in-screen re-render keeps it
+  expect(await page.locator('.tab-hint').count(), 'still there after a re-render').toBe(1);
+  await page.locator('[data-action="hint-ok"]').click();
+  expect(await page.locator('.tab-hint').count(), 'Got it dismisses').toBe(0);
+  expect((await prefsOf(page)).marks, 'remembered').toContain('hint:training');
+  await page.locator(SEL.tabFor('home')).click();
+  expect(await page.locator('.tab-mark[data-mark="club"]').count(), 'the Club mark is back on Home').toBe(1);
+  await page.locator(SEL.tabFor('training')).click();
+  expect(await page.locator('.tab-hint').count(), 'not shown twice').toBe(0);
+});
