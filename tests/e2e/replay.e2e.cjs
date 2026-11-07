@@ -56,6 +56,34 @@ const canvasStats = async (page, sel = '#rv-canvas') => {
 };
 
 const scrubValue = (page) => page.$eval('#rv-scrub', (el) => Number(el.value));
+/**
+ * How many ticks the replay advanced per second of *rendered* time. The viewer advances by the frame time it is given
+ * (capped at 0.2 s a frame), not by the wall clock, so on a starved machine a wall-clock window sees fewer frames and
+ * fewer ticks: that says nothing about the rate. This counts the same capped frame time from requestAnimationFrame
+ * (its callback runs after the viewer's, which registered first) and reads the scrub at both ends, so the answer does
+ * not depend on how fast frames arrive. Returns { ticks, sec } over at least minSec of rendered time.
+ */
+const playbackRate = (page, minSec = 0.5) =>
+  page.evaluate(
+    (need) =>
+      new Promise((resolve, reject) => {
+        const scrub = document.querySelector('#rv-scrub');
+        let prev = null;
+        let from = null;
+        let sec = 0;
+        let frames = 0;
+        const step = (now) => {
+          if (prev !== null && from !== null) sec += Math.min(0.2, (now - prev) / 1000);
+          if (from === null && prev !== null) from = Number(scrub.value); // the first interval is not counted: the viewer's own clock started earlier
+          prev = now;
+          if (sec >= need) return resolve({ ticks: Number(scrub.value) - from, sec });
+          if (++frames > 3000) return reject(new Error('the replay did not render enough frames'));
+          requestAnimationFrame(step);
+        };
+        requestAnimationFrame(step);
+      }),
+    minSec,
+  );
 const scrubMax = (page) => page.$eval('#rv-scrub', (el) => Number(el.max));
 const setScrub = (page, v) =>
   page.$eval(
@@ -170,11 +198,18 @@ test('replay: goal highlights, next and previous, slow-mo, and keyboard play', a
   await page.keyboard.press('Space');
   await setScrub(page, 0);
   await page.keyboard.press('Space');
-  await page.waitForTimeout(1000);
-  const fullSpeed = await scrubValue(page);
-  expect(fullSpeed, 'full speed runs about 60 ticks a second').toBeGreaterThan(30);
+  const full = await playbackRate(page);
+  const fullRate = full.ticks / full.sec;
+  expect(fullRate, `full speed runs 60 ticks per second of rendered time (${full.ticks} in ${full.sec.toFixed(2)} s)`).toBeGreaterThan(57);
+  expect(fullRate, 'and no faster').toBeLessThan(63);
   await slow.click();
   expect(await slow.getAttribute('aria-pressed'), 'slow-mo on').toBe('true');
+  await page.waitForTimeout(100);
+  const half = await playbackRate(page);
+  const halfRate = half.ticks / half.sec;
+  expect(halfRate, `slow-mo runs 30 ticks per second of rendered time (${half.ticks} in ${half.sec.toFixed(2)} s)`).toBeGreaterThan(27);
+  expect(halfRate, 'and no faster').toBeLessThan(33);
+  expect(halfRate, 'slower than normal play').toBeLessThan(fullRate * 0.6);
   await page.keyboard.press('s');
   expect(await slow.getAttribute('aria-pressed'), 'S toggles it off').toBe('false');
   await page.keyboard.press('s');
