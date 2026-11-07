@@ -608,9 +608,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .result-card { width: min(780px, 100%); max-height: 100%; padding: 0; gap: 0; overflow: clip; }
 /* Hero, stats and rewards scroll inside the card; the footer button never leaves view. */
 .rs-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-/* It takes focus when the dialog opens: no ring for that, a quiet inset one for the keyboard. */
+/* It takes focus when the dialog opens: no ring on it (the hero would paint over one), the card carries it for the keyboard. */
 .rs-scroll:focus { outline: none; }
-.rs-scroll:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.result-card:has(.rs-scroll:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
 .result-card[data-outcome="win"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #2b8a52 0%, #14492d 52%, #0a2416 100%); --rs-title: #ffd60a; --rs-glow: rgba(255, 214, 10, .35); }
 .result-card[data-outcome="draw"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #44566a 0%, #212d3a 55%, #111820 100%); --rs-title: #f3f6f1; --rs-glow: rgba(255, 255, 255, .2); }
 .result-card[data-outcome="loss"] { --rs-bg: radial-gradient(130% 120% at 50% -10%, #8a3126 0%, #4a1813 55%, #210b09 100%); --rs-title: #ffd3ca; --rs-glow: rgba(255, 123, 95, .3); }
