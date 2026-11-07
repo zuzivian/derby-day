@@ -1213,6 +1213,21 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (prefers-reduced-motion: no-preference) { .so-row.decisive { animation: so-decisive 1.4s ease-in-out infinite; } }
 .so-stake { display: inline-block; vertical-align: 1px; margin-left: 6px; padding: 1px 9px; border-radius: var(--r-pill); font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; background: #ff8a7a; color: #1b0b08; }
 .so-stake[data-tone="good"] { background: #5fd08e; color: #07210f; }
+/* Payoff: a flash over the goal (and a shake on a goal) when a kick is decided, a pulsing edge on a decisive kick, a glow for the verdict. */
+.so-stage[data-fx]::before { content: ''; position: absolute; inset: 0; border-radius: var(--r-md); pointer-events: none; animation: so-flash .7s ease-out forwards; }
+.so-stage[data-fx="good"]::before { background: radial-gradient(circle, rgba(95, 208, 142, .6), rgba(95, 208, 142, 0) 72%); }
+.so-stage[data-fx="bad"]::before { background: radial-gradient(circle, rgba(255, 138, 122, .55), rgba(255, 138, 122, 0) 72%); }
+.so-stage[data-shake] #so-canvas { animation: so-shake .45s; }
+.shootout[data-stakes] .so-stage::after { content: ''; position: absolute; inset: 0; border-radius: var(--r-md); pointer-events: none; box-shadow: inset 0 0 0 3px #ff8a7a, inset 0 0 34px #ff8a7a88; }
+@media (prefers-reduced-motion: no-preference) { .shootout[data-stakes] .so-stage::after { animation: so-edge 1.1s ease-in-out infinite; } }
+.shootout[data-final="win"] { --fc: #5fd08e; }
+.shootout[data-final="lose"] { --fc: #ff8a7a; }
+.shootout[data-final] .so-board { box-shadow: 0 0 0 2px var(--fc), 0 0 24px var(--fc); }
+#so-end[data-won="1"] .so-card { border-top: 8px solid #5fd08e; }
+#so-end[data-won="0"] .so-card { border-top: 8px solid #ff8a7a; }
+@keyframes so-flash { from { opacity: 1; } to { opacity: 0; } }
+@keyframes so-shake { 20% { transform: translate(-4px, 2px); } 40% { transform: translate(4px, -2px); } 60% { transform: translate(-3px, 0); } 80% { transform: translate(2px, 1px); } }
+@keyframes so-edge { 50% { opacity: .35; } }
 @keyframes so-decisive { 50% { background: rgba(255, 138, 122, .24); } }
 .so-total.pop { animation: so-total .6s var(--ease-out); }
 @keyframes so-mark { 0% { transform: scale(2.1); } 100% { transform: none; } }
@@ -1220,7 +1235,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-mark.missed { color: #ff8a7a; }
 .so-mark[aria-current="step"] { border-bottom-color: #ffd60a; color: #ffd60a; }
 .so-total { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-3xl); line-height: 1; min-width: 1.1em; text-align: right; font-variant-numeric: tabular-nums; color: #ffd60a; }
-.so-sd { position: absolute; right: 14px; top: -9px; font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; background: var(--accent); color: var(--accent-ink); border-radius: var(--r-pill); padding: 2px 10px; }
+.so-sd { position: absolute; left: 50%; transform: translateX(-50%); top: -11px; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; background: #ff8a7a; color: #1b0b08; border-radius: var(--r-pill); padding: 2px 14px; box-shadow: 0 0 0 3px #0f1513; }
 
 .so-stage { position: relative; width: min(100%, calc((100vh - 330px) * 1.6)); width: min(100%, calc((100dvh - 330px) * 1.6)); min-width: min(100%, 320px); }
 #so-canvas { display: block; width: 100%; aspect-ratio: 16 / 10; border-radius: var(--r-md); background: #1b2a24; touch-action: none; cursor: crosshair; }
@@ -1270,6 +1285,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 @media (max-width: 640px) {
   #so-canvas { aspect-ratio: 4 / 3; }
+  @media (min-height: 760px) { #so-canvas { aspect-ratio: 1 / 1; } }
   .so-stage { width: 100%; }
   .so-name { font-size: 16px; }
   .so-row { gap: 6px; padding: 3px 2px; }

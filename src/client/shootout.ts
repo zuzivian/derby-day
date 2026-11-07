@@ -81,11 +81,13 @@ const RUNUP_MS = 1500;
 const WINDUP_MS = 240;
 const FLIGHT_MS = 520;
 const RESULT_MS = 1600;
+const RESULT_FINAL_MS = 2400; // the deciding kick lingers before the verdict
+const SETUP_MS = 700; // the stand-off before your own kick; any input skips it
 const SKIP_AFTER_MS = 450;
 const QUICK_POWER = 0.62;
 const KEEPER_KITS = ['#f2c230', '#3fb7c9'];
 
-type Phase = 'intro' | 'aim' | 'charge' | 'telegraph' | 'flight' | 'result' | 'done';
+type Phase = 'intro' | 'setup' | 'aim' | 'charge' | 'telegraph' | 'flight' | 'result' | 'done';
 
 const DIVE_NAME: Record<number, string> = { [-1]: 'left', 0: 'centre', 1: 'right' };
 
@@ -231,6 +233,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   /** The last pointer to aim was a finger or pen: the crosshair is lifted above it and drawn larger. */
   let touchAim = false;
   let confirmLeave = false;
+  /** On-canvas lines for the stand-off before a kick: [headline, taker], and whether it is a decisive kick. */
+  let caption: [string, string, boolean] | null = null;
 
   // --- scoreboard ----------------------------------------------------------
   /** A decisive kick, in your words: [text, tone]. Null for an ordinary one. */
@@ -301,6 +305,17 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     if (on) skipTimer = window.setTimeout(() => el.classList.add('on'), SKIP_AFTER_MS);
   }
 
+  /** A flash (and, for a goal, a shake) over the goal when a kick is decided: green if it went your way. */
+  function fx(tone: 'good' | 'bad' | null, shake = false) {
+    const st = $('so-canvas').parentElement!;
+    delete st.dataset.fx;
+    delete st.dataset.shake;
+    if (reduced || !tone) return;
+    void st.offsetWidth; // restart the animation
+    st.dataset.fx = tone;
+    if (shake) st.dataset.shake = '1';
+  }
+
   function setInfo(who: string, help: string) {
     $('so-who').innerHTML = who;
     $('so-help').textContent = help;
@@ -322,12 +337,18 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     renderBoard();
     setBanner(null);
     setSkipHint(false);
+    fx(null);
     played = null;
     kickStart = now;
     const { turn } = plan;
     const takerSide = turn.side;
+    const stake = stakeOf(takerSide);
+    const n = turn.round + 1;
+    caption = [stake ? stake[0] : n > KICKS_PER_SIDE ? 'Sudden death' : `Kick ${n} of ${KICKS_PER_SIDE}`, turn.taker.name, !!stake];
+    if (stake) section.dataset.stakes = '1';
+    else delete section.dataset.stakes;
     if (takerSide === 0) {
-      phase = 'aim';
+      phase = reduced ? 'aim' : 'setup';
       power = 0;
       chargeBy = null;
       sel = null;
@@ -336,7 +357,6 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showMeter(null);
       showDive(false);
       showQuick(true);
-      const n = turn.round + 1;
       setInfo(`<b>Your kick</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)}, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(0)}`, TXT.aim);
       say(`${stakeOf(0)?.[0] ? `${stakeOf(0)![0]}. ` : ''}Your kick, ${turn.taker.name}. Facing ${turn.keeper.name} in goal. Aim, hold to build power, release to strike.`);
     } else {
@@ -346,7 +366,6 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showQuick(false);
       showDive(true);
       showMeter('timer');
-      const n = turn.round + 1;
       setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(1)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. ${TXT.dive}`);
       say(`${stakeOf(1)?.[0] ? `${stakeOf(1)![0]}. ` : ''}${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
     }
@@ -363,6 +382,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   }
 
   function strike(now: number, p: number) {
+    if (phase === 'setup') phase = 'aim';
     if (phase !== 'aim' && phase !== 'charge') return;
     chargeBy = null;
     showMeter(null);
@@ -379,6 +399,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   function launch(now: number, choice: { aim?: Aim; power?: number; dive?: Dive }) {
     played = playKick(sh, choice);
+    getSound().play({ type: 'kick', kind: 'shot', power: choice.power ?? 0.7 });
     phase = 'flight';
     flightStart = now;
     flightDelay = reduced ? 0 : WINDUP_MS;
@@ -397,6 +418,16 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     setBanner(OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
     setSkipHint(true);
     buzz(p.result.scored ? [20, 40, 20] : 30);
+    const snd = getSound();
+    const oc = p.result.outcome;
+    if (oc === 'goal') snd.play({ type: 'goal', team: 0 });
+    else if (oc === 'saved') snd.play({ type: 'catch', power: 0.8 });
+    else if (oc === 'post') snd.play({ type: 'knock', kind: 'post', power: 0.9 });
+    else snd.play({ type: 'ooh', power: 0.6 });
+    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2]);
+    fx(good ? 'good' : 'bad', p.result.scored);
+    delete section.dataset.stakes;
+    if (sh.done) section.dataset.final = sh.winner === 0 ? 'win' : 'lose';
     const extra = p.turn.side === 1 ? ` You dived ${DIVE_NAME[p.result.dive]}.` : '';
     setInfo(`<b>${esc(text)}.</b> ${esc(scoreText())}`, extra.trim());
     say(`${text}.${extra} ${scoreText()}`);
@@ -431,7 +462,11 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       : won
         ? `${o.youClub.name} go through.`
         : `${o.oppClub.name} go through.`;
+    $('so-end').dataset.won = won ? '1' : '0';
     $('so-end').hidden = false;
+    delete section.dataset.stakes;
+    getSound().react(won ? 'win' : 'loss');
+    buzz(won ? [30, 60, 30, 60, 90] : [90]);
     // The shootout is decided: Leave is dead (a second press would record the tie as a forfeit).
     clearTimeout(leaveTimer);
     confirmLeave = false;
@@ -488,8 +523,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   on(canvas, 'contextmenu', (e: Event) => e.preventDefault());
   const isTouch = (e: PointerEvent) => e.pointerType === 'touch' || e.pointerType === 'pen';
   on(canvas, 'pointermove', (e: PointerEvent) => {
-    const a = pointerToAim(e, isTouch(e) && (phase === 'aim' || phase === 'charge') ? TOUCH_AIM_LIFT : 0);
-    if (phase === 'aim' || phase === 'charge') {
+    const a = pointerToAim(e, isTouch(e) && (phase === 'aim' || phase === 'charge' || phase === 'setup') ? TOUCH_AIM_LIFT : 0);
+    if (phase === 'aim' || phase === 'charge' || phase === 'setup') {
       touchAim = isTouch(e);
       aim.x = a.x;
       aim.y = a.y;
@@ -497,6 +532,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
   });
   on(canvas, 'pointerdown', (e: PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (phase === 'setup') phase = 'aim'; // a touch skips the stand-off and starts the kick
     const a = pointerToAim(e, isTouch(e) && phase === 'aim' ? TOUCH_AIM_LIFT : 0);
     const now = performance.now();
     if (phase === 'aim') {
@@ -530,6 +566,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const onButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
     const now = performance.now();
+    if (phase === 'setup' && (ARROWS.includes(e.key) || e.key === ' ' || e.key === 'Spacebar') && !onButton) phase = 'aim';
     if (ARROWS.includes(e.key)) {
       e.preventDefault();
       if (phase === 'aim' || phase === 'charge') {
@@ -593,7 +630,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   // --- geometry --------------------------------------------------------------
   function goalRect() {
-    const w = Math.min(W * 0.66, H * 1.3);
+    const w = Math.min(W * (W < 520 ? 0.78 : 0.66), H * 1.3); // a phone gets a bigger goal to aim at
     const h = w * 0.42;
     const l = (W - w) / 2;
     const t = H * 0.09;
@@ -620,6 +657,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
   // --- frame loop ----------------------------------------------------------------
   function update(now: number, dt: number) {
+    if (phase === 'setup' && now - kickStart >= SETUP_MS) phase = 'aim';
     if (phase === 'aim' || phase === 'charge') {
       const sp = keys.has('Shift') ? 1.8 : 1;
       if (keys.has('ArrowLeft')) aim.x -= 1.1 * sp * dt;
@@ -644,7 +682,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     } else if (phase === 'flight') {
       if (now - flightStart >= flightDelay + (reduced ? 0 : FLIGHT_MS)) showResult(now);
     } else if (phase === 'result') {
-      if (now - resultStart >= RESULT_MS) afterResult(now);
+      if (now - resultStart >= (sh.done ? RESULT_FINAL_MS : RESULT_MS)) afterResult(now);
     }
   }
 
@@ -681,6 +719,10 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
 
     if (phase === 'telegraph') drawDiveZones(c, g);
     if (phase === 'aim' || phase === 'charge') drawCrosshair(c, g);
+    if (caption && !reduced) {
+      const k = phase === 'setup' ? 1 : phase === 'telegraph' ? 1 - (now - kickStart) / 1100 : 0;
+      if (k > 0) drawCaption(c, caption, k, now);
+    }
 
     // Taker figure while you keep
     if (turn && turn.side === 1 && phase !== 'intro' && phase !== 'done') drawTaker(c, now, t);
@@ -974,6 +1016,36 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       c.textAlign = 'center';
       c.fillText('risky', x, y - rr - 12);
     }
+  }
+
+  /** The stand-off: a hush over the pitch with the stakes in big letters, fading as the run-up gets going. */
+  function drawCaption(c: CanvasRenderingContext2D, cap: [string, string, boolean], k: number, now: number) {
+    const x = W / 2;
+    const y = H * 0.56;
+    c.save();
+    c.globalAlpha = Math.min(1, k * 1.5);
+    if (phase === 'setup') {
+      c.fillStyle = 'rgba(8,14,12,.45)';
+      c.fillRect(0, 0, W, H);
+    }
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.lineJoin = 'round';
+    c.translate(x, y);
+    const beat = cap[2] ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
+    c.scale(beat, beat);
+    c.lineWidth = 5;
+    c.strokeStyle = 'rgba(8,14,12,.85)';
+    c.fillStyle = cap[2] ? '#ff8a7a' : '#ffd60a';
+    c.font = `900 ${Math.max(24, H * 0.1)}px 'Big Shoulders Display', 'Arial Narrow', sans-serif`;
+    c.strokeText(cap[0].toUpperCase(), 0, 0);
+    c.fillText(cap[0].toUpperCase(), 0, 0);
+    c.font = `700 ${Math.max(13, H * 0.045)}px 'Barlow', system-ui, sans-serif`;
+    c.lineWidth = 3;
+    c.fillStyle = '#f3f6f1';
+    c.strokeText(cap[1], 0, H * 0.085);
+    c.fillText(cap[1], 0, H * 0.085);
+    c.restore();
   }
 
   function drawDiveZones(c: CanvasRenderingContext2D, g: ReturnType<typeof goalRect>) {
