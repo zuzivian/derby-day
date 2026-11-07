@@ -546,9 +546,18 @@ function launch(btn: HTMLElement, start: () => void) {
   });
 }
 
+// Quiet tick for switches and pickers (settings, pause menu, forms); mute and volume apply.
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  if (!(t instanceof HTMLInputElement)) return;
+  if (t.type === 'checkbox') getSound().ui(t.checked ? 'on' : 'off');
+  else if (t.type === 'radio' || t.type === 'range') getSound().ui('press');
+});
+
 root.addEventListener('click', (e) => {
   const el = (e.target as HTMLElement).closest<HTMLElement>('[data-action]');
   if (!el || takeover || launching) return;
+  getSound().ui('press');
   const s = app.save;
   const id = el.dataset.id ?? '';
   const action = el.dataset.action;

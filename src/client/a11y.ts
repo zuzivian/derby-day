@@ -3,6 +3,8 @@
 // back to the same control after a re-render, a focus trap for dialogs, and
 // arrow-key tabs.
 
+import { getSound } from './audio.ts';
+
 // ---------------------------------------------------------------------------
 // Live regions. Both live on <body>, outside #app, so re-rendering the app
 // never recreates them (a recreated region is often not announced).
@@ -55,6 +57,7 @@ let toastTimer = 0;
 let toastShowTimer = 0;
 /** Visible toast inside a persistent polite status region. */
 export function showToast(text: string, ok = true, ms = 3600): void {
+  getSound().ui(ok ? 'ok' : 'warn');
   const el = toastRegion();
   el.replaceChildren();
   clearTimeout(toastTimer);

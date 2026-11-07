@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
+import { MIX, busOf, crowdNoise, crowdTarget, kickVoice, softClip, uiNotes, crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -297,5 +297,96 @@ describe('atmosphere helpers', () => {
     expect(resultMood(s)).toBe('win');
     s.humans = [false, true];
     expect(resultMood(s)).toBe('loss');
+  });
+});
+
+describe('mix and envelopes', () => {
+  test('every event type has a bus, and the bus gains are sane', () => {
+    const all: SfxEvent['type'][] = ['kick', 'knock', 'tackle', 'goal', 'whistle', 'ooh', 'catch', 'header', 'call'];
+    for (const t of all) expect(Object.keys(MIX)).toContain(busOf(t));
+    expect(busOf('whistle')).toBe('ref');
+    expect(busOf('call')).toBe('ref');
+    expect(busOf('ooh')).toBe('crowd');
+    expect(busOf('kick')).toBe('ball');
+    for (const g of Object.values(MIX)) expect(g).toBeGreaterThan(0);
+    // Menu sounds sit far below everything in the match.
+    for (const k of ['crowd', 'ball', 'ref', 'stinger'] as const) expect(MIX.ui).toBeLessThan(MIX[k] / 3);
+  });
+
+  test('kick voices get louder, higher and crisper with power; shots outweigh passes', () => {
+    for (const kind of ['pass', 'shot'] as const) {
+      const soft = kickVoice(kind, 0);
+      const hard = kickVoice(kind, 1);
+      expect(hard.body).toBeGreaterThan(soft.body);
+      expect(hard.f0).toBeGreaterThan(soft.f0);
+      expect(hard.snap).toBeGreaterThan(soft.snap);
+      expect(soft.crack).toBe(0);
+      expect(hard.crack).toBeGreaterThan(0);
+      // Out-of-range power is clamped, not extrapolated.
+      expect(kickVoice(kind, 5)).toEqual(hard);
+      expect(kickVoice(kind, -1)).toEqual(soft);
+    }
+    expect(kickVoice('shot', 0.5).body).toBeGreaterThan(kickVoice('pass', 0.5).body);
+    for (const p of [0, 0.3, 0.7, 1]) for (const kind of ['pass', 'shot'] as const) {
+      const v = kickVoice(kind, p);
+      expect(v.body + v.snap + v.thud + v.crack).toBeLessThan(1.5);
+    }
+  });
+
+  test('crowd target rises smoothly with intensity and is clamped', () => {
+    let prev = crowdTarget(0);
+    expect(prev.gain).toBeGreaterThan(0);
+    for (let l = 0.05; l <= 1.0001; l += 0.05) {
+      const c = crowdTarget(l);
+      expect(c.gain).toBeGreaterThan(prev.gain);
+      expect(c.band).toBeGreaterThan(prev.band);
+      expect(c.low).toBeGreaterThan(prev.low);
+      prev = c;
+    }
+    expect(crowdTarget(7)).toEqual(crowdTarget(1));
+    expect(crowdTarget(-1)).toEqual(crowdTarget(0));
+  });
+
+  test('soft clip: identity below the knee, monotonic, odd and never reaches full scale', () => {
+    expect(softClip(0.3)).toBe(0.3);
+    expect(softClip(-0.5)).toBe(-0.5);
+    let prev = -Infinity;
+    for (let x = -50; x <= 50; x += 0.01) {
+      const y = softClip(x);
+      expect(y).toBeGreaterThanOrEqual(prev);
+      expect(Math.abs(y)).toBeLessThan(0.99);
+      expect(softClip(-x)).toBeCloseTo(-y, 12);
+      prev = y;
+    }
+    // No jump at the knee.
+    expect(Math.abs(softClip(0.6001) - softClip(0.6))).toBeLessThan(0.001);
+  });
+
+  test('crowd noise loops without a step at the seam', () => {
+    let seed = 12345;
+    const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const d = new Float32Array(44100);
+    crowdNoise(d, 2048, rnd);
+    let typical = 0;
+    for (let i = 5000; i < 9000; i++) typical = Math.max(typical, Math.abs(d[i] - d[i - 1]));
+    expect(Math.abs(d[0] - d[d.length - 1])).toBeLessThan(typical * 2);
+    expect(Math.max(...d)).toBeLessThan(4);
+  });
+
+  test('UI sounds are short, quiet in-bus, and cover every kind', () => {
+    for (const k of ['press', 'on', 'off', 'ok', 'warn'] as const) {
+      const notes = uiNotes(k);
+      expect(notes.length).toBeGreaterThan(0);
+      for (const n of notes) {
+        expect(n.at + n.dur).toBeLessThan(0.5);
+        expect(n.peak).toBeLessThanOrEqual(0.6);
+        expect(n.wave).toBe('sine');
+      }
+    }
+    // Switching on rises, switching off falls.
+    const up = uiNotes('on');
+    const down = uiNotes('off');
+    expect(up[1].f).toBeGreaterThan(up[0].f);
+    expect(down[1].f).toBeLessThan(down[0].f);
   });
 });
