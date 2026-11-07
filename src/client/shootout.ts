@@ -566,7 +566,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const onButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
     const now = performance.now();
-    if (phase === 'setup' && (ARROWS.includes(e.key) || e.key === ' ' || e.key === 'Spacebar') && !onButton) phase = 'aim';
+    // An arrow skips the stand-off from anywhere (it aims, as before the beat); Space only off a button, where it presses it.
+    if (phase === 'setup' && (ARROWS.includes(e.key) || ((e.key === ' ' || e.key === 'Spacebar') && !onButton))) phase = 'aim';
     if (ARROWS.includes(e.key)) {
       e.preventDefault();
       if (phase === 'aim' || phase === 'charge') {
