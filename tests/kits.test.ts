@@ -3,10 +3,11 @@
 // the change kits online validation accepts.
 
 import { describe, expect, test } from 'bun:test';
-import { avoidClash, CLASH_DE, colourDiff, deltaE2000, GRASS, GRASS_DE, grassClash, grassDiff, NEUTRAL_DARK, NEUTRAL_LIGHT, shirtAsRendered, worstDiff, type Quality } from '../src/client/kits.ts';
+import { avoidClash, CLASH_DE, colourDiff, deltaE2000, GRASS, GRASS_DE, grassClash, grassDiff, NEUTRAL_DARK, NEUTRAL_LIGHT, shirtAsRendered, VISIONS, worstDiff, type Quality } from '../src/client/kits.ts';
 import { keeperColors, PlayerKit } from '../src/client/r3d/player3d.ts';
 import probe from './fixtures/kit-probe.json';
 import { KIT_COLORS } from '../src/meta/names.ts';
+import { KIT_PALETTE } from '../src/meta/identity.ts';
 import type { TeamSetup } from '../src/sim/types.ts';
 
 const team = (primary: string, secondary: string): TeamSetup => ({ name: 'T', short: 'T', primary, secondary, players: [], aiSkill: 0.5 }) as unknown as TeamSetup;
@@ -28,7 +29,24 @@ describe('colour-blind simulation', () => {
   });
 });
 
+describe('tritan simulation', () => {
+  test('blue and green-teal collapse for a tritan; greys and white stay put', () => {
+    expect(colourDiff('#1d3f8f', '#0b7a3e', 'normal')).toBeGreaterThan(CLASH_DE);
+    expect(colourDiff('#1d3f8f', '#0b7a3e', 'tritan')).toBeLessThan(CLASH_DE);
+    expect(colourDiff('#808080', '#808080', 'tritan')).toBeCloseTo(0, 5);
+    expect(colourDiff('#ffffff', '#000000', 'tritan')).toBeGreaterThan(90);
+  });
+});
+
 describe('avoidClash', () => {
+  test('no pairing of palette kits (home and away, 144,400) clashes under any of the four visions', () => {
+    const pal = KIT_PALETTE.map((c) => c.hex);
+    const kits = pal.flatMap((a) => pal.filter((b) => b !== a).map((b) => team(a, b)));
+    const bad: string[] = [];
+    for (const h of kits) for (const a of kits) if (worstDiff(h.primary, avoidClash(h, a).primary, [...VISIONS, 'tritan']) < CLASH_DE) bad.push(`${h.primary} v ${a.primary}`);
+    expect(bad).toEqual([]);
+  });
+
   test('every pairing of ladder kits is readable under normal, protan and deutan vision', () => {
     const bad: string[] = [];
     for (const [hp, hs] of KIT_COLORS) {
