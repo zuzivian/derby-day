@@ -400,6 +400,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   function setClip(i: number, autoplay: boolean) {
+    pendingSeek = null; // a new clip replaces any held jump
     idx = (i + clips.length) % clips.length;
     clip = clips[idx];
     seeker.seek(clip.start);
@@ -435,6 +436,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   function togglePlay() {
+    pendingSeek = null; // the user has taken over: no held jump or auto-play later
     if (!playing && seeker.state.tick >= clip.end) {
       seeker.seek(clip.start);
       acc = 0;
@@ -472,6 +474,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
   }
 
   function nudge(delta: number) {
+    pendingSeek = null;
     playing = false;
     seeker.seek(Math.min(clip.end, Math.max(clip.start, seeker.state.tick + delta)));
     sync();

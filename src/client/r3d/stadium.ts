@@ -238,7 +238,7 @@ function boardTexture(aniso: number, panels: Panel[], pw: number): CanvasTexture
       g.font = `italic 800 ${px}px 'Big Shoulders Display', 'Arial Narrow', Arial, sans-serif`;
       if (g.measureText(text).width <= pw - (withFace ? 110 : 28)) break;
     }
-    g.fillText(text, x + (withFace ? pw / 2 + 28 : pw / 2), 31);
+    g.fillText(text, x + (withFace ? pw / 2 + 28 : pw / 2), 31, pw - (withFace ? 110 : 28)); // squeezed, never spilling into the next panel
     g.fillStyle = 'rgba(0,0,0,.25)';
     g.fillRect(x + pw - 2, 0, 2, 64);
   });
