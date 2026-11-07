@@ -120,7 +120,7 @@ export function createMatchRenderer(canvas: HTMLCanvasElement, opts: { cinematic
   if (why) {
     // Not asked for 2D, but 3D is not possible here: say so (once a page load) instead of silently looking different.
     canvas.dataset.fallback = why;
-    if (!toldFallback) showToast('3D view is not available on this device, so you are seeing the simple 2D view.', false, 6000);
+    if (!toldFallback) showToast("3D view isn't available on this device, so you're seeing the simple 2D view.", false, 6000);
     toldFallback = true;
   }
   return new PitchRenderer(canvas);

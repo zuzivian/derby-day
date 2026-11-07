@@ -129,7 +129,7 @@ function persist() {
   const r = writeSaveResult(app.save);
   saved = r !== 'blocked' && r !== 'quota';
   if (r === 'blocked') toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
-  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is NOT saved. Free some space, or back up your club: Club tab, then Back up or restore.', false);
+  else if (r === 'quota') toast('This browser is out of storage space, so your latest progress is not saved. Free some space, or back up your club (Club, then Back up or restore).', false);
   telemetry.level(clubLevel(app.save));
 }
 
@@ -857,7 +857,7 @@ function openInvite(): boolean {
   if (!code || app.prefs.onboarded === false) return false;
   dropInvite();
   if (!isUnlocked(app.save, 'link')) {
-    toast(`A friend invited you to an online friendly, but vs Player opens at club level ${unlockLevel(app.save, 'link')}. Ask them for a new link once you're there.`, false);
+    toast(`A friend invited you to an online friendly. vs Player opens at club level ${unlockLevel(app.save, 'link')}, so ask them for a new link then.`, false);
     return false;
   }
   startVersus((r, o) => mountOnline(r, { ...o, joinCode: code }));
@@ -869,7 +869,7 @@ if (app.prefs.onboarded === false) {
   if (pendingJoin) toast('A friend invited you to an online friendly. Play your first match, then you will join them.');
 } else if (!openInvite()) render();
 if (loaded.restored) toast('Your save was damaged, so Derby Day restored your previous one. You may have lost your last match or two.', false);
-else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload the page to get it. Nothing is saved in this tab, so your club is safe.', false);
-else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The unreadable save is kept in this browser, and a backup file can bring the old club back (Club tab, then Back up or restore).', false);
+else if (loaded.newer) toast('Your club was saved by a newer version of Derby Day. Reload to update. This tab will not overwrite it.', false);
+else if (loaded.lost) toast('Your saved club could not be read, so a new one was started. The old save is kept in this browser, and a backup file can bring that club back (Club, then Back up or restore).', false);
 else if (!saved) toast('This browser blocked storage, so progress will be lost when you close the tab.', false);
 else if (abandoned) toast(abandoned, false);

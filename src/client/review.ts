@@ -108,7 +108,7 @@ function seasonArc(s: Save, rv: SeasonReview): { moved: 'up' | 'down' | ''; html
   const moved = note?.includes('promoted') ? 'up' : note?.includes('relegated') ? 'down' : '';
   const d = year?.division ?? playerDivision(s);
   const line = moved === 'up' ? `▲ Promoted to ${divisionName(d)}` : moved === 'down' ? `▼ Down to ${divisionName(d)}` : divisionName(d);
-  const sub = moved === 'down' ? 'A setback, not the end. Climb back.' : note ? esc(note.replace(/^League \d+: /, 'League: ').replace(/, (promoted|relegated)$/, '')) : 'No League finish this season.';
+  const sub = moved === 'down' ? 'A setback, not the end. Climb back.' : note ? esc(note.replace(/^League \d+: /, 'League: ').replace(/, (promoted|relegated)$/, '')) : 'No league finish this season.';
   const now = playerDivision(s);
   const target = now > 1 ? `Target: League top two go up to ${divisionName(now - 1)}.` : 'Target: stay in the top division.';
   return {

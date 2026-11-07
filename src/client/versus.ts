@@ -241,7 +241,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="link-title" id="link-lobby">
     <h1 id="link-title" tabindex="-1">Two tabs</h1>
-    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, open the club, choose <b>Two tabs</b> and join with that code. Each tab steers its own team, and the tabs exchange only inputs: both run the same deterministic match in lockstep. No Elo, no rewards.</p>
+    <p>A friendly between two tabs or windows of this browser. One tab hosts and shows a code; in the other, choose <b>Two tabs</b> and join with that code. Each tab steers its own team. No Elo, no rewards.</p>
     ${support.ok ? (support.note ? `<p class="link-note">${esc(support.note)}</p>` : '') : `<p class="link-warn" id="link-unsupported" role="alert">${esc(support.reason)}</p>`}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">
@@ -253,7 +253,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
       </div>
       <div class="link-col">
         <h2>Join</h2>
-        <label>Room code <input id="link-code-input" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"></label>
+        <label>Match code <input id="link-code-input" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text"></label>
         <button class="btn primary" id="link-join"${support.ok && home ? '' : ' disabled'}>Join</button>
       </div>
     </div>
@@ -352,7 +352,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
           $<HTMLButtonElement>('link-join').disabled = false;
           $('link-join').textContent = 'Try again';
           status(
-            `No host answered on code ${code}. Check the code, and that the host tab is this same page (same file or address) in the same browser. Embedded viewers can block tabs from talking; if so, open dist/index.html directly in two tabs.`,
+            `No host answered on code ${code}. Check the code, and that the host tab is this same page in the same browser. If you are in an embedded viewer, open the game directly in two tabs.`,
             true,
           );
           return;
@@ -442,7 +442,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="online-title" id="online-lobby">
     <h1 id="online-title" tabindex="-1">Online</h1>
-    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team and only inputs cross the network. No Elo, no rewards.</p>
+    <p>A friendly against a friend on another computer. Create a match and send them the link (or the code); they open it and you kick off. Each of you steers your own team. No Elo, no rewards.</p>
     ${cfg ? '' : '<p class="link-warn" role="alert" id="online-off">Online play is not switched on for this copy of the game.</p>'}
     ${home ? '' : '<p class="link-warn" role="alert">Pick a full XI in Squad first.</p>'}
     <div class="link-cols">

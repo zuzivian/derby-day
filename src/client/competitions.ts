@@ -389,7 +389,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
   const s = ctx.app.save;
   const opp = kind === 'cup' ? (s.cup ? cupOpponent(s, s.cup) : null) : s.season ? seasonOpponent(s, s.season) : null;
   if (!opp) {
-    ctx.toast('No match to play right now.', false);
+    ctx.toast('Nothing to play right now. Start a cup or season first.', false);
     return false;
   }
   const label = kind === 'cup' ? `Cup ${CUP_ROUNDS[s.cup!.round].toLowerCase()}` : `League matchday ${s.season!.matchday + 1}`;
