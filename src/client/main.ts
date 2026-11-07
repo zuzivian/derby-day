@@ -150,10 +150,13 @@ function render() {
   const hadResult = !!root.querySelector('#result-title');
   const hadReview = !!root.querySelector('#review-title');
   const hadLevelUp = !!root.querySelector('#levelup-title');
+  const modalId = root.querySelector('.modal [id$="-title"]')?.id;
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   beforeRender(root);
   root.innerHTML = shell(app, screens[app.screen](app));
+  // The same dialog as before this render: no second entrance (styles.css .modal.seen).
+  if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');
   // A short entry fade only when the section changed, not on in-screen actions (Sell, Sign, Train).
   const entered = root.dataset.shown !== app.screen;
   if (entered) root.querySelector('#panel')?.classList.add('enter');
