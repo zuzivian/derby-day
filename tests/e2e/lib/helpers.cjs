@@ -113,7 +113,12 @@ async function headerElo(page) {
   return Number(m[1]);
 }
 
-/** Dismiss the first-run onboarding if the build has one. Never throws, never waits long. */
+/**
+ * Dismiss the first-run onboarding if the build has one. Never throws. When there is none it returns at once; when there is
+ * one the click gets a generous timeout: Playwright's actionability wait ("stable" needs two animation frames) can take
+ * more than a few seconds on a starved renderer (several browsers on one machine), and a click that gave up early left the
+ * welcome up, so the next step waited 20 s for tabs that never came (the offline test, 4 in 30 runs at 10 copies).
+ */
 async function skipOnboarding(page) {
   for (let i = 0; i < 6; i++) {
     const el = page.locator(SEL.onboardingSkip).first();
@@ -125,9 +130,10 @@ async function skipOnboarding(page) {
     }
     if (!visible) return;
     try {
-      await el.click({ timeout: 2000 });
+      await el.click({ timeout: 15_000 });
     } catch {
-      return;
+      if (page.isClosed()) return;
+      continue; // still there or already gone: the visibility check above decides
     }
     await page.waitForTimeout(120);
   }
