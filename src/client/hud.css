@@ -103,7 +103,7 @@
   font: 900 14px/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
 }
 .hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display); color: #ffb35c; }
-.hud .hud-me { grid-template-columns: auto minmax(0, 1fr) 3.5em; grid-template-rows: auto 10px; }
+.hud .hud-me { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 10px; }
 .hud-me-name { grid-column: 2 / 4; }
 .hud-me-legs { grid-column: 2; }
 .hud-me-st { grid-column: 3; text-align: right; font: italic 800 10px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: #5fd08e; }
@@ -239,7 +239,7 @@
 /* Phones held upright: the player card moves out of open play and the right thumb zone to the bottom
    left, above the mute button and radar row (the radar is 72 px wide at left 60, about 47 px tall). */
 @media (pointer: coarse) and (orientation: portrait) {
-  .hud-me { right: auto; left: 10px; bottom: 64px; width: 112px; }
+  .hud-me { right: auto; left: 10px; bottom: 64px; width: 134px; }
 }
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
@@ -406,7 +406,9 @@
 .pitch-wrap.replaying canvas { animation: replay-cut .4s ease-out; }
 @keyframes replay-cut { from { filter: brightness(2.2) saturate(.6); } to { filter: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .pitch-wrap.goal-flash::before, .pitch-wrap.replaying canvas { animation: none; }
+  /* Not just no animation: the overlay is solid white until the animation fades it, so without it the whole pitch stayed white. */
+  .pitch-wrap.goal-flash::before { display: none; }
+  .pitch-wrap.replaying canvas { animation: none; }
 }
 
 /* Desktop: the charge of a held kick as a ring round the pointer (matchView.ts), in the power bar's colours. */
@@ -422,3 +424,6 @@
 @media (pointer: coarse), (max-width: 640px) { .key-hint { display: none; } }
 /* Mouse feedback on the in-match controls: a press you can feel, and the same cue for the keyboard. */
 .hud-menu:active, .pitch-cam:active { transform: translateY(1px); }
+
+/* A replay is a clean cut: the camera and zoom buttons wait until it is over. */
+.pitch-wrap.replaying .pitch-cam, .pitch-wrap.replaying .pitch-zoom { visibility: hidden; }
