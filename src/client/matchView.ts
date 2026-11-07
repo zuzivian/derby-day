@@ -165,6 +165,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, T for the score and time, Esc to pause.'}</span>
+      <span class="aim-charge" aria-hidden="true"><i></i></span><p class="key-hint" aria-hidden="true"><kbd>WASD</kbd> run <kbd>Space</kbd> pass <kbd>F</kbd> shoot <kbd>C</kbd> loft <kbd>E</kbd> switch <kbd>Shift</kbd> sprint</p>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -358,6 +359,35 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     skip: HTMLButtonElement;
   } | null = null;
   const wrapEl = root.querySelector<HTMLElement>('.pitch-wrap')!;
+  // Desktop polish, DOM only (the sim sees none of it): the pointer ring hides once the mouse leaves the pitch, a charge ring
+  // follows the pointer while a kick charges, and a strip of key caps shows while the keys are in use, then fades.
+  const ringEl = wrapEl.querySelector<HTMLElement>('.aim-charge')!;
+  const keyEl = wrapEl.querySelector<HTMLElement>('.key-hint')!;
+  const mouse = { x: 0, y: 0, in: true };
+  const onMove = (e: PointerEvent) => {
+    if (e.pointerType !== 'mouse') return;
+    const r = wrapEl.getBoundingClientRect();
+    mouse.x = e.clientX - r.left;
+    mouse.y = e.clientY - r.top;
+    mouse.in = true;
+    keyEl.classList.remove('on');
+  };
+  const onOut = (e: PointerEvent) => e.pointerType === 'mouse' && (mouse.in = false);
+  wrapEl.addEventListener('pointermove', onMove);
+  wrapEl.addEventListener('pointerleave', onOut);
+  let keyUntil = 0;
+  let keyLast = -Infinity;
+  const onKeyHint = (e: KeyboardEvent) => {
+    if (paused || replay || e.ctrlKey || e.metaKey || e.altKey || o.inputSource || (s.humans[0] && s.humans[1]) || coarsePointer()) return;
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON' || t.tagName === 'SELECT')) return;
+    if (!/^(?:Key[WASDFCE]|Arrow(?:Up|Down|Left|Right)|Space|Shift(?:Left|Right))$/.test(e.code)) return;
+    const now = performance.now();
+    // Up for as long as the keys are used, and not again until they have been left alone a while.
+    if (now - keyLast > 22500) keyEl.classList.add('on');
+    if (keyEl.classList.contains('on')) keyUntil = keyLast = now + 2500;
+  };
+  window.addEventListener('keydown', onKeyHint);
   const hudEl = root.querySelector<HTMLElement>('.hud')!;
   const padEl = root.querySelector<HTMLElement>('.touch-pad')!;
   const live = () => s.phase === 'play' && !s.ball.inHands;
@@ -605,12 +635,23 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         // Time since the last tick, so positions are drawn between ticks (RenderExtras.since). Held
         // (paused, graphics lost) or capped at 12 ticks a frame, the picture stays on the tick.
         extras.since = paused || gfx.lost ? 0 : Math.max(-DT, Math.min(DT, acc));
+        if (!mouse.in) extras.showCursor = false;
         renderer.draw(s, extras);
+        if (performance.now() > keyUntil) keyEl.classList.remove('on');
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
         // Touch pads: the held button fills with the kick's power.
         const heldPad = padEl.querySelector<HTMLElement>('.pad-btn.down');
         if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
-        hud.update(s, charge, extras.charges ? undefined : hudGauge(s, extras));
+        const gauge = extras.charges ? undefined : hudGauge(s, extras);
+        hud.update(s, charge, gauge);
+        // The charge at the pointer, where the eye is (a mouse kick: a shot or a loft being held).
+        const ring = !!extras.armed?.kind && extras.showCursor && !!gauge;
+        ringEl.classList.toggle('on', ring);
+        if (ring) {
+          ringEl.style.transform = `translate(${mouse.x}px,${mouse.y}px)`;
+          ringEl.style.setProperty('--c', String(Math.round(gauge!.fill * 50) / 50));
+          ringEl.dataset.band = gauge!.band;
+        }
       }
     }
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
@@ -712,6 +753,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     document.removeEventListener('keydown', onTacticKey);
     document.removeEventListener('keydown', onScoreKey);
     window.removeEventListener('keydown', onReplayKey, true);
+    window.removeEventListener('keydown', onKeyHint);
+    wrapEl.removeEventListener('pointermove', onMove);
+    wrapEl.removeEventListener('pointerleave', onOut);
     endSkip();
     if (guardingBack) {
       window.removeEventListener('popstate', onPop);
