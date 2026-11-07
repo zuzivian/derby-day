@@ -384,6 +384,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tab:active { background: var(--surface-3); transform: scale(.97); }
 .tab { transition: color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out), transform var(--dur-press) var(--ease-out); }
 .tab.on { color: var(--ink); background: var(--surface-3); }
+.tab-dot { display: inline-block; width: 7px; height: 7px; margin: 0 0 8px 5px; border-radius: 50%; background: var(--accent); vertical-align: middle; }
+.form-record { font-size: var(--fs-xs); font-weight: 700; color: var(--hero-muted); font-variant-numeric: tabular-nums; }
+/* A cup tie or league matchday that is waiting is the next fixture: calmer than Kick off, which stays the one solid button. */
+.mode-card.due { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.mode-card.due .mode-btn.primary { background: var(--accent-soft); color: var(--ink); border: 2px solid var(--accent); box-shadow: none; }
+.mode-card.due .mode-btn.primary:hover { background: var(--accent-soft); }
 .tab.on::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 4px; height: 3px; border-radius: 2px; background: var(--accent); }
 .tab:focus-visible { outline-offset: -2px; }
 /* A primary button is already accent-filled: its keyboard ring is ink, so it reads as one ring, not a double border. */
@@ -1452,6 +1458,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 @media (max-width: 960px) {
   .mode-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  /* Stacked, the waiting fixtures come straight after Kick off, and a lone last card fills the row. */
+  .mode-card.due { order: -1; }
+  .mode-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 @media (max-width: 640px) {
   .topbar { gap: 8px 12px; }
