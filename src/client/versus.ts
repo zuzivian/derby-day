@@ -47,6 +47,8 @@ export interface VersusOptions {
   avoidClash: (home: TeamSetup, away: TeamSetup) => TeamSetup;
   /** Preselect this ladder club on One screen (a rematch). */
   opp?: string;
+  /** With `opp`: skip the setup and kick off at once (the rematch is one tap). */
+  go?: boolean;
   /** Reopen this mode's setup or lobby, for the result's rematch button. */
   again?: (opp?: string) => void;
   /** Called once: a result to show in the usual dialog, or null to go straight back to the club. */
@@ -92,7 +94,7 @@ const CSS = `
 .invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
 .invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
-.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; }
+.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .vs-setup th[data-pc] { border-bottom: 3px solid var(--pc); }
 .link-wait { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted); }
 .link-wait::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: link-pulse 1.2s ease-in-out infinite; }
@@ -157,11 +159,12 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="l2p-title">
     <h1 id="l2p-title" tabindex="-1">Two players, one screen</h1>
-    <p>Two players, one keyboard. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
+    <p>Two players, one keyboard: P1 on the left of it, P2 on the right. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
+    ${typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? '<p class="link-note">Touch alone can steer only one player: both of you need a keyboard here. To play on two devices, use Two tabs or Online.</p>' : ''}
     <div class="vs-sides">
       <div class="side" style="--pc:${HUMAN_COLORS[0]}">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
       <div class="vs">vs</div>
-      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
+      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><span id="l2p-crest">${crestSvg(near, 56)}</span><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker · pick a club</label>
         <select id="l2p-opp">${ladder.map((c) => `<option value="${esc(c.id)}"${c === near ? ' selected' : ''}>${esc(c.name)} (Elo ${c.elo})</option>`).join('')}</select>
       </div>
     </div>
@@ -175,6 +178,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   </section>`;
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)!;
   $('l2p-title').focus();
+  $('l2p-opp').addEventListener('change', () => ($('l2p-crest').innerHTML = crestSvg(ladder.find((c) => c.id === $<HTMLSelectElement>('l2p-opp').value)!, 56)));
   $('l2p-back').addEventListener('click', () => o.onDone(null));
   $('l2p-start').addEventListener('click', () => {
     const club = ladder.find((c) => c.id === $<HTMLSelectElement>('l2p-opp').value)!;
@@ -193,7 +197,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       crests: [o.save.club.crest, club.crest],
       label: 'One screen',
       forfeitText: 'Leave match',
-      controlsHint: `${dot(0)} <b>P1:</b> WASD · Space pass · hold F shoot · E switch · Left Shift sprint (or the mouse) &nbsp; ${dot(1)} <b>P2:</b> arrows · Enter or / pass · hold . shoot · , switch · Right Shift sprint · Esc pause`,
+      controlsHint: `<span class="hint-key">${dot(0)} <b>P1</b> WASD · Space pass · hold F shoot · E switch &nbsp; ${dot(1)} <b>P2</b> arrows · Enter pass · hold . shoot · , switch · Esc pause</span> <span class="hint-rest">Shift sprints (Left for P1, Right for P2). Hold C or M to loft. P1 can also use the mouse.</span>`,
       inputSource: (canvas, renderer, s, togglePause) => {
         const pads = new HotseatInput(canvas, renderer, (team) => s.controlled[team] >= 0 && s.ball.owner === s.controlled[team], togglePause);
         return {
@@ -214,15 +218,16 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       onEnd: (m, left) => {
         stopMatch?.();
         stopMatch = null;
-        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
+        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'P1 vs P2 · One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
         if (r) {
           r.headline = m.score[0] === m.score[1] ? 'Honours even' : `Player ${m.score[0] > m.score[1] ? '1 (yellow)' : '2 (cyan)'} wins`;
-          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id) };
+          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id), primary: true };
         }
         o.onDone(r);
       },
     });
   }
+  if (o.go && home) start(near);
   return () => stopMatch?.();
 }
 

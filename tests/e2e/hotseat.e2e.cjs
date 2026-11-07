@@ -30,6 +30,7 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   await page.locator(SEL.l2pStart).click();
   await page.waitForSelector(SEL.pitch);
   expect(await page.locator('.scoreboard').innerText(), 'the picked club is the away side').toContain(pickedName);
+  expect(await page.locator('.scoreboard .hud-pm').allInnerTexts(), 'the scoreboard tags each side with its player').toEqual(['P1', 'P2']);
 
   // Player 1 kicks off; then he has the ball near the centre spot. Player 2 runs down on the arrows,
   // then player 1 runs up on W, each while the other is idle; then both at once, sideways.
@@ -144,7 +145,14 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   expect(after.club.elo, 'Elo unchanged').toBe(before.club.elo);
   expect(after.history.length, 'no match recorded').toBe(before.history.length);
   expect(after.trainingPoints, 'no training sessions').toBe(before.trainingPoints);
-  await page.locator(SEL.modalClose).click();
-  await page.locator(SEL.modal).waitFor({ state: 'detached' });
-  expect(await page.locator(SEL.playLocal2p).count(), 'back on the club screen').toBe(1);
+  expect(await page.locator('.modal [data-action="rematch"].primary').count(), 'Rematch is the main button').toBe(1);
+  // One tap: the rematch kicks off against the same club without the setup screen.
+  await page.locator('.modal [data-action="rematch"]').click();
+  await page.waitForSelector('.hud-prompt:not([hidden])', { timeout: 15_000 });
+  expect(await page.locator('.hud-prompt').innerText(), 'the rematch is at its kick-off').toMatch(/Player 1 kicks off/);
+  expect(await page.locator('.scoreboard').innerText(), 'against the same club').toContain(pickedName);
+  await page.keyboard.press('Escape');
+  await page.locator('#forfeit').click();
+  if (await page.locator('#forfeit.danger').count()) await page.locator('#forfeit').click();
+  await page.locator(SEL.playLocal2p).waitFor();
 });

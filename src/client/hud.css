@@ -311,6 +311,8 @@
   .hud .hud-word, .hud-replay { animation: none; }
 }
 
+.hud-pm { font: 800 10px/1 'Barlow', system-ui, sans-serif; font-style: normal; color: #111; padding: 2px 4px; border-radius: 4px; margin: 0 5px; vertical-align: 2px; letter-spacing: .04em; }
+
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
 /* A split hint (matchView.ts) shows its essentials whole, wrapping on a phone rather than ending in

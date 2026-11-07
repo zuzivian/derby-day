@@ -57,7 +57,7 @@ export interface ResultView {
   /** Replaces the close button's "Back to the club", e.g. "Next: semi-final" (the player lands on the bracket). */
   closeLabel?: string;
   /** A rematch button next to the close button (friendlies): what it says and what it does. */
-  again?: { label: string; run: () => void };
+  again?: { label: string; run: () => void; /** The main button, ahead of Back to the club (two humans on one screen). */ primary?: boolean };
   /** Replaces the Victory/Draw/Defeat word, e.g. "Cup winners". */
   headline?: string;
   /** Ladder position before the match, for the Elo chip. */
@@ -652,8 +652,8 @@ function resultModal(app: App): string {
       </div>
       <footer class="rs-foot">
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
-        ${r.again ? `<button class="btn big" data-action="rematch">${esc(r.again.label)}</button>` : ''}
-        <button class="btn primary big rs-close" data-action="close-result">${esc(r.closeLabel ?? 'Back to the club')}</button>
+        ${r.again ? `<button class="btn${r.again.primary ? ' primary' : ''} big" data-action="rematch">${esc(r.again.label)}</button>` : ''}
+        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? 'Back to the club')}</button>
       </footer>
     </div>
   </div>`;

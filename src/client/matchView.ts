@@ -18,7 +18,7 @@ import { HighlightSpotter, HIGHLIGHT_RANK, ReplayBuffer, type Highlight, type Ti
 import { setPieceSpot, InputController } from './input.ts';
 import { hudGauge } from './power.ts';
 import { createMatchRenderer, mountCameraToggle, type MatchRenderer } from './renderer.ts';
-import type { RenderExtras } from './render.ts';
+import { HUMAN_COLORS, type RenderExtras } from './render.ts';
 import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { ReplayRecorder } from '../meta/replay.ts';
 import { clearLastReplay, storeReplay } from './replayStore.ts';
@@ -166,7 +166,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, T for the score and time, Esc to pause.'}</span>
       <span class="aim-charge" aria-hidden="true"><i></i></span><p class="key-hint" aria-hidden="true"><kbd>WASD</kbd> run <kbd>Space</kbd> pass <kbd>F</kbd> shoot <kbd>C</kbd> loft <kbd>E</kbd> switch <kbd>Shift</kbd> sprint</p>
-      ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
+      ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label, marks: o.humans?.[0] && o.humans?.[1] ? HUMAN_COLORS : undefined })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
           <h2 id="pause-title">Paused</h2>
@@ -690,7 +690,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
-      banner('Half time', 2600, recap());
+      banner('Half time', 2600, recap(s.humans[0] && s.humans[1] ? 'Player 2 kicks off: Enter' : undefined));
       announce(`Half-time. ${scoreLine()}`);
     }
     if (bannerUntil && now > bannerUntil) {

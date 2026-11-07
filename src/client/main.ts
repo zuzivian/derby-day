@@ -471,7 +471,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
     save: app.save,
     prefs: app.prefs,
     avoidClash,
-    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp })),
+    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp, go: opp !== undefined })),
     onDone: (result) => {
       stop();
       takeover = false;
