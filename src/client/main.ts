@@ -187,6 +187,8 @@ function render() {
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
   afterRender(root);
+  if (revealMark) placeMark(root, true);
+  revealMark = false;
 }
 
 /**
@@ -196,6 +198,7 @@ function render() {
  * into view only when it first appears (never on scroll), and is announced once per mark, not once per render.
  */
 let spokenMark: string | null = null;
+let revealMark = false;
 function syncMark(clear: boolean) {
   const marks = app.prefs.marks;
   if (!marks || !clear) return;
@@ -209,7 +212,9 @@ function syncMark(clear: boolean) {
   }
   root.querySelector('.tabs')?.insertAdjacentHTML('afterend', markHtml(mark));
   const first = spokenMark !== mark.screen;
-  placeMark(root, first);
+  placeMark(root, false);
+  // Scrolling the tab bar to it waits until afterRender has put the bar's old scroll position back (see render).
+  revealMark = first;
   if (first) {
     spokenMark = mark.screen;
     announce(`${mark.title}. ${mark.text}`);
@@ -490,6 +495,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
   app.result = {
     ranked,
+    label: warmup,
     forfeited,
     gf,
     ga,
