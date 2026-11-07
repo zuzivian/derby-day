@@ -18,10 +18,10 @@ export function crestSvg(c: { primary: string; secondary: string; crest: CrestPa
   const code = String(c.short ?? '').toUpperCase().slice(0, 3);
   const fills: Record<CrestPattern, string> = {
     plain: `<rect width="40" height="44" fill="${p}"/>`,
-    stripes: `<rect width="40" height="44" fill="${p}"/>${[6, 18, 30].map((x) => `<rect x="${x}" width="5" height="44" fill="${s}"/>`).join('')}`,
+    stripes: `<rect width="40" height="44" fill="${p}"/>${[5, 17, 29].map((x) => `<rect x="${x}" width="6" height="44" fill="${s}"/>`).join('')}`,
     halves: `<rect width="20" height="44" fill="${p}"/><rect x="20" width="20" height="44" fill="${s}"/>`,
     sash: `<rect width="40" height="44" fill="${p}"/><path d="M-4 8 L8 -4 L44 32 L32 44 Z" fill="${s}"/>`,
-    hoops: `<rect width="40" height="44" fill="${p}"/>${[8, 20, 32].map((y) => `<rect y="${y}" width="40" height="5" fill="${s}"/>`).join('')}`,
+    hoops: `<rect width="40" height="44" fill="${p}"/>${[7, 19, 31].map((y) => `<rect y="${y}" width="40" height="6" fill="${s}"/>`).join('')}`,
     chevron: `<rect width="40" height="44" fill="${p}"/><path d="M0 14 L20 26 L40 14 L40 22 L20 34 L0 22 Z" fill="${s}"/>`,
   };
   const shield = 'M3 3 H37 V20 C37 32 27 38 20 41 C13 38 3 32 3 20 Z';
