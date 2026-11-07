@@ -16,6 +16,7 @@ import { historyPanel } from './history.ts';
 import { NAME_MAX, NAME_MIN } from '../meta/identity.ts';
 import { crestSvg } from './crest.ts';
 import { confettiHtml } from './confetti.ts';
+import { isNewTab } from './coach.ts';
 import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpCardHtml } from './levels.ts';
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
@@ -161,7 +162,7 @@ export function shell(app: App, body: string): string {
   <div class="tabs" role="tablist" aria-label="Sections"${inert}>
     ${TABS.filter((t) => screenUnlocked(s, t.id)).map((t) => {
       const on = app.screen === t.id;
-      return `<button class="tab${on ? ' on' : ''}" role="tab" id="tab-${t.id}" aria-controls="panel" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-action="nav" data-screen="${t.id}"${on ? ' aria-current="page"' : ''}>${t.label}${t.id === 'training' && s.trainingPoints > 0 && !on ? `<i class="tab-dot" aria-hidden="true"></i><span class="sr-only"> (${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} waiting)</span>` : ''}</button>`;
+      return `<button class="tab${on ? ' on' : ''}" role="tab" id="tab-${t.id}" aria-controls="panel" aria-selected="${on}" tabindex="${on ? 0 : -1}" data-action="nav" data-screen="${t.id}"${on ? ' aria-current="page"' : ''}>${t.label}${isNewTab(s, app.prefs.marks, t.id, app.screen) ? '<i class="tab-dot" aria-hidden="true"></i><span class="sr-only"> (new)</span>' : t.id === 'training' && s.trainingPoints > 0 && !on ? `<i class="tab-dot" aria-hidden="true"></i><span class="sr-only"> (${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} waiting)</span>` : ''}</button>`;
     }).join('')}
   </div>
   <main id="main" class="screen" tabindex="-1"${inert}><div id="panel" role="tabpanel" aria-labelledby="tab-${app.screen}">${body}</div></main>
