@@ -588,6 +588,7 @@ function resultModal(app: App): string {
             ${scorerList(r.scorersAgainst, r.opp.name)}
           </div>
         </div>
+        ${r.forfeited ? '' : `<p class="rs-glance" aria-hidden="true">Possession ${r.possession[0]}–${r.possession[1]}% · Shots ${a.shots}–${b.shots}${(a.yellows ?? 0) + (a.reds ?? 0) + (b.yellows ?? 0) + (b.reds ?? 0) ? ` · Cards ${(a.yellows ?? 0) + (a.reds ?? 0)}–${(b.yellows ?? 0) + (b.reds ?? 0)}` : ''}</p>`}
         ${r.note ? `<p class="result-note${r.label?.startsWith('Cup') ? (outcome === 'loss' ? ' out' : '') : ''}">${esc(r.note)}</p>` : ''}
       </header>
       <div class="rs-body">

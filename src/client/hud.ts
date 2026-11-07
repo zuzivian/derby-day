@@ -378,7 +378,14 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         banner.dataset.tone = 'team';
         banner.style.setProperty('--tone', tone);
       }
-      banner.innerHTML = `<span>${esc(text)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}`;
+      // Lines of the sub (\n) are a recap (half and full time): one small line each, and the live call tag steps aside.
+      const lines = sub ? sub.split('\n') : [];
+      banner.classList.toggle('recap', lines.length > 1);
+      if (lines.length > 1) {
+        callTag.hidden = true;
+        tagUntil = 0;
+      }
+      banner.innerHTML = `<span>${esc(text)}</span>${lines.map((l) => `<small>${esc(l)}</small>`).join('')}`;
       banner.hidden = false;
       // Restart the pop-in animation.
       banner.style.animation = 'none';
