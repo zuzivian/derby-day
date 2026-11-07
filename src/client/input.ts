@@ -194,7 +194,7 @@ export function setPieceSpot(s: MatchState, team: 0 | 1): Vec | null {
 }
 
 /** Tap on a touch screen: at most this long and this many CSS pixels of travel. */
-const TOUCH_TAP_MS = 260;
+const TOUCH_TAP_MS = TOUCH_CLICK_MS;
 const TOUCH_TAP_PX = 14;
 /** The touch preview ring and aim line stay this long (ms) after the last finger lifts. */
 const TOUCH_RING_MS = 300;
@@ -285,7 +285,12 @@ export class InputController {
           this.steerTouch = null;
         }
         this.touches.add(e.pointerId);
-        if (this.touches.size === 1) this.steerTouch = e.pointerId;
+        if (this.touches.size === 1) {
+          this.steerTouch = e.pointerId;
+          // A new finger starts from where it lands: the filter still holds the last touch's point, and would
+          // glide the run target across the pitch from there (about 90 ms of lag for a far-off tap).
+          this.smooth.reset();
+        }
         this.lastTouch = true;
         if (!steers(e)) {
           this.touchTap = null; // a second finger: a pinch, or a tap that switches player (checked on release)
@@ -503,10 +508,11 @@ export class InputController {
       this.pressLeft();
     }));
     passBtn.addEventListener('pointerup', end(() => this.releaseLeft()));
-    passBtn.addEventListener('pointercancel', end(() => this.releaseLeft()));
+    // A cancelled press (the browser took the gesture, a system swipe) drops the charge: it must not kick.
+    passBtn.addEventListener('pointercancel', () => (this.leftStart = null));
     shootBtn.addEventListener('pointerdown', down(() => this.pressRight()));
     shootBtn.addEventListener('pointerup', end(() => this.releaseShot()));
-    shootBtn.addEventListener('pointercancel', end(() => this.releaseShot()));
+    shootBtn.addEventListener('pointercancel', () => (this.shotStart = null));
   }
 
   /** The kick being charged, for the renderer: a loft (left held past a click, or C) or a shot (right, Shoot or F). */
