@@ -51,16 +51,19 @@ export function formationSvg(id: FormationId): string {
   </svg>`;
 }
 
+export const signedN = (n: number): string => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '±0');
+
 /** The tactics panel for the Squad screen. */
-export function tacticsPanel(formation: FormationId | undefined, mentality: Mentality | undefined): string {
+export function tacticsPanel(formation: FormationId | undefined, mentality: Mentality | undefined, strengthOf?: (id: FormationId) => number): string {
   const f = formation ?? '4-4-2';
   const m = mentalityOf(mentality);
+  const str = strengthOf ? new Map(FORMATION_IDS.map((id) => [id, strengthOf(id)])) : null;
   const cards = FORMATION_IDS.map(
     (id) => `<label class="tac-card${id === f ? ' on' : ''}" title="${FORMATION_NOTE[id]}">
       <input type="radio" id="tac-formation-${id}" name="formation" value="${id}" data-change="formation"${id === f ? ' checked' : ''} aria-labelledby="tac-fn-${id}" aria-describedby="tac-f-${id}">
       ${formationSvg(id)}
-      <span class="tac-name" id="tac-fn-${id}">${id}</span>
-      <span class="sr-only" id="tac-f-${id}">${FORMATION_NOTE[id]}</span>
+      <span class="tac-name" id="tac-fn-${id}">${id}</span>${str ? `<span class="tac-str" aria-hidden="true">XI ${str.get(id)}${id === f ? '' : ` (${signedN(str.get(id)! - str.get(f)!)})`}</span>` : ''}
+      <span class="sr-only" id="tac-f-${id}">${FORMATION_NOTE[id]}${str ? ` Your best XI in this shape rates ${str.get(id)}.` : ''}</span>
     </label>`,
   ).join('');
   const steps = MENTALITY_IDS.map(

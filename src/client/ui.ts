@@ -2,7 +2,7 @@
 
 import { formationOf, type Role } from '../sim/constants.ts';
 import { tacticsPanel } from './tactics.ts';
-import { teamStrength, type LadderClub } from '../meta/club.ts';
+import { autoLineup, teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
@@ -307,6 +307,18 @@ function playerRow(p: Player, extra: string, starter = false, showNumber = true)
 
 const attrHead = ATTR_KEYS.map((k) => `<th class="num opt" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
 
+/** The biggest upgrade `p` would be on a current starter, by slot (rated as that slot's role), or null when nobody in the XI is worse. */
+export function fitFor(s: Save, p: Player): { d: number; label: string; who: string } | null {
+  let best: { d: number; label: string; who: string } | null = null;
+  formationOf(s.formation).forEach((f, i) => {
+    const cur = s.squad.find((x) => x.id === s.lineup[i]);
+    if (!cur) return;
+    const d = ratingAs(p, f.role) - ratingAs(cur, f.role);
+    if (d > 0 && (!best || d > best.d)) best = { d, label: f.label, who: cur.last };
+  });
+  return best;
+}
+
 export function squadScreen(app: App): string {
   const s = app.save;
   const byId = new Map(s.squad.map((p) => [p.id, p]));
@@ -329,7 +341,7 @@ export function squadScreen(app: App): string {
   return `
   <div class="squad-grid">
     ${academyPanel(app)}
-    ${tacticsPanel(s.formation, s.mentality)}
+    ${tacticsPanel(s.formation, s.mentality, (id) => teamStrength(s.squad, autoLineup(s.squad, id), id))}
     <article class="panel board">
       <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
@@ -365,7 +377,9 @@ export function transfersScreen(app: App): string {
         <tbody>${market.length ? market.map((p) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
-          return playerRow(p, `<td class="num">${formatMoney(price)}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
+          const fit = fitFor(s, p);
+          const note = `<span class="mk-note${fit ? ' up' : ''}">${fit ? `+${fit.d} at ${fit.label}` : 'bench'}</span>${price > s.budget ? `<span class="mk-note short">${formatMoney(price - s.budget)} short</span>` : ''}`;
+          return playerRow(p, `<td class="num mk-price"${fit ? ` title="Would start at ${fit.label}, replacing ${esc(fit.who)} (+${fit.d} in that slot)"` : ''}>${formatMoney(price)}${note}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
         }).join('') : `<tr><td colspan="15" class="muted">No players at that position right now. Try another filter.</td></tr>`}</tbody>
       </table></div>
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
@@ -374,7 +388,7 @@ export function transfersScreen(app: App): string {
       <h2 class="eyebrow">Sell<span class="eyebrow-more" id="sell-more" aria-hidden="true"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
       <div class="table-scroll"><table class="tbl compact has-action" aria-label="Sell" aria-describedby="sell-more">
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
-        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
+        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}${s.lineup.includes(p.id) ? ' <span class="pill">XI</span>' : ''}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
             ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`

@@ -90,3 +90,5 @@
   .tac-pips i.lit { background: CanvasText; forced-color-adjust: none; }
   .tac-pips i { border: 1px solid GrayText; }
 }
+.tac-str { font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.tac-card.on .tac-str { color: var(--accent); }

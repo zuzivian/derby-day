@@ -1,4 +1,4 @@
-import { autoLineup, generateSquad, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
+import { autoLineup, generateSquad, teamStrength, toTeamSetup, type ClubIdentity, type LadderClub } from '../meta/club.ts';
 import { ensureSkill, learnSkill, opponentSetup } from '../meta/skill.ts';
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
@@ -40,7 +40,7 @@ import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './vers
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
 import { introLine } from './stakes.ts';
-import { clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -634,8 +634,12 @@ root.addEventListener('click', (e) => {
       if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
       return;
     case 'auto-lineup':
-      s.lineup = autoLineup(s.squad, s.formation);
-      toast('Best XI picked.');
+      {
+        const before = teamStrength(s.squad, s.lineup, s.formation);
+        s.lineup = autoLineup(s.squad, s.formation);
+        const after = teamStrength(s.squad, s.lineup, s.formation);
+        toast(after === before ? 'Best XI picked. Already your strongest.' : `Best XI picked. XI strength ${before} → ${after}.`);
+      }
       persist();
       break;
     case 'market-role':
@@ -650,8 +654,10 @@ root.addEventListener('click', (e) => {
       // next row's Sign button and buy a second player by accident.
       if (performance.now() - lastBuyAt < 500) return;
       lastBuyAt = performance.now();
+      const bp = s.market.find((x) => x.id === id);
+      const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.message, r.ok);
+      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: use Pick my best XI in Squad.` : 'Bench cover.'}` : r.message, r.ok);
       if (r.ok) {
         persist();
         getSound().stinger('train');
@@ -728,13 +734,17 @@ root.addEventListener('click', (e) => {
 root.addEventListener('change', (e) => {
   const el = e.target as HTMLSelectElement;
   if (el.dataset.change === 'slot') {
+    const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
+    const af = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
+    toast(af === b4 ? 'Lineup changed.' : `Lineup changed. XI strength ${b4} → ${af}.`);
     persist();
     render();
   } else if (el.dataset.change === 'formation') {
+    const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setFormation(app.save, el.value as FormationId);
     persist();
-    announce(`Formation ${el.value}. Best XI re-picked.`);
+    announce(`Formation ${el.value}. Best XI re-picked. XI strength ${b4} to ${teamStrength(app.save.squad, app.save.lineup, app.save.formation)}.`);
     render();
   } else if (el.dataset.change === 'mentality') {
     setMentality(app.save, el.value as Mentality);

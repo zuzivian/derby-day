@@ -1627,3 +1627,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .league-standing { margin: 0; font-weight: 700; }
 .ladder-div { margin: 0 0 8px; }
 .tbl.ladder td.mydiv { color: var(--accent-ink, var(--ink)); font-weight: 800; }
+.mk-note { display: block; font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); white-space: nowrap; }
+.mk-note.up { color: var(--good, #0a7d3c); }
+.mk-note.short { color: var(--bad, #b42318); }
