@@ -260,12 +260,18 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     </header>
     <div class="rp-stage">
       <canvas id="rv-canvas" class="pitch-canvas replay-canvas" role="img" aria-label="Replay of the match"></canvas>
-      <span class="rp-tag" aria-hidden="true">Replay</span>
+      <span id="rv-tag" class="rp-tag" aria-hidden="true">Replay</span>
       <span class="rp-word" aria-hidden="true" hidden>Replay</span>
+      <button class="rp-cam" data-rp="cam" aria-keyshortcuts="V" hidden></button>
     </div>
+    <div class="rp-clips" role="group" aria-label="Jump to a moment" ${clips.length > 1 ? '' : 'hidden'}>${clips
+      .map((c, i) => `<button class="btn small" data-rp="clip" data-i="${i}">${c.goal ? `Goal ${c.n} · ${c.goal.minute}'` : 'Full match'}</button>`)
+      .join('')}</div>
     <div class="rp-scrub">
-      <label class="visually-hidden" for="rv-scrub">Replay position</label>
-      <input id="rv-scrub" type="range" min="0" max="1" step="1" value="0">
+      <div class="rp-track">
+        <input id="rv-scrub" type="range" min="0" max="1" step="1" value="0">
+        <div id="rv-marks" class="rp-marks"></div>
+      </div>
       <span id="rv-time" class="rp-time" aria-hidden="true"></span>
     </div>
     <div class="rp-controls">
@@ -278,7 +284,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     <div class="rp-foot">
       <button class="btn small ghost" data-rp="copy">Copy replay code</button>
       <span class="muted small">${formatSize(codeSize(code))}</span>
-      <span class="muted small rp-keys">Space play · ← → step · Shift+← → second · PgUp PgDn goal · S slow-mo · Esc close</span>
+      <span class="muted small rp-keys">Space play · ← → step · Shift+← → second · PgUp PgDn goal · S slow-mo · V camera · Esc close</span>
     </div>
   </div>`;
   const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
@@ -344,6 +350,9 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         case 'S':
           toggleSlow();
           return true;
+        case 'v':
+        case 'V':
+          return toggleCam();
         default:
           return false;
       }
@@ -363,6 +372,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     scrub.value = String(pos());
     q('#rv-time').textContent = `${clock(pos())} / ${clock(len())}`;
     scrub.setAttribute('aria-valuetext', `${clock(pos())} of ${clock(len())}`);
+    scrub.style.setProperty('--p', `${(100 * pos()) / Math.max(1, len())}%`);
     const atEnd = seeker.state.tick >= clip.end;
     playBtn.textContent = playing ? 'Pause' : atEnd ? 'Replay' : 'Play';
     slowBtn.setAttribute('aria-pressed', String(slow));
@@ -375,10 +385,19 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     seeker.seek(clip.start);
     acc = 0;
     scrub.max = String(len());
+    scrub.setAttribute('aria-label', `Position in ${label()}`);
     q('#rv-title').textContent = label();
+    q('#rv-tag').textContent = clip.goal ? `Replay · Goal ${clip.n}/${replay.goals.length}` : 'Replay · Full match';
+    // Goal markers on the timeline: tap one to jump to the build-up to that goal.
+    q('#rv-marks').innerHTML = replay.goals
+      .map((x, i) => [x, i] as const)
+      .filter(([x]) => x.tick >= clip.start && x.tick <= clip.end)
+      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((100 * (x.tick - clip.start)) / len()).toFixed(2)}%" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'"></button>`)
+      .join('');
+    el.querySelectorAll<HTMLElement>('[data-rp="clip"]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.i) === idx)));
     const g = clip.goal;
     q('#rv-sub').textContent = g
-      ? `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${replay[g.team === 0 ? 'home' : 'away'].name} score`
+      ? `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${replay[g.team === 0 ? 'home' : 'away'].name} scored`
       : `${replay.home.name} ${replay.score[0]}–${replay.score[1]} ${replay.away.name} · ${clips.length > 1 ? `${replay.goals.length} goal${replay.goals.length === 1 ? '' : 's'}` : 'no goals'}`;
     canvas.setAttribute('aria-label', `Replay: ${label()}. ${names}`);
     // Big "REPLAY" over the picture as each clip starts.
@@ -404,6 +423,28 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     slow = !slow;
     sync();
     announce(slow ? 'Half speed.' : 'Full speed.');
+  }
+
+  // Side or end-to-end view, for the 3D renderer only. Kept across clips.
+  type Cam3 = { cameraMode: string; setCameraMode(m: string): void };
+  const camBtn = q('[data-rp="cam"]');
+  const cam3 = () => (renderer && 'setCameraMode' in renderer ? (renderer as unknown as Cam3) : null);
+  function camLabel() {
+    const c = cam3();
+    camBtn.hidden = !c;
+    if (!c) return;
+    const v = c.cameraMode === 'end' ? 'End' : 'Side';
+    camBtn.textContent = `Cam: ${v}`;
+    camBtn.setAttribute('aria-label', `Camera: ${v.toLowerCase()} view. Press V to switch.`);
+  }
+  function toggleCam() {
+    const c = cam3();
+    if (!c) return false;
+    c.setCameraMode(c.cameraMode === 'end' ? 'broadcast' : 'end');
+    camLabel();
+    announce(`${c.cameraMode === 'end' ? 'End' : 'Side'} view.`);
+    dirty = true;
+    return true;
   }
 
   function nudge(delta: number) {
@@ -434,6 +475,19 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         break;
       case 'slow':
         toggleSlow();
+        break;
+      case 'cam':
+        toggleCam();
+        break;
+      case 'clip':
+        setClip(Number(b.dataset.i), true);
+        break;
+      case 'mark':
+        // Two seconds of build-up before the goal, then play (unless reduced motion).
+        seeker.seek(Math.max(clip.start, Number(b.dataset.tick) - 120));
+        acc = 0;
+        playing = motionOk;
+        sync();
         break;
       case 'copy':
         copyCode(code, b);
@@ -534,6 +588,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       ro.observe(canvas);
       renderer.resize();
       renderer.prepare(seeker.state);
+      camLabel();
       playing = wasPlaying;
       last = performance.now();
       acc = 0;
@@ -542,6 +597,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     },
   });
   setClip(idx, true);
+  camLabel();
   q('#rv-title').focus();
   raf = requestAnimationFrame(frame);
   warmTimer = window.setTimeout(warm, 0);
