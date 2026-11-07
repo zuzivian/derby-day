@@ -65,7 +65,10 @@ export function showToast(text: string, ok = true, ms = 3600): void {
   placeToast(t);
   // Empty first, then fill, so an identical message is announced again.
   toastShowTimer = window.setTimeout(() => el.appendChild(t), 30);
-  toastTimer = window.setTimeout(hideToast, ms);
+  toastTimer = window.setTimeout(() => {
+    t.classList.add('out');
+    toastTimer = window.setTimeout(hideToast, 160);
+  }, ms);
   window.addEventListener('scroll', onToastScroll, { passive: true });
 }
 

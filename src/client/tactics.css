@@ -10,9 +10,10 @@
 .tac-card {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px 6px;
   border: 1px solid var(--control-line); border-radius: 8px; background: var(--surface-2); cursor: pointer;
-  transition: border-color .12s, box-shadow .12s, transform .12s;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
 .tac-card:hover { border-color: var(--ink); }
+.tac-card:active, .tac-step:active { transform: scale(.97); }
 .tac-card.on, .tac-card:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--surface); }
 .tac-card:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
 .tac-card input, .tac-step input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; pointer-events: none; }
@@ -28,7 +29,7 @@
 .tac-step {
   position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px; min-width: 0;
   border: 1px solid var(--control-line); border-radius: 8px; background: var(--surface-2); cursor: pointer;
-  transition: border-color .12s, box-shadow .12s;
+  transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out);
 }
 .tac-step:hover { border-color: var(--ink); }
 .tac-step.on, .tac-step:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); background: var(--surface); }
