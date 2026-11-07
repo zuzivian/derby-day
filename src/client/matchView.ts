@@ -547,7 +547,12 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           buffer.push(used, s);
           for (const h of spotter.update(s)) {
             // The near things get their word as they happen, replay or not.
-            if (h.kind === 'woodwork' || h.kind === 'miss') hud.tag(h.kind === 'miss' ? 'So close!' : 'Off the woodwork!', 1700, h.label.split(' · ')[1]);
+            if (h.kind === 'woodwork' || h.kind === 'miss') {
+              const word = h.kind === 'miss' ? 'So close!' : 'Off the woodwork!';
+              const who = h.label.split(' · ')[1];
+              hud.tag(word, 1700, who);
+              announce(who ? `${word} ${who}` : word); // the tag itself is aria-hidden
+            }
             consider(h);
           }
           acc -= DT;

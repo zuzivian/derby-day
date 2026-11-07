@@ -1558,14 +1558,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .home .hero-story { display: none; }
   .home .hero-side { gap: 2px; }
 }
-/* Big screens (1920 up): the whole UI scales so it is not a small island in empty space. Not the match (its canvas math must stay 1:1). */
+/* Big screens (1920 up): the whole UI scales so it is not a small island in empty space. Not the match or the training ground (their canvas math must stay 1:1); the match's pause card scales on its own. */
 @media (min-width: 1800px) and (min-height: 900px) {
-  #app:not(:has(> .match)) { zoom: 1.25; }
-  .pause-card { zoom: 1.25; }
+  #app:not(:has(> .match, > .training)) { zoom: 1.25; }
+  #app:has(> .match) .pause-card { zoom: 1.25; }
 }
 @media (min-width: 2400px) and (min-height: 1200px) {
-  #app:not(:has(> .match)) { zoom: 1.5; }
-  .pause-card { zoom: 1.5; }
+  #app:not(:has(> .match, > .training)) { zoom: 1.5; }
+  #app:has(> .match) .pause-card { zoom: 1.5; }
 }
 
 /* ==========================================================================
