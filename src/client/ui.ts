@@ -217,10 +217,13 @@ function formChips(save: Save): string {
     .join('')}</ul>`;
 }
 
+/** The rising player Club's "Next up" points at, and whom Training opens on. */
+const firstRising = (s: Save) => s.squad.filter(isRising).sort((a, b) => overall(a) - overall(b))[0];
+
 /** One line on what to do next, from what the save already holds. Empty until training is unlocked. */
 function nextUp(s: Save): string {
   if (!isUnlocked(s, 'training')) return '';
-  const rising = s.squad.filter(isRising).sort((a, b) => overall(a) - overall(b))[0];
+  const rising = firstRising(s);
   const n = s.trainingPoints;
   const text = n > 0
     ? `${n} training session${n === 1 ? '' : 's'} waiting. ${rising ? `Start with ${esc(shortName(rising))}, who is rising.` : 'Spend them on your youngest players.'}`
@@ -407,7 +410,7 @@ export function transfersScreen(app: App): string {
 
 export function trainingScreen(app: App): string {
   const s = app.save;
-  const p = s.squad.find((x) => x.id === app.trainee) ?? s.squad[0];
+  const p = s.squad.find((x) => x.id === app.trainee) ?? firstRising(s) ?? s.squad[0];
   const relevant = (k: AttrKey) => k !== 'goalkeeping' || p.role === 'GK';
   return `
   <div class="training-grid">

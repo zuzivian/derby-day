@@ -34,7 +34,9 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
   wrap.setAttribute('aria-labelledby', 'settings-title');
   const save = hooks.getSave();
   const guestTab = isSaveGuest();
-  const prev = previousClub();
+  // The rolling backup of this same club (its last autosave) is crash recovery, not an "earlier club" to offer.
+  const old = previousClub();
+  const prev = old && old.seed !== save.seed ? old : null;
   wrap.innerHTML = `
   <div class="modal-card settings-card">
     <h2 id="settings-title" tabindex="-1">Back up or restore</h2>
