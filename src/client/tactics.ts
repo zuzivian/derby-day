@@ -63,7 +63,7 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
       <input type="radio" id="tac-formation-${id}" name="formation" value="${id}" data-change="formation"${id === f ? ' checked' : ''} aria-labelledby="tac-fn-${id}" aria-describedby="tac-f-${id}">
       ${formationSvg(id)}
       <span class="tac-name" id="tac-fn-${id}">${id}</span>${str ? `<span class="tac-str" aria-hidden="true">XI ${str.get(id)}${id === f ? '' : ` (${signedN(str.get(id)! - str.get(f)!)})`}</span>` : ''}
-      <span class="sr-only" id="tac-f-${id}">${FORMATION_NOTE[id]}${str ? ` Your best XI in this shape rates ${str.get(id)}.` : ''}</span>
+      <span class="sr-only" id="tac-f-${id}">${FORMATION_NOTE[id]}${str ? ` ${id === f ? 'Your XI' : 'The XI picked for this shape'} rates ${str.get(id)}.` : ''}</span>
     </label>`,
   ).join('');
   const steps = MENTALITY_IDS.map(

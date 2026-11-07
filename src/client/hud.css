@@ -192,6 +192,11 @@
   .hud-me-name { font-size: var(--fs-xs); }
   .hud-power-label { font-size: 10px; }
   .hud-hold { right: 6px; bottom: 24px; font-size: var(--fs-2xs); padding: 2px 6px; }
+  /* A small card: the Sprint / Tired word shares the name's row, so his legs keep the full width. */
+  .hud .hud-me { grid-template-rows: auto 4px; }
+  .hud-me-name { grid-column: 2; }
+  .hud-me-st { grid-row: 1; grid-column: 3; }
+  .hud-me-legs { grid-column: 2 / 4; }
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: var(--fs-2xs); padding: 3px 8px; }
@@ -212,7 +217,7 @@
    radar moves to the left, beside the mute button, out of the buttons' way. After the size rules
    above, so it wins the cascade. */
 @media (pointer: coarse) {
-  .hud-hold { bottom: 108px; right: 10px; }
+  .hud-hold { bottom: 118px; right: 10px; } /* above the power bar and its label */
   .hud-power { bottom: 86px; right: 10px; }
   .hud-me { bottom: 114px; right: 10px; }
   .hud-radar { left: 60px; transform: none; }
@@ -220,6 +225,10 @@
 /* Landscape phones: no room above the buttons without covering play; the card sits at the bottom, beside the radar. */
 @media (pointer: coarse) and (max-height: 520px) {
   .hud-me { right: auto; left: 168px; bottom: 8px; }
+}
+/* Where the card stays bottom right (touch landscape with room), the keeper's count sits above it. */
+@media (pointer: coarse) and (orientation: landscape) and (min-height: 521px) {
+  .hud-hold { bottom: 162px; }
 }
 /* Phones held upright: the player card moves out of open play and the right thumb zone to the bottom
    left, above the mute button and radar row (the radar is 72 px wide at left 60, about 47 px tall). */
@@ -352,7 +361,7 @@
 }
 /* Large touch screens: the power gauge and player card follow the bigger Pass / Shoot pads inboard. */
 @media (pointer: coarse) and (min-width: 768px) and (min-height: 521px) {
-  .hud-hold { bottom: 142px; right: 28px; }
+  .hud-hold { bottom: 152px; right: 28px; }
   .hud-power { bottom: 118px; right: 28px; }
   .hud-me { bottom: 146px; right: 28px; }
   .pitch-wrap .juice-mute { left: 16px; bottom: 16px; }
@@ -360,6 +369,9 @@
 }
 @media (pointer: coarse) and (orientation: portrait) and (min-width: 768px) {
   .hud-me { right: auto; left: 16px; bottom: 76px; width: 128px; }
+}
+@media (pointer: coarse) and (orientation: landscape) and (min-width: 768px) and (min-height: 521px) {
+  .hud-hold { bottom: 200px; }
 }
 
 /* Forced colors (#511): the stamina bar is a background fill on a background track. */

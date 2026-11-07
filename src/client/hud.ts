@@ -9,7 +9,7 @@
 
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
-import { keeperHoldLeft } from '../sim/human.ts';
+import { keeperHoldLeft, passIncoming } from '../sim/human.ts';
 import { tension } from './audio.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
@@ -294,7 +294,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   function drawPads(s: MatchState) {
     if (!padP || !padS) return;
     const team: 0 | 1 | null = s.humans[0] && !s.humans[1] ? 0 : s.humans[1] && !s.humans[0] ? 1 : null;
-    const off = team !== null && s.phase === 'play' && s.ball.owner !== s.controlled[team];
+    const me = team === null ? -1 : s.controlled[team];
+    // A pass on its way to him is played first time by either pad (human.ts), so they keep their on-the-ball names.
+    const off = team !== null && s.phase === 'play' && s.ball.owner !== me && !(me >= 0 && passIncoming(s, s.players[me]));
     if (String(off) === lastPad) return;
     lastPad = String(off);
     for (const [b, a, z] of [[padP, 'Pass', 'Switch'], [padS, 'Shoot', 'Tackle']] as const) { b.textContent = off ? z : a; b.setAttribute('aria-label', off ? z : a); }

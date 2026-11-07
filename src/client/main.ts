@@ -641,7 +641,7 @@ root.addEventListener('click', (e) => {
         const before = teamStrength(s.squad, s.lineup, s.formation);
         s.lineup = autoLineup(s.squad, s.formation);
         const after = teamStrength(s.squad, s.lineup, s.formation);
-        toast(after === before ? 'Best XI picked. Already your strongest.' : `Best XI picked. XI strength ${before} → ${after}.`);
+        toast(after === before ? 'Best XI picked. Already your strongest.' : after > before ? `Best XI picked. XI strength ${before} → ${after}.` : `XI picked by natural positions. XI strength ${before} → ${after}.`);
       }
       persist();
       break;
@@ -660,7 +660,7 @@ root.addEventListener('click', (e) => {
       const bp = s.market.find((x) => x.id === id);
       const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: use Pick my best XI in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put him in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
       if (r.ok) {
         persist();
         getSound().stinger('train');

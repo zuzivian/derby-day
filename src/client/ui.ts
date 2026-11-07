@@ -341,7 +341,7 @@ export function squadScreen(app: App): string {
   return `
   <div class="squad-grid">
     ${academyPanel(app)}
-    ${tacticsPanel(s.formation, s.mentality, (id) => teamStrength(s.squad, autoLineup(s.squad, id), id))}
+    ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
       <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
@@ -379,7 +379,7 @@ export function transfersScreen(app: App): string {
           const can = price <= s.budget && !full;
           const fit = fitFor(s, p);
           const note = `<span class="mk-note${fit ? ' up' : ''}">${fit ? `+${fit.d} at ${fit.label}` : 'bench'}</span>${price > s.budget ? `<span class="mk-note short">${formatMoney(price - s.budget)} short</span>` : ''}`;
-          return playerRow(p, `<td class="num mk-price"${fit ? ` title="Would start at ${fit.label}, replacing ${esc(fit.who)} (+${fit.d} in that slot)"` : ''}>${formatMoney(price)}${note}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
+          return playerRow(p, `<td class="num mk-price"${fit ? ` title="An upgrade at ${fit.label} on ${esc(fit.who)} (+${fit.d} in that slot)"` : ''}>${formatMoney(price)}${note}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
         }).join('') : `<tr><td colspan="15" class="muted">No players at that position right now. Try another filter.</td></tr>`}</tbody>
       </table></div>
       <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
