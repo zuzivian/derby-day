@@ -16,7 +16,7 @@
 import { CUP_ROUNDS, cupOpponent, seasonOpponent, seasonStanding } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import { winChance, type Save } from '../meta/game.ts';
-import { clubLevel, isUnlocked, nextUnlocks, nextUnlockText, unlockLevel, type UnlockId } from '../meta/levels.ts';
+import { clubLevel, isUnlocked, nextUnlocks, nextUnlockText, totalXpForLevel, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
@@ -228,9 +228,10 @@ const nearlyOpen = (s: Save, id: UnlockId): boolean => unlockLevel(s, id) - club
 /** A visible teaser for a mode that is still locked: padlock and level badge, no control inside. */
 function lockedCard(s: Save, mode: string, title: string, icon: string, id: UnlockId): string {
   const level = unlockLevel(s, id);
+  const toGo = Math.max(0, totalXpForLevel(level) - (s.xp ?? 0)).toLocaleString('en-GB');
   return `
   <article class="mode-card locked" data-mode="${mode}" data-locked-level="${level}" aria-labelledby="mode-${mode}">
-    <div class="mode-top"><span class="mode-icon">${icon}${lockBadge(level)}</span><div><h3 id="mode-${mode}" class="mode-title">${title}</h3><p class="mode-sub"><span aria-hidden="true">Level ${level}</span><span class="sr-only">Locked. Unlocks at club level ${level}.</span></p></div></div>
+    <div class="mode-top"><span class="mode-icon">${icon}${lockBadge(level)}</span><div><h3 id="mode-${mode}" class="mode-title">${title}</h3><p class="mode-sub"><span aria-hidden="true">Level ${level} · ${toGo} XP to go</span><span class="sr-only">Locked. Unlocks at club level ${level}, ${toGo} XP to go.</span></p></div></div>
   </article>`;
 }
 

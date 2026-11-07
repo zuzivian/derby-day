@@ -436,6 +436,10 @@ export function pendingMark(save: Save, marks: string[] | undefined, current: st
   return null;
 }
 
+/** A revealed tab that has not been visited yet: it keeps a dot in the tab bar until you open it (the card and ring show once, on Home). */
+export const isNewTab = (save: Save, marks: string[] | undefined, screen: string, current: string): boolean =>
+  !!marks && screen !== current && MARKS.some((m) => m.screen === screen && isUnlocked(save, m.unlock)) && !marks.includes(screen);
+
 /** The player is on `screen`: if it is a tab that gets a mark, the mark counts as seen. Returns true when `marks` changed. */
 export function acknowledge(marks: string[], screen: string): boolean {
   if (marks.includes(screen) || !MARKS.some((m) => m.screen === screen)) return false;

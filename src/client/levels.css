@@ -24,6 +24,10 @@
 .xp-bar span { display: block; height: 100%; background: linear-gradient(90deg, color-mix(in srgb, var(--xp-fill) 70%, var(--ink)), var(--xp-fill)); border-radius: var(--r-pill); }
 
 /* Club level panel (Club screen) */
+.level-meter { display: flex; align-items: center; gap: 10px; }
+.level-meter .level-badge { cursor: default; }
+.level-meter .xp-bar { flex: 1; max-width: none; height: 10px; }
+.level-badge.dim { border-color: var(--control-line); box-shadow: none; color: var(--muted); background: transparent; border-style: dashed; }
 .club-grid .level-panel { grid-column: 1 / -1; }
 .level-next { margin: 0; font-size: var(--fs-lg); font-weight: 700; }
 .level-next-label {
@@ -143,6 +147,12 @@
   .levelup-list .unlock { padding-top: 8px; padding-bottom: 8px; }
 }
 .levelup-actions .btn { width: 100%; }
+/* The new things arrive one after another, then the buttons. */
+.levelup-list .unlock { animation: lv-pop .45s var(--ease-spring) both; }
+.levelup-list .unlock:nth-child(1) { animation-delay: .35s; }
+.levelup-list .unlock:nth-child(2) { animation-delay: .5s; }
+.levelup-list .unlock:nth-child(3) { animation-delay: .65s; }
+.levelup-list .unlock:nth-child(n+4) { animation-delay: .8s; }
 
 /* Club identity editor */
 .identity-editor, .identity-set { border: 0; margin: 0; padding: 0; min-width: 0; }

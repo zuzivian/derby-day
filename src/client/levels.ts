@@ -58,7 +58,8 @@ function statusOf(s: Save, u: Unlock, nextLevel: number | null): 'done' | 'next'
 
 function unlockRow(s: Save, u: Unlock, nextLevel: number | null): string {
   const st = statusOf(s, u, nextLevel);
-  const status = st === 'done' ? 'Unlocked' : st === 'next' ? 'Next' : `Level ${unlockLevel(s, u.id)}`;
+  const toGo = fmt(Math.max(0, totalXpForLevel(unlockLevel(s, u.id)) - (s.xp ?? 0)));
+  const status = st === 'done' ? 'Unlocked' : `${st === 'next' ? 'Next' : `Level ${unlockLevel(s, u.id)}`} · ${toGo} XP to go`;
   return `<li class="unlock unlock-${st}">
     <span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span>
     <span class="unlock-body"><span class="unlock-name"><b>${esc(u.name)}</b>${u.kind === 'perk' ? ' <span class="pill perk-pill">perk</span>' : ''}</span><span class="muted small">${esc(u.text)}</span></span>
@@ -80,6 +81,7 @@ export function levelPanel(s: Save): string {
       <h2 id="level-title" class="eyebrow" tabindex="-1">Club level</h2>
       <span class="level-total muted small">${fmt(s.xp ?? 0)} XP in total${p.level < 99 ? ` · ${fmt(toNext)} to level ${p.level + 1}` : ''}</span>
     </div>
+    <div class="level-meter"><span class="level-badge tier-${badgeTier(p.level)}" aria-hidden="true">${p.level}</span><span class="xp-bar" role="img" aria-label="${esc(levelText(p))}"><span style="width:${p.maxed ? 100 : Math.round((p.intoLevel / p.needed) * 100)}%"></span></span>${p.level < 99 ? `<span class="level-badge tier-${badgeTier(p.level + 1)} dim" aria-hidden="true">${p.level + 1}</span>` : ''}</div>
     ${teaser
       ? `<p class="level-next" id="next-unlock"><span class="level-next-label">Next unlock</span> ${esc(teaser)}</p>`
       : `<p class="level-next" id="next-unlock"><span class="level-next-label">Everything unlocked</span> ${p.maxed ? 'Max level. Your XP keeps counting.' : 'Keep going: level 99 is the cap.'}</p>`}
@@ -151,7 +153,7 @@ export function levelUpModal(s: Save): string {
         <ul class="unlock-list levelup-list">${fresh.map((u) => `<li class="unlock unlock-done"><span class="unlock-level" aria-hidden="true">${unlockLevel(s, u.id)}</span><span class="unlock-body"><b>${esc(u.name)}</b><span class="muted small">${esc(u.text)}</span></span>${u.kind === 'perk' ? '<span class="pill perk-pill">perk</span>' : '<span class="pill new-pill">new</span>'}</li>`).join('')}</ul>
         ${next ? `<p class="levelup-next"><span class="level-next-label">Next</span> ${esc(next)}</p>` : ''}
         <div class="levelup-actions">
-          ${target ? `<button class="btn primary big" data-action="levelup-go" data-id="${esc(target.id)}">${esc(target.go!.label)}</button>` : ''}
+          ${target ? `<button class="btn primary big" data-action="levelup-go" data-id="${esc(target.id)}">${esc(target.go!.label === 'Show me' ? `Try ${target.name}` : target.go!.label)}</button>` : ''}
           <button class="btn${target ? ' ghost' : ' primary big'}" data-action="levelup-close">${target ? 'Later' : 'Back to the club'}</button>
         </div>
       </div>
