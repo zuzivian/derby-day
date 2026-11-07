@@ -919,7 +919,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
-    const waitText = lost ? (link?.status === 'reconnecting' || navigator.onLine === false ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you can't get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
+    const waitText = lost ? (link && (link.status === 'reconnecting' || (link.status !== 'open' && navigator.onLine === false)) ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you can't get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);

@@ -27,6 +27,7 @@ import {
   seasonOpponent,
   seasonStanding,
   seasonTable,
+  MAX_SEASON_FORFEITS,
   seasonVerdict,
   simulateRestOfCup,
   startCup,
@@ -253,8 +254,10 @@ function seasonPanel(s: Save): string {
   if (f && opp) status = nextMatch(s, opp, `Matchday ${season.matchday + 1}`, 'season', f.home === s.club.id);
   else {
     const pos = season.finish ?? 0;
-    const head = pos === 1 && season.moved !== null ? 'Champions' : season.moved === 'up' ? 'Promoted' : season.moved === 'down' ? 'Relegated' : pos === 1 ? 'Champions' : 'Stayed up';
-    status = `<div class="comp-status end ${season.moved === 'down' ? 'bad' : pos <= 2 ? 'good lift' : ''}" role="status">${pos === 1 ? `${SHIELD_ICON} ` : ''}<b class="end-head">${head}</b><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
+    // Too many forfeits wins no title and no promotion (meta/competitions.ts): no champions' shield or lift then.
+    const honest = (season.forfeits ?? 0) <= MAX_SEASON_FORFEITS;
+    const head = pos === 1 && honest ? 'Champions' : season.moved === 'up' ? 'Promoted' : season.moved === 'down' ? 'Relegated' : pos === 1 ? 'Top of the table' : 'Stayed up';
+    status = `<div class="comp-status end ${season.moved === 'down' ? 'bad' : honest && pos <= 2 ? 'good lift' : ''}" role="status">${pos === 1 && honest ? `${SHIELD_ICON} ` : ''}<b class="end-head">${head}</b><b>Finished ${ordinal(pos)}.</b> ${esc(seasonVerdict(pos, season.division ?? DIVISIONS, season.moved ?? null, season.forfeits ?? 0))}${season.earned > 0 ? ` You earned ${formatMoney(season.earned)}.` : ' No prize money this time.'}</div>
       <div class="actions"><button class="btn primary" data-action="comp-close" data-kind="season">Finish the season</button></div>`;
   }
   return `

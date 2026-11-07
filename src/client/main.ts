@@ -165,6 +165,9 @@ function render() {
   const entered = root.dataset.shown !== app.screen;
   if (entered) root.querySelector('#panel')?.classList.add('enter');
   root.dataset.shown = app.screen;
+  // A new section opens at its title: the page isn't left at the last screen's scroll (a short page clamps it to a few px,
+  // clipping the heading). Before focus is restored, so a focus target further down still scrolls itself into view.
+  if (entered && app.screen !== 'ladder') window.scrollTo(0, 0);
   // The ladder opens on your own row (on entry only, so a re-render never moves the page).
   if (entered && app.screen === 'ladder') root.querySelector('tr.you')?.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
   if (flash) {
@@ -187,8 +190,6 @@ function render() {
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
   else restoreFocus(root, key, '#main');
   afterRender(root);
-  // A new section opens at its title: the page isn't left at the last screen's scroll (a short page clamps it to a few px, clipping the heading). The ladder scrolls to your row instead.
-  if (entered && app.screen !== 'ladder') window.scrollTo(0, 0);
   if (revealMark) placeMark(root, true);
   revealMark = false;
 }
