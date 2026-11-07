@@ -406,3 +406,17 @@
 @media (prefers-reduced-motion: reduce) {
   .pitch-wrap.goal-flash::before, .pitch-wrap.replaying canvas { animation: none; }
 }
+
+/* Desktop: the charge of a held kick as a ring round the pointer (matchView.ts), in the power bar's colours. */
+.aim-charge { position: absolute; left: 0; top: 0; z-index: 1; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; opacity: 0; filter: drop-shadow(0 0 1.5px #000); --col: #46d36a; }
+.aim-charge.on { opacity: 1; }
+.aim-charge[data-band="amber"] { --col: #ffb020; }
+.aim-charge[data-band="red"] { --col: #ff4a32; }
+.aim-charge i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(var(--col) calc(var(--c, 0) * 360deg), rgba(0, 0, 0, .45) 0); mask: radial-gradient(circle, transparent 17px, #000 18px); }
+/* Key caps for the keyboard, up only while the keys are in use (matchView.ts). */
+.key-hint { position: absolute; left: 50%; bottom: 14px; z-index: 1; transform: translateX(-50%); margin: 0; padding: 5px 12px; border-radius: var(--r-pill); background: rgba(8, 12, 11, .72); color: #fff; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; }
+.key-hint.on { opacity: 1; }
+.key-hint kbd { margin: 0 2px 0 8px; font-size: 11px; padding: 2px 5px; color: #111; background: #f4f4f4; border-color: #9aa0a6; }
+@media (pointer: coarse), (max-width: 640px) { .key-hint { display: none; } }
+/* Mouse feedback on the in-match controls: a press you can feel, and the same cue for the keyboard. */
+.hud-menu:active, .pitch-cam:active { transform: translateY(1px); }
