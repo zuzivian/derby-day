@@ -596,12 +596,32 @@ test('a corner: a man comes short, and left held where the cross should land put
   await page.mouse.up();
   await page.waitForFunction(() => window.__derbyMatch.phase === 'play' && window.__derbyMatch.ball.owner < 0, null, { timeout: 10_000 });
   await page.evaluate(() => clearInterval(window.__holdRestart));
-  // Where it is heading: follow its flight in the page until it comes down or someone touches it.
+  // Where it is heading: where it first comes down, or where it is when someone first touches it. Read inside the sim's
+  // own tick, by watching the writes to ball.z and ball.lastTouch, and not by sampling from requestAnimationFrame: under
+  // load a frame carries up to a dozen ticks (matchView.ts catches up to 0.2 s a frame), so a frame sample can step over
+  // the tick the ball is on the ground (z is exactly 0 for one tick, then it bounces) and see it a bounce or a clearance
+  // later, metres from where it came down. That is what made this test fail only when the machine was busy.
   const landed = await page.evaluate(() => new Promise((resolve) => {
     const s = window.__derbyMatch;
-    const by = s.ball.lastTouch;
+    const ball = s.ball;
+    const by = ball.lastTouch;
+    let done = null;
+    const watch = (key, hit) => {
+      let v = ball[key];
+      Object.defineProperty(ball, key, {
+        configurable: true,
+        enumerable: true,
+        get: () => v,
+        set: (n) => {
+          if (!done && hit(n)) done = { x: ball.pos.x, y: ball.pos.y, z: n, touched: key === 'lastTouch' };
+          v = n;
+        },
+      });
+    };
+    watch('z', (n) => n <= 0);
+    watch('lastTouch', (n) => n !== by);
     const tick = () => {
-      if (s.ball.z === 0 || s.ball.lastTouch !== by || s.phase !== 'play') resolve({ x: s.ball.pos.x, y: s.ball.pos.y, z: s.ball.z, touched: s.ball.lastTouch !== by });
+      if (done || s.phase !== 'play') resolve(done ?? { x: ball.pos.x, y: ball.pos.y, z: ball.z, touched: false });
       else requestAnimationFrame(tick);
     };
     tick();
