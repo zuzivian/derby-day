@@ -162,11 +162,21 @@ test('onboarding: a coach tip does not pause play, can be dismissed, and is not 
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
   await page.waitForSelector(TIP, { timeout: 40_000 });
+  // Hold the coach's own tip clock still: frames age the card in wall time, so a slow runner could time it out or replace it
+  // while the test waits for play to move on.
+  await page.evaluate(() => window.__derbyCoach.freeze());
+  expect(await tipId(page), 'the first tip is the pass tip (the kick-off is ours)').toBe('pass');
   const a = await page.evaluate(() => window.__derbyMatch.tick);
   await page.waitForFunction((x) => window.__derbyMatch.tick > x + 20, a, { timeout: 15_000 });
   expect(await page.locator(SEL.pause).isHidden(), 'no pause menu').toBe(true);
-  await page.locator('.coach-x').click();
-  expect(await page.locator('.coach-tip').isHidden(), 'dismissed').toBe(true);
+  // Click and look in the same turn: the next queued tip ('run') is rightly shown on the very next frame after a dismissal,
+  // so a separate round trip to check could find that card instead of an empty slot, depending on how loaded the runner is.
+  const dismissed = await page.evaluate(() => {
+    const el = document.querySelector('.coach-tip');
+    el.querySelector('.coach-x').click();
+    return el.hidden;
+  });
+  expect(dismissed, 'dismissed').toBe(true);
   expect((await prefsOf(page)).coachSeen, '"Got it" counts as read').toContain('pass');
   await page.waitForTimeout(1500);
   expect(await page.locator(`${TIP}[data-coach-tip="pass"]`).count(), 'pass is not shown twice').toBe(0);
