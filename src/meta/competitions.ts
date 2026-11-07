@@ -547,7 +547,10 @@ export function seasonStanding(save: Save, season: Season | null | undefined = s
   const pts = (n: number) => `${n} pt${n === 1 ? '' : 's'}`;
   const pos = ordinal(i + 1);
   if (d > 1 && i < 2) return `${pos} · in the promotion places${rows[2].points < me.points ? `, ${pts(me.points - rows[2].points)} clear` : ''}`;
-  if (d < DIVISIONS && i >= rows.length - 2) return `${pos} · ${pts(rows[rows.length - 3].points - me.points)} from safety`;
+  if (d < DIVISIONS && i >= rows.length - 2) {
+    const gap = rows[rows.length - 3].points - me.points;
+    return `${pos} · ${gap > 0 ? `${pts(gap)} from safety` : 'level with safety, in the drop places'}`;
+  }
   return d > 1 ? `${pos} · ${me.points >= rows[1].points ? 'level with 2nd' : `${pts(rows[1].points - me.points)} off promotion`}` : '';
 }
 

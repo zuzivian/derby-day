@@ -708,7 +708,9 @@ root.addEventListener('click', (e) => {
       const again = app.result?.again;
       app.result = null;
       if (again) {
+        const origin = matchOrigin; // the new match would otherwise return focus to this (removed) Rematch button
         again.run();
+        if (origin) matchOrigin = origin;
         return;
       }
       break;

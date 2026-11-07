@@ -2,7 +2,7 @@
 // only: it reads the save and the existing Elo functions (elo.ts); nothing here changes a rule or a number.
 
 import type { LadderClub } from '../meta/club.ts';
-import { expectedScore, kFactor } from '../meta/elo.ts';
+import { eloDelta } from '../meta/elo.ts';
 import { ladderTable, type Save } from '../meta/game.ts';
 import { isUnlocked } from '../meta/levels.ts';
 import { esc } from './ui.ts';
@@ -32,22 +32,29 @@ export interface Stakes {
   derby: boolean;
 }
 
-/** The Elo a win or defeat is worth (the ladder's own sum) and where it would put you. */
+/** The Elo a one-goal win or defeat is worth (the ladder's own sum: a wider margin moves more) and where it would put you. */
 export function stakesVs(s: Save, opp: LadderClub): Stakes {
-  const e = expectedScore(s.club.elo, opp.elo);
-  const k = kFactor(s.club.played);
-  const gain = Math.round(k * (1 - e));
-  const cost = Math.round(k * e);
+  const me = s.club;
+  const gain = eloDelta(me.elo, opp.elo, 1, 0, me.played);
+  const cost = -eloDelta(me.elo, opp.elo, 0, 1, me.played);
   if (!isUnlocked(s, 'ladder')) return { gain, cost, derby: false };
   const table = ladderTable(s);
   const others = table.filter((r) => !r.you);
-  const at = (elo: number) => 1 + others.filter((r) => r.elo >= elo).length;
+  // The opponent's Elo moves too (applyResult), so rank against where it would land.
+  const at = (elo: number, oppElo: number) => 1 + others.filter((r) => (r.name === opp.name ? oppElo : r.elo) >= elo).length;
   const rankNow = table.findIndex((r) => r.you) + 1;
   const oppRank = table.findIndex((r) => r.name === opp.name) + 1;
-  return { gain, cost, rankNow, rankWin: at(s.club.elo + gain), rankLose: at(s.club.elo - cost), derby: oppRank > 0 && Math.abs(oppRank - rankNow) <= DERBY_PLACES };
+  return {
+    gain,
+    cost,
+    rankNow,
+    rankWin: at(me.elo + gain, opp.elo + eloDelta(opp.elo, me.elo, 0, 1, opp.played)),
+    rankLose: at(me.elo - cost, opp.elo + eloDelta(opp.elo, me.elo, 1, 0, opp.played)),
+    derby: oppRank > 0 && Math.abs(oppRank - rankNow) <= DERBY_PLACES,
+  };
 }
 
-/** "Win: +18 Elo, up to #22" for a line of text; the ladder part only when it is open. */
+/** "Win: +18 Elo, up to #22" for a line of text (a one-goal win; the ladder part only when it is open). */
 export function winText(st: Stakes): string {
   const up = st.rankNow && st.rankWin && st.rankWin < st.rankNow ? `, up to #${st.rankWin}` : '';
   return `Win: +${st.gain} Elo${up}`;
