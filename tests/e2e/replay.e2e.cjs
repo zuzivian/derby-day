@@ -306,3 +306,59 @@ test('replay: the viewer and the Recent list fit a 390 px phone, light and dark'
     await page.keyboard.press('Escape');
   }
 });
+
+test('replay: clip chips and goal markers jump to the moments, the camera switches, and the slider is named', async (t) => {
+  const page = await openApp(t, { width: 1280, height: 800 });
+  await storeReplay(page, goalCode());
+  await page.locator('.rp-row [data-replay="watch"]').click();
+  await page.locator(VIEWER).waitFor();
+
+  // One chip per goal plus the whole match; the current one is pressed.
+  const chips = page.locator('[data-rp="clip"]');
+  const goals = (await chips.count()) - 1;
+  expect(goals, 'a chip per goal and one for the match').toBeGreaterThanOrEqual(2);
+  expect(await chips.first().getAttribute('aria-pressed'), 'first goal is current').toBe('true');
+  expect(await page.locator('#rv-scrub').getAttribute('aria-label'), 'slider says what it scrubs').toMatch(/^Position in Goal 1 of/);
+  expect(await page.locator('#rv-tag').innerText(), 'the picture says which clip it is').toMatch(/Goal 1\//i);
+
+  // A goal clip has its goal marked; the whole match marks every goal.
+  expect(await page.locator('.rp-mark').count(), 'one marker in a goal clip').toBe(1);
+  await chips.last().click();
+  expect(await title(page), 'chip opens the whole match').toMatch(/WHOLE MATCH/i);
+  expect(await chips.last().getAttribute('aria-pressed')).toBe('true');
+  expect(await page.locator('.rp-mark').count(), 'every goal is marked on the whole match').toBe(goals);
+  await page.keyboard.press('Space'); // pause so the position is exact
+  await page.locator('.rp-mark').nth(1).click();
+  const at = await scrubValue(page);
+  const want = await page.locator('.rp-mark').nth(1).getAttribute('data-tick');
+  expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
+  expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
+
+  // Camera: the V key and the button switch the side and end views (3D only).
+  const cam = page.locator('[data-rp="cam"]');
+  if (await cam.isVisible()) {
+    expect(await cam.innerText()).toBe('Cam: Side');
+    await page.keyboard.press('v');
+    expect(await cam.innerText(), 'V switches the camera').toBe('Cam: End');
+    await cam.click();
+    expect(await cam.innerText(), 'the button switches it back').toBe('Cam: Side');
+  }
+  await page.keyboard.press('Escape');
+});
+
+test('replay: on a phone held sideways the picture is large and the controls sit beside it', async (t) => {
+  const page = await openApp(t, { width: 844, height: 390 });
+  await storeReplay(page, goalCode());
+  await page.locator('.rp-row [data-replay="watch"]').click();
+  await page.locator(VIEWER).waitFor();
+  const canvas = await page.locator('#rv-canvas').boundingBox();
+  expect(canvas.height, 'the picture is not a postage stamp').toBeGreaterThan(250);
+  const card = await page.locator('.replay-card').boundingBox();
+  expect(card.y + card.height, 'card fits the screen height').toBeLessThanOrEqual(390.5);
+  for (const rp of ['prev', 'play', 'next', 'slow', 'close']) {
+    const b = await page.locator(`[data-rp="${rp}"]`).boundingBox();
+    expect(b.y + b.height, `${rp} on screen`).toBeLessThanOrEqual(390.5);
+    expect(b.x, `${rp} right of the picture`).toBeGreaterThan(canvas.x + canvas.width - 2);
+  }
+  await page.keyboard.press('Escape');
+});
