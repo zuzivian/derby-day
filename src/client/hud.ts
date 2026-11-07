@@ -63,7 +63,7 @@ export function hudMarkup(o: HudOptions): string {
       </div>
       <div class="banner hud-word" id="banner" hidden></div>
       <canvas class="hud-radar" aria-hidden="true" style="aspect-ratio: ${PITCH_W} / ${PITCH_H}"></canvas>
-      <div class="hud-me" aria-hidden="true" hidden><span class="hud-me-no"></span><span class="hud-me-name"></span><span class="hud-me-legs"><i></i></span></div>
+      <div class="hud-me" aria-hidden="true" hidden><span class="hud-me-no"></span><span class="hud-me-name"></span><span class="hud-me-legs"><i></i></span><em class="hud-me-st"></em></div>
       <div class="hud-power" aria-hidden="true"><span class="hud-power-label"></span><i></i><b style="left:${SWEET_SPOT * 100}%"></b></div>
       <div class="hud-hold" hidden></div>
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
@@ -170,6 +170,11 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   const meNo = q('.hud-me-no');
   const meName = q('.hud-me-name');
   const meLegs = q('.hud-me-legs');
+  const meSt = q('.hud-me-st');
+  // Touch pads say what the next press does: off the ball Pass switches to the nearest man and Shoot tackles.
+  const padP = wrap.querySelector<HTMLElement>('#pad-pass');
+  const padS = wrap.querySelector<HTMLElement>('#pad-shoot');
+  let lastPad = '';
   const meFill = meLegs.querySelector('i') as HTMLElement;
   let lastMe = '';
   // The human's keeper with the ball in his hands: seconds left to play it (Law 12), src/sim/human.ts.
@@ -249,10 +254,18 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       }
       ctx.fill();
       ctx.stroke();
+      if (ctrl) {
+        // Your man: a bright ring round his dot, so he stands out among the other dots at 72 px.
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = (1.2 * dpr) / k;
+        ctx.beginPath();
+        ctx.arc(p.pos.x, p.pos.y, dot * 2.1, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = '#ffd60a';
     ctx.beginPath();
-    ctx.arc(s.ball.pos.x, s.ball.pos.y, dot * 0.7, 0, Math.PI * 2);
+    ctx.arc(s.ball.pos.x, s.ball.pos.y, dot * 0.8, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -261,7 +274,8 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
     const p = team === null ? undefined : s.players[s.controlled[team]];
     // Energy in 5% steps, so the DOM changes a few times a minute, not every frame.
     const legs = p ? Math.round(p.energy * 20) * 5 : 0;
-    const key = p && !p.sentOff ? `${p.i}|${legs}|${p.winded}` : '';
+    const st = p?.winded ? 'Tired' : p?.sprinting ? 'Sprint' : '';
+    const key = p && !p.sentOff ? `${p.i}|${legs}|${p.winded}|${st}` : '';
     if (key === lastMe) return;
     lastMe = key;
     me.hidden = !key;
@@ -273,6 +287,17 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
     meFill.style.width = `${legs}%`;
     meLegs.classList.toggle('low', legs <= 35);
     me.classList.toggle('winded', p.winded);
+    meSt.textContent = st;
+    meSt.hidden = !st;
+  }
+
+  function drawPads(s: MatchState) {
+    if (!padP || !padS) return;
+    const team: 0 | 1 | null = s.humans[0] && !s.humans[1] ? 0 : s.humans[1] && !s.humans[0] ? 1 : null;
+    const off = team !== null && s.phase === 'play' && s.ball.owner !== s.controlled[team];
+    if (String(off) === lastPad) return;
+    lastPad = String(off);
+    for (const [b, a, z] of [[padP, 'Pass', 'Switch'], [padS, 'Shoot', 'Tackle']] as const) { b.textContent = off ? z : a; b.setAttribute('aria-label', off ? z : a); }
   }
 
   const hud: Hud = {
@@ -320,6 +345,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
         hold.classList.toggle('hot', left !== null && left <= 2);
       }
       drawMe(s);
+      drawPads(s);
       drawRadar(s);
       const fk = freeKickKind(s);
       if (fk !== lastFk) {
