@@ -37,7 +37,7 @@
 .rp-scrub input[type="range"] { width: 100%; margin: 0; height: 28px; accent-color: var(--accent); cursor: pointer; touch-action: pan-y; }
 /* Goal markers under the track: a pip over a 36 px-tall hit area, lined up with the thumb. */
 .rp-marks { position: relative; height: 12px; margin-top: -4px; }
-.rp-mark { position: absolute; top: -10px; left: calc(8px + (100% - 16px) * var(--p) / 100%); width: 32px; height: 36px; margin-left: -16px; padding: 0; border: 0; background: none; cursor: pointer; }
+.rp-mark { position: absolute; top: -10px; left: calc(8px + (100% - 16px) * var(--p)); width: 32px; height: 36px; margin-left: -16px; padding: 0; border: 0; background: none; cursor: pointer; }
 .rp-mark::before { content: ''; position: absolute; left: 50%; top: 10px; margin-left: -7px; border: 7px solid transparent; border-top: 0; border-bottom: 11px solid var(--muted); }
 .rp-mark.us::before { border-bottom-color: var(--accent); }
 .rp-mark:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; border-radius: 8px; }

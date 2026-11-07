@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { MIX, busOf, crowdNoise, crowdTarget, kickVoice, softClip, uiNotes, crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
+import { SoundEngine, MIX, busOf, crowdNoise, crowdTarget, kickVoice, softClip, uiNotes, crowdLevel, detectSfx, goalMood, resultMood, tension, initialSnapshot, snapshot, stingerLength, stingerNotes, type SfxEvent } from '../src/client/audio.ts';
 import { generateLadder, autoLineup, ladderSquad, toTeamSetup } from '../src/meta/club.ts';
 import { GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, STAND_CD } from '../src/sim/constants.ts';
 import { createMatch, step } from '../src/sim/match.ts';
@@ -388,5 +388,30 @@ describe('mix and envelopes', () => {
     const down = uiNotes('off');
     expect(up[1].f).toBeGreaterThan(up[0].f);
     expect(down[1].f).toBeLessThan(down[0].f);
+  });
+});
+
+describe('SoundEngine ui gating', () => {
+  const peek = (e: SoundEngine) => e as unknown as { held: boolean; lastPlayed: Map<string, number> };
+
+  test('a paused match is silent, and leaving it (stopCrowd) lets the menus sound again', () => {
+    const e = new SoundEngine();
+    e.suspend();
+    e.ui('press');
+    expect(peek(e).lastPlayed.size).toBe(0);
+    e.stopCrowd();
+    expect(peek(e).held).toBe(false);
+    e.ui('press');
+    expect(peek(e).lastPlayed.has('ui:press')).toBe(true);
+  });
+
+  test('the 50 ms ui throttle is per kind: a toast cue in the same gesture as a press is not dropped', () => {
+    const e = new SoundEngine();
+    e.ui('press');
+    e.ui('ok');
+    expect([...peek(e).lastPlayed.keys()].sort()).toEqual(['ui:ok', 'ui:press']);
+    const t = peek(e).lastPlayed.get('ui:ok');
+    e.ui('ok'); // same kind inside the window: throttled
+    expect(peek(e).lastPlayed.get('ui:ok')).toBe(t);
   });
 });

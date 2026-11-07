@@ -333,6 +333,15 @@ test('replay: clip chips and goal markers jump to the moments, the camera switch
   const want = await page.locator('.rp-mark').nth(1).getAttribute('data-tick');
   expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
   expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
+  // Pips are placed with a unitless fraction (typed calc() arithmetic is not portable): later goals sit further right, none at 0:00.
+  const ps = await page.locator('.rp-mark').evaluateAll((els) => els.map((e) => e.getAttribute('style')));
+  expect(ps.every((x) => /--p:\s*0?\.\d+(;|$)|--p:\s*1(\.0+)?(;|$)/.test(x)), 'pip --p is a bare fraction').toBe(true);
+  const lefts = await page.locator('.rp-mark').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().left));
+  expect(lefts[1], 'later goals sit further right').toBeGreaterThan(lefts[0]);
+  // Changing clip with a pip focused keeps focus on the timeline.
+  await page.locator('.rp-mark').nth(1).focus();
+  await page.keyboard.press('PageUp');
+  expect(await page.evaluate(() => !!document.activeElement && document.activeElement !== document.body && !!document.activeElement.closest('.rp-scrub')), 'focus stays on the timeline after a clip change').toBe(true);
 
   // Camera: the V key and the button switch the side and end views (3D only).
   const cam = page.locator('[data-rp="cam"]');

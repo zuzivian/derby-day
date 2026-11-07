@@ -1462,7 +1462,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 
 @media (max-width: 960px) {
-  .mode-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .mode-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: dense; } /* dense: a half card moves up beside a lone due card, so no cell is left empty */
   /* Stacked, the waiting fixtures come straight after Kick off, and a lone last card fills the row. */
   .mode-card.due { order: -1; }
   .mode-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }

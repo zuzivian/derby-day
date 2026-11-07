@@ -514,8 +514,9 @@ export class SoundEngine {
   ui(kind: UiKind): void {
     if (this._muted || this._volume <= 0 || this.held) return;
     const now = performance.now();
-    if (now - (this.lastPlayed.get('ui') ?? -1e9) < 50) return;
-    this.lastPlayed.set('ui', now);
+    const key = `ui:${kind}`;
+    if (now - (this.lastPlayed.get(key) ?? -1e9) < 50) return;
+    this.lastPlayed.set(key, now);
     if (kind === 'press' || kind === 'on') this.unlock();
     const r = this.ready('ui');
     // Awake, or woken by this very gesture (a toast right after a click); a sleeping context stays asleep.
@@ -664,6 +665,7 @@ export class SoundEngine {
   }
 
   stopCrowd(): void {
+    this.held = false; // the match is over (a paused one leaves through here): the menus may sound again
     if (this.watchdog) clearInterval(this.watchdog);
     this.watchdog = null;
     const src = this.crowdSrc;

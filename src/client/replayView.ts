@@ -379,6 +379,22 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     dirty = true;
   }
 
+  /**
+   * Seek (scrub or goal pip). While the background pass is still filling keyframes, a seek past it would simulate
+   * the whole gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
+   */
+  function seekClamped(want: number, play?: boolean) {
+    const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
+    if (want > ready) {
+      want = ready;
+      status.textContent = 'Still loading the rest of the match…';
+    }
+    seeker.seek(want);
+    acc = 0;
+    if (play !== false) playing = motionOk;
+    sync();
+  }
+
   function setClip(i: number, autoplay: boolean) {
     idx = (i + clips.length) % clips.length;
     clip = clips[idx];
@@ -389,11 +405,15 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     q('#rv-title').textContent = label();
     q('#rv-tag').textContent = clip.goal ? `Replay · Goal ${clip.n}/${replay.goals.length}` : 'Replay · Full match';
     // Goal markers on the timeline: tap one to jump to the build-up to that goal.
-    q('#rv-marks').innerHTML = replay.goals
+    const marks = q('#rv-marks');
+    const hadFocus = marks.contains(document.activeElement);
+    marks.innerHTML = replay.goals
       .map((x, i) => [x, i] as const)
       .filter(([x]) => x.tick >= clip.start && x.tick <= clip.end)
-      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((100 * (x.tick - clip.start)) / len()).toFixed(2)}%" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'"></button>`)
+      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((x.tick - clip.start) / len()).toFixed(4)}" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'"></button>`)
       .join('');
+    // A rebuild drops focus to the body: keep it on the timeline (the new clip's first goal pip, else the scrub).
+    if (hadFocus) (marks.querySelector<HTMLElement>('.rp-mark') ?? scrub).focus();
     el.querySelectorAll<HTMLElement>('[data-rp="clip"]').forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.i) === idx)));
     const g = clip.goal;
     q('#rv-sub').textContent = g
@@ -484,8 +504,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         break;
       case 'mark':
         // Two seconds of build-up before the goal, then play (unless reduced motion).
-        seeker.seek(Math.max(clip.start, Number(b.dataset.tick) - 120));
-        acc = 0;
+        seekClamped(Math.max(clip.start, Number(b.dataset.tick) - 120));
         playing = motionOk;
         sync();
         break;
@@ -494,20 +513,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
         break;
     }
   });
-  scrub.addEventListener('input', () => {
-    // While the background pass is still filling keyframes, a scrub past it would simulate the whole
-    // gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
-    let want = clip.start + Number(scrub.value);
-    const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
-    if (want > ready) {
-      want = ready;
-      scrub.value = String(Math.max(0, want - clip.start));
-      status.textContent = 'Still loading the rest of the match…';
-    }
-    seeker.seek(want);
-    acc = 0;
-    sync();
-  });
+  scrub.addEventListener('input', () => seekClamped(clip.start + Number(scrub.value), false));
 
   const ro = new ResizeObserver(() => {
     renderer?.resize();
