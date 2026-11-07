@@ -158,6 +158,8 @@ function render() {
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   beforeRender(root);
+  // A training gain badge belongs to the visit it happened in: entering any screen clears it.
+  if (root.dataset.shown !== app.screen) app.gain = null;
   root.innerHTML = shell(app, screens[app.screen](app));
   // The same dialog as before this render: no second entrance (styles.css .modal.seen).
   if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');

@@ -313,7 +313,8 @@ const chip = (p: Player, cls = ''): string => `<span class="pchip ${cls}"><span 
 function goalsOf(s: Save, p: Player): number | null {
   const n = shortName(p) + ' ';
   if (s.squad.some((x) => x !== p && shortName(x) === shortName(p))) return null;
-  return s.history.reduce((a, m) => a + m.scorers.filter((x) => x.startsWith(n)).length, 0);
+  // " (OG)" lines are the other side's own goals, credited to us: never one of ours, whatever the name.
+  return s.history.reduce((a, m) => a + m.scorers.filter((x) => x.startsWith(n) && !x.includes(' (OG)')).length, 0);
 }
 
 /** Potential against current, the best-suited role, strengths and recorded goals; prose first so the visual is a bonus. */
@@ -321,7 +322,7 @@ function profileInfo(s: Save, p: Player): string {
   const ovr = overall(p);
   const v = scoutedPotential(p);
   const gap = v.lo - ovr;
-  const roles = (['GK', 'DEF', 'MID', 'FWD'] as Role[]).map((r) => [r, ratingAs(p, r)] as const).sort((a, b) => b[1] - a[1]);
+  const roles = (['GK', 'DEF', 'MID', 'FWD'] as Role[]).map((r) => [r, ratingAs(p, r)] as const).sort((a, b) => b[1] - a[1] || Number(b[0] === p.role) - Number(a[0] === p.role)); // a tie keeps his listed role first
   const keys = ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').sort((a, b) => p.attrs[b] - p.attrs[a]);
   const hi = keys[0], lo = keys[keys.length - 1];
   const g = goalsOf(s, p);
@@ -468,7 +469,7 @@ export function trainingScreen(app: App): string {
       </div>
       <div class="prof-info">${profileInfo(s, p)}</div>
       ${(() => {
-        const r = trainingRange(p, 'pace');
+        const r = trainingRange(p, ATTR_KEYS.find((k) => p.attrs[k] < 99) ?? 'pace'); // the same for every attribute below the cap (maxed ones say Max)
         const say = !s.trainingPoints ? 'No sessions left. Play a match to earn more.'
           : r.odds < 1 ? `At potential: a session adds +1 about ${Math.round(r.odds * 100)}% of the time, otherwise nothing.`
           : `One session adds ${r.lo === r.hi ? '+' + r.hi : `${r.lo} to +${r.hi}`} to the attribute you pick.`;
