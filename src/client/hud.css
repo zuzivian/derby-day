@@ -1,19 +1,19 @@
 /* In-match HUD over the pitch (src/client/hud.ts) and the 3D view's controls. */
 /* 140 px: the page's top padding, the pitch and the one-line controls hint fit a 1280x800 window without scrolling. */
 .match .pitch-wrap { width: min(100%, calc((100vh - 140px) * 1.531)); width: min(100%, calc((100dvh - 140px) * 1.531)); }
-.hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--font-display, 'Arial Narrow', sans-serif); border-radius: 10px; overflow: hidden; }
+.hud { position: absolute; inset: 0; pointer-events: none; color: #fff; font-family: var(--font-display); border-radius: var(--r-md); overflow: hidden; }
 .hud button { pointer-events: auto; }
 
 .hud-tl { position: absolute; left: 10px; top: 10px; display: flex; gap: 8px; align-items: flex-start; }
 .hud-crests { display: flex; gap: 4px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
 .hud-club { display: flex; flex-direction: column; align-items: center; gap: 1px; color: #fff; }
 .hud-club .crest { color: #fff; display: block; }
-.hud-club b { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-shadow: 0 1px 2px #000; background: rgba(8, 12, 11, .66); border-radius: 3px; padding: 0 4px; }
+.hud-club b { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .06em; text-shadow: 0 1px 2px #000; background: rgba(8, 12, 11, .66); border-radius: 3px; padding: 0 4px; }
 /* The KICK-OFF label (fx.ts): above the radar, on a dark plate so it reads on any grass. */
-.pitch-wrap .juice-label { bottom: auto; top: 26%; color: #fff; background: rgba(8, 12, 11, .66); border-radius: 4px; padding: 4px 14px; }
+.pitch-wrap .juice-label { bottom: auto; top: 26%; color: #fff; background: rgba(8, 12, 11, .66); border-radius: var(--r-xs); padding: 4px 14px; }
 .hud-bars { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .hud-bar {
-  display: flex; align-items: center; gap: 10px; background: rgba(8, 12, 11, .66); border-radius: 4px; padding: 3px 10px;
+  display: flex; align-items: center; gap: 10px; background: rgba(8, 12, 11, .66); border-radius: var(--r-xs); padding: 3px 10px;
   font-weight: 800; font-size: 21px; line-height: 1.15; letter-spacing: .05em; white-space: nowrap; box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset;
 }
 .hud-goals { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; color: #ffd60a; }
@@ -25,22 +25,22 @@
 
 .hud-tr { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .hud-menu, .pitch-cam {
-  appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 4px;
-  background: rgba(8, 12, 11, .66); color: #fff; font: 800 14px/1 var(--font-display, 'Arial Narrow', sans-serif); letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px;
+  appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: var(--r-xs);
+  background: rgba(8, 12, 11, .66); color: #fff; font: 800 14px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px;
 }
 .hud-menu:hover, .pitch-cam:hover { background: rgba(8, 12, 11, .86); }
 .hud-menu kbd {
   font: 700 11px/1 'Barlow', system-ui, sans-serif; letter-spacing: 0; text-transform: none; color: #111; background: #f4f4f4; border-radius: 3px;
   padding: 3px 5px; box-shadow: 0 2px 0 #9aa0a6;
 }
-.pitch-cam { font-size: 11px; padding: 3px 7px; pointer-events: auto; background: rgba(8, 12, 11, .6); color: rgba(255, 255, 255, .92); transition: background .25s, color .25s; }
+.pitch-cam { font-size: var(--fs-2xs); padding: 3px 7px; pointer-events: auto; background: rgba(8, 12, 11, .6); color: rgba(255, 255, 255, .92); transition: background .25s, color .25s; }
 .pitch-cam:hover, .pitch-cam:focus-visible { background: rgba(8, 12, 11, .82); color: #fff; }
 .pitch-cam.flash { background: rgba(8, 12, 11, .86); color: #ffd60a; }
 /* Zoom buttons for touch screens (renderer.ts); a mouse has the wheel and the keyboard + / -. */
 .pitch-zoom { display: none; gap: 4px; pointer-events: auto; }
 .pitch-zoom button {
-  appearance: none; border: 0; border-radius: 4px; width: 32px; height: 32px; background: rgba(8, 12, 11, .6); color: #fff;
-  font: 800 20px/1 var(--font-display, 'Arial Narrow', sans-serif); touch-action: manipulation; cursor: pointer;
+  appearance: none; border: 0; border-radius: var(--r-xs); width: 32px; height: 32px; background: rgba(8, 12, 11, .6); color: #fff;
+  font: 800 20px/1 var(--font-display); touch-action: manipulation; cursor: pointer;
 }
 @media (pointer: coarse) {
   .pitch-zoom { display: flex; }
@@ -49,7 +49,7 @@
 
 .hud .hud-word {
   top: 40%; display: flex; flex-direction: column; align-items: center; gap: 2px; color: #fff; transform: translate(-50%, -50%) skewX(-8deg);
-  font-family: var(--font-display, 'Arial Narrow', sans-serif); font-style: italic; font-weight: 900; font-size: clamp(38px, 9vw, 104px); letter-spacing: .02em; line-height: .95;
+  font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: clamp(38px, 9vw, 104px); letter-spacing: .02em; line-height: .95;
   text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 28px rgba(0, 0, 0, .45); animation: hud-pop .32s ease-out;
 }
 .hud .hud-word.intro { top: 22%; font-size: clamp(24px, 5vw, 56px); }
@@ -82,21 +82,21 @@
   background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); opacity: 0; transition: opacity .15s;
 }
 .hud-power-label {
-  position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 11px/1 var(--font-display, 'Arial Narrow', sans-serif);
+  position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 11px/1 var(--font-display);
   letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000;
 }
 /* Your man: shirt number, name and his legs (energy), above the power bar. */
 .hud-me {
   position: absolute; right: 10px; bottom: 44px; display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto 5px;
-  align-items: center; gap: 3px 7px; width: clamp(130px, 18%, 210px); padding: 5px 9px 6px 5px; border-radius: 4px;
+  align-items: center; gap: 3px 7px; width: clamp(130px, 18%, 210px); padding: 5px 9px 6px 5px; border-radius: var(--r-xs);
   background: rgba(8, 12, 11, .66); color: #fff; pointer-events: none;
 }
 .hud-me[hidden] { display: none; }
 .hud-me-no {
   grid-row: 1 / 3; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  font: 900 14px/1 var(--font-display, 'Arial Narrow', sans-serif); box-shadow: 0 0 0 2px #ff8a1c;
+  font: 900 14px/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
 }
-.hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display, 'Arial Narrow', sans-serif); color: #ffb35c; }
+.hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display); color: #ffb35c; }
 .hud-me-legs { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .18); overflow: hidden; }
 .hud-me-legs i { display: block; height: 100%; width: 100%; background: #5fd08e; transition: width .4s; }
 .hud-me-legs.low i { background: #f0b35a; }
@@ -108,14 +108,14 @@
 .hud-power.hot i { background: linear-gradient(#ff8a6b, #e0402a); }
 .hud-power b { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px #000; }
 .hud-hold {
-  position: absolute; right: 10px; bottom: 34px; background: rgba(8, 12, 11, .72); border-radius: 4px; padding: 3px 9px;
-  font-weight: 800; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; font-variant-numeric: tabular-nums;
+  position: absolute; right: 10px; bottom: 34px; background: rgba(8, 12, 11, .72); border-radius: var(--r-xs); padding: 3px 9px;
+  font-weight: 800; font-size: var(--fs-md); letter-spacing: .08em; text-transform: uppercase; font-variant-numeric: tabular-nums;
 }
 .hud-hold.hot { background: rgba(196, 44, 24, .85); }
 
 .pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 13px/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
 .pause-opt[hidden] { display: none; }
-.pause-opt input { width: 16px; height: 16px; accent-color: var(--accent, #ff8a1c); }
+.pause-opt input { width: 16px; height: 16px; accent-color: var(--accent); }
 .pause-volume input { width: 140px; max-width: 100%; flex: 1 1 100px; min-width: 0; height: 20px; }
 .pause-volume output { min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -130,28 +130,28 @@
 /* A call made while play goes on (Advantage): small, at the top, out of the way. */
 .hud-tag {
   position: absolute; left: 50%; top: 12px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .7); border-radius: 4px; padding: 4px 10px;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .7); border-radius: var(--r-xs); padding: 4px 10px;
 }
-.hud-tag b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
+.hud-tag b { font-family: var(--font-display); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
 /* The kind of free kick being taken: under the call tag, quiet for a direct one, the referee's yellow for an indirect one. */
 .hud-fk {
   position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 12px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: 4px; padding: 3px 9px;
+  font: italic 700 12px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: var(--r-xs); padding: 3px 9px;
 }
-.hud-fk b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+.hud-fk b { font-family: var(--font-display); font-weight: 900; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
 .hud-fk.indirect { background: rgba(8, 12, 11, .78); box-shadow: inset 0 0 0 1.5px #ffd60a; }
 .hud-fk.indirect b { color: #ffd60a; }
-.hud-fk small { font-weight: 600; font-size: 11px; opacity: .85; margin-left: 4px; }
+.hud-fk small { font-weight: 600; font-size: var(--fs-2xs); opacity: .85; margin-left: 4px; }
 .hud-fk[hidden] { display: none; }
 /* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
 .hud-prompt {
   position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: 4px; padding: 4px 10px;
+  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: var(--r-xs); padding: 4px 10px;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
 }
-.hud-prompt b { font-family: var(--font-display, 'Arial Narrow', sans-serif); font-weight: 900; font-size: 15px; letter-spacing: .04em; }
-.hud-prompt small { font-weight: 600; font-size: 11px; opacity: .8; margin-left: 4px; }
+.hud-prompt b { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-md); letter-spacing: .04em; }
+.hud-prompt small { font-weight: 600; font-size: var(--fs-2xs); opacity: .8; margin-left: 4px; }
 .hud-prompt[hidden] { display: none; }
 /* During a replay the radar and clock follow the replay (matchView.ts); the power bar has nothing to show. */
 .hud.replaying .hud-power { visibility: hidden; }
@@ -162,7 +162,7 @@
 .replay-skip { position: absolute; inset: 0; z-index: 3; cursor: pointer; background: transparent; border: 0; padding: 0; pointer-events: auto; }
 .replay-skip:focus-visible { outline: 3px solid #ffd60a; outline-offset: -3px; }
 .pitch-wrap.replaying::after {
-  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 10px;
+  content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: var(--r-md);
   box-shadow: inset 0 0 0 3px rgba(255, 214, 10, .55), inset 0 0 60px rgba(0, 0, 0, .35);
 }
 .pitch-wrap .juice-mute { top: auto; right: auto; left: 10px; bottom: 10px; width: 32px; height: 32px; }
@@ -171,29 +171,29 @@
   .hud-tl { left: 6px; top: 6px; gap: 5px; }
   .hud-tr { right: 6px; top: 6px; gap: 4px; }
   .hud-club .crest { width: 18px; height: 20px; }
-  .hud-club b { font-size: 11px; padding: 0 3px; }
+  .hud-club b { font-size: var(--fs-2xs); padding: 0 3px; }
   .hud-bar { font-size: 14px; gap: 6px; padding: 2px 6px; }
-  .hud-clock { font-size: 12px; }
-  .hud-menu { font-size: 11px; padding: 3px 6px; gap: 4px; }
-  .hud-menu kbd { font-size: 11px; padding: 2px 3px; }
+  .hud-clock { font-size: var(--fs-xs); }
+  .hud-menu { font-size: var(--fs-2xs); padding: 3px 6px; gap: 4px; }
+  .hud-menu kbd { font-size: var(--fs-2xs); padding: 2px 3px; }
   .hud-mode { display: none; }
-  .pitch-cam { font-size: 11px; padding: 3px 5px; }
+  .pitch-cam { font-size: var(--fs-2xs); padding: 3px 5px; }
   .hud-radar { width: 84px; bottom: 5px; }
   .hud-power { width: 70px; height: 10px; bottom: 8px; right: 6px; }
   .hud-me { right: 6px; bottom: 34px; width: 128px; padding: 3px 7px 4px 4px; gap: 2px 6px; grid-template-rows: auto 4px; }
-  .hud-me-no { width: 20px; height: 20px; font-size: 11px; }
-  .hud-me-name { font-size: 12px; }
+  .hud-me-no { width: 20px; height: 20px; font-size: var(--fs-2xs); }
+  .hud-me-name { font-size: var(--fs-xs); }
   .hud-power-label { font-size: 10px; }
-  .hud-hold { right: 6px; bottom: 24px; font-size: 11px; padding: 2px 6px; }
+  .hud-hold { right: 6px; bottom: 24px; font-size: var(--fs-2xs); padding: 2px 6px; }
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
-  .hud-tag { top: 50px; font-size: 11px; padding: 3px 8px; }
-  .hud-fk { top: 78px; font-size: 11px; }
+  .hud-tag { top: 50px; font-size: var(--fs-2xs); padding: 3px 8px; }
+  .hud-fk { top: 78px; font-size: var(--fs-2xs); }
   .hud-fk small { display: none; }
-  .hud-prompt { top: 78px; font-size: 11px; padding: 3px 8px; }
-  .hud-prompt b { font-size: 13px; }
-  .hud-tag b { font-size: 13px; }
-  .hud-replay small { font-size: 11px; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hud-prompt { top: 78px; font-size: var(--fs-2xs); padding: 3px 8px; }
+  .hud-prompt b { font-size: var(--fs-sm); }
+  .hud-tag b { font-size: var(--fs-sm); }
+  .hud-replay small { font-size: var(--fs-2xs); max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
 }
 @media (max-width: 640px) and (orientation: portrait) {
@@ -221,7 +221,7 @@
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
   position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font: italic 800 12px/1 var(--font-display, 'Arial Narrow', sans-serif); color: var(--c, #ff8a1c); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; z-index: 1;
+  font: italic 800 12px/1 var(--font-display); color: var(--c, #ff8a1c); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; z-index: 1;
 }
 .edge-mark i {
   width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 16px solid var(--c, #ff8a1c);
@@ -296,10 +296,10 @@
 .rp-stage { position: relative; width: min(100%, calc((100vh - 300px) * 1.531)); width: min(100%, calc((100dvh - 300px) * 1.531)); margin: 0 auto; }
 .rp-stage .replay-canvas { width: 100%; }
 .rp-tag, .rp-word {
-  position: absolute; pointer-events: none; color: #fff; font-family: var(--font-display, 'Arial Narrow', sans-serif); font-style: italic; font-weight: 900;
+  position: absolute; pointer-events: none; color: #fff; font-family: var(--font-display); font-style: italic; font-weight: 900;
   text-transform: uppercase; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45);
 }
-.rp-tag { left: 12px; top: 8px; font-size: 20px; letter-spacing: .06em; }
+.rp-tag { left: 12px; top: 8px; font-size: var(--fs-xl); letter-spacing: .06em; }
 .rp-word { left: 50%; top: 42%; transform: translate(-50%, -50%) skewX(-8deg); font-size: clamp(36px, 8vw, 92px); animation: hud-pop .32s ease-out; }
 @media (max-width: 640px) {
   .rp-stage { width: 100%; }
@@ -310,8 +310,8 @@
 }
 /* A lost WebGL context (gfxloss.ts): a calm note over the blank pitch, in a match or the replay viewer. */
 .pitch-wrap .gfx-note, .rp-stage .gfx-note {
-  position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; pointer-events: none; border-radius: 10px;
-  background: rgba(8, 12, 11, .72); color: #fff; font: 800 18px/1.2 var(--font-display, 'Arial Narrow', sans-serif); letter-spacing: .06em; text-transform: uppercase;
+  position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; pointer-events: none; border-radius: var(--r-md);
+  background: rgba(8, 12, 11, .72); color: #fff; font: 800 18px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase;
 }
 .pitch-wrap .gfx-note[hidden], .rp-stage .gfx-note[hidden] { display: none; }
 
