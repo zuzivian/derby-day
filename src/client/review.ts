@@ -10,9 +10,8 @@ import { potentialText, scoutedPotential, SCOUT_MATCHES, signProspect, starText,
 import { divisionName, playerDivision } from '../meta/world.ts';
 import { confettiHtml } from './confetti.ts';
 import type { App } from './ui.ts';
+import { esc } from './html.ts';
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 
 function stars(n: number): string {

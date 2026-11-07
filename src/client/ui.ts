@@ -23,6 +23,8 @@ import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpC
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
+import { esc } from './html.ts';
+export { esc };
 
 /** 'home' is the first view (kick off, play modes); 'club' holds the secondary content (news, replays, club level, tutorial, reset). */
 export type Screen = 'home' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions' | 'club';
@@ -73,9 +75,6 @@ export interface App {
   prefs: Prefs;
   result: ResultView | null;
 }
-
-export const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
 const TAB_UNLOCK: Record<Screen, UnlockId[]> = {

@@ -33,6 +33,7 @@ import {
 import type { CrestPattern } from '../meta/names.ts';
 import { crestSvg } from './crest.ts';
 import { getSound } from './audio.ts';
+import { esc } from './html.ts';
 
 export interface ShootoutClub {
   name: string;
@@ -61,8 +62,6 @@ export interface ShootoutViewOptions {
   onEnd: (r: ShootoutResult) => void;
 }
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const reducedMotion = (): boolean => {
   try {

@@ -9,8 +9,8 @@ import type { Save } from '../meta/game.ts';
 import { showToast } from './a11y.ts';
 import { expectRestore } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
+import { esc } from './html.ts';
 
-const esc = (t: string | number): string => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 export interface SettingsHooks {
   getSave: () => Save;
