@@ -555,7 +555,7 @@ export function applyResult(
 function matchNews(opp: string, gf: number, ga: number, scorers: string[], where: string, delta: number | null, firstWin: boolean): string {
   const d = gf - ga;
   const score = `${gf}–${ga}`;
-  const head = d >= 3 ? `Thrashed ${opp} ${score}` : d > 0 ? (d === 1 ? `Edged ${opp} ${score}` : `Beat ${opp} ${score}`) : d === 0 ? (gf ? `Shared the points with ${opp}, ${score}` : `Goalless against ${opp}`) : d === -1 ? `Beaten by ${opp}, ${score}` : `Lost to ${opp} ${score}`;
+  const head = d >= 3 ? `Thrashed ${opp} ${score}` : d > 0 ? (d === 1 ? `Edged ${opp} ${score}` : `Beat ${opp} ${score}`) : d === 0 ? (gf ? (/^the ranked|^League/.test(where) ? `Shared the points with ${opp}, ${score}` : `Drew with ${opp} ${score}`) : `Goalless against ${opp}`) : d === -1 ? `Beaten by ${opp}, ${score}` : `Lost to ${opp} ${score}`;
   const goals = scorers.length ? ` ${scorers.slice(0, 3).join(', ')}${scorers.length > 3 ? ` and ${scorers.length - 3} more` : ''}.` : '';
   return `${head} in ${where}.${goals}${delta === null ? '' : ` Elo ${signed(delta)}.`}${firstWin ? ' First ranked win!' : ''}`;
 }

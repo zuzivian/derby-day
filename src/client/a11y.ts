@@ -198,7 +198,7 @@ export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?:
 // ---------------------------------------------------------------------------
 // Dialogs
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), details > summary:first-of-type';
 
 /** Keep Tab and Shift+Tab inside `box`. Call from a keydown handler. */
 export function trapTab(box: HTMLElement, e: KeyboardEvent): void {

@@ -178,7 +178,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           ${me !== null ? quickTacticsMarkup(s.teams[me].mentality) : ''}
           <label class="pause-opt"><input type="checkbox" id="opt-replays"> Instant replays of goals and big chances</label>
           <label class="pause-opt pause-volume">Sound <input type="range" id="opt-volume" min="0" max="100" step="5" aria-label="Sound volume"><output id="opt-volume-out" for="opt-volume"></output></label>
-          ${controlsHelp('help-match')}
+          ${me !== null ? controlsHelp('help-match') : ''}
           <p class="hint">Esc or P pauses.<span id="zoom-hint"> Mouse wheel or + / − zooms the camera.</span></p>
         </div>
       </div>
@@ -662,8 +662,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
     // never the replayed one.
-    coach?.setPaused(paused || !!replay);
-    if (!replay) coach?.update(s, paused ? 0 : elapsed * 1000);
+    // (Also while a goal, card or half-time word is up: coach.css hides the tip then, so it must not age or be replaced unseen.)
+    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden])');
+    coach?.setPaused(paused || !!replay || wordUp);
+    if (!replay) coach?.update(s, paused || wordUp ? 0 : elapsed * 1000);
 
     setText(sbH, String(s.score[0]));
     setText(sbA, String(s.score[1]));
