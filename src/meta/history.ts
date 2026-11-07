@@ -58,7 +58,7 @@ export interface SeasonSummary {
 
 export const emptyRecords = (): ClubRecords => ({ played: 0, won: 0, drawn: 0, lost: 0, gf: 0, ga: 0, unbeatenRun: 0, winRun: 0 });
 
-const competitive = (m: MatchRecord): boolean => m.ranked || (!!m.competition && !m.competition.startsWith('Warm-up'));
+export const competitive = (m: MatchRecord): boolean => m.ranked || (!!m.competition && !m.competition.startsWith('Warm-up'));
 
 function describe(m: MatchRecord): string {
   return `${m.goalsFor}–${m.goalsAgainst} v ${m.opponent} (${m.ranked ? 'Ranked' : m.competition})`;

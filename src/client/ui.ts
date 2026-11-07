@@ -1,5 +1,6 @@
 // HTML templates for the management screens. Pure functions of app state.
 
+import { competitive } from '../meta/history.ts';
 import { formationOf, type Role } from '../sim/constants.ts';
 import { tacticsPanel } from './tactics.ts';
 import { autoLineup, teamStrength, type LadderClub } from '../meta/club.ts';
@@ -454,7 +455,7 @@ function ladderDivision(s: Save, rows: ReturnType<typeof ladderTable>): string {
 
 /** The last `n` rated results (ranked, cup, league) as W/D/L tiles, newest first, with one sentence for screen readers. */
 export function formPips(s: Save, n = 5): string {
-  const last = s.history.filter((m) => m.ranked || m.competition).slice(-n).reverse();
+  const last = s.history.filter(competitive).slice(-n).reverse();
   if (!last.length) return '';
   const r = (m: Save['history'][number]) => (m.goalsFor > m.goalsAgainst ? 'W' : m.goalsFor === m.goalsAgainst ? 'D' : 'L');
   const word = { W: 'won', D: 'drew', L: 'lost' };
@@ -468,7 +469,7 @@ function ladderStory(s: Save, rows: ReturnType<typeof ladderTable>): string {
   if (!s.club.played) return emptyState(`You start at #${at + 1} on ${me.elo} Elo. Play a ranked match from Home to start climbing.`, EMPTY_ICON.play);
   const up = rows[at - 1];
   const gap = up ? `<b>${up.elo - me.elo + 1} Elo</b> to pass ${esc(up.name)} (#${at})` : '<b>Top of the ladder.</b> Hold it';
-  const rated = [...s.history].reverse().find((m) => m.ranked || m.competition);
+  const rated = [...s.history].reverse().find(competitive);
   const d = rated ? rated.eloAfter - rated.eloBefore : 0;
   const move = rated && d ? ` <span class="ladder-move ${d > 0 ? 'up' : 'down'}"><span aria-hidden="true">${d > 0 ? '▲' : '▼'}</span> ${esc(signed(d))} last match</span>` : '';
   return `<div class="ladder-story"><span class="ladder-rank">#${at + 1}<span class="sr-only"> of ${rows.length}</span></span><span class="ladder-line">${gap}.${move}</span>${formPips(s)}</div>`;
