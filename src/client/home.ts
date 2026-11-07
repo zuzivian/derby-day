@@ -88,6 +88,15 @@ function formChips(s: Save): string {
     .join('')}${streakText ? `<span class="form-streak" aria-hidden="true">${streakText}</span>` : ''}</div>`;
 }
 
+/** The last ten results as a record ("6W 2D 2L"), once there are more matches than the five chips show. */
+function formRecord(s: Save): string {
+  const last = s.history.slice(-10);
+  if (last.length < 6) return '';
+  const w = last.filter((m) => m.goalsFor > m.goalsAgainst).length;
+  const l = last.filter((m) => m.goalsFor < m.goalsAgainst).length;
+  return `<div class="form-record" title="Last ${last.length} matches"><span class="sr-only">Last ${last.length} matches: </span>${w}W ${last.length - w - l}D ${l}L</div>`;
+}
+
 /** A small Elo sparkline, only once there is some history to draw. */
 function miniSpark(values: number[]): string {
   if (values.length < 2) return '';
@@ -151,7 +160,7 @@ function hero(app: App): string {
         ${crestSvg(c, 84)}
         <div class="hero-name">${esc(c.name)}</div>
         <div class="hero-elo"><span title="Elo rating">Elo <b>${c.elo}</b></span>${miniSpark(s.eloHistory)}</div>
-        ${formChips(s)}
+        ${formChips(s)}${formRecord(s)}
       </div>
       <div class="hero-mid">
         ${gaugeOn ? `${gauge(pct)}
@@ -233,7 +242,7 @@ function cupCard(s: Save): string {
     ? `<button class="mode-btn primary" data-action="comp-play" data-kind="cup">${ICON.arrow}<span>Play ${esc(CUP_ROUNDS[cup!.round].toLowerCase())}</span></button>`
     : `<button class="mode-btn" data-action="go" data-screen="competitions" aria-label="${cup ? 'Open the cup' : 'Enter the cup'}">${ICON.arrow}<span>${cup ? 'Open' : 'Enter'}</span></button>`;
   return `
-  <article class="mode-card" data-mode="cup" aria-labelledby="mode-cup">
+  <article class="mode-card${opp ? ' due' : ''}" data-mode="cup" aria-labelledby="mode-cup">
     <div class="mode-top"><span class="mode-icon">${ICON.cup}</span><div><h3 id="mode-cup" class="mode-title">Cup</h3><p class="mode-sub">${opp ? `vs ${esc(opp.short)}` : 'Knockout · 8 clubs'}</p></div></div>
     <div class="mode-actions">${action}</div>
   </article>`;
@@ -247,7 +256,7 @@ function leagueCard(s: Save): string {
     ? `<button class="mode-btn primary" data-action="comp-play" data-kind="season">${ICON.arrow}<span>Play matchday ${season!.matchday + 1}</span></button>`
     : `<button class="mode-btn" data-action="go" data-screen="competitions" aria-label="${season ? 'Open the league' : 'Start a league season'}">${ICON.arrow}<span>${season ? 'Open' : 'Start'}</span></button>`;
   return `
-  <article class="mode-card" data-mode="league" aria-labelledby="mode-league">
+  <article class="mode-card${opp ? ' due' : ''}" data-mode="league" aria-labelledby="mode-league">
     <div class="mode-top"><span class="mode-icon">${ICON.league}</span><div><h3 id="mode-league" class="mode-title">League</h3><p class="mode-sub">${opp ? `vs ${esc(opp.short)}` : '7 matchdays'}</p>${seasonStanding(s) ? `<p class="mode-sub mode-standing">${esc(seasonStanding(s))}</p>` : ''}</div></div>
     <div class="mode-actions">${action}</div>
   </article>`;
@@ -257,8 +266,8 @@ export function homeScreen(app: App): string {
   const s = app.save;
   // At level 1 there is only the hero and its Kick off; the other ways to play appear as they unlock.
   const cards = `${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}`;
-  // Until the Club tab opens (level 3) nothing else says what is coming: one line, so the next level is a goal.
-  const next = clubLevel(s) >= 2 && !isUnlocked(s, 'club') ? nextUnlockText(s) : null;
+  // One quiet line, from level 2 on, saying what the next unlock is and how far off: the goal stays in sight at every level.
+  const next = clubLevel(s) >= 2 ? nextUnlockText(s) : null;
   return `
   <div class="home">
     ${hero(app)}
