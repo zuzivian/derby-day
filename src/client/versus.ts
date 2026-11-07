@@ -30,7 +30,7 @@ import { announce, trapTab } from './a11y.ts';
 import { crestSvg } from './crest.ts';
 import { mountJuice } from './fx.ts';
 import { setPieceSpot, InputController } from './input.ts';
-import { mountMatch } from './matchView.ts';
+import { mountMatch, refereeCall } from './matchView.ts';
 import { BINDINGS, HotseatInput } from './pads.ts';
 import { HUMAN_COLORS } from './render.ts';
 import { createMatchRenderer, mountCameraToggle } from './renderer.ts';
@@ -923,9 +923,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     }
 
     while (lastEvent < s.events.length) {
-      const w = refereeWord(s, s.events[lastEvent++]);
+      const e = s.events[lastEvent++];
+      const w = refereeWord(s, e);
       if (w?.live) hud.tag(w.word, 1800, w.sub);
       else if (w) banner(w.word, 1500, w.sub);
+      const call = refereeCall(s, e);
+      if (call) announce(call);
     }
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
@@ -936,6 +939,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
       banner('Half time', 1800);
+      announce(`Half-time. ${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`);
     }
     if (bannerUntil && now > bannerUntil) bannerUntil = 0;
     if (s.phase === 'fulltime' && !ls.desync && !ended) {

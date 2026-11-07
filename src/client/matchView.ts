@@ -164,7 +164,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="Match">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, Esc to pause.'}</span>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, T for the score and time, Esc to pause.'}</span>
       ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
@@ -214,6 +214,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       announce('Paused.');
     } else {
       (focusBeforePause && root.contains(focusBeforePause) ? focusBeforePause : canvas).focus();
+      announce('Resumed.');
     }
   };
   let input: MatchInputSource = o.inputSource?.(canvas, renderer, s, () => setPaused(!paused)) ?? defaultInput();
@@ -483,6 +484,13 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   let endSkip = () => {};
   const scoreLine = () => `${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`;
 
+  // T: the score and the clock, said on request (the scoreboard is a picture to a screen reader on the canvas).
+  const onScoreKey = (e: KeyboardEvent) => {
+    if (e.code !== 'KeyT' || e.repeat || e.ctrlKey || e.metaKey || e.altKey || paused || replay || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    announce(`${scoreLine()} ${s.phase === 'halftime' ? 'Half-time.' : s.phase === 'fulltime' ? 'Full-time.' : `Minute ${matchMinute(s)}, ${s.half === 1 ? 'first' : 'second'} half.`}`);
+  };
+  document.addEventListener('keydown', onScoreKey);
+
   function banner(text: string, ms: number, sub?: string, tone?: string) {
     hud.word(text, ms, sub, tone);
     bannerUntil = performance.now() + ms;
@@ -668,6 +676,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     window.removeEventListener('blur', onBlur);
     document.removeEventListener('keydown', onKey);
     document.removeEventListener('keydown', onTacticKey);
+    document.removeEventListener('keydown', onScoreKey);
     window.removeEventListener('keydown', onReplayKey, true);
     endSkip();
     if (guardingBack) {
