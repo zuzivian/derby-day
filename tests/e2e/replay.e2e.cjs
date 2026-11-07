@@ -329,8 +329,10 @@ test('replay: clip chips and goal markers jump to the moments, the camera switch
   expect(await page.locator('.rp-mark').count(), 'every goal is marked on the whole match').toBe(goals);
   await page.keyboard.press('Space'); // pause so the position is exact
   await page.locator('.rp-mark').nth(1).click();
-  const at = await scrubValue(page);
   const want = await page.locator('.rp-mark').nth(1).getAttribute('data-tick');
+  // While the background pass is still loading, the jump is held at the furthest ready point and finished when it is done.
+  await page.waitForFunction((t) => Math.abs(Number(document.querySelector('#rv-scrub').value) - t) < 40, Number(want) - 120, { timeout: 15_000 }).catch(() => {});
+  const at = await scrubValue(page);
   expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
   expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
   // Pips are placed with a unitless fraction (typed calc() arithmetic is not portable): later goals sit further right, none at 0:00.

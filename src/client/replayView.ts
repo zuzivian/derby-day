@@ -383,9 +383,13 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
    * Seek (scrub or goal pip). While the background pass is still filling keyframes, a seek past it would simulate
    * the whole gap at once (about 0.9 s frozen for a full match): hold it at the furthest ready point, and say so.
    */
+  // A seek held short while loading: finished once the background pass is done (a later seek replaces it).
+  let pendingSeek: { want: number; play?: boolean } | null = null;
   function seekClamped(want: number, play?: boolean) {
     const ready = seeker.warmed ? Infinity : seeker.warmedTo + KEYFRAME_EVERY;
+    pendingSeek = null;
     if (want > ready) {
+      pendingSeek = { want, play };
       want = ready;
       status.textContent = 'Still loading the rest of the match…';
     }
@@ -559,6 +563,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
       return;
     }
     if (status.textContent?.startsWith('Still loading')) status.textContent = '';
+    if (pendingSeek) seekClamped(pendingSeek.want, pendingSeek.play);
     if (seeker.verified === false) {
       status.textContent = 'This replay was recorded on a different version of the game, so it may not match what happened.';
       status.classList.add('bad');
