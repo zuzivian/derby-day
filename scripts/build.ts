@@ -102,6 +102,71 @@ function headMeta(js: string): string {
   ].join('\n');
 }
 
+/**
+ * Build-time CSS minify: drops comments and collapses whitespace; the sources in the repo keep their comments.
+ * It scans token by token so strings ('...', "..."), url(...) bodies and anything inside them (data: SVGs,
+ * content: values) are copied verbatim. Whitespace is removed only around { } ; , and after ':' (never before it,
+ * since "a :hover" and "a:hover" differ), so selectors, @media/@supports conditions, calc() and custom
+ * properties keep their meaning.
+ */
+export function minifyCss(src: string): string {
+  let out = '';
+  const n = src.length;
+  let i = 0;
+  let space = false;
+  const put = (t: string): void => {
+    if (space && out && !/[{};,:]$/.test(out) && !/^[{};,]/.test(t)) out += ' ';
+    space = false;
+    out += t;
+  };
+  while (i < n) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '*') {
+      const e = src.indexOf('*/', i + 2);
+      i = e < 0 ? n : e + 2;
+      space = true;
+    } else if (c === ' ' || c === '\n' || c === '\t' || c === '\r') {
+      i++;
+      space = true;
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < n && src[j] !== c) j += src[j] === '\\' ? 2 : 1;
+      put(src.slice(i, j + 1));
+      i = j + 1;
+    } else if (c === ':' && space && out && !/[{};,:(]$/.test(out)) {
+      out += ' :';
+      space = false;
+      i++;
+    } else if (c === '{' || c === ';' || c === ',' || c === ':') {
+      out += c;
+      space = false;
+      i++;
+    } else if (c === '}') {
+      out = out.replace(/;$/, '') + '}';
+      space = false;
+      i++;
+    } else if (src.startsWith('url(', i)) {
+      let j = i + 4;
+      let q = '';
+      while (j < n && (q || src[j] !== ')')) {
+        if (q) {
+          if (src[j] === q) q = '';
+        } else if (src[j] === '"' || src[j] === "'") q = src[j];
+        j++;
+      }
+      put(src.slice(i, j + 1));
+      i = j + 1;
+    } else {
+      let j = i + 1;
+      while (j < n && !' \n\t\r"\'{};,:}/'.includes(src[j]) && !src.startsWith('url(', j)) j++;
+      if (j === i + 1 && src[j - 1] === '/') j = i + 1;
+      put(src.slice(i, j));
+      i = j;
+    }
+  }
+  return out;
+}
+
 async function build(): Promise<void> {
   const t0 = performance.now();
   const id = buildId();
@@ -124,7 +189,7 @@ async function build(): Promise<void> {
   }
   const js = (await out.outputs[0].text()).replace(/<\/script/gi, '<\\/script');
   // styles.css plus per-feature sheets that sit beside it.
-  const css = (await Promise.all(['styles.css', 'review.css', 'replay.css', 'levels.css', 'hud.css', 'coach.css', 'platform.css', 'tactics.css'].map((f) => readFile(`${root}src/client/${f}`, 'utf8')))).join('\n');
+  const css = minifyCss((await Promise.all(['styles.css', 'review.css', 'replay.css', 'levels.css', 'hud.css', 'coach.css', 'platform.css', 'tactics.css'].map((f) => readFile(`${root}src/client/${f}`, 'utf8')))).join('\n'));
   const fragment = (await readFile(`${root}src/client/page.html`, 'utf8'))
     .replace('/*__CSS__*/', () => css)
     .replace('/*__JS__*/', () => js);
