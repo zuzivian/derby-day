@@ -177,6 +177,11 @@ test('onboarding: situational tips fire once each, only while still true: the ba
   await page.locator(KICK).click();
   await page.waitForSelector(SEL.pitch);
   await page.waitForSelector(TIP, { timeout: 40_000 });
+  // Hold the coach's own tip clock still for the whole test; it is moved only by advance(0) below. Frames age the card in wall
+  // time, and between dismissing the first tip and the first poll (giveBall waits for open play, up to a minute on a slow runner)
+  // the next one ('run') would be shown, counted as read and replaced, by design, before the test looks: it never comes back.
+  await page.evaluate(() => window.__derbyCoach.freeze());
+  expect(await tipId(page), 'the first tip is the pass tip (the kick-off is ours)').toBe('pass');
   await page.locator('.coach-x').click();
   await giveBall(page);
   // Each tip is read, dismissed, and the coach is let look again in the same turn, so the queued tip shows at once.
