@@ -52,8 +52,14 @@
   font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: clamp(38px, 9vw, 104px); letter-spacing: .02em; line-height: .95;
   text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 28px rgba(0, 0, 0, .45); animation: hud-pop .32s ease-out;
 }
-.hud .hud-word.intro { top: 22%; font-size: clamp(24px, 5vw, 56px); }
+.hud .hud-word.intro { top: 15%; font-size: clamp(24px, 5vw, 56px); }
 .hud .hud-word.intro small { font-size: .4em; }
+@media (max-height: 460px) { .hud .hud-word.intro { top: 12%; font-size: 26px; } }
+/* Half/full-time recap: plain readable lines on a dark plate, not the display-size sub. */
+.hud .hud-word.recap { gap: 5px; top: 54%; width: 94%; } /* below the KICK-OFF label that comes up as the half ends */
+.hud .hud-word.recap small { font-size: clamp(11px, 2.9vw, 15px); letter-spacing: .05em; padding: 2px 9px; border-radius: 4px; background: rgba(8, 12, 11, .66); text-shadow: none; text-align: center; max-width: 100%; text-wrap: balance; }
+.hud .hud-word.recap small:first-of-type { font-size: clamp(14px, 4vw, 22px); letter-spacing: .08em; }
+.hud .hud-word.recap small:last-child:not(:nth-of-type(-n+2)) { opacity: .85; }
 .hud .hud-word small { font-size: .26em; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 /* The word's 4 px drop shadow read as a second, ghosted line under the small scorer line: a shadow to its own size. */
 .hud .hud-word small, .hud .hud-word[data-tone="team"] small { text-shadow: 0 1.5px 0 rgba(0, 0, 0, .6), 0 0 8px rgba(0, 0, 0, .5); }

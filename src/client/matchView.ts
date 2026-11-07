@@ -6,7 +6,7 @@
 // play resumes exactly where it stopped.
 
 import { DT, TICK_HZ } from '../sim/constants.ts';
-import { createMatch, matchMinute, step, type MatchOptions } from '../sim/match.ts';
+import { createMatch, matchMinute, possessionShare, step, type MatchOptions } from '../sim/match.ts';
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
@@ -500,6 +500,22 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   };
   document.addEventListener('keydown', onScoreKey);
 
+  // The break recap, as banner lines: score, each side's scorers with minutes, then what the sim already counts.
+  const recap = (hint?: string) => {
+    const [h, a] = [home.short, away.short];
+    const side = (t: 0 | 1) => {
+      const by = new Map<string, string[]>();
+      for (const g of s.goals) if (g.team === t) by.set(g.scorer, [...(by.get(g.scorer) ?? []), `${g.minute}'`]);
+      const all = [...by].map(([n, m]) => `${n} ${m.join(' ')}`);
+      return all.length ? `${(t ? a : h)}: ${all.slice(0, 3).join(', ')}${all.length > 3 ? ` +${all.length - 3}` : ''}` : '';
+    };
+    const [x, y] = s.stats;
+    const [pa, pb] = possessionShare(s);
+    const p = pa + pb ? pa : 50;
+    const cards = x.yellows + x.reds + y.yellows + y.reds;
+    return [`${h} ${s.score[0]}–${s.score[1]} ${a}`, side(0), side(1), `Shots ${x.shots}–${y.shots} · Possession ${p}–${100 - p}%${cards ? ` · Cards ${x.yellows + x.reds}–${y.yellows + y.reds}` : ''}`, hint].filter(Boolean).join('\n');
+  };
+
   function banner(text: string, ms: number, sub?: string, tone?: string) {
     hud.word(text, ms, sub, tone);
     bannerUntil = performance.now() + ms;
@@ -631,7 +647,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
-      banner('Half time', 1800);
+      banner('Half time', 2600, recap());
       announce(`Half-time. ${scoreLine()}`);
     }
     if (bannerUntil && now > bannerUntil) {
@@ -641,7 +657,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       ending = true;
       // Law 3: abandoned, the awarded result stands.
       if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
-      else banner('Full time', 99999, `${home.name} ${s.score[0]}–${s.score[1]} ${away.name}`);
+      else banner('Full time', 99999, recap('Tap or press Space for the result'));
       announce(`Full-time. ${scoreLine()}`);
       // A beat for the whistle and the score before the result dialog; a tap, click or Space/Enter/Esc moves on.
       const timer = window.setTimeout(() => finish(false), 2000);
