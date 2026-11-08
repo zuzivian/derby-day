@@ -1606,6 +1606,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:not(:has(> .match, > .training)) { zoom: 1.25; }
   #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.25; }
 }
+/* The desktop radar sits under the (now scaled) scoreboard: move it down to clear it. */
+@media (min-width: 1800px) and (min-height: 900px) and (pointer: fine) {
+  #app #pitch ~ .hud .hud-radar { top: 100px; }
+}
+@media (min-width: 2400px) and (min-height: 1200px) and (pointer: fine) {
+  #app #pitch ~ .hud .hud-radar { top: 120px; }
+}
 @media (min-width: 2400px) and (min-height: 1200px) {
   #app:not(:has(> .match, > .training)) { zoom: 1.5; }
   #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.5; }

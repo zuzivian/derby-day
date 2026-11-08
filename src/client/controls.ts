@@ -32,7 +32,7 @@ const KEYS: Row[] = [
   ['Other', 'V view, + / − zoom, T score and time, 1–5 mentality, Esc or P pause.'],
 ];
 
-const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|[FCEQVT0]|P|Esc|1-5)\b/g, '<kbd>$1</kbd>');
+const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|[FCEQVT0]|P|Esc|1[-–]5)\b/g, '<kbd>$1</kbd>');
 
 const coarse = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 

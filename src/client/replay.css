@@ -99,7 +99,7 @@
 
 /* Forced colors: a pressed chip or toggle was told by its fill alone; the goal pips told our goals by colour alone. */
 @media (forced-colors: active) {
-  .rp-clips .btn[aria-pressed="true"], .rp-controls .btn[aria-pressed="true"] { outline: 3px solid Highlight; outline-offset: -3px; }
+  .rp-clips .btn[aria-pressed="true"]:not(:focus-visible), .rp-controls .btn[aria-pressed="true"]:not(:focus-visible) { outline: 3px solid Highlight; outline-offset: -3px; }
   .rp-mark::before { border-bottom-color: GrayText; forced-color-adjust: none; }
   .rp-mark.us::before { border-bottom-color: Highlight; }
 }

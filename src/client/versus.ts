@@ -948,8 +948,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       if (link) section.dataset.link = link.status;
       const slow = live && !waiting && (ls.rttMs > 150 || now - lastStallAt < 4000);
       const chip = $('net-chip');
-      if (slow && chip.hidden && !slowSaid) announce('Slow connection.');
-      slowSaid ||= slow;
+      if (slow && !slowSaid) announce('Slow connection.'); // once per slow spell, again if it comes back
+      slowSaid = slow;
       chip.hidden = !slow;
       if (slow) chip.textContent = ls.rttMs > 150 ? `Slow connection · ${Math.round(ls.rttMs)} ms` : 'Connection hiccup';
       section.dataset.slow = slow ? '1' : '0';
