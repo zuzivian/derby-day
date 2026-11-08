@@ -727,6 +727,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 .rs-foot .replay-actions { justify-content: center; }
+.rs-foot .replay-actions .btn { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
+.rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
 .rs-close { width: 100%; }
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
 @media (max-height: 500px), (max-width: 360px) {
@@ -740,7 +742,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-height: 600px) {
   .result-card .rs-hero { padding: 10px var(--sp-4) 12px; }
   .result-card .rs-eyebrow { font-size: var(--fs-2xs); }
-  .result-card .result-title { font-size: 34px; margin-bottom: 6px; }
+  .result-card .result-title { font-size: 30px; margin-bottom: 6px; }
   .result-card .big-score { font-size: 48px; }
   .result-card .rs-crest .crest { width: 38px; height: 42px; }
   .result-card .rs-name { font-size: var(--fs-md); }

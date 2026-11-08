@@ -554,6 +554,21 @@ export function ladderScreen(app: App): string {
 type Outcome = 'win' | 'draw' | 'loss';
 const OUTCOME_WORD: Record<Outcome, string> = { win: 'Victory', draw: 'Draw', loss: 'Defeat' };
 
+/** A headline that fits the match, read from the scorers' minutes (2 + 3 goals, who led when). Plain Victory/Draw/Defeat when the story is not told (shootouts, forfeits, awarded scores). */
+function storyWord(r: ResultView, outcome: Outcome, derby: boolean): string {
+  const plain = OUTCOME_WORD[outcome];
+  const ev = [...r.scorersFor.map((x) => [0, parseInt(x.replace(/^.*\s/, ''), 10)]), ...r.scorersAgainst.map((x) => [1, parseInt(x.replace(/^.*\s/, ''), 10)])].sort((x, y) => x[1] - y[1]);
+  if (r.pens || r.forfeited || ev.length !== r.gf + r.ga || ev.some((e) => isNaN(e[1]))) return plain;
+  let diff = 0, low = 0;
+  for (const [t] of ev) low = Math.min(low, (diff += t ? -1 : 1));
+  const last = ev[ev.length - 1];
+  const late = !!last && last[1] >= 85;
+  const gap = r.gf - r.ga;
+  if (outcome === 'win') return low < 0 ? 'Comeback' : late && gap === 1 && !last[0] ? 'Late winner' : gap >= 4 ? 'Thrashing' : derby ? 'Derby win' : r.ga === 0 ? 'Clean sheet' : plain;
+  if (outcome === 'draw') return late && !last[0] && low < 0 ? 'Late leveller' : low < 0 ? 'Fought back' : r.gf ? plain : 'Goalless';
+  return gap <= -4 ? 'Heavy defeat' : late && gap === -1 && last[0] === 1 ? 'Late blow' : derby ? 'Derby loss' : plain;
+}
+
 const rsIcon = (body: string, size = 18) => `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false">${body}</svg>`;
 const RS_BALL = rsIcon('<circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".16"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.6 15.3 10l-1.3 3.9H10L8.7 10Z" fill="currentColor"/>', 14);
 const RS_UP = rsIcon('<path d="M12 5 20 16H4Z" fill="currentColor"/>', 16);
@@ -630,6 +645,8 @@ function resultModal(app: App): string {
   const them = r.opp.short;
   const sum = r.summary;
   const rankNow = isUnlocked(app.save, 'ladder') ? rankOf(app.save) : 0;
+  const oppRank = r.ranked && r.rankBefore ? ladderTable(app.save).findIndex((x) => x.name === r.opp.name) + 1 : 0;
+  const derby = oppRank > 0 && Math.abs(oppRank - r.rankBefore!) <= DERBY_PLACES;
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
@@ -643,6 +660,7 @@ function resultModal(app: App): string {
   const dev = sum?.developments ?? [];
   const growth = dev.length ? `<div class="rs-growth"><span class="rs-growth-title">${RS_GROWTH}<span>Player growth</span></span><ul>${dev.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const pens = r.pens ? `<span class="rs-pens">${r.pens.you}–${r.pens.opp} on penalties</span>` : '';
+  const again = r.again ? `<button class="btn${r.again.primary ? ' primary' : ''} big" data-action="rematch">${esc(r.again.label)}</button>` : '';
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
@@ -650,8 +668,8 @@ function resultModal(app: App): string {
       <header class="rs-hero">
         ${outcome === 'win' ? confettiHtml(r.headline ? 40 : undefined) : ''}
         ${r.headline === 'Cup winners' ? `<div class="rs-trophy">${CUP_ICON}</div>` : ''}
-        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
-        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? OUTCOME_WORD[outcome])}</h2>
+        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))}${derby ? ' · Derby' : ''} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
+        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? storyWord(r, outcome, derby))}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
           <div class="rs-team">
@@ -689,7 +707,7 @@ function resultModal(app: App): string {
           ${growth}
         </section>`}
         <section class="rs-panel rs-rewards" aria-labelledby="rs-rewards-title">
-          <h3 id="rs-rewards-title" class="rs-section"><span>Rewards</span></h3>
+          <h3 id="rs-rewards-title" class="rs-section"><span>What changed</span></h3>
           ${sum
             ? `${chips.length ? `<ul class="rs-chips">${chips.join('')}</ul>` : ''}
               ${r.forfeited ? growth : ''}
@@ -700,9 +718,10 @@ function resultModal(app: App): string {
       </div>
       </div>
       <footer class="rs-foot">
+        ${again && r.again?.primary ? again : ''}
+        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Next match' : 'Back to the club'))}</button>
+        ${again && !r.again?.primary ? again : ''}
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
-        ${r.again ? `<button class="btn${r.again.primary ? ' primary' : ''} big" data-action="rematch">${esc(r.again.label)}</button>` : ''}
-        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? 'Back to the club')}</button>
       </footer>
     </div>
   </div>`;
