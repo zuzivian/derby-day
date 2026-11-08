@@ -684,7 +684,7 @@ root.addEventListener('click', (e) => {
       const bp = s.market.find((x) => x.id === id);
       const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put him in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put them in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
       if (r.ok) {
         persist();
         getSound().stinger('train');
@@ -774,7 +774,7 @@ root.addEventListener('change', (e) => {
     const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
     const af = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
-    toast(af === b4 ? 'Lineup changed.' : `Lineup changed. XI strength ${b4} → ${af}.`);
+    toast(af === b4 ? 'XI changed.' : `XI changed. XI strength ${b4} → ${af}.`);
     persist();
     render();
   } else if (el.dataset.change === 'formation') {

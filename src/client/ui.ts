@@ -391,7 +391,7 @@ export function squadScreen(app: App): string {
     ${academyPanel(app)}
     ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
@@ -472,7 +472,7 @@ export function trainingScreen(app: App): string {
         const r = trainingRange(p, ATTR_KEYS.find((k) => p.attrs[k] < 99) ?? 'pace'); // the same for every attribute below the cap (maxed ones say Max)
         const say = !s.trainingPoints ? 'No sessions left. Play a match to earn more.'
           : r.odds < 1 ? `At potential: a session adds +1 about ${Math.round(r.odds * 100)}% of the time, otherwise nothing.`
-          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `${r.lo} to +${r.hi}`} to the attribute you pick.`;
+          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `+${r.lo} to +${r.hi}`} to the attribute you pick.`;
         return `<p class="train-preview${s.trainingPoints ? '' : ' none'}">${say}</p>`;
       })()}
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => {

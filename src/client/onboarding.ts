@@ -73,7 +73,7 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
 export function celebrationWords(gf: number, ga: number): { title: string; sub: string } {
   if (gf > ga) return { title: 'What a start!', sub: 'You won your first match.' };
   if (gf === ga) return { title: 'Honours even', sub: 'A draw first time out is a fine start.' };
-  return { title: 'Good effort', sub: 'Everyone loses a first game. Now you know the controls.' };
+  return { title: 'Good effort', sub: 'Everyone loses their first match. Now you know the controls.' };
 }
 
 /** "Squad, vs Player and Practice": the menu names only. Variants such as "Practice: Easy" fold into their head, so a sentence has no colons or brackets. */

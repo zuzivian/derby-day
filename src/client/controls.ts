@@ -19,7 +19,7 @@ const MOUSE: Row[] = [
   ['Switch', 'Left click a teammate without the ball.'],
   ['Tackle', 'Right click without the ball: a slide if far.'],
   ['Keeper', 'Left click rolls it out, hold left throws, right click punts.'],
-  ['Other', 'V view, wheel or + / − zoom, 1-5 mentality, Esc or P pause.'],
+  ['Other', 'V view, wheel or + / − zoom, 1–5 mentality, Esc or P pause.'],
 ];
 const KEYS: Row[] = [
   ['Run', 'WASD or arrows, hold Shift to sprint.'],
@@ -29,7 +29,7 @@ const KEYS: Row[] = [
   ['Switch', 'E or Q.'],
   ['Tackle', 'Space without the ball.'],
   ['Keeper', 'Space rolls it out, hold C throws, hold F punts.'],
-  ['Other', 'V view, + / − zoom, T score and time, 1-5 mentality, Esc or P pause.'],
+  ['Other', 'V view, + / − zoom, T score and time, 1–5 mentality, Esc or P pause.'],
 ];
 
 const kbd = (t: string) => t.replace(/\b(WASD|Space|Shift|[FCEQVT0]|P|Esc|1-5)\b/g, '<kbd>$1</kbd>');

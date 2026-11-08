@@ -138,12 +138,12 @@ const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMe
 const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
 /** On phones and tablets: no mouse or keys to talk about. */
 const TOUCH_HINT = hint(
-  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power, tackles off the ball · <b>tap</b> a man to pick him`,
+  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power (without the ball, a tackle) · <b>tap</b> a player to switch`,
   `Your player runs toward your finger, faster the further it is.`,
 );
 const MOUSE_HINT = hint(
   `<b>Left click</b> pass · <b>hold left</b> loft · <b>right click</b> shoot · <b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot · <b>V</b> camera · <b>Esc</b> pause`,
-  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> picks a man. Your player runs to the pointer, faster the further it is. Also: hold <b>C</b> loft · <b>Shift</b> sprint · <b>E</b> switch · <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1-5</b> mentality (1 Park the bus … 5 High press).`,
+  `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> switches player. Your player runs to the pointer, faster the further it is. Also: hold <b>C</b> loft · <b>Shift</b> sprint · <b>E</b> switch · <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1–5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
@@ -167,7 +167,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     <div class="pitch-wrap">
       <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch" aria-describedby="pitch-help"></canvas><span class="sr-only" id="pitch-help">${coarsePointer() ? 'Drag to run toward your finger, the further the faster. Pass passes, hold it to loft. Shoot shoots, or tackles without the ball. Tap a player to pick him.' : 'Mouse: move to run, the further the pointer the faster. With the ball, left click to pass to the pointer, hold left to loft, right click to shoot. Without it, left click to pick a player, right click to tackle. Keys: WASD or arrows to run, Space to pass or tackle, hold F to shoot, hold C to loft, E to switch, Shift to sprint, 1 to 5 for the mentality, T for the score and time, Esc to pause.'}</span>
       <span class="aim-charge" aria-hidden="true"><i></i></span><p class="key-hint" aria-hidden="true"><kbd>WASD</kbd> run <kbd>Space</kbd> pass <kbd>F</kbd> shoot <kbd>C</kbd> loft <kbd>E</kbd> switch <kbd>Shift</kbd> sprint</p>
-      ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs AI'), label: o.label, marks: o.humans?.[0] && o.humans?.[1] ? HUMAN_COLORS : undefined })}
+      ${hudMarkup({ teams: [home, away], crests: o.crests, mode: o.modeLabel ?? (o.humans?.[0] && o.humans?.[1] ? 'P1 vs P2' : 'You vs CPU'), label: o.label, marks: o.humans?.[0] && o.humans?.[1] ? HUMAN_COLORS : undefined })}
       <div class="pause" id="pause" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="pause-title">
           <h2 id="pause-title">Paused</h2>

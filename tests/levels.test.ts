@@ -145,9 +145,9 @@ describe('unlock table', () => {
     const s = newGame(3);
     s.xp = 1_300; // level 5, 200 short of level 6
     expect(nextUnlocks(s).map((u) => u.id)).toEqual(['transfers']);
-    expect(nextUnlockText(s)).toBe('Transfers at level 6 — 200 XP to go');
+    expect(nextUnlockText(s)).toBe('Transfers at level 6: 200 XP to go');
     s.xp = totalXpForLevel(10);
-    expect(nextUnlockText(s)).toBe('Squad of 25 at level 15 — 6,000 XP to go');
+    expect(nextUnlockText(s)).toBe('Squad of 25 at level 15: 6,000 XP to go');
   });
   test('pending unlocks are what the level-up dialog lists; closing it marks them seen', () => {
     const s = newGame(4);
@@ -445,7 +445,7 @@ describe('saves from before the gradual unlock table', () => {
     expect(unlockLevel(s, 'ladder')).toBe(4);
     expect(unlockLevel(s, 'replays')).toBe(3);
     expect(isUnlocked(s, 'ladder')).toBe(true);
-    expect(nextUnlockText(s)).toBe('The Cup and Practice: Hard at level 5 — 400 XP to go');
+    expect(nextUnlockText(s)).toBe('The Cup and Practice: Hard at level 5: 400 XP to go');
     // A new game is never legacy: it uses the table as written.
     const fresh = newGame(54);
     expect(fresh.legacyUnlocks).toBeUndefined();
