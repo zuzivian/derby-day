@@ -2,6 +2,7 @@
   "name": "Derby Day",
   "short_name": "Derby Day",
   "description": "Run a football club and play its matches yourself, mouse-first, in the browser.",
+  "lang": "en",
   "id": "/",
   "start_url": "/",
   "scope": "/",
