@@ -414,7 +414,9 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     const text = describeKick(p.turn.taker.name, keeperName, p.result.outcome);
     // Good for you: you scored, or they failed to.
     const good = (p.turn.side === 0) === p.result.scored;
-    setBanner(OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
+    // Your keeper saving a kick that decided something (a must-score for them, or the winner): a bigger word and cheer.
+    const clutch = p.result.outcome === 'saved' && p.turn.side === 1 && !!caption?.[2];
+    setBanner(clutch ? 'What a save!' : OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
     setSkipHint(true);
     buzz(p.result.scored ? [20, 40, 20] : 30);
     const snd = getSound();
@@ -423,8 +425,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     else if (oc === 'saved') snd.play({ type: 'catch', power: 0.8 });
     else if (oc === 'post') snd.play({ type: 'knock', kind: 'post', power: 0.9 });
     else snd.play({ type: 'ooh', power: 0.6 });
-    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2]);
-    fx(good ? 'good' : 'bad', p.result.scored);
+    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2], clutch ? 1 : 0);
+    fx(good ? 'good' : 'bad', p.result.scored || clutch);
     delete section.dataset.stakes;
     if (sh.done) section.dataset.final = sh.winner === 0 ? 'win' : 'lose';
     const extra = p.turn.side === 1 ? ` You dived ${DIVE_NAME[p.result.dive]}.` : '';

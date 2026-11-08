@@ -7,6 +7,7 @@
 
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
+import { goalMoment } from './moments.ts';
 import { crowdLevel, goalMood, resultMood, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
 
 export interface Juice {
@@ -71,7 +72,8 @@ interface Particle {
   life: number;
 }
 
-export function mountJuice(root: HTMLElement, s: MatchState): Juice {
+/** `shotDist`: metres of the latest goal's shot, when known; `derby`: the match is a derby (both read by moments.ts). */
+export function mountJuice(root: HTMLElement, s: MatchState, ex?: { derby?: boolean; shotDist?: () => number | undefined }): Juice {
   const sound = getSound();
   const wrap = root.querySelector<HTMLElement>('.pitch-wrap');
   if (!document.getElementById(STYLE_ID)) {
@@ -198,13 +200,13 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     }
   }
 
-  function confetti(team: 0 | 1) {
+  function confetti(team: 0 | 1, more = 1) {
     if (!ctx) return;
     resize();
     const t = s.teams[team];
     const colours = [t.primary, t.secondary, t.primary, '#ffd60a', '#ffffff'];
     const scale = Math.min(1, cw / 640);
-    const n = Math.round(150 * Math.max(0.5, scale));
+    const n = Math.round(150 * more * Math.max(0.5, scale));
     // The goal it went in: the one this side attacks this half (the teams change ends at half-time).
     const right = attackDir(s, team) > 0;
     const goalX = right ? cw * 0.98 : cw * 0.02;
@@ -262,19 +264,19 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
     }
   };
 
-  function goal(team: 0 | 1) {
-    buzz([40, 60, 80]);
+  function goal(team: 0 | 1, big: boolean) {
+    buzz(big ? [40, 60, 80, 60, 140] : [40, 60, 80]);
     if (reducedMotion()) {
       // No shake or particles: a slow, soft wash of the scorer's colour.
       if (flash) flash.style.background = s.teams[team].primary;
-      animate(flash, [{ opacity: 0 }, { opacity: 0.28, offset: 0.25 }, { opacity: 0 }], { duration: 900, easing: 'ease-out' });
+      animate(flash, [{ opacity: 0 }, { opacity: 0.28, offset: 0.25 }, { opacity: 0 }], { duration: big ? 1300 : 900, easing: 'ease-out' });
       return;
     }
-    shake();
+    shake(big ? 8 : 5, big ? 760 : 520);
     // A white-hot flash on the whistle-less instant the ball hits the net, then the confetti.
     if (flash) flash.style.background = '#fff';
-    animate(flash, [{ opacity: 0 }, { opacity: 0.34, offset: 0.12 }, { opacity: 0 }], { duration: 420, easing: 'ease-out' });
-    confetti(team);
+    animate(flash, [{ opacity: 0 }, { opacity: big ? 0.5 : 0.34, offset: 0.12 }, { opacity: 0 }], { duration: big ? 620 : 420, easing: 'ease-out' });
+    confetti(team, big ? 1.7 : 1);
   }
 
   function kickoff() {
@@ -296,9 +298,12 @@ export function mountJuice(root: HTMLElement, s: MatchState): Juice {
       if (ev.won && !reducedMotion()) shake(1.3, 140);
     }
     if (ev.type === 'goal') {
-      goal(ev.team);
+      const mo = goalMoment(cur.goals, cur.goals.length - 1, { derby: ex?.derby, dist: ex?.shotDist?.() });
       const m = goalMood(cur, ev.team);
-      sound.react(m.side, m.big);
+      goal(ev.team, mo?.level === 2);
+      // A big moment: the home cheer holds longer, and the biggest add a short win jingle over it.
+      sound.react(m.side, m.big || !!mo, mo?.level ?? 0);
+      if (mo?.level === 2 && m.side === 'for') sound.stinger('win');
     } else if (ev.type === 'whistle' && ev.kind === 'kickoff') kickoff();
     else if (ev.type === 'whistle' && ev.kind === 'fulltime') sound.react(resultMood(cur));
     // The woodwork draws the crowd's gasp too, not only a shot dragged wide.

@@ -10,7 +10,8 @@ import { createMatch, matchMinute, possessionShare, step, type MatchOptions } fr
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { controlsHelp } from './controls.ts';
-import { getSound } from './audio.ts';
+import { getSound, homeTeam } from './audio.ts';
+import { fullTimeMoment, goalMoment } from './moments.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
 import { tickDue } from './ticks.ts';
@@ -279,7 +280,10 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
   ro.observe(canvas);
   renderer.resize();
   renderer.prepare(s);
-  const juice = mountJuice(root, s);
+  // A derby (the kick-off banner said so) and the latest goal's shot length: the big-moment classifier reads both (moments.ts).
+  const derby = o.intro?.title === 'Derby';
+  let goalDist: number | undefined;
+  const juice = mountJuice(root, s, { derby, shotDist: () => goalDist });
   // Who kicks off and with which key: hot-seat has both players on one keyboard (Player 2 passes with Enter).
   const kickoffPrompt = (team: 0 | 1): string | null => {
     if (s.humans[0] && s.humans[1]) return team === 0 ? 'Player 1 kicks off: press Space' : 'Player 2 kicks off: press Enter';
@@ -605,8 +609,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
           const before = s.controlled[0];
           step(s, used);
           if (!Array.isArray(used) && (used.select || used.switchPlayer) && s.controlled[0] !== before) juice.buzz(10);
-          juice.tick(s);
-          buffer.push(used, s);
+          // Before the sound and effects: a goal's shot length (highlights.ts) is wanted by them.
           for (const h of spotter.update(s)) {
             // The near things get their word as they happen, replay or not.
             if (h.kind === 'woodwork' || h.kind === 'miss') {
@@ -615,8 +618,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
               hud.tag(word, 1700, who);
               announce(who ? `${word} ${who}` : word); // the tag itself is aria-hidden
             }
+            if (h.kind === 'goal') goalDist = h.dist;
             consider(h);
           }
+          juice.tick(s);
+          buffer.push(used, s);
           acc -= DT;
           steps++;
           if (live()) shownThisStop = false;
@@ -684,7 +690,8 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (s.goals.length > lastGoals) {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
-      banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      const mo = goalMoment(s.goals, s.goals.length - 1, { derby, dist: goalDist });
+      banner(mo?.word ?? 'Goal!', mo ? 2400 : 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
       // A quick white flash over the pitch as the net moves (CSS drops it under reduced motion).
       wrapEl.classList.remove('goal-flash');
       void wrapEl.offsetWidth;
@@ -694,7 +701,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       cell.classList.remove('bump');
       void cell.offsetWidth;
       cell.classList.add('bump');
-      announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
+      announce(`${mo ? `${mo.word} ` : ''}Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${scoreLine()}`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
@@ -707,9 +714,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     if (s.phase === 'fulltime') {
       ending = true;
       // Law 3: abandoned, the awarded result stands.
-      if (s.abandoned) banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
-      else banner('Full time', 99999, recap('Tap or press Space for the result'));
-      announce(`Full-time. ${scoreLine()}`);
+      if (s.abandoned) {
+        banner('Abandoned', 99999, `${s.teams[s.abandoned.team].name} down to six players`);
+        announce(`Full-time. ${scoreLine()}`);
+      } else {
+        const ft = fullTimeMoment(s.score, homeTeam(s), { final: o.label === 'Cup final', derby });
+        banner(ft.word, 99999, recap(`${ft.clean ? 'Clean sheet\n' : ''}Tap or press Space for the result`), ft.word === 'Full time' ? undefined : s.teams[homeTeam(s)].primary);
+        announce(`${ft.word === 'Full time' ? 'Full-time.' : `Full-time. ${ft.word}`} ${scoreLine()}${ft.clean ? ' Clean sheet.' : ''}`);
+      }
       // A beat for the whistle and the score before the result dialog; a tap, click or Space/Enter/Esc moves on.
       const timer = window.setTimeout(() => finish(false), 2000);
       const t0 = performance.now();

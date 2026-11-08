@@ -702,12 +702,12 @@ export class SoundEngine {
     this.afterRoar = true;
   }
 
-  /** The stands' reaction to a goal (for or against the home side) or the final whistle; the goal's net sound plays separately. */
-  react(kind: 'for' | 'against' | 'win' | 'loss' | 'draw', big = false): void {
+  /** The stands' reaction to a goal (for or against the home side) or the final whistle; the goal's net sound plays separately. `swell` (1, 2) holds a home cheer longer for a big moment. */
+  react(kind: 'for' | 'against' | 'win' | 'loss' | 'draw', big = false, swell = 0): void {
     const r = this.ready();
     if (!r) return;
     try {
-      if (kind === 'for' || kind === 'win') this.roar(kind === 'win' ? 0.8 : big ? 1 : 0.7, big || kind === 'win' ? 3600 : 1800);
+      if (kind === 'for' || kind === 'win') this.roar(kind === 'win' ? 0.8 : big ? 1 : 0.7, (big || kind === 'win' ? 3600 : 1800) + swell * 1500);
       else if (kind === 'against' || kind === 'loss') {
         // Away fans' small cheer is the roar at a lower strength; the home end groans under it.
         this.roar(kind === 'loss' ? 0.1 : 0.3, 1200);

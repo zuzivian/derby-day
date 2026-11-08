@@ -11,7 +11,7 @@
 // is plain data, so cloning a snapshot and stepping it with the same inputs
 // replays those ticks exactly, without touching the live match.
 
-import { GOAL_BAR_H, GOAL_BOTTOM, GOAL_TOP, PITCH_W, TICK_HZ } from '../sim/constants.ts';
+import { GOAL_BAR_H, GOAL_BOTTOM, GOAL_TOP, PITCH_H, PITCH_W, TICK_HZ } from '../sim/constants.ts';
 import { oppGoal, ownGoal } from '../sim/field.ts';
 import { step } from '../sim/match.ts';
 import type { HumanInput, MatchState, TeamInputs } from '../sim/types.ts';
@@ -28,6 +28,8 @@ export interface Highlight {
   label: string;
   /** Goals: the tick of the strike that scored (the replay's slow-motion starts there), when the shot was seen. */
   shot?: number;
+  /** Goals: metres from that strike to the middle of the goal line, when the shot was seen. */
+  dist?: number;
 }
 
 /** Higher is more worth a replay; a better moment replaces a pending one. */
@@ -46,6 +48,7 @@ interface ShotWatch {
   goalX: number;
   shooter: string;
   speed: number;
+  dist: number;
 }
 
 /** Watches the live match tick by tick and reports highlights. Reads state only. */
@@ -77,7 +80,7 @@ export class HighlightSpotter {
     // Goals.
     while (this.goals < s.goals.length) {
       const g = s.goals[this.goals++];
-      out.push({ kind: 'goal', tick: s.tick, goalX: oppGoal(s, g.team).x, label: `Goal · ${g.scorer} ${g.minute}'`, shot: this.watch && this.watch.team === g.team ? this.watch.tick : undefined });
+      out.push({ kind: 'goal', tick: s.tick, goalX: oppGoal(s, g.team).x, label: `Goal · ${g.scorer} ${g.minute}'`, shot: this.watch && this.watch.team === g.team ? this.watch.tick : undefined, dist: this.watch && this.watch.team === g.team ? this.watch.dist : undefined });
       this.watch = null;
     }
     // Cards: replay the challenge behind it (the last foul by that player), not the referee.
@@ -101,7 +104,7 @@ export class HighlightSpotter {
       const st = s.stats[t];
       if (st.shots > this.shots[t]) {
         const owner = this.prev.owner;
-        this.watch = { team: t, tick: s.tick, onTarget: st.onTarget > this.onTarget[t], goalX: oppGoal(s, t).x, shooter: name(owner), speed: Math.hypot(s.ball.vel.x, s.ball.vel.y) };
+        this.watch = { team: t, tick: s.tick, onTarget: st.onTarget > this.onTarget[t], goalX: oppGoal(s, t).x, shooter: name(owner), speed: Math.hypot(s.ball.vel.x, s.ball.vel.y), dist: Math.hypot(s.ball.pos.x - oppGoal(s, t).x, s.ball.pos.y - PITCH_H / 2) };
       }
       this.shots[t] = st.shots;
       this.onTarget[t] = st.onTarget;
