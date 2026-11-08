@@ -152,7 +152,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       return;
     }
     const p: BackupPreview = r.preview;
-    const when = p.exportedAt ? ` · saved ${esc(new Date(p.exportedAt).toLocaleDateString('en-GB'))}` : '';
+    const when = p.exportedAt ? ` · saved ${esc(new Date(p.exportedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}` : '';
     preview.innerHTML = `
       <div class="bk-found"><strong>${esc(p.name)}</strong> · Level ${p.level} · ${p.played} played · Elo ${p.elo}${when}</div>
       <p class="muted small">Restoring replaces <strong>${esc(hooks.getSave().club.name)}</strong> in this browser, and the page reloads. Your current club is kept as a safety copy you can swap back to.</p>
