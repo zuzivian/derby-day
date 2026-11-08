@@ -330,7 +330,7 @@ function profileInfo(s: Save, p: Player): string {
   const txt = `Overall ${ovr}, potential ${potentialText(p)}: ${growth}.`;
   return `<div class="pot-meter" role="img" aria-label="${esc(txt)}"><span class="pot-now" style="width:${ovr}%"></span><span class="pot-max" style="left:${v.hi}%"></span></div>
   <p class="prof-line">${txt}</p>
-  <p class="prof-line muted">Best suited: <b>${roles[0][0]}</b> ${roles[0][1]}${roles[0][0] !== p.role ? ` (listed ${p.role}, ${ovr})` : ''} · next ${roles[1][0]} ${roles[1][1]}. Strongest ${ATTR_NAME[hi].toLowerCase()} ${p.attrs[hi]}, weakest ${ATTR_NAME[lo].toLowerCase()} ${p.attrs[lo]}.${g === null ? '' : ` ${g} goal${g === 1 ? '' : 's'} in recorded matches.`}</p>`;
+  <p class="prof-line muted">Best suited: <b>${roles[0][0]}</b> ${roles[0][1]}${roles[0][0] !== p.role ? ` (listed ${p.role}, ${ovr})` : ''} · next ${roles[1][0]} ${roles[1][1]}. Strongest ${ATTR_NAME[hi].toLowerCase()} ${p.attrs[hi]}, weakest ${ATTR_NAME[lo].toLowerCase()} ${p.attrs[lo]}.${g === null ? '' : ` ${g}\u00a0goal${g === 1 ? '' : 's'} in recorded matches.`}</p>`;
 }
 
 /** Read-only attribute bars, each with its number as text. */

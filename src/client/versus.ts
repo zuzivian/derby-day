@@ -114,7 +114,7 @@ function injectCss(): void {
 
 const clientSeed = () => Math.floor(Math.random() * 2 ** 31) | 0;
 const dot = (team: 0 | 1) => `<span class="vs-dot" style="background:${HUMAN_COLORS[team]}" aria-hidden="true"></span>`;
-const kbd = (t: string) => t.replace(/(Hold |Esc|Enter|Space|Left Shift|Right Shift|Arrow keys|W A S D|\b[FEP]\b|, \(comma\)|\. \(period\)|\/)/g, (k) => (k === 'Hold ' ? k : `<kbd>${k}</kbd>`));
+const kbd = (t: string) => t.replace(/(Hold |Esc|Enter|Space|Left Shift|Right Shift|Arrow keys|W A S D|\b[CEFMP]\b|, \(comma\)|\. \(period\)|\/)/g, (k) => (k === 'Hold ' ? k : `<kbd>${k}</kbd>`));
 
 function ownTeam(save: Save): TeamSetup | null {
   if (!lineupReady(save)) return null;

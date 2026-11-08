@@ -397,7 +397,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Club screen ---------------------------------------------------------------- */
 .club-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: var(--sp-4); }
-.club-grid .news { align-self: start; }
+.club-grid .news, .club-grid .form { align-self: start; }
 /* Club history spans the grid, with its records in two columns, so no column is left empty beside it. */
 .club-grid .history-panel { grid-column: 1 / -1; }
 @media (min-width: 900px) {
@@ -1604,11 +1604,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Big screens (1920 up): the whole UI scales so it is not a small island in empty space. Not the match or the training ground (their canvas math must stay 1:1); the match's pause card scales on its own. */
 @media (min-width: 1800px) and (min-height: 900px) {
   #app:not(:has(> .match, > .training)) { zoom: 1.25; }
-  #app:has(> .match) .pause-card { zoom: 1.25; }
+  #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.25; }
 }
 @media (min-width: 2400px) and (min-height: 1200px) {
   #app:not(:has(> .match, > .training)) { zoom: 1.5; }
-  #app:has(> .match) .pause-card { zoom: 1.5; }
+  #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.5; }
 }
 
 /* ==========================================================================
