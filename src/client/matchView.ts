@@ -574,6 +574,9 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     o.onEnd(s, forfeited);
   }
 
+  // Live collections, queried once: a selector search every frame was a hot-path cost.
+  const downPads = padEl.getElementsByClassName('down');
+  const wordEls = root.getElementsByClassName('hud-word');
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
@@ -646,7 +649,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         if (performance.now() > keyUntil) keyEl.classList.remove('on');
         const charge = extras.charges ? Math.max(extras.charges[0], extras.charges[1]) : extras.charge;
         // Touch pads: the held button fills with the kick's power.
-        const heldPad = padEl.querySelector<HTMLElement>('.pad-btn.down');
+        const heldPad = downPads[0] as HTMLElement | undefined;
         if (heldPad) heldPad.style.setProperty('--charge', String(Math.round(Math.min(1, Math.max(0, charge)) * 50) / 50));
         const gauge = extras.charges ? undefined : hudGauge(s, extras);
         hud.update(s, charge, gauge);
@@ -663,7 +666,11 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
     // never the replayed one.
     // (Also while a goal, card or half-time word is up: coach.css hides the tip then, so it must not age or be replaced unseen.)
-    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden])');
+    let wordUp = false;
+    for (let i = 0; i < wordEls.length; i++) {
+      const w = wordEls[i] as HTMLElement;
+      if (!w.hidden && (w.dataset.tone || w.classList.contains('recap'))) wordUp = true;
+    }
     coach?.setPaused(paused || !!replay || wordUp);
     if (!replay) coach?.update(s, paused || wordUp ? 0 : elapsed * 1000);
 

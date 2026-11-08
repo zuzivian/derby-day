@@ -19,6 +19,9 @@ export const FRAME_BUDGET_MS = 40;
 /** Each judgement averages this long of frames (and at least GOV_MIN_FRAMES of them), ms. */
 export const GOV_WINDOW_MS = 1500;
 export const GOV_MIN_FRAMES = 10;
+/** A window already this many times over a budget after GOV_SEVERE_FRAMES frames is judged then, not at the window's end: a phone at half speed should not stutter for 1.5 s first. */
+export const GOV_SEVERE = 2;
+export const GOV_SEVERE_FRAMES = 6;
 /** After a step (and at the start), wait this long before judging again, ms. */
 export const GOV_SETTLE_MS = 2000;
 /** Step back up after this long of windows all under half of both budgets, ms. */
@@ -79,7 +82,9 @@ export class QualityGovernor {
     // A frame after a hidden tab or a long stall says nothing about steady speed: cap it.
     this.draw += Math.min(drawMs, 100);
     this.frame += Math.min(frameMs, 100);
-    if (++this.n < GOV_MIN_FRAMES || now - this.windowStart < GOV_WINDOW_MS) return null;
+    this.n++;
+    const severe = this.n >= GOV_SEVERE_FRAMES && (this.draw / this.n > DRAW_BUDGET_MS * GOV_SEVERE || this.frame / this.n > FRAME_BUDGET_MS * GOV_SEVERE);
+    if (!severe && (this.n < GOV_MIN_FRAMES || now - this.windowStart < GOV_WINDOW_MS)) return null;
     const draw = this.draw / this.n;
     const frame = this.frame / this.n;
     this.draw = this.frame = this.n = 0;

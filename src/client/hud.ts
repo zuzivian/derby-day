@@ -201,13 +201,24 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   // off the dark radar panel.
   const rims = colors.map((c) => (luma(c) < 0.35 ? 'rgba(255,255,255,.85)' : 'rgba(0,0,0,.9)'));
 
+  // The radar's CSS size, kept by a ResizeObserver: reading it every frame forced a layout after the frame's DOM writes.
+  let radarW = 0;
+  let radarH = 0;
+  const measureRadar = () => {
+    const b = radar.getBoundingClientRect();
+    radarW = b.width;
+    radarH = b.height;
+  };
+  measureRadar();
+  const radarRo = typeof ResizeObserver === 'function' ? new ResizeObserver(measureRadar) : null;
+  radarRo?.observe(radar);
+
   function drawRadar(s: MatchState) {
     if (!ctx) return;
-    const r = radar.getBoundingClientRect();
-    if (r.width < 2) return;
+    if (radarW < 2) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const w = Math.round(r.width * dpr);
-    const h = Math.round(r.height * dpr);
+    const w = Math.round(radarW * dpr);
+    const h = Math.round(radarH * dpr);
     if (radar.width !== w || radar.height !== h) {
       radar.width = w;
       radar.height = h;
@@ -407,6 +418,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
     },
     dispose() {
       until = 0;
+      radarRo?.disconnect();
     },
   };
   return hud;
