@@ -225,7 +225,13 @@ for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }, { 
     const at = { x: b.l + ((62 + 3.5) / 112) * (b.r - b.l), y: b.t + ((52 + 3.5) / 75) * (b.b - b.t) };
     const cdp = await page.context().newCDPSession(page);
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: at.x, y: at.y }] });
-    await page.waitForTimeout(900);
+    // Let the finger steer for a number of sim ticks, not a number of milliseconds. matchView.ts steps at most 0.2 s of
+    // game time per frame, so a loaded machine runs fewer ticks in the same wall time (a 900 ms wait gave 36 ticks at 100x
+    // CPU slowdown against about 54 unloaded), and the run is acceleration-limited: 36 ticks cover 2.0 m on the diagonal,
+    // right at the 'he ran > 2 m' bound ('he ran (1.4, 1.4)'). The direction was exact (cos 1.00) every time.
+    const t0 = await page.evaluate(() => window.__derbyMatch.tick);
+    await page.waitForFunction((t0) => window.__derbyMatch.tick - t0 >= 90, t0, { timeout: 60_000, polling: 50 });
+    // 90 ticks (1.5 s) is about 6 m of the 17 m to the finger: far enough to measure, short of arriving.
     const me = await page.evaluate(() => { const s = window.__derbyMatch; return s.players[s.controlled[0]].pos; });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     const [dx, dy] = [me.x - 50, me.y - 40];
