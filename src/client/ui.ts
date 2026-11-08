@@ -62,6 +62,17 @@ export interface ResultView {
   headline?: string;
   /** Ladder position before the match, for the Elo chip. */
   rankBefore?: number;
+  /** Every goal in the order it was scored (match clock seconds), so the headline can tell a late winner from a late leveller. */
+  goals?: GoalAt[];
+  /** Derby, decided once before the match exactly as the kick-off banner does (stakesVs). */
+  derby?: boolean;
+}
+
+export interface GoalAt { side: 'us' | 'them'; second: number }
+
+/** Goals in true chronological order from the match's goal events, `us` being team `side` (0 by default). */
+export function goalOrder(goals: { team: 0 | 1; second: number; tick: number }[], side: 0 | 1 = 0): GoalAt[] {
+  return [...goals].sort((a, b) => a.tick - b.tick).map((e) => ({ side: e.team === side ? 'us' : 'them', second: e.second }));
 }
 
 export interface App {
@@ -554,19 +565,21 @@ export function ladderScreen(app: App): string {
 type Outcome = 'win' | 'draw' | 'loss';
 const OUTCOME_WORD: Record<Outcome, string> = { win: 'Victory', draw: 'Draw', loss: 'Defeat' };
 
-/** A headline that fits the match, read from the scorers' minutes (2 + 3 goals, who led when). Plain Victory/Draw/Defeat when the story is not told (shootouts, forfeits, awarded scores). */
-function storyWord(r: ResultView, outcome: Outcome, derby: boolean): string {
+/** A headline that fits the match, read from the goals in the order they were scored (2 + 3 goals, who led when). Plain Victory/Draw/Defeat when the story is not told (shootouts, forfeits, awarded scores, no goal times). */
+export function storyWord(r: ResultView, outcome: Outcome): string {
   const plain = OUTCOME_WORD[outcome];
-  const ev = [...r.scorersFor.map((x) => [0, parseInt(x.replace(/^.*\s/, ''), 10)]), ...r.scorersAgainst.map((x) => [1, parseInt(x.replace(/^.*\s/, ''), 10)])].sort((x, y) => x[1] - y[1]);
-  if (r.pens || r.forfeited || ev.length !== r.gf + r.ga || ev.some((e) => isNaN(e[1]))) return plain;
+  const derby = !!r.derby;
+  const ev = r.goals;
+  if (!ev || r.pens || r.forfeited || ev.length !== r.gf + r.ga || ev.some((e) => !(e.second >= 0))) return plain;
   let diff = 0, low = 0;
-  for (const [t] of ev) low = Math.min(low, (diff += t ? -1 : 1));
+  for (const e of ev) low = Math.min(low, (diff += e.side === 'them' ? -1 : 1));
   const last = ev[ev.length - 1];
-  const late = !!last && last[1] >= 85;
+  const late = !!last && last.second >= 85 * 60;
   const gap = r.gf - r.ga;
-  if (outcome === 'win') return low < 0 ? 'Comeback' : late && gap === 1 && !last[0] ? 'Late winner' : gap >= 4 ? 'Thrashing' : derby ? 'Derby win' : r.ga === 0 ? 'Clean sheet' : plain;
-  if (outcome === 'draw') return late && !last[0] && low < 0 ? 'Late leveller' : low < 0 ? 'Fought back' : r.gf ? plain : 'Goalless';
-  return gap <= -4 ? 'Heavy defeat' : late && gap === -1 && last[0] === 1 ? 'Late blow' : derby ? 'Derby loss' : plain;
+  const ours = last?.side === 'us';
+  if (outcome === 'win') return low < 0 ? 'Comeback' : late && gap === 1 && ours ? 'Late winner' : gap >= 4 ? 'Thrashing' : derby ? 'Derby win' : r.ga === 0 ? 'Clean sheet' : plain;
+  if (outcome === 'draw') return late && ours && low < 0 ? 'Late leveller' : low < 0 ? 'Fought back' : r.gf ? plain : 'Goalless';
+  return gap <= -4 ? 'Heavy defeat' : late && gap === -1 && !ours ? 'Late blow' : derby ? 'Derby loss' : plain;
 }
 
 const rsIcon = (body: string, size = 18) => `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false">${body}</svg>`;
@@ -645,8 +658,7 @@ function resultModal(app: App): string {
   const them = r.opp.short;
   const sum = r.summary;
   const rankNow = isUnlocked(app.save, 'ladder') ? rankOf(app.save) : 0;
-  const oppRank = r.ranked && r.rankBefore ? ladderTable(app.save).findIndex((x) => x.name === r.opp.name) + 1 : 0;
-  const derby = oppRank > 0 && Math.abs(oppRank - r.rankBefore!) <= DERBY_PLACES;
+  const derby = !!r.derby; // stored before the match (stakesVs), never recomputed from the post-match ladder
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
@@ -669,7 +681,7 @@ function resultModal(app: App): string {
         ${outcome === 'win' ? confettiHtml(r.headline ? 40 : undefined) : ''}
         ${r.headline === 'Cup winners' ? `<div class="rs-trophy">${CUP_ICON}</div>` : ''}
         <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))}${derby ? ' · Derby' : ''} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
-        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? storyWord(r, outcome, derby))}</h2>
+        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? storyWord(r, outcome))}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
           <div class="rs-team">

@@ -38,7 +38,7 @@ import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
-import { esc, type ResultView } from './ui.ts';
+import { esc, goalOrder, type ResultView } from './ui.ts';
 
 export interface VersusOptions {
   save: Save;
@@ -139,6 +139,7 @@ function resultFor(m: MatchState, side: 0 | 1, opp: ResultView['opp'], elo: numb
     possession: [poss[side], poss[o]],
     scorersFor: scorers(side),
     scorersAgainst: scorers(o),
+    goals: goalOrder(m.goals, side),
     label,
     note,
     unrecorded: 'Friendly between two humans: no Elo, no money, no training.',

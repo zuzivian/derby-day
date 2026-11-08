@@ -54,7 +54,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
 import { storyHtml } from './stakes.ts';
-import { CUP_ICON, emptyState, esc, rankOf, type App } from './ui.ts';
+import { CUP_ICON, emptyState, esc, goalOrder, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -459,6 +459,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
       note: outcome.note,
       pens,
       rankBefore,
+      goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
       headline: outcome.trophy ? (outcome.trophy.kind === 'cup' ? 'Cup winners' : 'Champions') : undefined,
       closeLabel: closeLabelFor(kind, s),
     };
