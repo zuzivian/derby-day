@@ -138,7 +138,7 @@ const coarsePointer = (): boolean => typeof matchMedia === 'function' && matchMe
 const hint = (key: string, rest: string) => `<span class="hint-key">${key}</span> <span class="hint-rest">${rest}</span>`;
 /** On phones and tablets: no mouse or keys to talk about. */
 const TOUCH_HINT = hint(
-  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power (without the ball, a tackle) · <b>tap</b> a player to switch`,
+  `<b>Drag</b> to run · <b>Pass</b>, hold to loft · <b>Shoot</b>, hold for power, tackles off the ball · <b>tap</b> a player to switch`,
   `Your player runs toward your finger, faster the further it is.`,
 );
 const MOUSE_HINT = hint(
