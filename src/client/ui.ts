@@ -482,7 +482,7 @@ export function trainingScreen(app: App): string {
         <span class="attr-name">${ATTR_NAME[k]}</span>
         <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>
         <span class="attr-val${g?.n ? ' tick' : ''}">${p.attrs[k]}${g ? `<b class="gain${g.n ? '' : ' zero'}" aria-hidden="true">${g.n ? '+' + g.n : '+0'}</b>` : ''}</span>
-        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
+        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="${max ? `${ATTR_NAME[k]} is at its maximum, ${p.attrs[k]}` : `Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}`}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
       </li>`;
       }).join('')}</ul>
       <p class="muted small">Under-21s grow fastest, and a player at their potential rarely improves.</p>

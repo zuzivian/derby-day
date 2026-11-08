@@ -1667,6 +1667,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .pchip .rise-tag::after { content: none; }
 .name-btn { appearance: none; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; min-width: 0; max-width: 100%; }
 .name-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A 24 px target (WCAG 2.5.8) from the 21 px line, with the negative margin keeping the row exactly as tall as before. */
+@media (pointer: fine) { .name-btn { padding: 3px 0; margin: -3px 0; } }
 .prof-row > td { background: var(--surface-2); white-space: normal; }
 .prof { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); padding: var(--sp-2) 0; font-weight: 400; }
 .attr-list.ro li { grid-template-columns: 92px minmax(0, 1fr) 28px; }

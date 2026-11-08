@@ -427,3 +427,11 @@
 
 /* A replay is a clean cut: the camera and zoom buttons wait until it is over. */
 .pitch-wrap.replaying .pitch-cam, .pitch-wrap.replaying .pitch-zoom { visibility: hidden; }
+
+/* 24 px targets with a mouse (WCAG 2.5.8) with the looks unchanged: the small Cam and All controls buttons grow an invisible 4 px margin; touch has its 44 px rules above. */
+@media (pointer: fine) {
+  .pitch-cam, .hint-more { position: relative; }
+  .pitch-cam::after, .hint-more::after { content: ''; position: absolute; inset: -4px; }
+  .pause-opt { min-height: 24px; }
+  .pause-opt input[type="range"] { height: 24px; }
+}
