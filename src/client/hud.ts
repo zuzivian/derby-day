@@ -10,6 +10,7 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
 import { keeperHoldLeft, passIncoming } from '../sim/human.ts';
+import { announce } from './a11y.ts';
 import { tension } from './audio.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
@@ -72,7 +73,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden aria-hidden="true"></div>
       <div class="hud-fk" hidden aria-hidden="true"></div>
-      <div class="hud-prompt" hidden role="status"></div>
+      <div class="hud-prompt" hidden></div>
     </div>`;
 }
 
@@ -162,6 +163,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   // A human's kick-off waiting: who kicks off, with which key, and how long before the CPU takes it.
   const prompt = q('.hud-prompt');
   let lastPrompt = '';
+  let lastSay: string | null = null;
   const banner = q('#banner');
   const clock = q('#sb-clock');
   const radar = q<HTMLCanvasElement>('.hud-radar');
@@ -313,6 +315,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       if (pr !== lastPrompt) {
         lastPrompt = pr;
         prompt.hidden = !pr;
+        // Said once when it appears: a live region would read the countdown out every second.
+        if (say && say !== lastSay) announce(say);
+        lastSay = say;
         if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>· the CPU takes it in ${ko.secs} s</small>`;
       }
       const c = matchClock(s);

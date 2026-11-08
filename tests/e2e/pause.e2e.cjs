@@ -124,3 +124,19 @@ test('the pause menu has a sound volume slider; the arrow keys change it and it 
   expect(await page.evaluate(() => localStorage.getItem('derbyday.audio.volume.v1')), 'remembered').toBe('0.8');
   expect(await page.locator(SEL.pause).isVisible(), 'the arrows did not leave the menu').toBe(true);
 });
+
+test('with a mouse the Cam and All controls buttons are 24 px targets (an invisible margin, the looks unchanged)', async (t) => {
+  const page = await openApp(t, { prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d' });
+  await startRanked(page);
+  await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play');
+  for (const sel of ['.pitch-cam', '#hint-more']) {
+    const hit = await page.evaluate((s) => {
+      const e = document.querySelector(s);
+      const r = e.getBoundingClientRect();
+      const mid = (r.left + r.right) / 2;
+      // Just outside the box, top and bottom: still the button, and the whole reach is 24 px or more.
+      return [document.elementFromPoint(mid, r.top - 3) === e, document.elementFromPoint(mid, r.bottom + 3) === e];
+    }, sel);
+    expect(hit, `${sel}: 3 px beyond its box still presses it`).toEqual([true, true]);
+  }
+});

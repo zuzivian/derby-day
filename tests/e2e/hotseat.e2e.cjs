@@ -55,6 +55,7 @@ test('Local 2P: pick an opponent, both players steer their own team, nothing is 
   // Both players see who kicks off and with which key.
   await page.waitForSelector('.hud-prompt:not([hidden])', { timeout: 15_000 });
   expect(await page.locator('.hud-prompt').innerText(), 'the kick-off prompt names player 1 and his key').toMatch(/Player 1 kicks off: press Space/);
+  expect(await page.locator('.hud-prompt').getAttribute('role'), 'a countdown is not a live region (it would be read out every second)').toBe(null);
   const pressedAt = await page.evaluate(() => window.__derbyMatch.tick);
   await page.keyboard.press('Space');
   await page.waitForFunction(() => window.__derbyMatch.phase === 'play', null, { timeout: 15_000, polling: 'raf' });

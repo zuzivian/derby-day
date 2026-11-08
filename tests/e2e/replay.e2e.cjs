@@ -370,6 +370,7 @@ test('replay: clip chips and goal markers jump to the moments, the camera switch
   const at = await scrubValue(page);
   expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
   expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
+  expect(await page.locator('.rp-mark').nth(1).getAttribute('title'), 'a pip says which team scored (our goals were told by colour alone)').toBeTruthy();
   // Pips are placed with a unitless fraction (typed calc() arithmetic is not portable): later goals sit further right, none at 0:00.
   const ps = await page.locator('.rp-mark').evaluateAll((els) => els.map((e) => e.getAttribute('style')));
   expect(ps.every((x) => /--p:\s*0?\.\d+(;|$)|--p:\s*1(\.0+)?(;|$)/.test(x)), 'pip --p is a bare fraction').toBe(true);

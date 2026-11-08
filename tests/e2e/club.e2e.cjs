@@ -122,3 +122,13 @@ test('screen reader: Ladder and Sell headings are short, the paste-replay button
   await goTab(page, 'club');
   expect(await page.getByRole('button', { name: 'Play pasted replay' }).count(), 'the Play button names its job').toBe(1);
 });
+
+test('mouse targets are at least 24 px: the profile name buttons in the squad', async (t) => {
+  const page = await openApp(t);
+  for (const screen of ['squad']) {
+    await goTab(page, screen);
+    const hs = await page.locator('.name-btn').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+    expect(hs.length, `${screen}: name buttons`).toBeGreaterThan(0);
+    expect(Math.min(...hs), `${screen}: the smallest name button`).toBeGreaterThanOrEqual(24);
+  }
+});

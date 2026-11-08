@@ -1032,7 +1032,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
     c.translate(x, y);
-    const beat = cap[2] ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
+    const beat = cap[2] && !reduced ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
     c.scale(beat, beat);
     c.lineWidth = 5;
     c.strokeStyle = 'rgba(8,14,12,.85)';

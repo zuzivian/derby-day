@@ -713,8 +713,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
         <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
         <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
-      <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
-      <div class="net-chip" id="net-chip" role="status" hidden></div>
+      <div class="net-banner" id="net-wait" hidden>Waiting for opponent…</div>
+      <div class="net-chip" id="net-chip" hidden></div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="net-menu-title">
@@ -895,6 +895,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let shownHalftime = false;
   let fullAt = 0;
   let statsAt = 0;
+  let waitSaid = 0;
+  let slowSaid = false;
   function banner(text: string, ms: number, sub?: string) {
     hud.word(text, ms, sub);
     bannerUntil = performance.now() + ms;
@@ -926,6 +928,10 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     waitEl.hidden = !waiting;
     const waitText = lost ? (link && (link.status === 'reconnecting' || (link.status !== 'open' && navigator.onLine === false)) ? `${navigator.onLine === false ? "You are offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you cannot get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
+    // Said when the wait begins or turns into a lost connection, without the seconds that count down on screen.
+    const waitKey = lost ? 2 : waiting ? 1 : 0;
+    if (waitKey > waitSaid) announce(waitText.replace(/ \d+ s(?=[.,])/, ''));
+    waitSaid = waitKey;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);
     section.dataset.tick = String(s.tick);
@@ -942,6 +948,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       if (link) section.dataset.link = link.status;
       const slow = live && !waiting && (ls.rttMs > 150 || now - lastStallAt < 4000);
       const chip = $('net-chip');
+      if (slow && chip.hidden && !slowSaid) announce('Slow connection.');
+      slowSaid ||= slow;
       chip.hidden = !slow;
       if (slow) chip.textContent = ls.rttMs > 150 ? `Slow connection · ${Math.round(ls.rttMs)} ms` : 'Connection hiccup';
       section.dataset.slow = slow ? '1' : '0';
