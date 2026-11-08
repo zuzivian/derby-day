@@ -546,7 +546,7 @@ export function applyResult(
   }
 
   pushHistory(save, { opponent: opponentName.name, opponentShort: opponentName.short, goalsFor, goalsAgainst, ranked, eloBefore, eloAfter: c.elo, scorers, ...(competition ? { competition } : {}), ...(counted ? { week: save.week } : {}), ...(forfeited ? { forfeited } : {}) });
-  save.news.push(matchNews(opponentName.name, goalsFor, goalsAgainst, scorers, ranked ? 'the ranked ladder' : competition ? (/^Cup/.test(competition) ? `the ${competition}` : /^Warm/.test(competition) ? 'a warm-up friendly' : competition) : 'a friendly', rated ? delta : null, !!firstWin));
+  save.news.push(matchNews(opponentName.name, goalsFor, goalsAgainst, scorers, ranked ? 'the ranked ladder' : competition ? (/^Cup/.test(competition) ? `the ${competition}` : /^Warm/.test(competition) ? 'a warm-up friendly' : /^First/.test(competition) ? 'your first match' : competition) : 'a friendly', rated ? delta : null, !!firstWin));
   if (save.news.length > 40) save.news.splice(0, save.news.length - 40);
   return { eloDelta: delta, money, trainingPoints: tp, developments, xp, ...(fine || owed ? { fine, owed } : {}) };
 }

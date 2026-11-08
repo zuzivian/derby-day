@@ -172,7 +172,7 @@ function cupPanel(s: Save): string {
   }
   return `
   <article class="panel comp-panel" aria-labelledby="cup-title">
-    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
+    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : out ? 'Out' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
     ${status}
     ${bracket(s, cup)}
   </article>`;

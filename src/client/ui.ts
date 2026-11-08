@@ -326,7 +326,7 @@ function profileInfo(s: Save, p: Player): string {
   const keys = ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').sort((a, b) => p.attrs[b] - p.attrs[a]);
   const hi = keys[0], lo = keys[keys.length - 1];
   const g = goalsOf(s, p);
-  const growth = gap > 0 ? `${gap} to grow` : p.age >= 30 ? 'past peak: expect decline' : 'at potential';
+  const growth = gap > 0 ? `${gap} to grow` : p.age >= 30 ? 'past peak, expect decline' : 'at potential';
   const txt = `Overall ${ovr}, potential ${potentialText(p)}: ${growth}.`;
   return `<div class="pot-meter" role="img" aria-label="${esc(txt)}"><span class="pot-now" style="width:${ovr}%"></span><span class="pot-max" style="left:${v.hi}%"></span></div>
   <p class="prof-line">${txt}</p>
