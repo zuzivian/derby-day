@@ -567,7 +567,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     P.set('pelvis', 0, pelvisYaw, pelvisRoll);
     // Feet: planted through stance (moving back under him at exactly his speed, so they never skate),
     // then swung forward, the heel kicking up behind at a run.
-    const lift = 0.05 * gait + 0.12 * run + 0.14 * sprint;
+    const lift = 0.07 * smooth(0.1, 1.4, speed) + 0.1 * run + 0.14 * sprint;
     const heel = 0.08 * run + 0.22 * sprint;
     const centre = -0.06 * S * run;
     for (const left of [true, false]) {

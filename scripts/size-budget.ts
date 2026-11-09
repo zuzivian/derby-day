@@ -5,7 +5,10 @@
 // 2026-10-25: raised to 1,400,000. The owner set in-match gameplay (models, audio, HUD, physics) as the priority,
 // and main had reached 1,246,647 bytes (about 352 KB gzipped) with more of that work queued.
 
-const BUDGET_BYTES = 1_400_000;
+// 2026-11-09: raised to 2,000,000. The owner chose a graphics upgrade (broadcast realism: players and animation first)
+// and approved about 2 MB for it; main was at 1,370,000 bytes, 98% of the old budget.
+
+const BUDGET_BYTES = 2_000_000;
 
 const file = new URL('../dist/index.html', import.meta.url).pathname;
 const f = Bun.file(file);

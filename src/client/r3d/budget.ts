@@ -31,6 +31,8 @@ export interface FrameBudget {
 //   high: players 1.7, stadium 0.4, scene 0.5, submit 4.1 ms; 154 calls; 432k tris.
 // The totals leave the governor 4 (low) and 2 (high) ms before it steps down; players and stadium get
 // the most room over what is spent today, since celebrations land there. GPU counts: about 20% over.
+// 2026-11-09, the continuous player bodies (body3d.ts, about 3,300 triangles each at high quality, 2,300 at low, one
+// draw call instead of two): max seen low 78 calls, 165k tris; high 163 calls, 484k tris. Inside the budgets as they are.
 export const FRAME_BUDGET: Record<Quality, FrameBudget> = {
   low: { ms: { setup: 0.3, players: 1.7, stadium: 0.6, scene: 0.5, submit: 2.9 }, calls: 140, tris: 190_000 },
   high: { ms: { setup: 0.3, players: 2.1, stadium: 0.9, scene: 0.6, submit: 4.1 }, calls: 190, tris: 520_000 },
