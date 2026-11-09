@@ -15,10 +15,13 @@ export const CLASH_DE = 20;
 
 /** Machado 2009, severity 1.0, applied to linear RGB. */
 const PROTAN = [0.152286, 1.052583, -0.204868, 0.114503, 0.786281, 0.099216, -0.003882, -0.048116, 1.051998];
+const TRITAN = [1.255528, -0.076749, -0.178779, -0.078411, 0.930809, 0.147602, 0.004733, 0.691367, 0.3039];
 const DEUTAN = [0.367322, 0.860646, -0.227968, 0.280085, 0.672501, 0.047413, -0.01182, 0.04294, 0.968881];
 
-export type Vision = 'normal' | 'protan' | 'deutan';
+export type Vision = 'normal' | 'protan' | 'deutan' | 'tritan';
 export const VISIONS: Vision[] = ['normal', 'protan', 'deutan'];
+/** Shirt clashes also hold for tritanopia (rare, but the blue-yellow axis was left open). */
+const CLASH_VISIONS: Vision[] = [...VISIONS, 'tritan'];
 
 const toLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
 
@@ -30,7 +33,7 @@ function hexToLinear(hex: string): RGB {
 
 function simulate(rgb: RGB, v: Vision): RGB {
   if (v === 'normal') return rgb;
-  const m = v === 'protan' ? PROTAN : DEUTAN;
+  const m = v === 'protan' ? PROTAN : v === 'tritan' ? TRITAN : DEUTAN;
   const clamp = (x: number) => Math.max(0, Math.min(1, x));
   return [clamp(m[0] * rgb[0] + m[1] * rgb[1] + m[2] * rgb[2]), clamp(m[3] * rgb[0] + m[4] * rgb[1] + m[5] * rgb[2]), clamp(m[6] * rgb[0] + m[7] * rgb[1] + m[8] * rgb[2])];
 }
@@ -93,13 +96,13 @@ export function colourDiff(a: string, b: string, v: Vision = 'normal'): number {
 }
 
 /** The smallest difference between two colours across normal, protan and deutan vision. */
-export function worstDiff(a: string, b: string): number {
-  return Math.min(...VISIONS.map((v) => colourDiff(a, b, v)));
+export function worstDiff(a: string, b: string, visions: Vision[] = VISIONS): number {
+  return Math.min(...visions.map((v) => colourDiff(a, b, v)));
 }
 
-/** Do two shirts clash for anyone (normal, protan or deutan vision)? */
+/** Do two shirts clash for anyone (normal, protan, deutan or tritan vision)? */
 export function shirtsClash(a: string, b: string): boolean {
-  return worstDiff(a, b) < CLASH_DE;
+  return worstDiff(a, b, CLASH_VISIONS) < CLASH_DE;
 }
 
 export const NEUTRAL_DARK = '#1c1c1c';
@@ -113,11 +116,12 @@ export const NEUTRAL_LIGHT = '#f5f5f5';
  */
 export function avoidClash(home: TeamSetup, away: TeamSetup): TeamSetup {
   const swapped = { ...away, primary: away.secondary, secondary: away.primary };
-  const darkOk = worstDiff(home.primary, NEUTRAL_DARK) >= worstDiff(home.primary, NEUTRAL_LIGHT);
+  const w = (o: string) => worstDiff(home.primary, o, CLASH_VISIONS);
+  const darkOk = w(NEUTRAL_DARK) >= w(NEUTRAL_LIGHT);
   const neutral = { ...away, primary: darkOk ? NEUTRAL_DARK : NEUTRAL_LIGHT, secondary: darkOk ? NEUTRAL_LIGHT : NEUTRAL_DARK };
   const options = [away, swapped, neutral];
   for (const o of options) if (!shirtsClash(home.primary, o.primary)) return o;
-  return options.reduce((best, o) => (worstDiff(home.primary, o.primary) > worstDiff(home.primary, best.primary) ? o : best));
+  return options.reduce((best, o) => (w(o.primary) > w(best.primary) ? o : best));
 }
 
 // ---------------------------------------------------------------------------

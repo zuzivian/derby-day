@@ -33,6 +33,7 @@ import {
 import type { CrestPattern } from '../meta/names.ts';
 import { crestSvg } from './crest.ts';
 import { getSound } from './audio.ts';
+import { esc } from './html.ts';
 
 export interface ShootoutClub {
   name: string;
@@ -61,8 +62,6 @@ export interface ShootoutViewOptions {
   onEnd: (r: ShootoutResult) => void;
 }
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const reducedMotion = (): boolean => {
   try {
@@ -138,7 +137,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     ? {
         canvas: 'The goal, seen from the penalty spot. Touch and hold to aim, lift to strike.',
         howTake: '<b>Taking a kick:</b> touch the goal to aim (the target sits above your finger), hold to build power, drag to adjust and lift to strike. Hit it too hard and it sails over the bar; the corners are riskier.',
-        howKeep: "<b>Keeping:</b> watch the taker's run-up, then tap the left, middle or right of the goal, or a dive button, before he strikes.",
+        howKeep: "<b>Keeping:</b> watch the taker's run-up, then tap the left, middle or right of the goal, or a dive button, before the strike.",
         aim: 'Touch where to shoot, hold to build power, lift to strike. Stay in the green; too hard flies over the bar.',
         dive: 'Tap left, middle or right of the goal to dive.',
         cont: 'Tap the pitch to continue',
@@ -147,7 +146,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     : {
         canvas: 'The goal, seen from the penalty spot. Aim with the mouse or the arrow keys.',
         howTake: '<b>Taking a kick:</b> move the mouse to aim, hold the left button to build power and let go to strike. Hit it too hard and it sails over the bar; the corners are riskier. <b>Keys:</b> arrows aim, hold Space and release to strike.',
-        howKeep: "<b>Keeping:</b> watch the taker's run-up, then click the left, middle or right of the goal to dive before he strikes. <b>Keys:</b> arrows pick a side, Space dives.",
+        howKeep: "<b>Keeping:</b> watch the taker's run-up, then click the left, middle or right of the goal to dive before the strike. <b>Keys:</b> arrows pick a side, Space dives.",
         aim: 'Aim with the mouse or arrow keys. Hold the left button or Space to build power, release to strike. Strike in the green; too hard flies over the bar.',
         dive: 'Click the left, middle or right of the goal to dive, or use the arrow keys and Space.',
         cont: 'Click or press Space to continue',
@@ -366,7 +365,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
       showQuick(false);
       showDive(true);
       showMeter('timer');
-      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(1)}`, `His run-up angles ${DIVE_NAME[tellDive]}, but he may be bluffing. ${TXT.dive}`);
+      setInfo(`<b>Save it</b> (${n > KICKS_PER_SIDE ? 'sudden death' : `${n} of ${KICKS_PER_SIDE}`}): ${esc(turn.taker.name)} steps up, shooting ${Math.round(turn.taker.shooting * 100)}${stakePill(1)}`, `The run-up angles ${DIVE_NAME[tellDive]}, but it may be a bluff. ${TXT.dive}`);
       say(`${stakeOf(1)?.[0] ? `${stakeOf(1)![0]}. ` : ''}${turn.taker.name} steps up for ${o.oppClub.name}. His run-up angles ${DIVE_NAME[tellDive]}. Choose left, centre or right to dive.`);
     }
   }
@@ -415,7 +414,9 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     const text = describeKick(p.turn.taker.name, keeperName, p.result.outcome);
     // Good for you: you scored, or they failed to.
     const good = (p.turn.side === 0) === p.result.scored;
-    setBanner(OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
+    // Your keeper saving a kick that decided something (a must-score for them, or the winner): a bigger word and cheer.
+    const clutch = p.result.outcome === 'saved' && p.turn.side === 1 && !!caption?.[2];
+    setBanner(clutch ? 'What a save!' : OUTCOME_BANNER[p.result.outcome], p.result.outcome, good);
     setSkipHint(true);
     buzz(p.result.scored ? [20, 40, 20] : 30);
     const snd = getSound();
@@ -424,8 +425,8 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     else if (oc === 'saved') snd.play({ type: 'catch', power: 0.8 });
     else if (oc === 'post') snd.play({ type: 'knock', kind: 'post', power: 0.9 });
     else snd.play({ type: 'ooh', power: 0.6 });
-    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2]);
-    fx(good ? 'good' : 'bad', p.result.scored);
+    snd.react(good ? 'for' : 'against', sh.done || !!caption?.[2], clutch ? 1 : 0);
+    fx(good ? 'good' : 'bad', p.result.scored || clutch);
     delete section.dataset.stakes;
     if (sh.done) section.dataset.final = sh.winner === 0 ? 'win' : 'lose';
     const extra = p.turn.side === 1 ? ` You dived ${DIVE_NAME[p.result.dive]}.` : '';
@@ -1033,7 +1034,7 @@ export function mountShootout(root: HTMLElement, o: ShootoutViewOptions): () => 
     c.textBaseline = 'middle';
     c.lineJoin = 'round';
     c.translate(x, y);
-    const beat = cap[2] ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
+    const beat = cap[2] && !reduced ? 1 + Math.abs(Math.sin(now / 150)) * 0.06 : 1; // a heartbeat on a decisive kick
     c.scale(beat, beat);
     c.lineWidth = 5;
     c.strokeStyle = 'rgba(8,14,12,.85)';

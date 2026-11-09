@@ -9,8 +9,9 @@ import type { Save } from '../meta/game.ts';
 import { showToast } from './a11y.ts';
 import { expectRestore } from './tabguard.ts';
 import { telemetry } from './telemetry.ts';
+import { esc } from './html.ts';
+import { controlsHelp } from './controls.ts';
 
-const esc = (t: string | number): string => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 export interface SettingsHooks {
   getSave: () => Save;
@@ -66,6 +67,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
     ${prev ? `<div class="bk-prev"><p class="muted small">A safety copy of an earlier club is kept: <strong>${esc(prev.name)}</strong> (${prev.played} played).</p><button class="btn small" id="bk-undo" type="button">Swap back to ${esc(prev.name)}</button></div>` : ''}`}
     </section>
     ${telemetry.enabled ? `<section class="settings-sec" aria-labelledby="pv-h"><h3 class="eyebrow" id="pv-h">Privacy</h3><label class="check"><input type="checkbox" id="tl-off"${telemetry.optedOut() ? ' checked' : ''}> Don't send anonymous usage counts</label></section>` : ''}
+    <section class="settings-sec">${controlsHelp('help-settings')}</section>
     <div class="settings-foot"><button class="btn ghost" id="settings-close" type="button">Done</button></div>
   </div>`;
   document.body.appendChild(wrap);
@@ -88,7 +90,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       e.stopPropagation();
       close();
     } else if (e.key === 'Tab') {
-      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden])')].filter((x) => x.offsetParent !== null);
+      const f = [...wrap.querySelectorAll<HTMLElement>('button:not([disabled]),textarea,input:not([hidden]),summary')].filter((x) => x.offsetParent !== null);
       if (!f.length) return;
       const first = f[0], last = f[f.length - 1];
       if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
@@ -150,7 +152,7 @@ export function openSettings(hooks: SettingsHooks, opener: HTMLElement | null): 
       return;
     }
     const p: BackupPreview = r.preview;
-    const when = p.exportedAt ? ` · saved ${esc(new Date(p.exportedAt).toLocaleDateString('en-GB'))}` : '';
+    const when = p.exportedAt ? ` · saved ${esc(new Date(p.exportedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }))}` : '';
     preview.innerHTML = `
       <div class="bk-found"><strong>${esc(p.name)}</strong> · Level ${p.level} · ${p.played} played · Elo ${p.elo}${when}</div>
       <p class="muted small">Restoring replaces <strong>${esc(hooks.getSave().club.name)}</strong> in this browser, and the page reloads. Your current club is kept as a safety copy you can swap back to.</p>

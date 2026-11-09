@@ -25,9 +25,8 @@ import {
   type XpGain,
 } from '../meta/levels.ts';
 import { CREST_PATTERNS } from '../meta/names.ts';
+import { esc } from './html.ts';
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const fmt = (n: number) => n.toLocaleString('en-GB');
 

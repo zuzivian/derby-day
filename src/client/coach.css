@@ -96,8 +96,6 @@
 @media (prefers-reduced-motion: reduce) { .ob-score > span > span { animation: none; } }
 .ob-score { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-4xl); line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ob-xp { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1.5px dashed var(--line); border-radius: var(--r-md); background: var(--surface-2); }
-.ob-xp-bar { height: 8px; border-radius: var(--r-xs); background: var(--line); overflow: hidden; }
-.ob-xp-bar i { display: block; height: 100%; background: var(--accent); }
 .ob-welcome .kickoff { display: flex; width: 100%; justify-content: center; }
 .ob-welcome .ob-kit { justify-content: center; }
 
@@ -107,3 +105,6 @@
 /* The welcome card is a dark felt card, but its club panel is the theme's light surface: the club names inherited the card's
    near-white text and vanished in the light theme (1.01:1). Ink on the panel is right in both themes. (Kept here, not in styles.css.) */
 .ob-welcome .ob-versus { color: var(--ink); }
+
+/* A goal, a card or the half/full-time words take the middle of the pitch for a couple of seconds: the tip steps aside rather than sit on them. */
+.pitch-wrap:has(.hud-word[data-tone]:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap:has(.hud-word.recap:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap.replaying :is(.coach-tip, .coach-intro) { visibility: hidden; }

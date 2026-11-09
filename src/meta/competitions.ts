@@ -293,7 +293,7 @@ export function startCup(save: Save): Cup {
   save.cup = cup;
   save.cupWait = CUP_WAIT;
   const opp = cupOpponent(save, cup);
-  save.news.push(`Entered Cup ${edition}. Quarter-final against ${opp?.name ?? 'TBC'}.`);
+  save.news.push(`Cup ${edition} is on: quarter-final against ${opp?.name ?? 'TBC'}.`);
   return cup;
 }
 

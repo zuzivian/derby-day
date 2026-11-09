@@ -80,7 +80,7 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
       <fieldset class="tac-group">
         <legend class="tac-legend">Formation</legend>
         <div class="tac-cards">${cards}</div>
-        <p class="muted small tac-hint">${FORMATION_NOTE[f]} XI is your lineup's strength (yours as set, others as auto-picked for that shape). Changing shape re-picks your best XI.</p>
+        <p class="muted small tac-hint">${FORMATION_NOTE[f]} XI strength is your starting eleven's rating (yours as set; other shapes as auto-picked). Changing shape re-picks your best XI.</p>
       </fieldset>
       <fieldset class="tac-group">
         <legend class="tac-legend">Mentality <span class="muted">· how your CPU teammates defend, press and attack</span></legend>

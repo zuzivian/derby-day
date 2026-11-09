@@ -56,7 +56,7 @@ export const P2_KEYS: PadKeys = {
 /** Human-readable bindings, for the setup screen and the hint under the pitch. */
 export const BINDINGS: { action: string; p1: string; p2: string }[] = [
   { action: 'Move', p1: 'W A S D (or the mouse: further out = faster)', p2: 'Arrow keys' },
-  { action: 'Pass / tackle', p1: 'Space (or left click / right click)', p2: 'Enter or /' },
+  { action: 'Pass / tackle', p1: 'Space (or left click to pass, right click to tackle)', p2: 'Enter or /' },
   { action: 'Loft', p1: 'Hold C, release (or hold left button)', p2: 'Hold M, release' },
   { action: 'Shoot', p1: 'Hold F, release (or right button)', p2: 'Hold . (period), release' },
   { action: 'Switch player', p1: 'E (or left click a player)', p2: ', (comma)' },

@@ -397,7 +397,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Club screen ---------------------------------------------------------------- */
 .club-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); gap: var(--sp-4); }
-.club-grid .news { align-self: start; }
+.club-grid .news, .club-grid .form { align-self: start; }
 /* Club history spans the grid, with its records in two columns, so no column is left empty beside it. */
 .club-grid .history-panel { grid-column: 1 / -1; }
 @media (min-width: 900px) {
@@ -440,6 +440,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .news-list li:first-child::before { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 .news-list li:not(:last-child)::after { content: ''; position: absolute; left: 7px; top: 20px; bottom: 2px; width: 2px; border-radius: 1px; background: var(--line); }
 .news-list li:last-child { padding-bottom: 0; }
+.news-list li:not(.latest) { font-size: var(--fs-sm); color: var(--muted); padding-bottom: var(--sp-2); }
+.news-list li.latest { font-size: var(--fs-lg); font-weight: 600; padding-bottom: var(--sp-4); }
 .news-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; padding-top: var(--sp-3); border-top: 1px solid var(--line); }
 
 /* Tables --------------------------------------------------------------------- */
@@ -536,7 +538,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .slot select:hover { border-color: #f3f6f1; }
 /* Wide pitches have room for whole names (phones keep the full-width select below). */
 @media (min-width: 900px) { .slot select { max-width: 190px; } }
-.formation-pick select { font-size: var(--fs-xs); font-weight: 800; min-height: 28px; padding: 2px 26px 2px 8px; letter-spacing: .04em; }
 
 /* Training -------------------------------------------------------------------- */
 .train-head { display: flex; justify-content: flex-start; align-items: baseline; }
@@ -545,7 +546,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .training-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: var(--sp-4); align-items: start; }
 .roster-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .roster-btn {
-  appearance: none; width: 100%; display: grid; grid-template-columns: 40px minmax(0, 1fr) 28px 56px; gap: 10px; align-items: center; text-align: left;
+  appearance: none; width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 28px 56px; gap: 10px; align-items: center; text-align: left;
   padding: var(--sp-2) 10px; border: 1px solid transparent; border-radius: var(--r-md); background: none; cursor: pointer; transition: background-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur-press) var(--ease-out);
 }
 .roster-btn:hover { background: var(--surface-2); }
@@ -726,6 +727,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl);
 }
 .rs-foot .replay-actions { justify-content: center; }
+.rs-foot .replay-actions .btn { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
+.rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
 .rs-close { width: 100%; }
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
 @media (max-height: 500px), (max-width: 360px) {
@@ -739,7 +742,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-height: 600px) {
   .result-card .rs-hero { padding: 10px var(--sp-4) 12px; }
   .result-card .rs-eyebrow { font-size: var(--fs-2xs); }
-  .result-card .result-title { font-size: 34px; margin-bottom: 6px; }
+  .result-card .result-title { font-size: 30px; margin-bottom: 6px; }
   .result-card .big-score { font-size: 48px; }
   .result-card .rs-crest .crest { width: 38px; height: 42px; }
   .result-card .rs-name { font-size: var(--fs-md); }
@@ -759,7 +762,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .rs-foot .replay-actions { flex: 1 1 auto; }
   .rs-foot .rs-close { width: auto; flex: 1 1 auto; }
 }
-.modal-foot { position: sticky; bottom: calc(-1 * var(--sp-6)); margin: 0 calc(-1 * var(--sp-6)) calc(-1 * var(--sp-6)); padding: var(--sp-4) var(--sp-6) var(--sp-6); background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-xl) var(--r-xl); display: flex; flex-direction: column; gap: var(--sp-3); }
 
 /* Match ------------------------------------------------------------------------ */
 .match { display: flex; flex-direction: column; gap: 10px; align-items: center; }
@@ -767,12 +769,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: var(--sp-3);
   background: #0f1513; color: #f3f6f1; border-radius: var(--r-md); padding: var(--sp-2) 14px;
 }
-.sb-team { display: flex; align-items: center; gap: 10px; min-width: 0; color: #f3f6f1; }
-.sb-away { justify-content: flex-end; }
-.sb-name { font-family: var(--font-display); font-weight: 800; font-size: var(--fs-xl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-center { text-align: center; }
-.sb-score { font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 1; font-variant-numeric: tabular-nums; color: #ffd60a; letter-spacing: .04em; }
-.sb-dash { color: #6b7a74; margin: 0 4px; }
 .sb-clock { font-size: var(--fs-xs); color: #a9b7b1; font-variant-numeric: tabular-nums; letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
 .pitch-wrap { position: relative; width: min(100%, calc((100vh - 190px) * 1.493)); width: min(100%, calc((100dvh - 190px) * 1.493)); min-width: min(100%, 320px); }
 #pitch, .pitch-canvas { display: block; width: 100%; aspect-ratio: 112 / 75; border-radius: var(--r-md); cursor: none; touch-action: none; background: #1f4f33; }
@@ -870,12 +866,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .slot .magnet { width: 34px; height: 34px; font-size: 16px; }
   .attr-list li { grid-template-columns: 92px minmax(0, 1fr) 28px auto; gap: var(--sp-2); }
   .attr-name { font-size: var(--fs-sm); }
-  .sb-name { font-size: var(--fs-md); }
-  .sb-score { font-size: 30px; }
-  .sb-team .crest { display: none; }
   .modal { padding: var(--sp-2); }
   .modal-card { padding: 20px; border-radius: var(--r-lg); }
-  .modal-foot { bottom: -20px; margin: 0 -20px -20px; padding: var(--sp-4) 20px 20px; border-radius: 0 0 var(--r-lg) var(--r-lg); }
   .modal-card.result-card { padding: 0; }
   .rs-hero { padding: var(--sp-4) var(--sp-3) 18px; }
   .result-title { font-size: 46px; margin-bottom: 10px; }
@@ -943,13 +935,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .onboarding { display: flex; flex-direction: column; gap: 20px; }
 .ob-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
 .ob-top .wordmark { font-size: 34px; }
-.ob-progress { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; }
-.ob-progress li { flex: 1; display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); min-width: 0; }
-.ob-dot { display: block; height: 6px; border-radius: 3px; background: var(--line-strong); overflow: hidden; }
-.ob-progress li.done .ob-dot { background: var(--xp-fill); }
-.ob-progress li.on { color: var(--ink); }
-.ob-progress li.on .ob-dot { background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
-.ob-count { display: none; margin: var(--sp-2) 0 0; font-size: var(--fs-xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .ob-main { min-width: 0; }
 .ob-card { max-width: 720px; margin: 0 auto; width: 100%; gap: 18px; padding: 28px; border-radius: var(--r-xl); box-shadow: var(--shadow-2); }
 .ob-title { font-size: var(--fs-4xl); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
@@ -980,25 +965,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .ob-error { color: var(--bad); font-weight: 700; }
 .ob-error::before { content: '! '; }
 .ob-nav { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); flex-wrap: wrap; padding-top: var(--sp-4); border-top: 1px solid var(--line); }
-.ob-choices { border: 0; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
-.ob-choice {
-  position: relative; display: flex; flex-direction: column; gap: 2px; padding: 14px var(--sp-4) 14px 46px; border: 1px solid var(--line-strong); border-radius: var(--r-lg);
-  cursor: pointer; background: var(--surface-2); transition: border-color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
-}
-.ob-choice:hover { border-color: var(--control-line); }
-.ob-choice.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
-.ob-choice input { position: absolute; left: var(--sp-4); top: 17px; width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
-.ob-choice:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-.ob-choice input:focus-visible { outline: none; }
-.ob-choice-title { font-weight: 800; }
-.ob-choice-text { font-size: 14px; }
+.help-controls { text-align: left; min-width: 0; }
+.help-controls summary { cursor: pointer; font-weight: 700; padding: 12px 0; display: list-item; list-style-position: inside; }
+.help-controls .controls-card { margin-top: var(--sp-3); }
+.pause-card .help-controls { grid-column: 1 / -1; }
 .controls-card { display: flex; flex-direction: column; gap: 6px; }
 .controls-title { font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .controls-table { white-space: normal; }
 .controls-table th[scope="row"] { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); border-bottom: 1px solid var(--line); width: 34%; }
-.ob-tips { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.ob-tips li { position: relative; padding-left: 22px; }
-.ob-tips li::before { content: ''; position: absolute; left: 4px; top: 8px; width: 8px; height: 8px; border-radius: 2px; background: var(--accent); transform: rotate(45deg); }
 .ob-versus { padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-2); border: 1px solid var(--line); }
 
 /* Training ground ------------------------------------------------------------- */
@@ -1014,10 +988,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .coach::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 5px; background: var(--accent); }
 .coach-top { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
 .coach-count { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
-.coach-dots { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; }
-.coach-dots li { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--control-line); }
-.coach-dots li.on { border-color: var(--accent); background: var(--accent); }
-.coach-dots li.done { border-color: var(--xp-fill); background: var(--xp-fill); }
+.coach-dots { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; font-size: var(--fs-sm); color: var(--muted); }
+.coach-dots li { display: flex; align-items: center; gap: 4px; }
+.coach-dots li::before { content: ''; box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--control-line); font-size: 10px; line-height: 10px; text-align: center; font-weight: 800; color: #fff; }
+.coach-dots li.on { color: var(--ink); font-weight: 700; }
+.coach-dots li.on::before { border-color: var(--accent); background: var(--accent); }
+.coach-dots li.done::before { content: '✓'; border-color: var(--xp-fill); background: var(--xp-fill); }
 .coach-title { font-size: 26px; font-weight: 900; text-transform: uppercase; }
 .coach-text { margin: 0; font-size: 16px; max-width: 72ch; }
 /* Every drill's copy and every note is laid invisibly in the same cell (tutorial.ts showDrill), so the card
@@ -1053,12 +1029,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .pad-btn.shoot.locked.down { background-color: rgba(207, 51, 38, .75); }
 
 @media (max-width: 640px) {
-  .ob-step-label { display: none; }
-  .ob-count { display: block; }
   .ob-card { padding: 20px; border-radius: var(--r-lg); }
   .ob-title { font-size: 34px; }
   .ob-club-name { font-size: 26px; }
-  .ob-choices { grid-template-columns: minmax(0, 1fr); }
   .ob-nav .btn.big { padding: 10px var(--sp-4); }
   .training-title { font-size: var(--fs-2xl); }
   .coach-title { font-size: 21px; }
@@ -1157,8 +1130,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .league-table abbr { text-decoration: none; }
 .league-table tr.zone-up td:first-child { box-shadow: inset 4px 0 0 var(--good); }
 .league-table tr.zone-down td:first-child { box-shadow: inset 4px 0 0 var(--bad); }
+/* A shape as well as a colour: up and down arrows in the zone rows and the key. */
+.league-table tr.zone-up td:first-child::before, .key-up::before { content: '\25B2'; content: '\25B2' / ''; }
+.league-table tr.zone-down td:first-child::before, .key-down::before { content: '\25BC'; content: '\25BC' / ''; }
+.league-table tr[class*="zone-"] td:first-child::before { font-size: 8px; margin-right: 3px; vertical-align: 1px; }
 .league-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
-.key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; color: var(--on-status); font-size: 8px; line-height: 12px; text-align: center; vertical-align: 1px; }
 .key-up { background: var(--good); }
 .key-down { background: var(--bad); margin-left: 10px; }
 .matchdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
@@ -1552,7 +1529,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Last in the sheet so it wins over the per-screen sizes above. */
 /* Touch: every management control is at least 44 px tall. */
 @media (pointer: coarse) {
-  .btn, .btn.small, .chip, .tab, select, .slot select, .formation-pick select, .roster-btn, input[type="text"], .replay-paste input, summary { min-height: 44px; }
+  .btn, .btn.small, .chip, .tab, select, .slot select, .roster-btn, .name-btn, input[type="text"], .replay-paste input, summary { min-height: 44px; }
   summary { display: flex; align-items: center; }
   button.level-badge::before { content: ''; position: absolute; inset: -8px; }
 }
@@ -1561,7 +1538,17 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @keyframes stat-flash { 0% { background: color-mix(in srgb, var(--good) 45%, transparent); transform: scale(1.03); } 100% { background: transparent; transform: none; } }
 @media (prefers-reduced-motion: no-preference) {
   .attr-list li.flash, .stat.flash { animation: stat-flash .45s ease-out 1; border-radius: var(--r-md); }
+  .tick { animation: tick-pop .6s cubic-bezier(.2, 1.5, .4, 1) 1; }
+  .gain { animation: gain-rise .9s ease-out 1; }
 }
+@keyframes tick-pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); color: var(--good); } 100% { transform: scale(1); } }
+@keyframes gain-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.attr-val { position: relative; }
+.attr-val.tick { color: var(--good); }
+.gain { position: absolute; right: 100%; margin-right: 4px; font-size: var(--fs-sm); font-weight: 800; color: var(--good); }
+.gain.zero { color: var(--muted); font-weight: 600; }
+.train-preview { margin: 0 0 var(--sp-3); font-weight: 600; }
+.train-preview.none, .train-left.none { color: var(--warn, var(--bad)); }
 
 /* Tablets (641-900 px: iPad and Galaxy Tab held upright) --------------------------------- */
 /* All seven tabs fit the bar, so Club is not hidden behind the scroll fade. */
@@ -1619,11 +1606,18 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Big screens (1920 up): the whole UI scales so it is not a small island in empty space. Not the match or the training ground (their canvas math must stay 1:1); the match's pause card scales on its own. */
 @media (min-width: 1800px) and (min-height: 900px) {
   #app:not(:has(> .match, > .training)) { zoom: 1.25; }
-  #app:has(> .match) .pause-card { zoom: 1.25; }
+  #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.25; }
+}
+/* The desktop radar sits under the (now scaled) scoreboard: move it down to clear it. */
+@media (min-width: 1800px) and (min-height: 900px) and (pointer: fine) {
+  #app #pitch ~ .hud .hud-radar { top: 100px; }
+}
+@media (min-width: 2400px) and (min-height: 1200px) and (pointer: fine) {
+  #app #pitch ~ .hud .hud-radar { top: 120px; }
 }
 @media (min-width: 2400px) and (min-height: 1200px) {
   #app:not(:has(> .match, > .training)) { zoom: 1.5; }
-  #app:has(> .match) .pause-card { zoom: 1.5; }
+  #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.5; }
 }
 
 /* ==========================================================================
@@ -1635,8 +1629,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (forced-colors: active) {
   /* #505 open tab */
   .tab.on::after { background: Highlight !important; }
-  /* #504 selected card on onboarding-style choices */
-  .ob-choice.on { outline: 3px solid Highlight; outline-offset: -2px; border-width: 2px; }
   /* #508 selected roster row and chip */
   .roster-btn.on, .chip.on { outline: 3px solid Highlight; outline-offset: -3px; }
   /* #512 sessions pips and the ladder "you" row */
@@ -1677,7 +1669,24 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .badge { font-size: var(--fs-sm); font-weight: 700; padding: 2px 10px; border-radius: var(--r-pill); border: 1px dashed var(--line); color: var(--muted); }
 .badge.got { border: 1px solid var(--good); color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
 .tab.flash { animation: stat-flash .6s ease-out 2; }
-.roster-name .rise-tag { margin: 0 5px 0 0; }
+.pchip { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pchip .pos { flex: none; width: 40px; padding: 0; }
+.pchip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pchip .rise-tag { margin: 0 5px 0 0; }
+.pchip .rise-tag::after { content: none; }
+.name-btn { appearance: none; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; min-width: 0; max-width: 100%; }
+.name-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+/* A 24 px target (WCAG 2.5.8) from the 21 px line, with the negative margin keeping the row exactly as tall as before. */
+@media (pointer: fine) { .name-btn { padding: 3px 0; margin: -3px 0; } }
+.prof-row > td { background: var(--surface-2); white-space: normal; }
+.prof { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); padding: var(--sp-2) 0; font-weight: 400; }
+.attr-list.ro li { grid-template-columns: 92px minmax(0, 1fr) 28px; }
+.pot-meter { position: relative; height: 10px; border-radius: var(--r-pill); background: var(--surface-3); margin: var(--sp-3) 0 6px; }
+.pot-now { display: block; height: 100%; border-radius: var(--r-pill); background: var(--xp-fill); }
+.pot-max { position: absolute; top: -3px; width: 3px; height: 16px; margin-left: -1px; background: var(--ink); border-radius: 2px; }
+.prof-line { margin: 4px 0; }
+.prof-info { padding: 0 0 var(--sp-3); }
+@media (max-width: 640px) { .prof { grid-template-columns: minmax(0, 1fr); } }
 .roster-name .rise-tag::after { content: none; }
 
 /* Season arc: standing against the promotion places, your division on the ladder */

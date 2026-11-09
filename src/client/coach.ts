@@ -333,6 +333,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
   el.addEventListener('click', onClick);
 
   let lastState: MatchState | null = null;
+  let held = false; // paused, a replay or a goal/card word is up: the tip is hidden, so it neither ages nor gets replaced or announced
   let frozen = false; // e2e only: frames do not move the tip clock, only hook.advance does
   const step = (s: MatchState, dtMs: number, redraw = dtMs > 0) => {
     lastState = s;
@@ -343,9 +344,9 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
       if (redraw && text !== tipText(shown, o.mode(), touch(), introTip === shown)) { draw(shown); pulse(shown); } // the player switched input: say it their way
       if (age >= autoHideMs(text)) hide();
       // A fresher situation replaces a tip that has had time to be read, and only if it is still true.
-      else if (tracker.queue.length && age >= minTipMs(text)) hide();
+      else if (!held && tracker.queue.length && age >= minTipMs(text)) hide();
     }
-    if (!shown && tracker.queue.length && s.phase !== 'fulltime') {
+    if (!shown && !held && tracker.queue.length && s.phase !== 'fulltime') {
       const id = tracker.take(s, human);
       if (id) show(id);
     }
@@ -355,6 +356,7 @@ export function mountCoach(host: HTMLElement, o: CoachOptions): CoachHandle {
       step(s, frozen ? 0 : dtMs, dtMs > 0);
     },
     setPaused(paused) {
+      held = paused;
       el.classList.toggle('paused', paused);
       banner.classList.toggle('paused', paused);
     },

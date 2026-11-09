@@ -194,7 +194,7 @@ export function nextUnlocks(save: Save): Unlock[] {
   return locked.filter((u) => unlockLevel(save, u.id) === first);
 }
 
-/** "The Cup and Practice: Hard at level 5 — 340 XP to go", or null when everything is unlocked. */
+/** "The Cup and Practice: Hard at level 5: 340 XP to go", or null when everything is unlocked. */
 export function nextUnlockText(save: Save): string | null {
   const next = nextUnlocks(save);
   if (!next.length) return null;
@@ -202,7 +202,7 @@ export function nextUnlockText(save: Save): string | null {
   const toGo = Math.max(0, totalXpForLevel(level) - (save.xp ?? 0));
   const names = next.map((u) => u.name);
   const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
-  return `${list} at level ${level} — ${toGo.toLocaleString('en-GB')} XP to go`;
+  return `${list} at level ${level}: ${toGo.toLocaleString('en-GB')} XP to go`;
 }
 
 /** Unlocks reached that the player hasn't been told about yet (the level-up dialog lists these). */

@@ -5,7 +5,7 @@ import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
-import type { AttrKey } from '../meta/player.ts';
+import { overall, type AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { scoreAwarded } from '../sim/rules.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -39,8 +39,8 @@ import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
-import { introLine } from './stakes.ts';
-import { fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { introLine, stakesVs } from './stakes.ts';
+import { goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -158,6 +158,8 @@ function render() {
   const key = pendingFocus ?? captureFocus(root);
   pendingFocus = null;
   beforeRender(root);
+  // A training gain badge belongs to the visit it happened in: entering any screen clears it.
+  if (root.dataset.shown !== app.screen) app.gain = null;
   root.innerHTML = shell(app, screens[app.screen](app));
   // The same dialog as before this render: no second entrance (styles.css .modal.seen).
   if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');
@@ -471,7 +473,7 @@ function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void)
     save: app.save,
     prefs: app.prefs,
     avoidClash,
-    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp })),
+    again: (opp) => startVersus((r, o) => mount(r, { ...o, opp, go: opp !== undefined })),
     onDone: (result) => {
       stop();
       takeover = false;
@@ -493,6 +495,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
   const scorersAgainst = forfeited || scoreAwarded(m) ? [] : m.goals.filter((e) => e.team === 1).map((e) => `${e.scorer} ${e.minute}'`);
   const eloBefore = s.club.elo;
   const rankBefore = rankOf(s);
+  const derby = ranked && !!opp && stakesVs(s, opp).derby; // decided now, as the kick-off banner does, before Elo moves
   const skipRecord = forfeited && !ranked;
   const summary = skipRecord ? null : applyResult(s, ranked ? opp : null, { name: away.name, short: away.short }, gf, ga, ranked, scorersFor, warmup, forfeited, practice);
   maybeRollover(s); // a new season starts after the 10th ranked or competition match; the review shows once the result is closed
@@ -511,6 +514,8 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     scorersFor,
     scorersAgainst,
     rankBefore,
+    derby,
+    goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
     tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
@@ -682,7 +687,7 @@ root.addEventListener('click', (e) => {
       const bp = s.market.find((x) => x.id === id);
       const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put him in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put them in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
       if (r.ok) {
         persist();
         getSound().stinger('train');
@@ -700,15 +705,24 @@ root.addEventListener('click', (e) => {
       if (r.ok) persist();
       break;
     }
+    case 'profile':
+      app.profile = app.profile === id ? null : id;
+      break;
     case 'trainee':
       app.trainee = id;
+      app.gain = null;
       queueReveal('.panel.trainee');
       break;
     case 'train': {
       app.trainee = id; // keep this player selected, rather than the fallback re-picking after his gain
-      const r = train(s, id, el.dataset.attr as AttrKey);
+      const attr = el.dataset.attr as AttrKey;
+      const tp = s.squad.find((x) => x.id === id);
+      if (tp && tp.attrs[attr] >= 99) return; // already maxed: a session would be spent for nothing
+      const was = tp ? [tp.attrs[attr], overall(tp)] : [0, 0];
+      const r = train(s, id, attr);
       toast(r.message, r.ok);
       if (r.ok) {
+        if (tp) app.gain = { id, attr, n: tp.attrs[attr] - was[0], up: overall(tp) > was[1] };
         persist();
         getSound().stinger('train');
         flash = [`li:has([data-action="train"][data-id="${id}"][data-attr="${el.dataset.attr}"])`, '.stat.sessions'];
@@ -763,7 +777,7 @@ root.addEventListener('change', (e) => {
     const b4 = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
     setLineupSlot(app.save, Number(el.dataset.slot), el.value);
     const af = teamStrength(app.save.squad, app.save.lineup, app.save.formation);
-    toast(af === b4 ? 'Lineup changed.' : `Lineup changed. XI strength ${b4} → ${af}.`);
+    toast(af === b4 ? 'XI changed.' : `XI changed. XI strength ${b4} → ${af}.`);
     persist();
     render();
   } else if (el.dataset.change === 'formation') {

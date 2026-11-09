@@ -15,9 +15,8 @@ import { fallback2D, watchGfxLoss, type GfxLossWatch } from './gfxloss.ts';
 import { createMatchRenderer, type MatchRenderer } from './renderer.ts';
 import { lastReplay, recentReplays, replaySlots } from './replayStore.ts';
 import { EMPTY_ICON, emptyState } from './ui.ts';
+import { esc } from './html.ts';
 
-const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const FOCUSABLE = 'a[href], button:not([disabled]):not([aria-disabled="true"]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -415,7 +414,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     marks.innerHTML = replay.goals
       .map((x, i) => [x, i] as const)
       .filter(([x]) => x.tick >= clip.start && x.tick <= clip.end)
-      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((x.tick - clip.start) / len()).toFixed(4)}" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'"></button>`)
+      .map(([x, i]) => `<button class="rp-mark${x.team === replay.humanTeam ? ' us' : ''}" data-rp="mark" data-tick="${x.tick}" style="--p:${((x.tick - clip.start) / len()).toFixed(4)}" aria-label="Goal ${i + 1}, ${esc(x.scorer)}, ${x.minute}'" title="${esc(replay[x.team === 0 ? 'home' : 'away'].name)}"></button>`)
       .join('');
     // A rebuild drops focus to the body: keep it on the timeline (the new clip's first goal pip, else the scrub).
     if (hadFocus) (marks.querySelector<HTMLElement>('.rp-mark') ?? scrub).focus();

@@ -103,7 +103,7 @@
   font: 900 14px/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
 }
 .hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display); color: #ffb35c; }
-.hud .hud-me { grid-template-columns: auto minmax(0, 1fr) 3.5em; grid-template-rows: auto 10px; }
+.hud .hud-me { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 10px; }
 .hud-me-name { grid-column: 2 / 4; }
 .hud-me-legs { grid-column: 2; }
 .hud-me-st { grid-column: 3; text-align: right; font: italic 800 10px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: #5fd08e; }
@@ -239,7 +239,7 @@
 /* Phones held upright: the player card moves out of open play and the right thumb zone to the bottom
    left, above the mute button and radar row (the radar is 72 px wide at left 60, about 47 px tall). */
 @media (pointer: coarse) and (orientation: portrait) {
-  .hud-me { right: auto; left: 10px; bottom: 64px; width: 112px; }
+  .hud-me { right: auto; left: 10px; bottom: 64px; width: 134px; }
 }
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
@@ -310,6 +310,8 @@
 @media (prefers-reduced-motion: reduce) {
   .hud .hud-word, .hud-replay { animation: none; }
 }
+
+.hud-pm { font: 800 10px/1 'Barlow', system-ui, sans-serif; font-style: normal; color: #111; padding: 2px 4px; border-radius: 4px; margin: 0 5px; vertical-align: 2px; letter-spacing: .04em; }
 
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
@@ -404,5 +406,32 @@
 .pitch-wrap.replaying canvas { animation: replay-cut .4s ease-out; }
 @keyframes replay-cut { from { filter: brightness(2.2) saturate(.6); } to { filter: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .pitch-wrap.goal-flash::before, .pitch-wrap.replaying canvas { animation: none; }
+  /* Not just no animation: the overlay is solid white until the animation fades it, so without it the whole pitch stayed white. */
+  .pitch-wrap.goal-flash::before { display: none; }
+  .pitch-wrap.replaying canvas { animation: none; }
+}
+
+/* Desktop: the charge of a held kick as a ring round the pointer (matchView.ts), in the power bar's colours. */
+.aim-charge { position: absolute; left: 0; top: 0; z-index: 1; width: 46px; height: 46px; margin: -23px 0 0 -23px; pointer-events: none; opacity: 0; filter: drop-shadow(0 0 1.5px #000); --col: #46d36a; }
+.aim-charge.on { opacity: 1; }
+.aim-charge[data-band="amber"] { --col: #ffb020; }
+.aim-charge[data-band="red"] { --col: #ff4a32; }
+.aim-charge i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(var(--col) calc(var(--c, 0) * 360deg), rgba(0, 0, 0, .45) 0); mask: radial-gradient(circle, transparent 17px, #000 18px); }
+/* Key caps for the keyboard, up only while the keys are in use (matchView.ts). */
+.key-hint { position: absolute; left: 50%; bottom: 14px; z-index: 1; transform: translateX(-50%); margin: 0; padding: 5px 12px; border-radius: var(--r-pill); background: rgba(8, 12, 11, .72); color: #fff; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; }
+.key-hint.on { opacity: 1; }
+.key-hint kbd { margin: 0 2px 0 8px; font-size: 11px; padding: 2px 5px; color: #111; background: #f4f4f4; border-color: #9aa0a6; }
+@media (pointer: coarse), (max-width: 640px) { .key-hint { display: none; } }
+/* Mouse feedback on the in-match controls: a press you can feel, and the same cue for the keyboard. */
+.hud-menu:active, .pitch-cam:active { transform: translateY(1px); }
+
+/* A replay is a clean cut: the camera and zoom buttons wait until it is over. */
+.pitch-wrap.replaying .pitch-cam, .pitch-wrap.replaying .pitch-zoom { visibility: hidden; }
+
+/* 24 px targets with a mouse (WCAG 2.5.8) with the looks unchanged: the small Cam and All controls buttons grow an invisible 4 px margin; touch has its 44 px rules above. */
+@media (pointer: fine) {
+  .pitch-cam, .hint-more { position: relative; }
+  .pitch-cam::after, .hint-more::after { content: ''; position: absolute; inset: -4px; }
+  .pause-opt { min-height: 24px; }
+  .pause-opt input[type="range"] { height: 24px; }
 }

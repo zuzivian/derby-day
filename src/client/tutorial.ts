@@ -7,6 +7,7 @@ import { step } from '../sim/match.ts';
 import type { TeamSetup } from '../sim/types.ts';
 import { announce, reducedMotion, trapTab } from './a11y.ts';
 import { getSound } from './audio.ts';
+import { controlsHelp } from './controls.ts';
 import { checkDrill, createTraining, CARRIER, DRILLS, filterInput, holdFrozen, HUMAN, MARKER_R, stageDrill, type DrillId, type Hint, type Retry } from './drills.ts';
 import { InputController } from './input.ts';
 import { PitchRenderer } from './render.ts';
@@ -82,6 +83,8 @@ const HINT: Record<Hint, string> = {
 /** Which pad buttons each drill uses (Shoot doubles as the tackle button). */
 const PAD_USE: Record<DrillId, ('pass' | 'shoot')[]> = { move: [], pass: ['pass'], shoot: ['shoot'], tackle: ['shoot'] };
 
+const SHORT: Record<DrillId, string> = { move: 'Run', pass: 'Pass', shoot: 'Shoot', tackle: 'Tackle' };
+
 const esc = (x: string) => x.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 /** The retry note, restating the control in use so it says what to do next. */
@@ -116,7 +119,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     <div class="coach" id="coach">
       <div class="coach-top">
         <span class="coach-count" id="coach-count"></span>
-        <ol class="coach-dots" aria-hidden="true">${DRILLS.map((d) => `<li data-drill="${d}"></li>`).join('')}</ol>
+        <ol class="coach-dots" aria-label="Drills">${DRILLS.map((d) => `<li data-drill="${d}">${SHORT[d]}<span class="sr-only"></span></li>`).join('')}</ol>
         <button class="btn small ghost" id="tr-again" type="button" aria-label="Restart drill">Restart</button>
       </div>
       <h2 class="coach-title" id="coach-title"></h2>
@@ -148,6 +151,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
             <button class="btn primary" id="tr-resume" type="button">Resume</button>
             <button class="btn" id="tr-skip-2" type="button">Leave practice</button>
           </div>
+          ${controlsHelp('help-train')}
           <p class="hint">Esc or P pauses and resumes.</p>
         </div>
       </div>
@@ -223,11 +227,12 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   let pending: (() => void) | null = null;
   let burst: { x: number; y: number; t: number } | null = null;
   let allDone = false;
+  const doneSet = new Set<number>();
   const still = reducedMotion();
 
   function showDrill() {
     const c = COPY[drill.id];
-    $('coach-count').textContent = `Drill ${index + 1} of ${DRILLS.length}`;
+    $('coach-count').textContent = `Drill ${index + 1} of ${DRILLS.length} · ${index + 1 < DRILLS.length ? 'next: ' + SHORT[DRILLS[index + 1]] : 'last one'}`;
     $('coach-title').textContent = c.title;
     $('coach-text').textContent = c.text[mode];
     // Every drill's copy (and every note) sits invisibly in the same grid cell, so the card is always
@@ -241,8 +246,14 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       b.classList.toggle('locked', !uses.includes(key));
       b.setAttribute('aria-disabled', String(!uses.includes(key)));
     }
+    paintDots();
+  }
+
+  /** Done drills keep their tick (even when one is replayed); the current one is bold. */
+  function paintDots() {
     container.querySelectorAll<HTMLElement>('.coach-dots li').forEach((li, i) => {
-      li.className = i < index ? 'done' : i === index ? 'on' : '';
+      li.className = `${doneSet.has(i) ? 'done' : ''} ${i === index ? 'on' : ''}`.trim();
+      li.querySelector('.sr-only')!.textContent = `, ${doneSet.has(i) ? 'done' : i === index ? 'current' : 'to do'}`;
     });
   }
 
@@ -267,7 +278,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
   function passed(now: number) {
     const c = COPY[drill.id];
     note(c.done, true);
-    container.querySelectorAll<HTMLElement>('.coach-dots li')[index].className = 'done';
+    doneSet.add(index);
+    paintDots();
     holdUntil = now + 1300;
     const me = s.players[HUMAN].pos;
     burst = { x: me.x, y: me.y, t: now };
@@ -297,7 +309,7 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
     const text = retryText(why, mode);
     note(text, false);
     announce(text);
-    holdUntil = now + 1500;
+    holdUntil = now + 1000;
     pending = () => {
       drill = stageDrill(s, drill.id);
     };

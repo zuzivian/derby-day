@@ -7,7 +7,7 @@ import { autoLineup, teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
 import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
-import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, type AttrKey, type Player } from '../meta/player.ts';
+import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, trainingRange, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
 import type { TeamStats } from '../sim/types.ts';
 import { isRising, potentialText, scoutedPotential, SEASON_WEEKS, weekOfYear } from '../meta/progression.ts';
@@ -23,6 +23,8 @@ import { identityControls, levelChip, levelPanel, levelUpModal, levelUpOpen, xpC
 import { recentReplaysHtml, resultReplayHtml } from './replayView.ts';
 import { academyPanel, reviewButton, reviewModal, reviewOpen } from './review.ts';
 import type { Prefs } from './store.ts';
+import { esc } from './html.ts';
+export { esc };
 
 /** 'home' is the first view (kick off, play modes); 'club' holds the secondary content (news, replays, club level, tutorial, reset). */
 export type Screen = 'home' | 'squad' | 'transfers' | 'training' | 'ladder' | 'competitions' | 'club';
@@ -55,11 +57,22 @@ export interface ResultView {
   /** Replaces the close button's "Back to the club", e.g. "Next: semi-final" (the player lands on the bracket). */
   closeLabel?: string;
   /** A rematch button next to the close button (friendlies): what it says and what it does. */
-  again?: { label: string; run: () => void };
+  again?: { label: string; run: () => void; /** The main button, ahead of Back to the club (two humans on one screen). */ primary?: boolean };
   /** Replaces the Victory/Draw/Defeat word, e.g. "Cup winners". */
   headline?: string;
   /** Ladder position before the match, for the Elo chip. */
   rankBefore?: number;
+  /** Every goal in the order it was scored (match clock seconds), so the headline can tell a late winner from a late leveller. */
+  goals?: GoalAt[];
+  /** Derby, decided once before the match exactly as the kick-off banner does (stakesVs). */
+  derby?: boolean;
+}
+
+export interface GoalAt { side: 'us' | 'them'; second: number }
+
+/** Goals in true chronological order from the match's goal events, `us` being team `side` (0 by default). */
+export function goalOrder(goals: { team: 0 | 1; second: number; tick: number }[], side: 0 | 1 = 0): GoalAt[] {
+  return [...goals].sort((a, b) => a.tick - b.tick).map((e) => ({ side: e.team === side ? 'us' : 'them', second: e.second }));
 }
 
 export interface App {
@@ -67,15 +80,16 @@ export interface App {
   screen: Screen;
   nextOpp: LadderClub;
   trainee: string | null;
+  /** Squad row opened to its profile (display only). */
+  profile?: string | null;
   marketRole: Role | 'ALL';
   confirmSell: string | null;
   confirmReset: boolean;
   prefs: Prefs;
   result: ResultView | null;
+  /** The last training gain, for the badge on its row. */
+  gain?: { id: string; attr: AttrKey; n: number; up: boolean } | null;
 }
-
-export const esc = (t: string | number): string =>
-  String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
 const TAB_UNLOCK: Record<Screen, UnlockId[]> = {
@@ -257,7 +271,7 @@ export function clubScreen(app: App): string {
 
     <article class="panel news">
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
-      <ul class="news-list">${s.news.slice(-8).reverse().map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
+      <ul class="news-list">${s.news.slice(-8).reverse().map((n, i) => `<li${i ? '' : ' class="latest"'}>${esc(n)}</li>`).join('')}</ul>
       <div class="news-actions">
         ${reviewButton(app)}
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
@@ -303,10 +317,43 @@ const RISING = '<span class="rise-tag" title="Young, with room to grow"><span ar
 const nameCell = (p: Player): string =>
   `<span class="name-text">${esc(fullName(p))}</span><span class="pos pos-${p.role} only-narrow" aria-hidden="true">${p.role}</span>${isRising(p) ? RISING : ''}`;
 
-function playerRow(p: Player, extra: string, starter = false, showNumber = true): string {
+/** Compact player chip: position tag, name, rising mark. Used by the squad lists and the training roster. */
+const chip = (p: Player, cls = ''): string => `<span class="pchip ${cls}"><span class="pos pos-${p.role}">${p.role}</span><span class="pchip-name">${isRising(p) ? RISING : ''}${esc(fullName(p))}</span></span>`;
+
+/** Goals in the recorded matches, matched on the scorer line ("J. Smith 23'"); null when two squad players share the name. */
+function goalsOf(s: Save, p: Player): number | null {
+  const n = shortName(p) + ' ';
+  if (s.squad.some((x) => x !== p && shortName(x) === shortName(p))) return null;
+  // " (OG)" lines are the other side's own goals, credited to us: never one of ours, whatever the name.
+  return s.history.reduce((a, m) => a + m.scorers.filter((x) => x.startsWith(n) && !x.includes(' (OG)')).length, 0);
+}
+
+/** Potential against current, the best-suited role, strengths and recorded goals; prose first so the visual is a bonus. */
+function profileInfo(s: Save, p: Player): string {
+  const ovr = overall(p);
+  const v = scoutedPotential(p);
+  const gap = v.lo - ovr;
+  const roles = (['GK', 'DEF', 'MID', 'FWD'] as Role[]).map((r) => [r, ratingAs(p, r)] as const).sort((a, b) => b[1] - a[1] || Number(b[0] === p.role) - Number(a[0] === p.role)); // a tie keeps his listed role first
+  const keys = ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').sort((a, b) => p.attrs[b] - p.attrs[a]);
+  const hi = keys[0], lo = keys[keys.length - 1];
+  const g = goalsOf(s, p);
+  const growth = gap > 0 ? `${gap} to grow` : p.age >= 30 ? 'past peak, expect decline' : 'at potential';
+  const txt = `Overall ${ovr}, potential ${potentialText(p)}: ${growth}.`;
+  return `<div class="pot-meter" role="img" aria-label="${esc(txt)}"><span class="pot-now" style="width:${ovr}%"></span><span class="pot-max" style="left:${v.hi}%"></span></div>
+  <p class="prof-line">${txt}</p>
+  <p class="prof-line muted">Best suited: <b>${roles[0][0]}</b> ${roles[0][1]}${roles[0][0] !== p.role ? ` (listed ${p.role}, ${ovr})` : ''} · next ${roles[1][0]} ${roles[1][1]}. Strongest ${ATTR_NAME[hi].toLowerCase()} ${p.attrs[hi]}, weakest ${ATTR_NAME[lo].toLowerCase()} ${p.attrs[lo]}.${g === null ? '' : ` ${g}\u00a0goal${g === 1 ? '' : 's'} in recorded matches.`}</p>`;
+}
+
+/** Read-only attribute bars, each with its number as text. */
+const attrBars = (p: Player): string => `<ul class="attr-list ro">${ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').map((k) => `<li><span class="attr-name">${ATTR_NAME[k]}</span><span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span><span class="attr-val">${p.attrs[k]}</span></li>`).join('')}</ul>`;
+
+function playerRow(p: Player, extra: string, starter = false, showNumber = true, prof?: { s: Save; open: boolean }): string {
+  const name = prof
+    ? `<button class="name-btn" data-action="profile" data-id="${p.id}" aria-expanded="${prof.open}" aria-controls="prof-${p.id}">${nameCell(p)}</button>`
+    : nameCell(p);
   return `<tr${starter ? ' class="starter"' : ''}>
     ${showNumber ? `<td class="num">${p.number}</td>` : ''}
-    <td class="name">${nameCell(p)}${starter ? ' <span class="pill">XI</span>' : ''}</td>
+    <td class="name">${name}${starter ? ' <span class="pill">XI</span>' : ''}</td>
     <td class="opt">${esc(nation(p))}</td>
     <td class="num opt">${p.age}</td>
     <td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td>
@@ -314,7 +361,7 @@ function playerRow(p: Player, extra: string, starter = false, showNumber = true)
     <td class="num muted opt">${potentialText(p)}</td>
     ${ATTR_KEYS.map((k) => attrCell(p.attrs[k])).join('')}
     ${extra}
-  </tr>`;
+  </tr>${prof?.open ? `<tr class="prof-row"><td colspan="15" id="prof-${p.id}"><div class="prof"><div>${attrBars(p)}</div><div>${profileInfo(prof.s, p)}</div></div></td></tr>` : ''}`;
 }
 
 const attrHead = ATTR_KEYS.map((k) => `<th class="num opt" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
@@ -355,7 +402,7 @@ export function squadScreen(app: App): string {
     ${academyPanel(app)}
     ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Lineup · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
@@ -363,7 +410,7 @@ export function squadScreen(app: App): string {
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
-        <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id))).join('')}</tbody>
+        <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id), true, { s, open: app.profile === p.id })).join('')}</tbody>
       </table></div>
     </article>
   </div>`;
@@ -419,9 +466,9 @@ export function trainingScreen(app: App): string {
   return `
   <div class="training-grid">
     <article class="panel roster">
-      <h2 class="eyebrow train-head">Training<span class="train-left">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
+      <h2 class="eyebrow train-head">Training<span class="train-left${s.trainingPoints ? '' : ' none'}">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
-        <span class="pos pos-${x.role}">${x.role}</span><span class="roster-name">${isRising(x) ? RISING : ''}${esc(fullName(x))}</span><span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
+        ${chip(x, 'roster-name')}<span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
       <p class="muted small train-rule">Sessions earned per match: ranked win +3, other results +2, friendlies +1.</p>
     </article>
@@ -429,15 +476,27 @@ export function trainingScreen(app: App): string {
       <div class="trainee-head">
         <span class="magnet big">${p.number}</span>
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
-        <div class="ovr-block"><span class="ovr-big">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : '<span class="room done">at potential</span>'; })()}</div>
+        <div class="ovr-block"><span class="ovr-big${app.gain?.up && app.gain.id === p.id ? ' tick' : ''}">${overall(p)}</span><span class="muted">potential ${potentialText(p)}</span>${(() => { const g = scoutedPotential(p).lo - overall(p); return g > 0 ? `<span class="room">${g} to grow</span>` : `<span class="room done">${scoutedPotential(p).exact ? 'at potential' : 'near potential'}</span>`; })()}</div>
       </div>
-      <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => `<li>
+      <div class="prof-info">${profileInfo(s, p)}</div>
+      ${(() => {
+        const r = trainingRange(p, ATTR_KEYS.find((k) => p.attrs[k] < 99) ?? 'pace'); // the same for every attribute below the cap (maxed ones say Max)
+        const say = !s.trainingPoints ? 'No sessions left. Play a match to earn more.'
+          : r.odds < 1 ? `At potential: a session adds +1 about ${Math.round(r.odds * 100)}% of the time, otherwise nothing.`
+          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `+${r.lo} to +${r.hi}`} to the attribute you pick.`;
+        return `<p class="train-preview${s.trainingPoints ? '' : ' none'}">${say}</p>`;
+      })()}
+      <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => {
+        const g = app.gain && app.gain.id === p.id && app.gain.attr === k ? app.gain : null;
+        const max = p.attrs[k] >= 99;
+        return `<li>
         <span class="attr-name">${ATTR_NAME[k]}</span>
         <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>
-        <span class="attr-val">${p.attrs[k]}</span>
-        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="Train ${ATTR_NAME[k].toLowerCase()}"${s.trainingPoints > 0 ? '' : ' aria-disabled="true"'}>Train</button>
-      </li>`).join('')}</ul>
-      <p class="muted small">Under-21s grow fastest. A player at their potential rarely improves, so spend sessions on the young ones.</p>
+        <span class="attr-val${g?.n ? ' tick' : ''}">${p.attrs[k]}${g ? `<b class="gain${g.n ? '' : ' zero'}" aria-hidden="true">${g.n ? '+' + g.n : '+0'}</b>` : ''}</span>
+        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="${max ? `${ATTR_NAME[k]} is at its maximum, ${p.attrs[k]}` : `Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}`}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
+      </li>`;
+      }).join('')}</ul>
+      <p class="muted small">Under-21s grow fastest, and a player at their potential rarely improves.</p>
     </article>
   </div>`;
 }
@@ -505,6 +564,23 @@ export function ladderScreen(app: App): string {
 
 type Outcome = 'win' | 'draw' | 'loss';
 const OUTCOME_WORD: Record<Outcome, string> = { win: 'Victory', draw: 'Draw', loss: 'Defeat' };
+
+/** A headline that fits the match, read from the goals in the order they were scored (2 + 3 goals, who led when). Plain Victory/Draw/Defeat when the story is not told (shootouts, forfeits, awarded scores, no goal times). */
+export function storyWord(r: ResultView, outcome: Outcome): string {
+  const plain = OUTCOME_WORD[outcome];
+  const derby = !!r.derby;
+  const ev = r.goals;
+  if (!ev || r.pens || r.forfeited || ev.length !== r.gf + r.ga || ev.some((e) => !(e.second >= 0))) return plain;
+  let diff = 0, low = 0;
+  for (const e of ev) low = Math.min(low, (diff += e.side === 'them' ? -1 : 1));
+  const last = ev[ev.length - 1];
+  const late = !!last && last.second >= 85 * 60;
+  const gap = r.gf - r.ga;
+  const ours = last?.side === 'us';
+  if (outcome === 'win') return low < 0 ? 'Comeback' : late && gap === 1 && ours ? 'Late winner' : gap >= 4 ? 'Thrashing' : derby ? 'Derby win' : r.ga === 0 ? 'Clean sheet' : plain;
+  if (outcome === 'draw') return late && ours && low < 0 ? 'Late leveller' : low < 0 ? 'Fought back' : r.gf ? plain : 'Goalless';
+  return gap <= -4 ? 'Heavy defeat' : late && gap === -1 && !ours ? 'Late blow' : derby ? 'Derby loss' : plain;
+}
 
 const rsIcon = (body: string, size = 18) => `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true" focusable="false">${body}</svg>`;
 const RS_BALL = rsIcon('<circle cx="12" cy="12" r="9.5" fill="currentColor" opacity=".16"/><circle cx="12" cy="12" r="9.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.6 15.3 10l-1.3 3.9H10L8.7 10Z" fill="currentColor"/>', 14);
@@ -582,6 +658,7 @@ function resultModal(app: App): string {
   const them = r.opp.short;
   const sum = r.summary;
   const rankNow = isUnlocked(app.save, 'ladder') ? rankOf(app.save) : 0;
+  const derby = !!r.derby; // stored before the match (stakesVs), never recomputed from the post-match ladder
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
@@ -595,6 +672,7 @@ function resultModal(app: App): string {
   const dev = sum?.developments ?? [];
   const growth = dev.length ? `<div class="rs-growth"><span class="rs-growth-title">${RS_GROWTH}<span>Player growth</span></span><ul>${dev.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
   const pens = r.pens ? `<span class="rs-pens">${r.pens.you}–${r.pens.opp} on penalties</span>` : '';
+  const again = r.again ? `<button class="btn${r.again.primary ? ' primary' : ''} big" data-action="rematch">${esc(r.again.label)}</button>` : '';
   return `
   <div class="modal result-modal" role="dialog" aria-modal="true" aria-labelledby="result-title" aria-describedby="result-line">
     <div class="modal-card result-card" data-outcome="${outcome}">
@@ -602,8 +680,8 @@ function resultModal(app: App): string {
       <header class="rs-hero">
         ${outcome === 'win' ? confettiHtml(r.headline ? 40 : undefined) : ''}
         ${r.headline === 'Cup winners' ? `<div class="rs-trophy">${CUP_ICON}</div>` : ''}
-        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
-        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? OUTCOME_WORD[outcome])}</h2>
+        <div class="rs-eyebrow">${esc(r.label ?? (r.ranked ? 'Ranked' : 'Friendly'))}${derby ? ' · Derby' : ''} · ${r.abandoned ? 'Abandoned' : r.forfeited ? 'Forfeited' : 'Full-time'}</div>
+        <h2 id="result-title" class="result-title" tabindex="-1">${r.abandoned ? 'Abandoned' : esc(r.headline ?? storyWord(r, outcome))}</h2>
         <p id="result-line" class="sr-only">${esc(`${c.name} ${r.gf}, ${r.opp.name} ${r.ga}${r.pens ? `, ${r.pens.you}–${r.pens.opp} on penalties` : ''}.`)}</p>
         <div class="result-score">
           <div class="rs-team">
@@ -641,7 +719,7 @@ function resultModal(app: App): string {
           ${growth}
         </section>`}
         <section class="rs-panel rs-rewards" aria-labelledby="rs-rewards-title">
-          <h3 id="rs-rewards-title" class="rs-section"><span>Rewards</span></h3>
+          <h3 id="rs-rewards-title" class="rs-section"><span>What changed</span></h3>
           ${sum
             ? `${chips.length ? `<ul class="rs-chips">${chips.join('')}</ul>` : ''}
               ${r.forfeited ? growth : ''}
@@ -652,9 +730,10 @@ function resultModal(app: App): string {
       </div>
       </div>
       <footer class="rs-foot">
+        ${again && r.again?.primary ? again : ''}
+        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Next match' : 'Back to the club'))}</button>
+        ${again && !r.again?.primary ? again : ''}
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
-        ${r.again ? `<button class="btn big" data-action="rematch">${esc(r.again.label)}</button>` : ''}
-        <button class="btn primary big rs-close" data-action="close-result">${esc(r.closeLabel ?? 'Back to the club')}</button>
       </footer>
     </div>
   </div>`;

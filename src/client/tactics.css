@@ -96,3 +96,6 @@
 }
 .tac-str { font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); white-space: nowrap; }
 .tac-card.on .tac-str { color: var(--accent); }
+/* Pause-menu mentality: hover and press, as the tactics board cards have. */
+.qt-step:hover { border-color: var(--ink); background: var(--surface-2); }
+.qt-step:active { transform: scale(.97); }

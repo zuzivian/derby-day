@@ -38,7 +38,7 @@ import { fallback2D, watchGfxLoss } from './gfxloss.ts';
 import { hudMarkup, mountHud, refereeWord } from './hud.ts';
 import { clearLastReplay } from './replayStore.ts';
 import type { Prefs } from './store.ts';
-import { esc, type ResultView } from './ui.ts';
+import { esc, goalOrder, type ResultView } from './ui.ts';
 
 export interface VersusOptions {
   save: Save;
@@ -47,6 +47,8 @@ export interface VersusOptions {
   avoidClash: (home: TeamSetup, away: TeamSetup) => TeamSetup;
   /** Preselect this ladder club on One screen (a rematch). */
   opp?: string;
+  /** With `opp`: skip the setup and kick off at once (the rematch is one tap). */
+  go?: boolean;
   /** Reopen this mode's setup or lobby, for the result's rematch button. */
   again?: (opp?: string) => void;
   /** Called once: a result to show in the usual dialog, or null to go straight back to the club. */
@@ -92,7 +94,7 @@ const CSS = `
 .invite { display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
 .invite input { flex: 1 1 220px; min-width: 0; font-size: 13px; }
 .net-banner.bad { background: #b8322a; top: 40%; font-size: 18px; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; align-items: center; white-space: normal; text-align: center; }
-.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; }
+.vs-sides .side { border-top: 4px solid var(--pc, var(--line)); padding-top: 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .vs-setup th[data-pc] { border-bottom: 3px solid var(--pc); }
 .link-wait { display: flex; align-items: center; gap: 8px; font-weight: 700; color: var(--muted); }
 .link-wait::before { content: ''; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); animation: link-pulse 1.2s ease-in-out infinite; }
@@ -112,7 +114,7 @@ function injectCss(): void {
 
 const clientSeed = () => Math.floor(Math.random() * 2 ** 31) | 0;
 const dot = (team: 0 | 1) => `<span class="vs-dot" style="background:${HUMAN_COLORS[team]}" aria-hidden="true"></span>`;
-const kbd = (t: string) => t.replace(/(Hold |Esc|Enter|Space|Left Shift|Right Shift|Arrow keys|W A S D|\b[FEP]\b|, \(comma\)|\. \(period\)|\/)/g, (k) => (k === 'Hold ' ? k : `<kbd>${k}</kbd>`));
+const kbd = (t: string) => t.replace(/(Hold |Esc|Enter|Space|Left Shift|Right Shift|Arrow keys|W A S D|\b[CEFMP]\b|, \(comma\)|\. \(period\)|\/)/g, (k) => (k === 'Hold ' ? k : `<kbd>${k}</kbd>`));
 
 function ownTeam(save: Save): TeamSetup | null {
   if (!lineupReady(save)) return null;
@@ -137,6 +139,7 @@ function resultFor(m: MatchState, side: 0 | 1, opp: ResultView['opp'], elo: numb
     possession: [poss[side], poss[o]],
     scorersFor: scorers(side),
     scorersAgainst: scorers(o),
+    goals: goalOrder(m.goals, side),
     label,
     note,
     unrecorded: 'Friendly between two humans: no Elo, no money, no training.',
@@ -157,11 +160,12 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   root.innerHTML = `
   <section class="panel vs-setup" aria-labelledby="l2p-title">
     <h1 id="l2p-title" tabindex="-1">Two players, one screen</h1>
-    <p>Two players, one keyboard. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
+    <p>Two players, one keyboard: P1 on the left of it, P2 on the right. Each of you steers one player; the CPU runs the rest. Friendly: no Elo, no rewards.</p>
+    ${typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? '<p class="link-note">Touch alone can steer only one player: both of you need a keyboard here. To play on two devices, use Two tabs or Online.</p>' : ''}
     <div class="vs-sides">
       <div class="side" style="--pc:${HUMAN_COLORS[0]}">${crestSvg(o.save.club, 56)}<div class="side-name">${esc(o.save.club.name)}</div><span class="vs-player">${dot(0)} Player 1 · yellow marker</span></div>
       <div class="vs">vs</div>
-      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker</label>
+      <div class="side" style="--pc:${HUMAN_COLORS[1]}"><span id="l2p-crest">${crestSvg(near, 56)}</span><label class="vs-player" for="l2p-opp">${dot(1)} Player 2 · cyan marker · pick a club</label>
         <select id="l2p-opp">${ladder.map((c) => `<option value="${esc(c.id)}"${c === near ? ' selected' : ''}>${esc(c.name)} (Elo ${c.elo})</option>`).join('')}</select>
       </div>
     </div>
@@ -175,6 +179,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
   </section>`;
   const $ = <T extends HTMLElement>(id: string) => root.querySelector<T>(`#${id}`)!;
   $('l2p-title').focus();
+  $('l2p-opp').addEventListener('change', () => ($('l2p-crest').innerHTML = crestSvg(ladder.find((c) => c.id === $<HTMLSelectElement>('l2p-opp').value)!, 56)));
   $('l2p-back').addEventListener('click', () => o.onDone(null));
   $('l2p-start').addEventListener('click', () => {
     const club = ladder.find((c) => c.id === $<HTMLSelectElement>('l2p-opp').value)!;
@@ -193,7 +198,7 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       crests: [o.save.club.crest, club.crest],
       label: 'One screen',
       forfeitText: 'Leave match',
-      controlsHint: `${dot(0)} <b>P1:</b> WASD · Space pass · hold F shoot · E switch · Left Shift sprint (or the mouse) &nbsp; ${dot(1)} <b>P2:</b> arrows · Enter or / pass · hold . shoot · , switch · Right Shift sprint · Esc pause`,
+      controlsHint: `<span class="hint-key">${dot(0)} <b>P1</b> WASD · Space pass · hold F shoot · E switch &nbsp; ${dot(1)} <b>P2</b> arrows · Enter pass · hold . shoot · , switch · Esc pause</span> <span class="hint-rest">Shift sprints (Left for P1, Right for P2). Hold C or M to loft. P1 can also use the mouse.</span>`,
       inputSource: (canvas, renderer, s, togglePause) => {
         const pads = new HotseatInput(canvas, renderer, (team) => s.controlled[team] >= 0 && s.ball.owner === s.controlled[team], togglePause);
         return {
@@ -214,15 +219,16 @@ export function mountLocal2P(root: HTMLElement, o: VersusOptions): () => void {
       onEnd: (m, left) => {
         stopMatch?.();
         stopMatch = null;
-        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
+        const r = left ? null : resultFor(m, 0, oppOf(away, club.crest), o.save.club.elo, 'P1 vs P2 · One screen', `Player 1 (yellow) ${m.score[0]}–${m.score[1]} Player 2 (cyan).`);
         if (r) {
           r.headline = m.score[0] === m.score[1] ? 'Honours even' : `Player ${m.score[0] > m.score[1] ? '1 (yellow)' : '2 (cyan)'} wins`;
-          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id) };
+          if (o.again) r.again = { label: 'Rematch', run: () => o.again!(club.id), primary: true };
         }
         o.onDone(r);
       },
     });
   }
+  if (o.go && home) start(near);
   return () => stopMatch?.();
 }
 
@@ -304,7 +310,7 @@ export function mountLink(root: HTMLElement, o: VersusOptions): () => void {
         if (!start) return;
         guest = m.id;
         tr.send({ t: 'start', to: guest, host: id, start });
-        status('Connected — kick off!', false, true);
+        status('Connected. Kick off!', false, true);
       } else if (m.t === 'ready' && m.id === guest && start) {
         off();
         tr.peer = guest;
@@ -586,7 +592,7 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         if (m.t === 'join' && typeof m.id === 'string' && (guestId === null || guestId === m.id)) {
           start ??= hostStart(o, home, m, seed, delay);
           if (!start) {
-            status("Your friend's team couldn't be read. Ask them to reload the page and try again.", true, 'bad-team');
+            status("Your friend's club could not be read. Ask them to reload the page and try again.", true, 'bad-team');
             return;
           }
           guestId = m.id;
@@ -623,12 +629,12 @@ export function mountOnline(root: HTMLElement, o: OnlineOptions): () => void {
         const st = cleanStart(m.start);
         const mine = cleanTeam(home);
         if (!st || !mine) {
-          status("The host's match couldn't be read. Both of you reload the page, then try again.", true, 'bad-start');
+          status("The host's match could not be read. Both of you reload the page, then try again.", true, 'bad-start');
           return;
         }
         // The host builds both teams: ours must still be ours (only the kit and a " II" may change).
         if (!isOwnTeam(st.away, mine)) {
-          status("The host's match didn't have your squad in it, so it wasn't started. Both of you reload the page, then try again.", true, 'bad-squad');
+          status("The host's match did not have your squad in it, so it was not started. Both of you reload the page, then try again.", true, 'bad-squad');
           return;
         }
         started = true;
@@ -702,14 +708,14 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   root.innerHTML = `
   <section class="match" aria-label="${label} match" id="net-match" data-side="${me}" data-mode="${o.link ? 'online' : 'tabs'}">
     <div class="pitch-wrap">
-      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run, tap a player to pick him, and use the Pass and Shoot buttons. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
+      <canvas id="pitch" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Pitch. You control the ${me === 0 ? 'home side, yellow marker' : 'away side, cyan marker'}. ${coarse ? 'Drag to run, tap a player to switch, and use the Pass and Shoot buttons. Use the Menu button to leave.' : 'Mouse or keys as usual; Esc opens the leave menu.'}"></canvas>
       ${hudMarkup({ teams: [home, away], crests: o.start.crests, mode: 'You vs Friend', label, menuId: 'net-menu-btn', menuText: 'Menu' })}
       <div class="touch-pad" role="group" aria-label="Kick buttons">
         <button class="pad-btn" id="pad-pass" type="button" aria-label="Pass">Pass</button>
         <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
-      <div class="net-banner" id="net-wait" role="status" hidden>Waiting for opponent…</div>
-      <div class="net-chip" id="net-chip" role="status" hidden></div>
+      <div class="net-banner" id="net-wait" hidden>Waiting for opponent…</div>
+      <div class="net-chip" id="net-chip" hidden></div>
       <div class="net-banner bad" id="net-stop" role="alert" hidden><span id="net-stop-text"></span><button class="btn" id="net-stop-back">Back to the club</button></div>
       <div class="pause" id="net-menu" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="net-menu-title">
@@ -723,7 +729,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       </div>
     </div>
     <p class="net-stats" id="net-stats"></p>
-    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run · Pass, hold to loft · Shoot, hold for power, tackles off the ball · tap a man to pick him. Your player runs toward your finger, faster the further it is.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
+    <p class="controls-hint">You are <b>${me === 0 ? 'Home' : 'Away'}</b> ${dot(me)} (${me === 0 ? 'yellow' : 'cyan'} marker). ${coarse ? 'Drag to run · Pass, hold to loft · Shoot, hold for power, tackles off the ball · tap a player to switch. Your player runs toward your finger, faster the further it is.' : 'Same controls as a normal match: the pointer or WASD/arrows to run, left click or Space to pass, hold left or C to loft, right click or F to shoot.'}</p>
   </section>`;
   const $ = (id: string) => root.querySelector<HTMLElement>(`#${id}`)!;
   const section = $('net-match');
@@ -890,6 +896,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
   let shownHalftime = false;
   let fullAt = 0;
   let statsAt = 0;
+  let waitSaid = 0;
+  let slowSaid = false;
   function banner(text: string, ms: number, sub?: string) {
     hud.word(text, ms, sub);
     bannerUntil = performance.now() + ms;
@@ -919,8 +927,12 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
     const waiting = lost > 0 || (stallStart !== null && now - stallStart > WAIT_BANNER_MS && live);
     const waitEl = $('net-wait');
     waitEl.hidden = !waiting;
-    const waitText = lost ? (link && (link.status === 'reconnecting' || (link.status !== 'open' && navigator.onLine === false)) ? `${navigator.onLine === false ? "You're offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you can't get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
+    const waitText = lost ? (link && (link.status === 'reconnecting' || (link.status !== 'open' && navigator.onLine === false)) ? `${navigator.onLine === false ? "You are offline" : 'Connection lost'}, reconnecting… ${lost} s. The match is paused and ends if you cannot get back.` : `${them} disconnected. The match is paused: waiting ${lost} s, then it ends as abandoned.`) : `Waiting for ${them}…`;
     if (waitEl.textContent !== waitText) waitEl.textContent = waitText;
+    // Said when the wait begins or turns into a lost connection, without the seconds that count down on screen.
+    const waitKey = lost ? 2 : waiting ? 1 : 0;
+    if (waitKey > waitSaid) announce(waitText.replace(/ \d+ s(?=[.,])/, ''));
+    waitSaid = waitKey;
     waitEl.classList.toggle('lost', lost > 0);
     section.dataset.lost = String(lost);
     section.dataset.tick = String(s.tick);
@@ -937,6 +949,8 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       if (link) section.dataset.link = link.status;
       const slow = live && !waiting && (ls.rttMs > 150 || now - lastStallAt < 4000);
       const chip = $('net-chip');
+      if (slow && !slowSaid) announce('Slow connection.'); // once per slow spell, again if it comes back
+      slowSaid = slow;
       chip.hidden = !slow;
       if (slow) chip.textContent = ls.rttMs > 150 ? `Slow connection · ${Math.round(ls.rttMs)} ms` : 'Connection hiccup';
       section.dataset.slow = slow ? '1' : '0';

@@ -110,6 +110,14 @@ export function trainingGain(r: Rng, p: Player, attr: AttrKey): number {
   return Math.max(0, Math.min(3, Math.round((1 + next(r) * 2) * ageFactor)));
 }
 
+/** What one session can give, for the preview: the range of a gain, and at the ceiling the chance of any. Mirrors trainingGain. */
+export function trainingRange(p: Player, attr: AttrKey): { lo: number; hi: number; odds: number } {
+  if (p.attrs[attr] >= 99) return { lo: 0, hi: 0, odds: 0 };
+  const f = p.age < 21 ? 1.5 : p.age <= 25 ? 1 : p.age <= 29 ? 0.7 : 0.4;
+  if (overall(p) >= p.potential) return { lo: 0, hi: 1, odds: 0.3 * f };
+  return { lo: Math.min(3, Math.round(f)), hi: Math.min(3, Math.round(3 * f)), odds: 1 };
+}
+
 export function toSimAttrs(a: Attributes): SimAttrs {
   const o = {} as SimAttrs;
   for (const k of ATTR_KEYS) o[k] = a[k] / 100;

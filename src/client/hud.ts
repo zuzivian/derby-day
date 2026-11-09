@@ -10,6 +10,7 @@
 import type { CrestPattern } from '../meta/names.ts';
 import { BOX_DEPTH, BOX_W, CENTRE_R, PITCH_H, PITCH_W, RESTART_HUMAN_WAIT, TICK_HZ } from '../sim/constants.ts';
 import { keeperHoldLeft, passIncoming } from '../sim/human.ts';
+import { announce } from './a11y.ts';
 import { tension } from './audio.ts';
 import { inAddedTime, indirectPending, matchSeconds } from '../sim/rules.ts';
 import type { MatchEvent, MatchState, TeamSetup } from '../sim/types.ts';
@@ -34,6 +35,8 @@ export interface HudOptions {
   /** Menu button: id and text. */
   menuId?: string;
   menuText?: string;
+  /** Hot-seat: each human's marker colour; the scoreboard then tags the codes P1 / P2. */
+  marks?: [string, string];
 }
 
 const code = (t: TeamSetup) => esc((t.short || t.name.slice(0, 3)).toUpperCase().slice(0, 3));
@@ -41,6 +44,7 @@ const code = (t: TeamSetup) => esc((t.short || t.name.slice(0, 3)).toUpperCase()
 /** Markup for inside .pitch-wrap, after the canvas. */
 export function hudMarkup(o: HudOptions): string {
   const [home, away] = o.teams;
+  const pm = (n: 0 | 1) => (o.marks ? `<i class="hud-pm" style="background:${o.marks[n]}">P${n + 1}</i>` : '');
   return `
     <div class="hud" data-hud>
       <div class="hud-tl">
@@ -50,9 +54,9 @@ export function hudMarkup(o: HudOptions): string {
         </div>
         <div class="hud-bars">
           <div class="hud-bar scoreboard" title="${esc(home.name)} v ${esc(away.name)}">
-            <span class="visually-hidden">${esc(home.name)}</span><span aria-hidden="true">${code(home)}</span>
+            <span class="visually-hidden">${esc(home.name)}</span><span aria-hidden="true">${pm(0)}${code(home)}</span>
             <span class="hud-goals"><span id="sb-h">0</span><span class="hud-dash">-</span><span id="sb-a">0</span></span>
-            <span aria-hidden="true">${code(away)}</span><span class="visually-hidden">${esc(away.name)}</span>
+            <span aria-hidden="true">${code(away)}${pm(1)}</span><span class="visually-hidden">${esc(away.name)}</span>
           </div>
           <div class="hud-bar hud-clock"><span id="sb-clock">00:00</span><span class="visually-hidden"> · <span id="sb-min">1'</span> · <span id="sb-phase">${esc(o.label)}</span></span></div>
         </div>
@@ -69,7 +73,7 @@ export function hudMarkup(o: HudOptions): string {
       <div class="hud-replay" hidden><span>Replay</span><small></small></div>
       <div class="hud-tag" hidden aria-hidden="true"></div>
       <div class="hud-fk" hidden aria-hidden="true"></div>
-      <div class="hud-prompt" hidden role="status"></div>
+      <div class="hud-prompt" hidden></div>
     </div>`;
 }
 
@@ -159,6 +163,7 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
   // A human's kick-off waiting: who kicks off, with which key, and how long before the CPU takes it.
   const prompt = q('.hud-prompt');
   let lastPrompt = '';
+  let lastSay: string | null = null;
   const banner = q('#banner');
   const clock = q('#sb-clock');
   const radar = q<HTMLCanvasElement>('.hud-radar');
@@ -310,6 +315,9 @@ export function mountHud(wrap: HTMLElement, s0: MatchState, kickoffPrompt: Kicko
       if (pr !== lastPrompt) {
         lastPrompt = pr;
         prompt.hidden = !pr;
+        // Said once when it appears: a live region would read the countdown out every second.
+        if (say && say !== lastSay) announce(say);
+        lastSay = say;
         if (say && ko) prompt.innerHTML = `<b>${esc(say)}</b> <small>· the CPU takes it in ${ko.secs} s</small>`;
       }
       const c = matchClock(s);

@@ -52,7 +52,7 @@ test('levels: the next-unlock teaser and the club level panel list what is next 
   expect(await page.locator(SEL.xpText).innerText(), 'header').toBe('Level 4 · 60 / 400 XP');
   expect(await tabScreens(page), 'tabs at level 4').toEqual(['home', 'squad', 'training', 'club']);
   await goTab(page, SEL.clubScreen);
-  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice: Hard at level 5 — 340 XP to go');
+  expect(await page.locator(SEL.nextUnlock).innerText(), 'teaser').toContain('The Cup and Practice: Hard at level 5: 340 XP to go');
   await page.locator(`${SEL.levelPanel} summary`).click();
   const text = await page.locator(SEL.levelPanel).innerText();
   expect(text, 'unlocked row').toMatch(/Training[\s\S]*Unlocked/);

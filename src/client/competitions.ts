@@ -54,7 +54,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
 import { storyHtml } from './stakes.ts';
-import { CUP_ICON, emptyState, esc, rankOf, type App } from './ui.ts';
+import { CUP_ICON, emptyState, esc, goalOrder, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
   app: App;
@@ -172,7 +172,7 @@ function cupPanel(s: Save): string {
   }
   return `
   <article class="panel comp-panel" aria-labelledby="cup-title">
-    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
+    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : out ? 'Out' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
     ${status}
     ${bracket(s, cup)}
   </article>`;
@@ -290,12 +290,15 @@ function leagueTable(s: Save, season: Season): string {
       <th scope="col" class="num"><abbr title="Goal difference">GD</abbr></th><th scope="col" class="num"><abbr title="Points">Pts</abbr></th>
     </tr></thead>
     <tbody>${rows
-      .map((r, i) => `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${!started ? '' : up && i < 2 ? ' zone-up' : down && i >= rows.length - 2 ? ' zone-down' : ''}">
-        <td class="num">${i + 1}</td>
+      .map((r, i) => {
+        const zone = !started ? '' : up && i < 2 ? 'up' : down && i >= rows.length - 2 ? 'down' : '';
+        return `<tr${r.you ? ' aria-current="true"' : ''} class="${r.you ? 'you' : ''}${zone ? ` zone-${zone}` : ''}">
+        <td class="num">${i + 1}${zone ? `<span class="visually-hidden">, ${zone === 'up' ? 'promotion' : 'relegation'} place</span>` : ''}</td>
         <th scope="row" class="name">${kit(r)}${esc(r.name)} <span class="club-code" aria-hidden="true">${esc(codes.get(r.id) ?? '')}</span>${r.you ? ' <span class="pill" aria-hidden="true">you</span><span class="visually-hidden"> (your club)</span>' : ''}</th>
         <td class="num">${r.played}</td><td class="num">${r.won}</td><td class="num">${r.drawn}</td><td class="num">${r.lost}</td>
         <td class="num opt">${r.gf}</td><td class="num opt">${r.ga}</td><td class="num">${r.gd ? signed(r.gd) : '0'}</td><td class="num ovr">${r.points}</td>
-      </tr>`)
+      </tr>`;
+      })
       .join('')}</tbody>
   </table></div>
   ${up || down ? `<p class="muted small league-key">${up ? `<span class="key key-up" aria-hidden="true"></span>Promotion to ${divisionName(d - 1)} ` : ''}${down ? `<span class="key key-down" aria-hidden="true"></span>Relegation to ${divisionName(d + 1)}` : ''}</p>` : ''}`;
@@ -456,6 +459,7 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
       note: outcome.note,
       pens,
       rankBefore,
+      goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
       headline: outcome.trophy ? (outcome.trophy.kind === 'cup' ? 'Cup winners' : 'Champions') : undefined,
       closeLabel: closeLabelFor(kind, s),
     };
