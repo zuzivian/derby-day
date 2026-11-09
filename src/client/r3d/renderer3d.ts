@@ -63,6 +63,12 @@ const ZOOM_KEY = 'derby-zoom';
 /** Visual events with no sim cause linger on this clock, so they need their own lifetimes. */
 const NO_EVENTS: AnimEvent[] = [];
 
+/** The name on the back of a shirt: the last word of the player's name. */
+function surname(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts[parts.length - 1] ?? '';
+}
+
 function storedCamera(): CameraMode {
   try {
     return localStorage.getItem(CAMERA_KEY) === 'end' ? 'end' : 'broadcast';
@@ -308,6 +314,8 @@ export class Renderer3D implements MatchRenderer {
   private camDistPrev = 60;
   // Scratch objects refilled every frame, so the render loop doesn't allocate them (GC pauses).
   private axis = new Vector3();
+  /** The ball for the players' heads to follow (sim metres), updated once a frame. */
+  private ballAt = { x: 0, y: 0, z: 0 };
   private pctx: PlayerContext = { time: 0, dtSim: 0, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: false };
   private refBody: SimBody = { pos: { x: 0, y: 0 }, vel: { x: 0, y: 0 }, facing: { x: 1, y: 0 } };
   private stadiumFrame = { excite: [0, 0] as [number, number], still: false, ball: { x: 0, y: 0, z: 0, speed: 0 } };
@@ -358,6 +366,9 @@ export class Renderer3D implements MatchRenderer {
     private opts: Renderer3DOptions,
   ) {
     const hi = opts.quality === 'high';
+    // Players: finer meshes and sharper kit textures (numbers, names) at high quality.
+    this.kit.texSize = hi ? 512 : 256;
+    this.kit.detail = hi ? 'high' : 'low';
     this.gl = new WebGLRenderer({ canvas, antialias: hi, powerPreference: 'high-performance', stencil: false });
     // Software rendering (low): no shadow maps, and a slightly reduced resolution.
     this.pixelRatio = this.basePixelRatio();
@@ -615,6 +626,7 @@ export class Renderer3D implements MatchRenderer {
       const keeper = p.role === 'GK';
       const kit = keeper ? kits[p.team].keeper : kits[p.team].field;
       const look = lookFor(p.id, kit, p.number, keeper, (salt) => hash01(p.id + p.name, salt));
+      look.name = surname(p.name);
       const model = createProceduralPlayer(this.kit, look);
       model.object.traverse((o) => (o.castShadow = o.castShadow || false));
       this.scene.add(model.object);
@@ -744,6 +756,9 @@ export class Renderer3D implements MatchRenderer {
     const mob = this.mob;
     const mobT = mob ? (s.tick - mob.tick) / 60 + lead : 0;
 
+    this.ballAt.x = b.pos.x;
+    this.ballAt.y = b.pos.y;
+    this.ballAt.z = b.z;
     // Players. A player sent off is parked far off the pitch by the sim: not drawn.
     for (const p of s.players) {
       const model = this.players[p.i];
@@ -761,6 +776,7 @@ export class Renderer3D implements MatchRenderer {
       c.hasBall = b.owner === p.i;
       c.wall = inWall(s, p);
       c.armUp = false;
+      c.ball = this.ballAt;
       c.reducedMotion = this.reduced;
       const runner = mob ? mob.runners.find((r) => r.i === p.i) : undefined;
       const body = !mob ? p : p.i === mob.scorer ? scorerBody(mob, mobT, this.mobBody) : runner ? mobBody(mob, runner, mobT, this.mobBody) : p;
