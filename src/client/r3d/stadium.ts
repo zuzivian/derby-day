@@ -265,6 +265,71 @@ function bannerTexture(t: TeamSetup): CanvasTexture {
   return tex(c, 4);
 }
 
+/**
+ * Tiling grass detail (read as data, not colour): red is blades, short strokes in every direction around
+ * mid grey; green and blue are soft blotches for patchy colour. Each channel averages to about 0.5.
+ */
+function grassDetailTexture(aniso: number): CanvasTexture {
+  const S = 256;
+  const [c, g] = canvas(S, S);
+  const r = rng(91);
+  const img = g.createImageData(S, S);
+  const d = img.data;
+  const red = new Float32Array(S * S).fill(0.5);
+  // Blades: thin strokes, drawn wrapped so the tile repeats seamlessly.
+  for (let n = 0; n < 2600; n++) {
+    const x0 = r() * S;
+    const y0 = r() * S;
+    const a = r() * Math.PI * 2;
+    const len = 3 + r() * 7;
+    const v = (r() - 0.5) * 0.9;
+    for (let k = 0; k < len; k++) {
+      const x = Math.floor(x0 + Math.cos(a) * k + S) % S;
+      const y = Math.floor(y0 + Math.sin(a) * k + S) % S;
+      red[y * S + x] += v * (1 - k / len) * 0.5;
+    }
+  }
+  // Blotches: a few wrapped soft discs per channel, lighter and darker.
+  const blot = new Float32Array(S * S * 2).fill(0.5);
+  for (let ch = 0; ch < 2; ch++) {
+    for (let n = 0; n < 26; n++) {
+      const cx = r() * S;
+      const cy = r() * S;
+      const rad = 12 + r() * 40;
+      const v = (r() - 0.5) * 0.7;
+      for (let y = -rad; y <= rad; y++) {
+        for (let x = -rad; x <= rad; x++) {
+          const q = 1 - Math.sqrt(x * x + y * y) / rad;
+          if (q <= 0) continue;
+          const px = Math.floor(cx + x + S) % S;
+          const py = Math.floor(cy + y + S) % S;
+          blot[(py * S + px) * 2 + ch] += v * q * q;
+        }
+      }
+    }
+  }
+  // Re-centre each channel on 0.5, so the multiply averages to 1.
+  const centre = (get: (i: number) => number) => {
+    let t = 0;
+    for (let i = 0; i < S * S; i++) t += get(i);
+    return 0.5 - t / (S * S);
+  };
+  const dr = centre((i) => red[i]);
+  const dg = centre((i) => blot[i * 2]);
+  const db = centre((i) => blot[i * 2 + 1]);
+  const b8 = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
+  for (let i = 0; i < S * S; i++) {
+    d[i * 4] = b8(red[i] + dr);
+    d[i * 4 + 1] = b8(blot[i * 2] + dg);
+    d[i * 4 + 2] = b8(blot[i * 2 + 1] + db);
+    d[i * 4 + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = tex(c, aniso, true);
+  t.colorSpace = LinearSRGBColorSpace;
+  return t;
+}
+
 function boardTexture(aniso: number, panels: Panel[], pw: number): CanvasTexture {
   const [c, g] = canvas(pw * panels.length, 64);
   const skins = ['#f1c9a5', '#c68863', '#8d5a36', '#e8b98f'];
@@ -822,7 +887,31 @@ export function buildStadium(o: StadiumOptions): Stadium {
   // --- pitch -----------------------------------------------------------------
   const gw = PITCH_W + 2 * STAND_END;
   const gh = PITCH_H + 2 * STAND_SIDE;
-  const grass = new Mesh(keep(new PlaneGeometry(gw, gh)), keep(new MeshLambertMaterial({ map: keep(grassTexture(gw, gh, o.quality, o.anisotropy)) })));
+  const grassMat = keep(new MeshLambertMaterial({ map: keep(grassTexture(gw, gh, o.quality, o.anisotropy)) }));
+  // Up close the turf texture is about 17 px a metre: a tiling detail texture in world space adds the blades
+  // (every 1.2 m) and soft patches (every 14 m) over it. Both average to 1, so the grass's colour as the kit
+  // check measures it (kits.ts GRASS) is unchanged; far off the mipmaps fade them to that average.
+  const detail = keep(grassDetailTexture(o.anisotropy));
+  grassMat.onBeforeCompile = (sh) => {
+    sh.uniforms.tDetail = { value: detail };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', 'varying vec2 vGrassXZ;\n#include <common>')
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGrassXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', 'uniform sampler2D tDetail;\nvarying vec2 vGrassXZ;\n#include <common>')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+{
+  float blades = texture2D(tDetail, vGrassXZ / 1.2).r;
+  vec2 blot = texture2D(tDetail, vGrassXZ / 14.0 + 0.37).gb;
+  diffuseColor.rgb *= 0.86 + 0.28 * blades;
+  diffuseColor.rgb *= vec3(0.97 + 0.06 * blot.x, 0.98 + 0.04 * blot.x, 0.97 + 0.06 * blot.y);
+}`,
+      );
+  };
+  grassMat.customProgramCacheKey = () => 'grass-detail';
+  const grass = new Mesh(keep(new PlaneGeometry(gw, gh)), grassMat);
   grass.rotation.x = -Math.PI / 2;
   grass.receiveShadow = true;
   group.add(grass);
