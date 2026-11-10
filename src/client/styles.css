@@ -1837,6 +1837,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .mk-note { display: block; font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); white-space: nowrap; }
 .mk-note.up { color: var(--good); }
 .mk-note.short { color: var(--bad); }
+/* Under an armed Confirm the note wraps to the button's width, so it never widens the action column (a 320 px Sell table). */
+td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-inline-size: 100%; }
 
 /* Ladder story: your place, the gap to the club above, form; neighbours (the derby places) tinted; the form line on Club */
 .ladder-story { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-3); margin: 0 0 var(--sp-3); }
