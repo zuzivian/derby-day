@@ -193,3 +193,102 @@ test('shootout: a hidden tab stops the clock, so the keeper window and a chargin
   }
   expect([...seen].sort().join(','), 'checked both roles').toBe('keeper,taker');
 }, { timeoutMs: 150_000 });
+
+test('shootout: a touch phone gets touch wording', async (t) => {
+  const page = await reachShootout(t, { width: 390, height: 844, hasTouch: true });
+  const intro = async () => (await page.locator('#so-intro').innerText()).toLowerCase();
+  expect(await intro(), 'no mouse on a phone').notToContain('mouse');
+  expect(await intro(), 'touch wording').toContain('tap left, centre or right to dive');
+  await page.locator(S.start).tap();
+  for (let k = 0; k < 8; k++) {
+    await waitPhase(page, ['aim', 'telegraph', 'done']);
+    if ((await phaseOf(page)) === 'telegraph') break;
+    await playOneKick(page);
+    await page.waitForTimeout(520);
+    await page.keyboard.press('Space').catch(() => {});
+  }
+  const help = await page.locator('.so-help').innerText();
+  expect(help, 'dive help on touch').toContain('Tap Left, Centre or Right to dive');
+  expect(help).notToContain('Click');
+});
+
+test('shootout: mouse wording flips to touch wording on the first touch pointerdown', async (t) => {
+  // A wide viewport with a fine pointer: mouse wording at mount, then a touch pointerdown.
+  const page = await reachShootout(t);
+  expect((await page.locator('#so-intro').innerText()).toLowerCase(), 'mouse wording first').toContain('mouse');
+  await page.evaluate(() => document.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true })));
+  const text = (await page.locator('#so-intro').innerText()).toLowerCase();
+  expect(text, 'touch wording after a finger').notToContain('mouse');
+  expect(text).toContain('tap left, centre or right to dive');
+});
+
+test('shootout: on touch, action buttons are 44px, Forfeit is spaced apart and hidden once a kick is decided', async (t) => {
+  const page = await reachShootout(t, { width: 390, height: 844, hasTouch: true });
+  await page.locator(S.start).tap();
+  await waitPhase(page, ['aim', 'telegraph']);
+  const box = async (sel) => page.locator(sel).evaluate((e) => { const r = e.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: r.height }; });
+  const primary = (await phaseOf(page)) === 'aim' ? S.quick : S.dive(-1);
+  const p = await box(primary);
+  const l = await box(S.leave);
+  expect(Math.round(p.h), 'primary action is at least 44px').toBeGreaterThanOrEqual(44);
+  expect(Math.round(l.h), 'forfeit is at least 44px').toBeGreaterThanOrEqual(44);
+  expect(l.top - p.bottom, 'clear space between forfeit and the primary action').toBeGreaterThanOrEqual(12);
+  await playOneKick(page);
+  expect(await page.locator(S.leave).evaluate((e) => getComputedStyle(e).visibility), 'no forfeit while a result shows').toBe('hidden');
+});
+
+test('shootout: short landscape banner clears the dive labels; the end card pauses, names the next step and has confetti on a win', async (t) => {
+  const page = await reachShootout(t, { width: 750, height: 342, hasTouch: true });
+  await page.locator(S.start).tap();
+  await waitPhase(page, ['aim', 'telegraph']);
+  await playOneKick(page);
+  const r = await page.evaluate(() => {
+    const b = document.querySelector('#so-banner').getBoundingClientRect();
+    const c = document.querySelector('#so-canvas');
+    const cr = c.getBoundingClientRect();
+    const top = parseFloat(getComputedStyle(c.parentElement).getPropertyValue('--so-lbl-top'));
+    return { bannerBottom: b.bottom - cr.top, bannerTop: b.top - cr.top, bannerH: b.height, lblTop: top };
+  });
+  expect(r.bannerBottom, 'banner ends above the LEFT/CENTRE/RIGHT labels').toBeLessThanOrEqual(r.lblTop + 1);
+  expect(r.bannerTop, 'banner stays on the canvas').toBeGreaterThanOrEqual(0);
+  expect(r.bannerH, 'banner is capped in short landscape').toBeLessThanOrEqual(60);
+  await page.waitForTimeout(520);
+  await page.keyboard.press('Space').catch(() => {});
+  for (let k = 0; k < 60; k++) {
+    await waitPhase(page, ['aim', 'telegraph', 'done']);
+    if ((await phaseOf(page)) === 'done') break;
+    await playOneKick(page);
+    await page.waitForTimeout(520);
+    await page.keyboard.press('Space').catch(() => {});
+    await waitPhase(page, ['aim', 'telegraph', 'done']);
+  }
+  // Phase is 'done' as the end card is still held back for a beat.
+  expect(await page.locator(S.end).isHidden(), 'end card waits a beat after the last kick').toBe(true);
+  await page.locator(S.end).waitFor({ state: 'visible' });
+  const title = await page.locator(S.endTitle).textContent();
+  const won = /You win/.test(title);
+  const next = await page.locator('#so-end-next').innerText();
+  expect(next, 'next step named').toMatch(won ? /^Through to the (semi-final|final)$/ : /^Knocked out$/);
+  expect(await page.locator('#so-end .confetti').count(), 'confetti only on a win').toBe(won ? 1 : 0);
+  expect(await page.locator(S.leave).evaluate((e) => getComputedStyle(e).visibility === 'hidden' || e.hidden), 'no forfeit after the end').toBe(true);
+}, { timeoutMs: 150_000 });
+
+test('shootout: reduced motion shows no confetti on the end card', async (t) => {
+  const page = await reachShootout(t, {
+    width: 750,
+    height: 342,
+    hasTouch: true,
+    init: () => {
+      const mm = window.matchMedia.bind(window);
+      const noop = () => {};
+      window.matchMedia = (q) =>
+        /prefers-reduced-motion:\s*reduce/.test(q)
+          ? { matches: true, media: q, onchange: null, addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop, dispatchEvent: () => false }
+          : mm(q);
+    },
+  });
+  await page.locator(S.start).tap();
+  await finishShootout(page, null);
+  await page.locator(S.end).waitFor({ state: 'visible' });
+  expect(await page.locator('#so-end .confetti').count(), 'no confetti under reduced motion').toBe(0);
+}, { timeoutMs: 150_000 });
