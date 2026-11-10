@@ -1576,8 +1576,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .wordmark::after { height: 4px; }
   /* Every chip shows: the strip wraps to two rows (level chip, lives and money; then rank and week), no scroller, no fade mask. */
   .status-strip { gap: 6px; width: 100%; flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; }
+  /* The level chip owns the first row and the stat chips share the second equally, so a long figure (a 3-digit
+     rank, a wide font) can never strand one chip alone on a row; at the narrowest widths they wrap two and two. */
   .status-strip > * { flex: none; }
-  .status-strip .level-chip { height: 34px; flex: 1 1 140px; min-width: 0; padding-right: 10px; }
+  .status-strip > .stat { flex: 1 1 auto; justify-content: center; }
+  .status-strip .level-chip { height: 34px; flex: 1 1 100%; min-width: 0; padding-right: 10px; }
   .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   /* The badge beside it shows the level, so "Level 45 · " takes no room (still in the text for screen readers) and the XP fits. */
   .status-strip .xp-lv { font-size: 0; }
@@ -1619,6 +1622,15 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Large text on a phone (em here follows the browser's text size): the half-width Cup and League cards would split their titles mid-word, so they go full width too. */
 @media (max-width: 20em) {
   .mode-card[data-mode] { grid-column: 1 / -1; }
+}
+@media (max-width: 25em) {
+  .status-strip { gap: 4px; }
+  .status-strip .stat { padding: 0 6px; gap: 3px; }
+  .status-strip .stat .icon { width: 14px; height: 14px; }
+}
+/* Too narrow for four chips in a row (320 px, or a wide font): pair them, so none is left alone on a line. */
+@media (max-width: 21.8125em) {
+  .status-strip > .stat { flex: 1 1 calc(50% - 4px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .kickoff, .kickoff::after { transition: none; }
@@ -1894,6 +1906,7 @@ td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-in
 /* Club: level, news and history lead; identity and rename fold away; the danger zone has its own panel at the end. */
 .club-grid .level-panel, .club-grid .customise, .club-grid .danger-panel { grid-column: 1 / -1; }
 .customise-fold > summary { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; list-style: none; min-height: 32px; }
+@media (pointer: coarse) { .customise-fold > summary { min-height: 44px; } }
 .customise-fold > summary::-webkit-details-marker { display: none; }
 .customise-fold > summary h2 { margin: 0; }
 .customise-fold > summary .tac-chev { margin-left: auto; }
