@@ -62,7 +62,8 @@ test('mobilefit: portrait coach tip stays clear of the camera and zoom buttons, 
   await page.waitForSelector('#ob-kickoff');
   await page.click('#ob-kickoff');
   await page.waitForSelector('.coach-tip:not([hidden])', { timeout: 30_000 });
-  await page.waitForTimeout(600);
+  // Measure the settled card: it slides in over .25s (a 6 px rise), which a busy machine can stretch past a fixed wait.
+  await page.waitForFunction(() => { const c = getComputedStyle(document.querySelector('.coach-tip')); return c.opacity === '1' && (c.transform === 'none' || c.transform === 'matrix(1, 0, 0, 1, 0, 0)'); }, null, { timeout: 15_000 });
   const tip = await rect(page, '.coach-tip');
   for (const sel of ['[data-zoom="1"]', '[data-zoom="-1"]', '.pitch-cam', '.hud-menu']) {
     const r = await rect(page, sel);
