@@ -31,6 +31,16 @@ function perspective(r: Replay): { us: 0 | 1; res: 'W' | 'D' | 'L'; us_g: number
   return { us, res: a > b ? 'W' : a === b ? 'D' : 'L', us_g: a, them_g: b };
 }
 
+/** The native share sheet is offered on touch devices that have one; desktop keeps "Copy replay code". */
+function canShare(): boolean {
+  try {
+    return typeof navigator.share === 'function' && (matchMedia('(pointer: coarse)').matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  } catch {
+    return false;
+  }
+}
+const copyLabel = () => (canShare() ? 'Share replay' : 'Copy replay code');
+
 /** Buttons for the result modal: Watch goals (if there were any) and Copy replay code. */
 export function resultReplayHtml(): string {
   const last = lastReplay();
@@ -38,7 +48,7 @@ export function resultReplayHtml(): string {
   const goals = last.replay.goals.length;
   return `<div class="replay-actions">
     ${goals ? `<button class="btn small" data-replay="watch" data-id="${esc(last.id)}"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M7 4.5v15l12-7.5Z" fill="currentColor"/></svg> Watch goals (${goals})</button>` : ''}
-    <button class="btn" data-replay="copy" data-id="${esc(last.id)}">Copy replay code</button>
+    <button class="btn" data-replay="copy" data-id="${esc(last.id)}">${copyLabel()}</button>
   </div>`;
 }
 
@@ -56,7 +66,7 @@ export function recentReplaysHtml(): string {
         <span class="res-opp">${esc(opp.name)}<span class="muted small">${esc(replay.label || 'Match')} · ${goals} goal${goals === 1 ? '' : 's'}</span></span>
         <span class="rp-btns">
           <button class="btn small" data-replay="watch" data-id="${esc(id)}" aria-label="Watch ${esc(replay.home.name)} ${replay.score[0]}, ${esc(replay.away.name)} ${replay.score[1]}">Watch</button>
-          <button class="btn small ghost" data-replay="copy" data-id="${esc(id)}" aria-label="Copy replay code for ${esc(opp.name)}">Copy code</button>
+          <button class="btn small ghost" data-replay="copy" data-id="${esc(id)}" aria-label="${canShare() ? 'Share' : 'Copy'} replay code for ${esc(opp.name)}">${canShare() ? 'Share' : 'Copy code'}</button>
         </span>
       </li>`;
     })
@@ -165,6 +175,28 @@ function codeBox(code: string, opener: HTMLElement | null) {
 
 /** Must run inside the click handler so the clipboard call keeps the user gesture. */
 function copyCode(code: string, opener: HTMLElement | null) {
+  if (canShare()) {
+    let sp: Promise<void> | undefined;
+    try {
+      sp = navigator.share({ title: 'Derby Day replay', text: code });
+    } catch {
+      sp = undefined;
+    }
+    if (sp) {
+      sp.then(
+        () => announce('Replay shared.'),
+        (err: unknown) => {
+          if ((err as { name?: string } | null)?.name === 'AbortError') return; // the player cancelled the sheet
+          copyToClipboard(code, opener);
+        },
+      );
+      return;
+    }
+  }
+  copyToClipboard(code, opener);
+}
+
+function copyToClipboard(code: string, opener: HTMLElement | null) {
   const fallback = () => {
     // Older browsers and locked-down iframes: select the text and try the legacy command.
     const ta = codeBox(code, opener);
@@ -281,7 +313,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     </div>
     <p id="rv-status" class="small rp-status" role="status"></p>
     <div class="rp-foot">
-      <button class="btn small ghost" data-rp="copy">Copy replay code</button>
+      <button class="btn small ghost" data-rp="copy">${copyLabel()}</button>
       <span class="muted small">${formatSize(codeSize(code))}</span>
       <span class="muted small rp-keys" aria-label="Keyboard shortcuts"><span class="rp-keys-label">Shortcuts</span> <span><kbd>Space</kbd> play</span> <span><kbd>←</kbd><kbd>→</kbd> step</span> <span><kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> second</span> <span><kbd>PgUp</kbd><kbd>PgDn</kbd> goal</span> <span><kbd>S</kbd> slow-mo</span> <span><kbd>V</kbd> camera</span> <span><kbd>Esc</kbd> close</span></span>
     </div>

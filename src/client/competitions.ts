@@ -54,6 +54,7 @@ import type { MatchState, TeamSetup } from '../sim/types.ts';
 import { crestSvg } from './crest.ts';
 import type { ShootoutResult, ShootoutViewOptions } from './shootout.ts';
 import { storyHtml } from './stakes.ts';
+import { reducedMotion } from './a11y.ts';
 import { CUP_ICON, emptyState, esc, goalOrder, rankOf, type App } from './ui.ts';
 
 export interface CompContext {
@@ -82,8 +83,13 @@ export function competitionsScreen(app: App): string {
   // Idle competitions are small cards side by side; a running one takes the full width.
   const idle = [cupOn && !s.cup ? cupPanel(s) : '', leagueOn && !s.season ? seasonPanel(s) : ''].filter(Boolean);
   const locked = [cupOn ? null : unlockOf('cup'), leagueOn ? null : unlockOf('league')].filter((u) => !!u);
+  // On a phone the two panels stack into a very long page: two anchor chips jump between them.
+  const jump = cupOn && leagueOn
+    ? `<nav class="comp-jump" aria-label="Jump to"><button type="button" class="chip" data-action="comp-jump" data-target="cup-title">Cup</button><button type="button" class="chip" data-action="comp-jump" data-target="season-title">League</button></nav>`
+    : '';
   return `
   <div class="comp-grid">
+    ${jump}
     ${s.cup ? cupPanel(s) : ''}
     ${s.season ? seasonPanel(s) : ''}
     ${idle.length ? `<div class="comp-top">${idle.join('')}</div>` : ''}
@@ -144,7 +150,7 @@ function cupPanel(s: Save): string {
     const field = d > 1 ? `Clubs from ${divisionName(d)} near your Elo and ${CUP_GUESTS} from ${divisionName(d - 1)}` : `The clubs of ${divisionName(1)}`;
     return `
     <article class="panel comp-panel" aria-labelledby="cup-title">
-      <div class="board-head"><h2 id="cup-title" class="comp-title">The Cup</h2><span class="eyebrow">Knockout · ${COMP_SIZE} clubs · ${divisionName(d)} prizes</span></div>
+      <div class="board-head"><h2 id="cup-title" class="comp-title" tabindex="-1">The Cup</h2><span class="eyebrow">Knockout · ${COMP_SIZE} clubs · ${divisionName(d)} prizes</span></div>
       <p>${field}, seeded by Elo. Quarter-final, semi-final, final. One match a round; a draw goes to penalties.</p>
       <dl class="facts comp-prizes">
         <div><dt>Quarter-final</dt><dd>+${formatMoney(prizeIn(CUP_PRIZES[0], d))}</dd></div>
@@ -172,7 +178,7 @@ function cupPanel(s: Save): string {
   }
   return `
   <article class="panel comp-panel" aria-labelledby="cup-title">
-    <div class="board-head"><h2 id="cup-title" class="comp-title">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : out ? 'Out' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
+    <div class="board-head"><h2 id="cup-title" class="comp-title" tabindex="-1">Cup ${cup.edition}</h2><span class="eyebrow">${cup.done ? 'Finished' : out ? 'Out' : esc(CUP_ROUNDS[cup.round])}${cup.earned ? ` · earned <span class="money">${formatMoney(cup.earned)}</span>` : ''}</span></div>
     ${status}
     ${bracket(s, cup)}
   </article>`;
@@ -236,7 +242,7 @@ function seasonPanel(s: Save): string {
     const moves = [d > 1 ? `the top two go up to ${divisionName(d - 1)}` : 'the champions are the best club in the land', d < DIVISIONS ? `the bottom two go down to ${divisionName(d + 1)}` : ''].filter(Boolean).join('; ');
     return `
     <article class="panel comp-panel" aria-labelledby="season-title">
-      <div class="board-head"><h2 id="season-title" class="comp-title">The League</h2><span class="eyebrow">${divisionName(d)} · ${COMP_SIZE} clubs · ${COMP_SIZE - 1} matchdays</span></div>
+      <div class="board-head"><h2 id="season-title" class="comp-title" tabindex="-1">The League</h2><span class="eyebrow">${divisionName(d)} · ${COMP_SIZE} clubs · ${COMP_SIZE - 1} matchdays</span></div>
       <p>Play the rest of ${divisionName(d)} once. Three points for a win, one for a draw; goal difference, then goals scored, split ties. ${moves[0].toUpperCase()}${moves.slice(1)}. Prize money for every place, paid for the matchdays you play.</p>
       <dl class="facts comp-prizes">
         <div><dt>Champions</dt><dd>+${formatMoney(prizeIn(SEASON_PRIZES[0], d))}</dd></div>
@@ -262,7 +268,7 @@ function seasonPanel(s: Save): string {
   }
   return `
   <article class="panel comp-panel" aria-labelledby="season-title">
-    <div class="board-head"><h2 id="season-title" class="comp-title">League ${season.edition}</h2><span class="eyebrow">${divisionName(season.division ?? DIVISIONS)} · ${season.done ? 'Finished' : `Matchday ${season.matchday + 1} of ${days}`}</span></div>
+    <div class="board-head"><h2 id="season-title" class="comp-title" tabindex="-1">League ${season.edition}</h2><span class="eyebrow">${divisionName(season.division ?? DIVISIONS)} · ${season.done ? 'Finished' : `Matchday ${season.matchday + 1} of ${days}`}</span></div>
     ${seasonStanding(s) ? `<p class="league-standing">${esc(seasonStanding(s))}</p>` : ''}
     ${status}
     <div class="league-body">
@@ -346,6 +352,21 @@ function fixtureList(s: Save, season: Season): string {
 // ---------------------------------------------------------------------------
 // Actions
 
+/** Bring a panel's heading into view and focus it, once the (re-)render has put it on the page. */
+function revealHeading(id: string, now = false): void {
+  const go = () => {
+    const h = document.getElementById(id);
+    if (!h) return;
+    h.focus({ preventScroll: true });
+    // A wide screen shows both panels near the top already: only move the page when the heading is off-screen or the screen is narrow.
+    const top = h.getBoundingClientRect().top;
+    if (!now && !matchMedia('(max-width: 640px)').matches && top >= 0 && top < innerHeight * 0.6) return;
+    h.scrollIntoView({ block: 'start', behavior: reducedMotion() || !now ? 'auto' : 'smooth' });
+  };
+  if (now) go();
+  else requestAnimationFrame(() => requestAnimationFrame(go));
+}
+
 /** Handle a `comp-*` click. Returns true when the caller should re-render. */
 export function competitionAction(action: string, el: HTMLElement, ctx: CompContext): boolean {
   const s = ctx.app.save;
@@ -357,6 +378,7 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
       if (!ok.ok) return ctx.toast(ok.message, false), true;
       const cup = startCup(s);
       ctx.persist();
+      revealHeading('cup-title');
       ctx.toast(`Cup ${cup.edition}: ${cupOpponent(s, cup)?.name ?? 'TBC'} in the quarter-final.`);
       return true;
     }
@@ -366,9 +388,13 @@ export function competitionAction(action: string, el: HTMLElement, ctx: CompCont
       if (!ok.ok) return ctx.toast(ok.message, false), true;
       const season = startSeason(s);
       ctx.persist();
+      revealHeading('season-title');
       ctx.toast(`League ${season.edition}: ${seasonOpponent(s, season)?.name ?? 'TBC'} on matchday 1.`);
       return true;
     }
+    case 'comp-jump':
+      revealHeading(el.dataset.target === 'season-title' ? 'season-title' : 'cup-title', true);
+      return false;
     case 'comp-play':
       return !playCompetitionMatch(el.dataset.kind === 'season' ? 'season' : 'cup', ctx);
     case 'comp-sim-cup':

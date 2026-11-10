@@ -1221,10 +1221,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .trophy-season .trophy-icon { color: var(--good); }
 .result-note:empty { display: none; }
 
+.comp-jump { display: none; }
+/* Room above a scrolled-to panel heading, so the toast (top of the viewport) never covers the fixture card below it. */
+.comp-title { scroll-margin-top: 76px; }
 @media (max-width: 960px) {
   .comp-top, .league-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
+  .comp-jump { display: flex; gap: var(--sp-2); }
   .comp-panel > .actions .btn { width: 100%; }
   .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .ties { gap: var(--sp-2); }
@@ -1753,9 +1757,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 
 /* Stakes and rivalry: the line under the Home hero and the fixture cards. */
-.hero-story { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: var(--fs-sm); color: var(--hero-ink); text-align: center; }
+.hero-story { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: var(--fs-sm); color: var(--story-ink, var(--hero-ink)); text-align: center; }
 .hero-story .story-win { font-weight: 700; font-variant-numeric: tabular-nums; }
-.derby { display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--hero-ink); color: var(--hero-bg, #0b3d2e); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.derby { display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--story-ink, var(--hero-ink)); color: var(--story-bg, var(--hero-bg, #0b3d2e)); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+/* On a light/dark themed fixture card (not the dark Home hero) the story line uses the card's own ink. */
+.comp-next { --story-ink: var(--ink); --story-bg: var(--surface); }
 /* Progression cues: a rising young player, the room left in training. */
 .rise-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--good); white-space: nowrap; }
 @media (min-width: 641px) { .rise-tag::after { content: " Rising"; } }
