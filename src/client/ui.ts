@@ -730,9 +730,11 @@ function resultModal(app: App): string {
       </div>
       </div>
       <footer class="rs-foot">
-        ${again && r.again?.primary ? again : ''}
-        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Next match' : 'Back to the club'))}</button>
-        ${again && !r.again?.primary ? again : ''}
+        <div class="rs-actions">
+          ${again && r.again?.primary ? again : ''}
+          <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Continue' : 'Back to the club'))}</button>
+          ${again && !r.again?.primary ? again : ''}
+        </div>
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
       </footer>
     </div>

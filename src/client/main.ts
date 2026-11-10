@@ -519,6 +519,11 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, s.trainingPoints, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
+  // Straight into the next ranked match, unless a level-up or the season review is waiting behind this card.
+  if (ranked && !forfeited && isUnlocked(s, 'ranked') && !levelUpOpen(s) && !reviewOpen(s)) {
+    app.result.again = { label: 'Play next', primary: true, run: () => startMatch(true, app.nextOpp) };
+    app.result.closeLabel = 'Back to Home';
+  }
   persist();
   app.screen = 'home';
   render();

@@ -729,7 +729,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions { justify-content: center; }
 .rs-foot .replay-actions .btn { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
 .rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
-.rs-close { width: 100%; }
+/* One big button fills the row; two (Play next and Back to Home) share it, so the card body keeps its height. */
+.rs-actions { display: flex; gap: var(--sp-2); }
+.rs-actions > .btn { flex: 1 1 0; min-width: 0; }
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
 @media (max-height: 500px), (max-width: 360px) {
   .rs-foot { gap: var(--sp-2); padding: 10px var(--sp-3) 12px; }
@@ -760,7 +762,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-height: 500px) {
   .rs-foot { flex-direction: row; align-items: center; }
   .rs-foot .replay-actions { flex: 1 1 auto; }
-  .rs-foot .rs-close { width: auto; flex: 1 1 auto; }
+  .rs-foot .rs-actions { flex: 1 1 auto; }
 }
 
 /* Match ------------------------------------------------------------------------ */

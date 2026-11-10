@@ -183,3 +183,25 @@ test('home: the ranked hero says why this match matters: head-to-head and what a
   const fresh = await openApp(t, { level: 12 });
   expect(await fresh.locator(`${SEL.hero} .story-h2h`).innerText(), 'first meeting').toMatch(/First meeting/);
 });
+
+test('home: a ranked result offers Play next, which kicks off the next ranked match at once', async (t) => {
+  const page = await openApp(t, { level: 3, prefs: SHORT, fast: true });
+  await page.locator(SEL.kickOff).click();
+  await page.waitForSelector(SEL.pitch);
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
+  const next = page.locator('.modal [data-action="rematch"]');
+  if (!(await next.count())) {
+    // A level-up waits behind the card, so the only way on is Continue (the dialog follows).
+    expect((await page.locator(SEL.modalClose).innerText()).trim(), 'continue label').toMatch(/^continue$/i);
+    return;
+  }
+  expect((await next.innerText()).trim(), 'label').toMatch(/^play next$/i);
+  expect((await page.locator(SEL.modalClose).innerText()).trim(), 'the other way out').toMatch(/^back to home$/i);
+  const opp = (await readSave(page)).history.length;
+  await next.click();
+  await page.waitForSelector(SEL.pitch);
+  await page.locator(SEL.modalClose).waitFor({ timeout: 60_000 });
+  const save = await readSave(page);
+  expect(save.history.length, 'a second match recorded').toBe(opp + 1);
+  expect(save.history.at(-1).ranked, 'ranked again').toBe(true);
+});
