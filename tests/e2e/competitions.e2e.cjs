@@ -101,7 +101,7 @@ test('competitions: on a phone Cup and League chips jump to each panel; starting
   await goTab(page, 'competitions');
   const chips = page.locator('.comp-jump .chip');
   expect(await chips.allInnerTexts(), 'two anchor chips').toEqual(['Cup', 'League']);
-  expect((await chips.first().boundingBox()).height, 'chip is a 44 px target').toBeGreaterThanOrEqual(44);
+  expect(Math.round((await chips.first().boundingBox()).height), 'chip is a 44 px target (rounded: layout can land at 43.99998)').toBeGreaterThanOrEqual(44);
   await chips.nth(1).click();
   await page.waitForFunction(() => document.activeElement && document.activeElement.id === 'season-title');
   await page.waitForTimeout(900); // the smooth scroll settles
