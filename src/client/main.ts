@@ -536,7 +536,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     rankBefore,
     derby,
     goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
-    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, s.trainingPoints, isUnlocked(s, 'training')) : undefined,
+    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, s.trainingPoints, isUnlocked(s, 'training'), isUnlocked(s, 'squad')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
   // Straight into the next ranked match, unless a level-up or the season review is waiting behind this card.
