@@ -409,3 +409,26 @@ test('replay: on a phone held sideways the picture is large and the controls sit
   }
   await page.keyboard.press('Escape');
 });
+
+test('replay: on a big desktop the card grows to 1120 px and the shortcuts are grouped under a label', async (t) => {
+  const big = await openApp(t, { width: 1440, height: 900 });
+  await storeReplay(big, goalCode());
+  await big.locator('.rp-row [data-replay="watch"]').click();
+  await big.locator(VIEWER).waitFor();
+  const card = await big.locator('.replay-card').boundingBox();
+  expect(card.width, 'card wider than the old 880 cap').toBeGreaterThan(1000);
+  expect(card.width, 'card capped at 1120').toBeLessThanOrEqual(1120.5);
+  const stage = await big.locator('#rv-canvas').boundingBox();
+  expect(stage.width, 'picture still sized from the viewport height').toBeLessThanOrEqual((900 - 350) * 1.531 + 1);
+  expect(await big.locator('.rp-keys-label').innerText(), 'label').toMatch(/shortcuts/i);
+  expect(await big.locator('.rp-keys kbd').count(), 'key caps').toBeGreaterThanOrEqual(8);
+  const wide = await pageWidths(big);
+  expect(wide.scrollWidth, 'no sideways scroll').toBeLessThanOrEqual(wide.innerWidth);
+  await big.keyboard.press('Escape');
+
+  const small = await openApp(t, { width: 1100, height: 900 });
+  await storeReplay(small, goalCode());
+  await small.locator('.rp-row [data-replay="watch"]').click();
+  await small.locator(VIEWER).waitFor();
+  expect((await small.locator('.replay-card').boundingBox()).width, 'below 1280 px the card keeps its 880 cap').toBeLessThanOrEqual(880.5);
+});

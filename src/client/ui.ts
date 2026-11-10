@@ -124,8 +124,9 @@ export const PRACTICE = [
 export const practiceUnlocked = (save: Save, id: string): boolean => isUnlocked(save, id === 'hard' ? 'practice-hard' : id === 'normal' ? 'practice-normal' : 'practice');
 
 /** One helpful line under a ranked loss or draw: what the match still gave you. */
-export function rankedNote(gf: number, ga: number, sessions: number, trainingOpen: boolean): string {
-  const lead = gf === ga ? 'A point shared.' : ga - gf === 1 ? 'So close.' : 'Not this time.';
+export function rankedNote(gf: number, ga: number, sessions: number, trainingOpen: boolean, squadOpen = false): string {
+  // A heavy defeat (3+) with Squad open offers a concrete next step instead of a bare commiseration.
+  const lead = gf === ga ? 'A point shared.' : ga - gf === 1 ? 'So close.' : ga - gf >= 3 && squadOpen ? 'Not this time. Try High press from Pause, or rework the XI in Squad.' : 'Not this time.';
   return `${lead} ${trainingOpen && sessions > 0 ? `Your ${sessions} training session${sessions === 1 ? ' is' : 's are'} waiting in Training.` : 'The prize money and XP are yours either way.'}`;
 }
 
@@ -402,7 +403,7 @@ export function squadScreen(app: App): string {
     ${academyPanel(app)}
     ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacks <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
