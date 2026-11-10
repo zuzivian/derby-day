@@ -171,3 +171,92 @@ test('the status strip is a tab stop only where it scrolls, re-checked on rotati
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.waitForFunction(() => !document.querySelector('.status-strip').hasAttribute('tabindex'), null, { timeout: 3000 });
 });
+
+// Runs inside the page (openApp stringifies it), so it cannot use anything from this file.
+const strongFirst = (save) => {
+  const ATTRS = ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'goalkeeping', 'stamina'];
+  save.budget = 500_000_000;
+  const star = save.market[0];
+  for (const k of ATTRS) star.attrs[k] = 99;
+  star.potential = 99;
+  const dud = save.market[1];
+  for (const k of ATTRS) dud.attrs[k] = 5;
+  dud.potential = 5;
+};
+
+for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 844, hasTouch: true }]) {
+  test(`transfers at ${size.width}px: upgrades are primary, chipped and first; signing offers Start at <POS>`, async (t) => {
+    const page = await openApp(t, { ...size, mutateSave: strongFirst });
+    const before = await readSave(page);
+    const star = before.market[0];
+    const dud = before.market[1];
+    await goTab(page, 'transfers');
+    const rows = page.locator('.panel:has(.has-action) tbody tr').filter({ has: page.locator('[data-action="buy"]') });
+    expect(await rows.first().locator('[data-action="buy"]').getAttribute('data-id'), 'upgrade sorted first').toBe(star.id);
+    expect(await rows.first().locator('.up-chip').innerText(), 'chip text').toMatch(/^Upgrade \+\d+ at [A-Z]+/);
+    expect(await rows.first().locator('[data-action="buy"]').getAttribute('class'), 'upgrade Sign is primary').toMatch(/primary/);
+    const dudBtn = page.locator(`[data-action="buy"][data-id="${dud.id}"]`);
+    expect(await dudBtn.getAttribute('class'), 'non-upgrade Sign is not primary').toBe('btn small');
+    expect(await page.locator(`tr:has([data-id="${dud.id}"]) .up-chip`).count(), 'no chip on non-upgrade').toBe(0);
+    if (size.width < 1000) expect(await rows.first().locator('.name-sub').isVisible(), 'age and POT under the name on phones').toBe(true);
+
+    await page.locator(`[data-action="buy"][data-id="${star.id}"]`).click();
+    const start = page.locator(`[data-action="start-xi"][data-id="${star.id}"]`);
+    await start.waitFor();
+    expect(await page.evaluate(() => document.activeElement?.dataset.action), 'focus moves to Start').toBe('start-xi');
+    expect((await page.locator(SEL.toast).innerText()).length, 'short toast (name, price, first-signing XP)').toBeLessThan(80);
+    const slot = Number(await start.getAttribute('data-slot'));
+    const b4 = await readSave(page);
+    expect(b4.lineup[slot] === star.id, 'not started yet').toBe(false);
+    await start.click();
+    await page.waitForFunction(() => /XI strength \d+ → \d+/.test(document.querySelector('.toast')?.textContent ?? ''));
+    expect((await readSave(page)).lineup[slot], 'in the XI slot').toBe(star.id);
+    expect(await page.locator('.signed-bar').count(), 'bar gone').toBe(0);
+  });
+}
+
+test('transfers: a non-upgrade signing says it joins the bench, with no Start button', async (t) => {
+  const page = await openApp(t, { mutateSave: strongFirst });
+  const dud = (await readSave(page)).market[1];
+  await goTab(page, 'transfers');
+  await page.locator(`[data-action="buy"][data-id="${dud.id}"]`).click();
+  await page.locator(SEL.toast).waitFor();
+  expect(await page.locator(SEL.toast).innerText(), 'bench toast').toMatch(/bench/i);
+  expect(await page.locator('[data-action="start-xi"]').count(), 'no Start button').toBe(0);
+});
+
+test('transfers: selling a starter says so, shows the XI chip on phones, and the toast shows the budget change', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  const save = await readSave(page);
+  const id = save.lineup[1];
+  await goTab(page, 'transfers');
+  await page.locator(SEL.sell(id)).click();
+  const confirm = page.locator(SEL.sellConfirm(id));
+  expect(await confirm.getAttribute('aria-label'), 'confirm label').toMatch(/^Confirm: sells a starter \([A-Z]+\) for ƒ/);
+  const chip = page.locator(`tr:has([data-id="${id}"]) .pill.sell-xi`);
+  const box = await chip.boundingBox();
+  expect(box && box.width > 8 && box.height > 8, 'XI chip is visible on a phone').toBe(true);
+  await confirm.click();
+  await page.locator(SEL.toast).waitFor();
+  expect(await page.locator(SEL.toast).innerText(), 'budget change').toMatch(/Budget ƒ[\d.,]+[km]? → ƒ/i);
+});
+
+test('training: key attributes are tagged for the role, the best one is suggested, none is disabled; phones get a sticky summary', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'training');
+  expect(await page.locator('.key-tag').count(), 'two key attributes').toBe(2);
+  expect(await page.locator('.attr-list li.best').count(), 'one suggested').toBe(1);
+  expect(await page.locator('.attr-list [data-action="train"][aria-disabled="true"]').count(), 'every choice stays available').toBe(0);
+  const sticky = page.locator('.train-sticky');
+  expect(await sticky.isVisible(), 'sticky bar on phones').toBe(true);
+  expect(await sticky.innerText(), 'sessions, name and OVR').toMatch(/\d+ sessions? left[\s\S]*OVR \d+/);
+  await page.locator('.attr-list li.best [data-action="train"]').click();
+  await page.locator(SEL.toast).waitFor();
+  await page.waitForTimeout(100);
+  const covers = await page.evaluate(() => {
+    const a = document.querySelector('.toast')?.getBoundingClientRect();
+    const g = document.querySelector('.attr-list li:has(.gain)')?.getBoundingClientRect();
+    return !!(a && g && a.bottom > g.top && a.top < g.bottom);
+  });
+  expect(covers, 'toast does not cover the gain row').toBe(false);
+});

@@ -5,7 +5,7 @@ import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
 import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, salePrice, formatMoney, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
-import { fullName, overall, type AttrKey } from '../meta/player.ts';
+import { fullName, overall, shortName, type AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { scoreAwarded } from '../sim/rules.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -161,7 +161,7 @@ function render() {
   pendingFocus = null;
   beforeRender(root);
   // A training gain badge belongs to the visit it happened in: entering any screen clears it.
-  if (root.dataset.shown !== app.screen) app.gain = null;
+  if (root.dataset.shown !== app.screen) { app.gain = null; app.signed = null; }
   root.innerHTML = shell(app, screens[app.screen](app));
   // The same dialog as before this render: no second entrance (styles.css .modal.seen).
   if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');
@@ -701,7 +701,13 @@ root.addEventListener('click', (e) => {
       const bp = s.market.find((x) => x.id === id);
       const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put them in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      toast(r.ok && bp ? (fit ? r.message : `${r.message} Added to the bench.`) : r.message, r.ok);
+      if (r.ok && bp && fit) {
+        // The Start button sits in the market panel, so the next step is one press away (and announced).
+        app.signed = { id: bp.id, slot: fit.slot, label: fit.label, d: fit.d, who: fit.who };
+        pendingFocus = keyFor({ action: 'start-xi', id: bp.id });
+        announce(`${shortName(bp)} would start at ${fit.label}, plus ${fit.d} over ${fit.who}. Start at ${fit.label} is the next button.`);
+      } else if (r.ok) app.signed = null;
       if (r.ok) {
         persist();
         getSound().stinger('train');
@@ -709,17 +715,37 @@ root.addEventListener('click', (e) => {
       }
       break;
     }
+    case 'start-xi': {
+      const slot = Number(el.dataset.slot);
+      const sp = s.squad.find((x) => x.id === id);
+      app.signed = null;
+      if (!sp || !Number.isInteger(slot)) break;
+      const b4 = teamStrength(s.squad, s.lineup, s.formation);
+      setLineupSlot(s, slot, id);
+      const af = teamStrength(s.squad, s.lineup, s.formation);
+      toast(`XI strength ${b4} → ${af}`);
+      announce(`${shortName(sp)} now starts. XI strength ${b4} to ${af}.`);
+      persist();
+      flash = ['.tab[data-screen="squad"]'];
+      break;
+    }
+    case 'signed-dismiss':
+      app.signed = null;
+      announce('Kept on the bench.');
+      break;
     case 'sell':
       app.confirmSell = id;
       {
         const sp = s.squad.find((x) => x.id === id);
-        if (sp) announce(`Confirm sale of ${fullName(sp)} for ${formatMoney(salePrice(sp))}. Press again to sell.`);
+        const at = sp ? s.lineup.indexOf(sp.id) : -1;
+        if (sp) announce(`Confirm sale of ${fullName(sp)} for ${formatMoney(salePrice(sp))}.${at >= 0 ? ' He is a starter.' : ''} Press again to sell.`);
       }
       break;
     case 'sell-confirm': {
+      const budgetBefore = s.budget;
       const r = sellPlayer(s, id);
       app.confirmSell = null;
-      toast(r.message, r.ok);
+      toast(r.ok ? `${r.message} Budget ${formatMoney(budgetBefore)} → ${formatMoney(s.budget)}` : r.message, r.ok);
       if (r.ok) persist();
       break;
     }

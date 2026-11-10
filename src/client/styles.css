@@ -1843,3 +1843,27 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions .btn[data-replay="watch"] { --btn-bg: var(--surface-2); --btn-fg: var(--ink); --btn-line: var(--line); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .rs-foot .replay-actions .btn[data-replay="watch"]:hover { --btn-bg: var(--surface-3); }
 .rs-foot .replay-actions .btn[data-replay="watch"] svg { flex: none; }
+
+/* Transfers: upgrades stand out, the just-signed bar, phone detail under the name ------------------ */
+.name-sub { display: none; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); white-space: nowrap; }
+@media (max-width: 1000px) { .tbl.has-action .name-sub { display: block; } .tbl.has-action .up-chip { margin-left: 0; } }
+.up-chip { display: inline-block; margin: 2px 0 0 8px; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.5; padding: 0 7px; border-radius: var(--r-pill); white-space: nowrap; color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
+.signed-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--good) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); font-weight: 600; }
+.signed-bar > span { flex: 1 1 14em; min-width: 0; }
+@media (max-width: 600px) {
+  /* The XI mark is wanted on the Sell list: starters are easy to sell by mistake. */
+  .tbl td.name .pill.sell-xi { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
+}
+
+/* Training: key attributes, a sticky summary on phones ---------------------------------------------- */
+.key-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.5; padding: 0 6px; border-radius: var(--r-pill); color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); white-space: nowrap; }
+.attr-list li.off .attr-name, .attr-list li.off .attr-val, .attr-list li.off .bar { opacity: .55; }
+.attr-list li.best .attr-name { font-weight: 800; }
+.train-sticky { display: none; }
+@media (max-width: 700px) {
+  .train-sticky { display: flex; align-items: baseline; gap: var(--sp-3); position: sticky; top: 0; z-index: 5; margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3); padding: var(--sp-2) var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .train-sticky.none b { color: var(--warn, var(--bad)); }
+  .train-sticky .ts-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .train-sticky .ts-ovr { font-weight: 800; }
+}
+@media (max-width: 480px) { .key-tag { display: block; margin: 1px 0 0; width: max-content; } }
