@@ -1645,9 +1645,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .topbar .club-name { max-width: 11ch; font-size: 15px; }
   #app:has(.home) .topbar .club-chip .crest { width: 20px; height: 23px; }
   #app:has(.home) .status-strip { gap: 4px; overflow: visible; }
-  #app:has(.home) .status-strip .level-chip { height: 34px; min-width: 0; padding-right: 10px; }
+  /* The level chip gives way (its bar shrinks) so a wider system font never pushes the strip into a scroll. */
+  #app:has(.home) .status-strip .level-chip { height: 34px; min-width: 0; padding-right: 10px; flex: 0 1 auto; }
   #app:has(.home) .status-strip .xp-text { display: none; }
-  #app:has(.home) .status-strip .xp-bar { min-width: 48px; max-width: 64px; }
+  #app:has(.home) .status-strip .xp { min-width: 0; }
+  #app:has(.home) .status-strip .xp-bar { min-width: 20px; width: 64px; max-width: 64px; }
   #app:has(.home) .status-strip .stat { height: 34px; padding: 0 8px; gap: 4px; font-size: var(--fs-sm); }
 }
 /* Very short landscape (568x320, a 200%-zoomed laptop): tighter still, so Kick off needs no scroll. */
