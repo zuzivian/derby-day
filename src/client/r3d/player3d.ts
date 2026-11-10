@@ -11,32 +11,10 @@
 
 import { grassDiff, worstDiff } from '../kits.ts';
 import type { MatchPlayer } from '../../sim/types.ts';
-import { angleDelta, clamp01, damp, smooth, sx, sz } from './space.ts';
-import { merge, type Part } from './geo.ts';
-import {
-  Bone,
-  BoxGeometry,
-  BufferAttribute,
-  CanvasTexture,
-  Color,
-  CylinderGeometry,
-  Euler,
-  Group,
-  Matrix4,
-  Mesh,
-  MeshStandardMaterial,
-  Object3D,
-  PlaneGeometry,
-  Quaternion,
-  SRGBColorSpace,
-  Skeleton,
-  SkinnedMesh,
-  Sphere,
-  SphereGeometry,
-  Vector3,
-  type BufferGeometry,
-  type Material,
-} from './three.ts';
+import { angleDelta, damp, smooth, sx, sz } from './space.ts';
+import { BI, SKEL, buildBody, joints, paintKit } from './body3d.ts';
+import { hash01 } from './space.ts';
+import { Bone, CanvasTexture, Euler, Group, MeshStandardMaterial, Object3D, Quaternion, Skeleton, SkinnedMesh, Sphere, Vector3, type BufferGeometry, type Material } from './three.ts';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -83,6 +61,8 @@ export interface PlayerContext {
   wall: boolean;
   /** The referee's arm held straight up: an indirect free kick until someone else touches it (Law 5). */
   armUp?: boolean;
+  /** The ball (sim metres, z its height): heads turn to follow it. */
+  ball?: { x: number; y: number; z: number } | null;
   reducedMotion: boolean;
 }
 
@@ -110,6 +90,11 @@ export interface PlayerLook {
   height: number;
   /** -1..1: slight build variation (shoulder width, limb thickness). */
   build: number;
+  /** Surname across the shoulders of the shirt. */
+  name?: string | null;
+  /** Tonal pattern of the shirt (body3d.ts paintKit), and a V-neck or a crew collar; from the kit's colours when unset. */
+  pattern?: number;
+  vneck?: boolean;
 }
 
 export interface Player3D {
@@ -130,6 +115,8 @@ const RIM_FROM = 0.3;
 const RIM_TO = 0.62;
 /** Brightness of a surface touching the grass (1 = none), rising to full by 0.24 m up. */
 const FOOT_DARK = 0.6;
+/** Strength of the sky light along a player's silhouette. */
+const SKY_RIM = 0.35;
 
 // ---------------------------------------------------------------------------
 // Shared resources: geometries and materials are cached and shared by every
@@ -138,7 +125,11 @@ const FOOT_DARK = 0.6;
 export class PlayerKit {
   private geos = new Map<string, BufferGeometry>();
   private mats = new Map<string, Material>();
+  private owned: Material[] = [];
   private textures: CanvasTexture[] = [];
+  /** Kit texture size in px (square), and mesh detail: the renderer sets these per quality. */
+  texSize = 256;
+  detail: 'low' | 'high' = 'high';
 
   geo(key: string, make: () => BufferGeometry): BufferGeometry {
     let g = this.geos.get(key);
@@ -160,75 +151,77 @@ export class PlayerKit {
   }
 
   /**
-   * The material every player's skinned mesh shares: colours live in the vertices. With `rim`, the
-   * same but darkened toward the silhouette, for a kit too close to the grass (kits.ts
-   * grassClash): the dark edge separates the player from the pitch without changing the club's
-   * colours, and costs no extra draw call.
+   * The players' skinned-mesh material: colours live in the vertices, a player's kit texture (shirt,
+   * numbers, face: body3d.ts paintKit) multiplies over them. Without a texture it is shared by every
+   * player. With `rim`, darkened toward the silhouette, for a kit too close to the grass (kits.ts
+   * grassClash): the dark edge separates the player from the pitch without changing the club's colours.
+   * Every variant compiles to one of two shader programs.
    */
-  skinnedMat(rim = false): Material {
+  skinnedMat(rim = false, map: CanvasTexture | null = null): Material {
     const key = rim ? 'skinned-rim' : 'skinned';
-    let m = this.mats.get(key);
-    if (!m) {
-      const sm = new MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0 } as Record<string, unknown>);
-      // Contact: boots, socks and anything lying on the grass darken toward it (world height), which
-      // roots the player without a shadow-map pixel or a mesh. Shirts sit well above it, so kits are untouched.
-      sm.onBeforeCompile = (shader) => {
-        shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', 'varying float vFootY;\n#include <common>')
-          .replace('#include <project_vertex>', '#include <project_vertex>\nvFootY = ( modelMatrix * vec4( transformed, 1.0 ) ).y;');
-        shader.fragmentShader = shader.fragmentShader.replace('#include <common>', 'varying float vFootY;\n#include <common>').replace(
-          '#include <opaque_fragment>',
-          `outgoingLight *= mix( ${FOOT_DARK.toFixed(2)}, 1.0, smoothstep( 0.0, 0.24, vFootY ) );
+    if (!map) {
+      const m = this.mats.get(key);
+      if (m) return m;
+    }
+    const sm = new MeshStandardMaterial({ vertexColors: true, roughness: 0.74, metalness: 0, ...(map ? { map } : {}) } as Record<string, unknown>);
+    // Contact: boots, socks and anything lying on the grass darken toward it (world height), which
+    // roots the player without a shadow-map pixel or a mesh. Shirts sit well above it, so kits are untouched.
+    // Sky: a soft cool light along the silhouette, the broadcast look of players lit from all round by
+    // the open sky; not on rim kits, whose edge is darkened instead.
+    sm.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', 'varying float vFootY;\n#include <common>')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvFootY = ( modelMatrix * vec4( transformed, 1.0 ) ).y;');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', 'varying float vFootY;\n#include <common>').replace(
+        '#include <opaque_fragment>',
+        `outgoingLight *= mix( ${FOOT_DARK.toFixed(2)}, 1.0, smoothstep( 0.0, 0.24, vFootY ) );
+float rimEdge = 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) );
 ${
   rim
-    ? `float rimEdge = 1.0 - abs( dot( normalize( normal ), normalize( vViewPosition ) ) );
-outgoingLight *= 1.0 - ${RIM_DARK.toFixed(2)} * smoothstep( ${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, rimEdge );
+    ? `outgoingLight *= 1.0 - ${RIM_DARK.toFixed(2)} * smoothstep( ${RIM_FROM.toFixed(2)}, ${RIM_TO.toFixed(2)}, rimEdge );
 `
-    : ''
+    : `outgoingLight += vec3( 0.55, 0.65, 0.8 ) * ${SKY_RIM.toFixed(2)} * pow( rimEdge, 3.0 ) * diffuseColor.rgb;
+`
 }#include <opaque_fragment>`,
-        );
-      };
-      sm.customProgramCacheKey = () => (rim ? 'player-rim-foot' : 'player-foot');
-      m = sm;
-      this.mats.set(key, m);
-    }
-    return m;
+      );
+    };
+    sm.customProgramCacheKey = () => (rim ? 'player-rim-foot' : 'player-foot-sky');
+    if (map) this.owned.push(sm);
+    else this.mats.set(key, sm);
+    return sm;
   }
 
-  /** Shirt number for the back: transparent texture, outlined digits. */
-  numberMat(num: number, color: string, outline: string): Material {
-    const key = `num|${num}|${color}|${outline}`;
-    let m = this.mats.get(key);
-    if (!m) {
-      const c = document.createElement('canvas');
-      c.width = 128;
-      c.height = 128;
-      const g = c.getContext('2d')!;
-      g.font = `800 ${num >= 10 ? 100 : 116}px 'Big Shoulders Display', 'Arial Narrow', 'Helvetica Neue', Arial, sans-serif`;
-      g.textAlign = 'center';
-      g.textBaseline = 'middle';
-      g.lineJoin = 'round';
-      g.lineWidth = 14;
-      g.strokeStyle = outline;
-      g.strokeText(String(num), 64, 70);
-      g.fillStyle = color;
-      g.fillText(String(num), 64, 70);
-      const tex = new CanvasTexture(c);
-      tex.colorSpace = SRGBColorSpace;
-      tex.anisotropy = 4;
-      this.textures.push(tex);
-      m = new MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.35, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-      this.mats.set(key, m);
-    }
-    return m;
+  /** A player's kit texture, owned by the kit. null without a DOM. */
+  kitTexture(look: PlayerLook): CanvasTexture | null {
+    const outline = look.trim === '#111111' ? '#f5f5f5' : '#111111';
+    const pick = hash01(`${look.shirt}|${look.trim}|${look.shorts}`, 9);
+    const tex = paintKit(
+      {
+        shirt: look.shirt,
+        trim: look.trim,
+        numColor: look.trim,
+        numOutline: outline,
+        number: look.number,
+        name: look.name ?? null,
+        pattern: look.pattern ?? Math.floor(pick * 6),
+        vneck: look.vneck ?? hash01(look.shirt, 3) < 0.5,
+        skin: look.skin,
+        hair: look.hair,
+      },
+      this.texSize,
+    );
+    if (tex) this.textures.push(tex);
+    return tex;
   }
 
   dispose(): void {
     for (const g of this.geos.values()) g.dispose();
     for (const m of this.mats.values()) m.dispose();
+    for (const m of this.owned) m.dispose();
     for (const t of this.textures) t.dispose();
     this.geos.clear();
     this.mats.clear();
+    this.owned = [];
     this.textures = [];
   }
 }
@@ -385,101 +378,35 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     parent.add(j);
     return j;
   };
+  // The skeleton (body3d.ts SKEL). The chest is not posed on its own: it takes part of the spine's
+  // rotation, so the back bends as a curve rather than at one joint.
   const body = new Bone();
-  const pelvis = joint(body, 0, 0.95, 0);
-  const spine = joint(pelvis, 0, 0.06, 0);
-  const neck = joint(spine, 0, 0.465, 0.005);
-  const head = joint(neck, 0, 0.075, 0.01);
-  const shL = joint(spine, 0.235 * bw, 0.4, -0.01);
-  const elL = joint(shL, 0, -0.29, 0);
-  const shR = joint(spine, -0.235 * bw, 0.4, -0.01);
-  const elR = joint(shR, 0, -0.29, 0);
-  const hipL = joint(pelvis, 0.1 * bw, -0.02, 0);
-  const knL = joint(hipL, 0, -0.45, 0);
-  const anL = joint(knL, 0, -0.41, 0);
-  const hipR = joint(pelvis, -0.1 * bw, -0.02, 0);
-  const knR = joint(hipR, 0, -0.45, 0);
-  const anR = joint(knR, 0, -0.41, 0);
+  const pelvis = joint(body, 0, SKEL.pelvisY, 0);
+  const spine = joint(pelvis, 0, SKEL.spineUp, 0);
+  const chest = joint(spine, 0, SKEL.chestUp, 0);
+  const neck = joint(chest, SKEL.neck[0], SKEL.neck[1], SKEL.neck[2]);
+  const head = joint(neck, 0, SKEL.headUp, 0);
+  const shL = joint(chest, SKEL.shoulder[0] * bw, SKEL.shoulder[1], SKEL.shoulder[2]);
+  const elL = joint(shL, 0, -SKEL.upperArm, 0);
+  const shR = joint(chest, -SKEL.shoulder[0] * bw, SKEL.shoulder[1], SKEL.shoulder[2]);
+  const elR = joint(shR, 0, -SKEL.upperArm, 0);
+  const hipL = joint(pelvis, SKEL.hip[0] * bw, SKEL.hip[1], SKEL.hip[2]);
+  const knL = joint(hipL, 0, -SKEL.thigh, 0);
+  const anL = joint(knL, 0, -SKEL.shin, 0);
+  const hipR = joint(pelvis, -SKEL.hip[0] * bw, SKEL.hip[1], SKEL.hip[2]);
+  const knR = joint(hipR, 0, -SKEL.thigh, 0);
+  const anR = joint(knR, 0, -SKEL.shin, 0);
   const bones: Bone[] = [pelvis, spine, neck, head, shL, elL, shR, elR, hipL, knL, anL, hipR, knR, anR];
-  const all = [...bones, body];
+  // Skeleton order is body3d.ts BI: the posed bones, then the chest (and the root last).
+  const all = [...bones, chest, body];
+  void BI;
   body.updateMatrixWorld(true);
 
-  const parts: Part[] = [];
-  const col = new Color();
-  const tmpM = new Matrix4();
-  const tmpE = new Euler();
-  const tmpQ = new Quaternion();
-  /** A primitive on a bone: local offset/scale/tilt, baked into bind pose. */
-  const part = (bone: Bone, g: BufferGeometry, color: string, x = 0, y = 0, z = 0, scale: [number, number, number] = [1, 1, 1], rx = 0) => {
-    tmpQ.setFromEuler(tmpE.set(rx, 0, 0));
-    tmpM.compose(new Vector3(x, y, z), tmpQ, new Vector3(...scale));
-    g.applyMatrix4(tmpM);
-    g.applyMatrix4(bone.matrixWorld);
-    col.set(color);
-    parts.push({ geo: g, tags: { aBone: all.indexOf(bone) }, color: [col.r, col.g, col.b] });
-  };
-  const cyl = (rt: number, rb: number, len: number, seg = 8) => new CylinderGeometry(rt, rb, len, seg, 1).translate(0, -len / 2, 0);
-
-  // Shorts, torso, collar.
-  part(pelvis, new CylinderGeometry(0.17 * bw, 0.185 * bw, 0.21, 10).translate(0, -0.1, 0), look.shorts, 0, 0.1, 0, [1, 1, 0.74]);
-  part(spine, new CylinderGeometry(0.228, 0.168, 0.47, 12, 2).translate(0, 0.235, 0), look.shirt, 0, 0, 0, [bw, 1, 0.62]);
-  part(spine, cyl(0.082, 0.094, 0.035, 10), look.trim, 0, 0.475, 0.005, [1, 1, 0.85]);
-  // Neck, head, nose, hair.
-  part(neck, cyl(0.056, 0.064, 0.09), look.skin, 0, 0.08, 0);
-  part(head, new SphereGeometry(0.112, 14, 10).translate(0, 0.105, 0), look.skin, 0, 0, 0, [0.93, 1.08, 1.02]);
-  part(head, new BoxGeometry(0.028, 0.04, 0.03), look.skin, 0, 0.09, 0.112);
-  if (look.hairStyle !== 3) {
-    const big = look.hairStyle === 4;
-    const r = look.hairStyle === 1 ? 0.116 : big ? 0.14 : 0.122;
-    part(head, new SphereGeometry(r, 14, 8, 0, Math.PI * 2, 0, look.hairStyle === 1 ? 1.1 : 1.35).translate(0, 0.105, 0), look.hair, 0, 0.02, -0.012, [0.98, big ? 1.05 : 1, 1.06], -0.32);
-    if (look.hairStyle === 2) part(head, new BoxGeometry(0.2, 0.15, 0.06), look.hair, 0, 0.07, -0.085);
-  }
-  // Arms.
-  for (const [sh, el] of [
-    [shL, elL],
-    [shR, elR],
-  ] as const) {
-    part(sh, new SphereGeometry(0.08, 10, 8), look.shirt, 0, -0.01, 0);
-    part(sh, cyl(0.076, 0.066, look.longSleeves ? 0.29 : 0.16, 10), look.shirt);
-    if (!look.longSleeves) part(sh, cyl(0.058, 0.044, 0.29, 10), look.skin);
-    // Forearm tapering to the wrist, then a flat hand with a thumb (a padded glove for keepers).
-    part(el, cyl(0.05, 0.033, 0.25, 10), look.longSleeves ? look.shirt : look.skin);
-    const g = !!look.gloves;
-    const handC = look.gloves ?? look.skin;
-    part(el, new BoxGeometry(g ? 0.08 : 0.062, g ? 0.11 : 0.085, g ? 0.042 : 0.03).translate(0, -0.045, 0), handC, 0, -0.25, 0.004);
-    part(el, new BoxGeometry(0.022, g ? 0.055 : 0.045, 0.024).translate(0, -0.022, 0), handC, 0, -0.26, g ? 0.03 : 0.024, [1, 1, 1], -0.45);
-  }
-  // Legs.
-  for (const [hip, kn, an] of [
-    [hipL, knL, anL],
-    [hipR, knR, anR],
-  ] as const) {
-    // Thigh tapering to the knee; the calf swells under the sock and narrows to the ankle.
-    part(hip, cyl(0.102 * bw, 0.064, 0.45, 10), look.skin);
-    part(hip, cyl(0.116 * bw, 0.106 * bw, 0.22, 10), look.shorts, 0, 0.03, 0);
-    part(kn, cyl(0.064, 0.06, 0.08, 10), look.skin, 0, 0.02, 0);
-    part(kn, cyl(0.066, 0.075, 0.12, 10), look.socks, 0, -0.04, -0.006);
-    part(kn, cyl(0.075, 0.042, 0.26, 10), look.socks, 0, -0.16, -0.006);
-    // Boot: sole, heel and upper, a rounded toe, and a coloured flash along the side.
-    part(an, new BoxGeometry(0.094, 0.022, 0.27).translate(0, -0.064, 0.052), look.bootSole);
-    part(an, new BoxGeometry(0.088, 0.07, 0.15).translate(0, -0.022, -0.012), look.boots);
-    part(an, new SphereGeometry(0.05, 10, 6).translate(0, 0, 0), look.boots, 0, -0.04, 0.1, [0.9, 0.62, 1.55]);
-    part(an, new BoxGeometry(0.092, 0.016, 0.13).translate(0, -0.03, 0.035), look.bootAccent);
-  }
-
-  const geo = merge(parts, ['aBone'], true);
-  const boneAttr = geo.attributes.aBone;
-  const n = boneAttr.count;
-  const si = new Uint16Array(n * 4);
-  const sw = new Float32Array(n * 4);
-  for (let i = 0; i < n; i++) {
-    si[i * 4] = boneAttr.getX(i);
-    sw[i * 4] = 1;
-  }
-  geo.deleteAttribute('aBone');
-  geo.setAttribute('skinIndex', new BufferAttribute(si, 4));
-  geo.setAttribute('skinWeight', new BufferAttribute(sw, 4));
-  const mesh = new SkinnedMesh(geo, kit.skinnedMat(!!look.rim));
+  // One skinned mesh per player, one draw call: a continuous body (body3d.ts) whose colours live in
+  // the vertices, with the kit texture (shirt, numbers, name, face) over them.
+  const tex = kit.kitTexture(look);
+  const geo = buildBody(look, kit.detail, !!tex);
+  const mesh = new SkinnedMesh(geo, kit.skinnedMat(!!look.rim, tex));
   mesh.castShadow = true;
   // A fixed sphere round the player, big enough for a full-length dive, so a player off-screen is
   // culled: no draw call, no skeleton update and no bone-texture upload that frame. (The sphere a
@@ -489,13 +416,6 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   mesh.bind(new Skeleton(all));
   root.add(mesh);
 
-  if (look.number !== null) {
-    const outline = look.trim === '#111111' ? '#f5f5f5' : '#111111';
-    const num = new Mesh(kit.geo('numplane', () => new PlaneGeometry(0.25, 0.25)), kit.numberMat(look.number, look.trim, outline));
-    num.position.set(0, 0.26, -0.13);
-    num.rotation.set(-0.08, Math.PI, 0);
-    spine.add(num);
-  }
   // Hand markers, for a held ball.
   const L = { hand: new Object3D() };
   const R = { hand: new Object3D() };
@@ -519,7 +439,18 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let action: Action | null = null;
   /** A reaction held back until the action in progress is over. */
   let later: AnimEvent | null = null;
-  let phase = Math.random() * Math.PI * 2;
+  /** Gait cycle, 0..1 (two steps): the left foot lands at 0, the right at 0.5. */
+  let cyc = Math.random();
+  /** Each foot's spot on the grass (scene metres) while it is planted. */
+  const footL = { locked: false, wx: 0, wz: 0 };
+  const footR = { locked: false, wx: 0, wz: 0 };
+  /** The heading the model is drawn at this frame (root.rotation.y), for the planted feet. */
+  let yawNow = 0;
+  /** Smoothed forward acceleration, m/s². */
+  let accS = 0;
+  /** Where the head is turned to follow the ball (rad, + to his left), and tipped down to it. */
+  let lookYaw = 0;
+  let lookPitch = 0;
   let yaw: number | null = null;
   let speedS = 0;
   let sideS = 0;
@@ -554,63 +485,177 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     action = { ev, dur, mirror, held: 0 };
   }
 
+  // Leg geometry for the foot IK (bind pose, local units).
+  const LEG = joints(bw);
+  const THIGH = SKEL.thigh;
+  const SHIN = SKEL.shin;
+  const ANKLE_Y = LEG.ankle;
+  const REACH = (THIGH + SHIN) * 0.995;
+  const footT = new Vector3();
+  const ikQ = new Quaternion();
+  const ikE = new Euler();
+
+  /**
+   * Two-bone IK for one leg: the hip, knee and ankle angles that put the ankle at `target` (body
+   * space, local units) with the foot pitched `toe` (rad, + toes down), written into P. The target is
+   * taken into the pelvis's frame first, so the pelvis can twist and roll over planted feet. A target
+   * out of reach is raised until it is in reach, with the heel (behind) or the toes (in front) lifting
+   * to keep the boot on the grass.
+   */
+  function legIK(P: Pose, left: boolean, tx: number, ty: number, tz: number, toe: number, bodyY: number, pelvisYaw: number, pelvisRoll: number) {
+    const hx = (left ? 1 : -1) * LEG.hipX;
+    // Ankle target relative to the pelvis joint, in the pelvis's frame.
+    footT.set(tx, ty - bodyY - SKEL.pelvisY, tz);
+    ikQ.setFromEuler(ikE.set(0, pelvisYaw, pelvisRoll)).invert();
+    footT.applyQuaternion(ikQ);
+    let dx = footT.x - hx;
+    let dy = footT.y - SKEL.hip[1];
+    const dz = footT.z;
+    let dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (dist > REACH) {
+      // Raise it into reach: the leg straight, the foot rolled onto its toes or heel.
+      const flat2 = dx * dx + dz * dz;
+      const ny = -Math.sqrt(Math.max(0.0001, REACH * REACH - flat2));
+      const lift = ny - dy;
+      dy = ny;
+      dist = Math.sqrt(flat2 + dy * dy);
+      toe += dz < 0 ? Math.min(0.9, lift / 0.12) : -Math.min(0.5, lift / 0.08);
+      if (dist > REACH) {
+        const k = REACH / dist;
+        dx *= k;
+        dy *= k;
+        dist = REACH;
+      }
+    }
+    const cosK = (THIGH * THIGH + SHIN * SHIN - dist * dist) / (2 * THIGH * SHIN);
+    const knee = Math.PI - Math.acos(Math.max(-1, Math.min(1, cosK)));
+    const cosA = (THIGH * THIGH + dist * dist - SHIN * SHIN) / (2 * THIGH * Math.max(1e-4, dist));
+    const alpha = Math.acos(Math.max(-1, Math.min(1, cosA)));
+    const roll = Math.asin(Math.max(-1, Math.min(1, dx / Math.max(1e-4, dist))));
+    const pitch = Math.atan2(-dz, -dy) - alpha;
+    P.set(left ? 'hipL' : 'hipR', pitch, 0, roll);
+    P.set(left ? 'knL' : 'knR', knee);
+    P.set(left ? 'anL' : 'anR', toe - pitch - knee);
+  }
+
   function locomotion(P: Pose, time: number, dtSim: number, reduced: boolean) {
     const speed = speedS;
     const gait = smooth(0.25, 3.6, speed);
+    const run = smooth(2.2, 4.6, speed);
     const sprint = smooth(5.2, 7.6, speed);
-    // Stride length grows with speed, so cadence rises more slowly than speed.
-    const stride = (1.25 + 0.32 * speed) * PLAYER_SCALE; // longer legs, longer strides: the feet keep pace with the ground
-    const back = fwdS < -0.6 && speed > 0.8 ? -1 : 1;
-    phase += ((speed * dtSim) / stride) * Math.PI * 2 * back;
-    const s = Math.sin(phase);
-    const c = Math.cos(phase);
-    const sR = -s;
-    const cR = -c;
-    // Moving sideways (a keeper shuffling along his line): a shorter swing of the legs, and the shoulders stay square.
-    const side = clamp01(Math.abs(sideS) / Math.max(0.5, speed)) * gait;
-    const amp = (0.28 + 0.36 * gait + 0.32 * sprint) * gait * (1 - 0.45 * side);
-    const kAmp = (0.55 + 0.75 * sprint) * gait;
-    P.reset();
-    // Legs: thigh swing, knee folds during the forward swing, foot plants.
-    P.set('hipL', -s * amp, 0, 0.02);
-    P.set('hipR', -sR * amp, 0, -0.02);
-    P.set('knL', 0.08 + kAmp * Math.max(0, c) ** 1.4 + 0.15 * gait * Math.max(0, -s));
-    P.set('knR', 0.08 + kAmp * Math.max(0, cR) ** 1.4 + 0.15 * gait * Math.max(0, -sR));
-    P.set('anL', -0.15 * gait * Math.max(0, s) + 0.25 * gait * Math.max(0, -s) * Math.max(0, c));
-    P.set('anR', -0.15 * gait * Math.max(0, sR) + 0.25 * gait * Math.max(0, -sR) * Math.max(0, cR));
-    // Arms swing against the legs, elbows bent more as you speed up.
-    const armAmp = (0.2 + 0.45 * gait + 0.4 * sprint) * Math.max(0.15, gait);
-    P.set('shL', s * armAmp, 0, 0.09 + 0.05 * gait);
-    P.set('shR', sR * armAmp, 0, -0.09 - 0.05 * gait);
-    P.set('elL', -(0.25 + 0.95 * gait + 0.25 * sprint) - Math.max(0, -s) * 0.25 * gait);
-    P.set('elR', -(0.25 + 0.95 * gait + 0.25 * sprint) - Math.max(0, -sR) * 0.25 * gait);
-    // Trunk: lean into the run, counter-rotate the shoulders, bob twice a cycle.
-    const lean = 0.04 + 0.12 * gait + 0.16 * sprint;
-    P.set('spine', lean * back, -s * 0.14 * gait * (1 - side), -sideS * 0.12);
-    P.set('pelvis', 0, s * 0.1 * gait, 0);
-    P.set('head', -lean * 0.6 * back, s * 0.06 * gait, 0);
-    const bob = gait * (0.055 * Math.abs(s) - 0.035) - 0.01 * sprint;
-    // Sidestep: shuffle with a little roll instead of a forward stride.
-    if (side > 0.05) {
-      P.add('hipL', 0, 0, Math.max(0, s) * 0.3 * side * Math.sign(sideS));
-      P.add('hipR', 0, 0, Math.max(0, -s) * 0.3 * side * Math.sign(sideS));
+    // Direction of travel in the player's frame (x his left, z forward), and how much of it is sideways or backwards.
+    const vl = Math.max(1e-4, speed);
+    const mx = speed > 0.05 ? sideS / vl : 0;
+    const mz = speed > 0.05 ? fwdS / vl : 1;
+    const lat = Math.abs(mx);
+    const backw = Math.max(0, -mz);
+    // Gait: a cycle is two steps. Stance (foot on the grass) is most of a walk's cycle and a third of a sprint's.
+    const beta = 0.62 - 0.24 * run - 0.06 * sprint;
+    const vLocal = speed / h;
+    let freq = 0.75 + 0.18 * speed;
+    // The distance the body covers while a foot is down; past what the legs can reach, step quicker instead.
+    const sMax = (0.75 + 0.25 * run) * (1 - 0.55 * lat) * (1 - 0.35 * backw);
+    let S = (vLocal * beta) / freq;
+    if (S > sMax) {
+      freq = (vLocal * beta) / sMax;
+      S = sMax;
     }
-    // Idle: breathing and a slow weight shift, bouncing on the toes at kickoff-ready.
+    cyc = (cyc + freq * dtSim) % 1;
+    // A keeper set for a shot crouches with his feet wide, standing or shuffling across his line: the legs come from the
+    // same IK, so his feet stay planted as he shuffles.
+    const set = keeperW * (1 - smooth(1.5, 4, speed));
+    const crouch = 0.035 * gait + 0.02 * run + 0.035 * sprint + 0.16 * set;
+    const bobA = 0.016 * gait * (1 - run) - 0.028 * run;
+    const bodyY = -crouch + bobA * Math.cos(4 * Math.PI * (cyc - beta / 2));
+    const twist = (0.06 + 0.1 * run) * gait * (1 - lat);
+    const pelvisYaw = -twist * Math.cos(2 * Math.PI * cyc);
+    // The swing side's hip drops a little in a walk.
+    const pelvisRoll = 0.04 * gait * (1 - run) * Math.sin(2 * Math.PI * cyc);
+    P.reset();
+    P.set('pelvis', 0, pelvisYaw, pelvisRoll);
+    // Feet: planted through stance (moving back under him at exactly his speed, so they never skate),
+    // then swung forward, the heel kicking up behind at a run.
+    const lift = (0.07 * smooth(0.1, 1.4, speed) + 0.1 * run + 0.14 * sprint) * (1 - 0.4 * set);
+    // Running with the ball: the right foot pokes it on once a stride, reaching on and low at the end of its swing.
+    const touch = dribbleW * smooth(1, 2.5, speed) * (reduced ? 0 : 1);
+    const heel = 0.08 * run + 0.22 * sprint;
+    const centre = -0.06 * S * run;
+    for (const left of [true, false]) {
+      const p = (cyc + (left ? 0 : 0.5)) % 1;
+      const width = (left ? 1 : -1) * (LEG.hipX * (1 - 0.35 * run) + 0.05 * lat + 0.13 * set);
+      let along: number;
+      let fy = 0;
+      let toe = 0;
+      if (p < beta) {
+        const u = p / beta;
+        along = centre + S * (0.5 - u);
+        // Heel strike (toes up), flat, then rolling onto the toes at push-off.
+        toe = -0.2 * gait * (1 - run) * (1 - smooth(0, 0.18, u)) + 0.45 * gait * smooth(0.55, 1, u);
+      } else {
+        const u = (p - beta) / (1 - beta);
+        const e = u * u * (3 - 2 * u);
+        along = centre + S * (-0.5 + e) - heel * 0.9 * Math.sin(Math.PI * Math.min(1, u / 0.7)) * (1 - u);
+        fy = lift * Math.sin(Math.PI * u) ** 0.8 + heel * Math.sin(Math.PI * Math.min(1, u / 0.75)) ** 2 * (1 - 0.6 * u);
+        toe = 0.5 * gait * (1 - smooth(0, 0.5, u)) - 0.15 * gait * smooth(0.6, 1, u);
+        if (!left && touch > 0) {
+          const poke = touch * Math.sin(Math.PI * Math.max(0, Math.min(1, (u - 0.45) / 0.55)));
+          along += 0.28 * poke;
+          fy *= 1 - 0.5 * poke;
+          toe += 0.35 * poke;
+        }
+      }
+      // Planted feet hold their spot on the grass through turns and changes of pace: locked in world space while
+      // down, released if the body has moved too far from where the gait would put the foot (a cut, a seek).
+      let tx = width + mx * along;
+      let tz = mz * along;
+      const fl = left ? footL : footR;
+      if (p < beta) {
+        const cy = Math.cos(yawNow);
+        const sy = Math.sin(yawNow);
+        if (!fl.locked) {
+          fl.wx = root.position.x + h * (tx * cy + tz * sy);
+          fl.wz = root.position.z + h * (-tx * sy + tz * cy);
+          fl.locked = true;
+        }
+        const dx = (fl.wx - root.position.x) / h;
+        const dz = (fl.wz - root.position.z) / h;
+        const lx = dx * cy - dz * sy;
+        const lz = dx * sy + dz * cy;
+        if ((lx - tx) ** 2 + (lz - tz) ** 2 > 0.2 * 0.2) fl.locked = false;
+        else {
+          tx = lx;
+          tz = lz;
+        }
+      } else fl.locked = false;
+      legIK(P, left, tx, ANKLE_Y + fy, tz, toe * (1 - 0.6 * backw), bodyY, pelvisYaw, pelvisRoll);
+      // Knees out over the toes in a keeper's wide crouch, not knocked together.
+      if (set > 0.01) P.add(left ? 'hipL' : 'hipR', 0, (left ? 0.3 : -0.3) * set, 0);
+    }
+    // Arms swing against the legs (the left forward as the right leg comes through), elbows bent more at speed.
+    const sw = Math.cos(2 * Math.PI * cyc);
+    const armAmp = (0.18 + 0.32 * run + 0.4 * sprint) * gait * (1 - 0.6 * lat) * (1 - 0.4 * backw);
+    const elb = 0.25 + 0.75 * gait + 0.55 * run + 0.15 * sprint;
+    P.set('shL', armAmp * sw, 0, 0.1 + 0.06 * gait);
+    P.set('shR', -armAmp * sw, 0, -0.1 - 0.06 * gait);
+    P.set('elL', -(elb + 0.35 * gait * Math.max(0, -sw)));
+    P.set('elR', -(elb + 0.35 * gait * Math.max(0, sw)));
+    // Trunk: lean into the run and into acceleration, back when braking or backpedalling; the shoulders
+    // counter the pelvis; the head stays level.
+    const lean = (0.04 + 0.1 * run + 0.14 * sprint) * (1 - backw) - 0.1 * backw * gait + Math.max(-0.2, Math.min(0.22, accS * 0.035));
+    P.set('spine', lean, -pelvisYaw * 1.6, -sideS * 0.04 - pelvisRoll * 0.8);
+    P.set('head', -lean * 0.7, pelvisYaw * 0.5, 0);
+    // Idle: breathing and a slow weight shift.
     const idle = 1 - gait;
     if (idle > 0 && !reduced) {
       const t = time + idleSeed;
       P.add('spine', 0.02 * Math.sin(t * 1.9) * idle, 0.05 * Math.sin(t * 0.37) * idle, 0.03 * Math.sin(t * 0.53) * idle);
-      P.add('head', 0, 0.25 * Math.sin(t * 0.29 + 1) * idle, 0);
-      P.add('hipL', -0.05 * idle, 0, 0.06 * idle);
-      P.add('hipR', 0.04 * idle, 0, -0.07 * idle);
-      P.add('knL', 0.1 * idle);
-      P.add('knR', 0.14 * idle);
-      P.add('shL', 0.03 * Math.sin(t * 0.8) * idle, 0, 0.06 * idle);
-      P.add('shR', -0.03 * Math.sin(t * 0.8) * idle, 0, -0.06 * idle);
+      P.add('head', 0, 0.2 * Math.sin(t * 0.29 + 1) * idle, 0);
+      P.add('shL', 0.03 * Math.sin(t * 0.8) * idle, 0, 0.04 * idle);
+      P.add('shR', -0.03 * Math.sin(t * 0.8) * idle, 0, -0.04 * idle);
     }
     // Bank into the turn, about the feet: a runner turning at speed leans in.
     const bank = reduced ? 0 : Math.max(-0.2, Math.min(0.2, -turnS * speed * 0.02)) * gait;
-    P.body(0, bob - 0.02 * idle, 0, 0, 0, bank);
+    P.body(0, bodyY, 0, 0, 0, bank);
   }
 
   // Stances layered over locomotion with their own smoothed weights.
@@ -618,11 +663,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   function stances(P: Pose) {
     if (keeperW > 0.01) {
       stance.copy(P);
-      stance.set('hipL', -0.55, 0, 0.22).set('hipR', -0.55, 0, -0.22);
-      stance.set('knL', 0.95).set('knR', 0.95).set('anL', -0.35).set('anR', -0.35);
+      // The crouch and the wide feet come from locomotion (its IK); here the trunk, head and hands.
       stance.set('spine', 0.42, 0, 0).set('head', -0.3);
       stance.set('shL', -0.5, 0, 0.55).set('shR', -0.5, 0, -0.55).set('elL', -0.7).set('elR', -0.7);
-      stance.a[BODY + 1] = -0.16;
       P.blend(stance, keeperW * (1 - smooth(1.5, 4, speedS)));
     }
     if (windedW > 0.01) {
@@ -903,6 +946,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       yaw = damp(yaw, yaw + angleDelta(yaw, target), 14, dt);
       if (dt > 0) turnS = damp(turnS, ctx.dtSim > 0 ? angleDelta(yaw0, yaw) / dt : 0, 8, dt);
       root.rotation.y = yaw;
+      yawNow = yaw;
 
       // Velocity in the player's frame, smoothed so the gait never jumps.
       const fx = Math.sin(yaw);
@@ -914,7 +958,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       const side = vx * fz - vz * fx;
       const k = ctx.dtSim > 0 ? 12 : 0;
       speedS = damp(speedS, speed, k, dt);
+      const fwdPrev = fwdS;
       fwdS = damp(fwdS, fwd, k, dt);
+      accS = damp(accS, ctx.dtSim > 0 && dt > 0 ? (fwdS - fwdPrev) / dt : 0, 5, dt);
       sideS = damp(sideS, side, k, dt);
 
       keeperW = damp(keeperW, ctx.keeperSet, 6, dt);
@@ -929,6 +975,26 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
 
       locomotion(loco, ctx.time, ctx.dtSim, reduced);
       stances(loco);
+      // Follow the ball with the head (and a little with the shoulders): turned toward it, tipped down to it
+      // when it is close. Not a keeper whose whole body already faces it, nor a man with it at his feet.
+      let wantYaw = 0;
+      let wantPitch = 0;
+      if (ctx.ball && !ctx.look && !ctx.hasBall && !ctx.holding && !ctx.throwHold) {
+        const bx = ctx.ball.x - p.pos.x;
+        const by = ctx.ball.y - p.pos.y;
+        const dist = Math.sqrt(bx * bx + by * by);
+        if (dist > 0.5) {
+          const rel = angleDelta(yaw, Math.atan2(bx, by));
+          // A ball behind him: half a glance over the shoulder, not an owl's turn.
+          const behind = Math.abs(rel) > 1.9;
+          wantYaw = Math.max(-1.2, Math.min(1.2, rel)) * (behind ? 0.45 : 1) * (1 - 0.5 * smooth(5.2, 7.6, speedS));
+          wantPitch = Math.max(-0.25, Math.min(0.55, Math.atan2(1.8 - ctx.ball.z, dist) - 0.06));
+        }
+      }
+      lookYaw = damp(lookYaw, wantYaw, 5, dt);
+      lookPitch = damp(lookPitch, wantPitch, 5, dt);
+      loco.add('head', lookPitch * 0.7, lookYaw * 0.62, 0);
+      loco.add('spine', lookPitch * 0.12, lookYaw * 0.3, 0);
       out.copy(loco);
 
       if (action) {
@@ -970,6 +1036,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         b.rotation.set(a[i * 3], a[i * 3 + 1], a[i * 3 + 2]);
         b.position.copy(rest[i]);
       }
+      // The spine's rotation, shared with the chest: a curve through the back.
+      const si = B.spine * 3;
+      spine.rotation.set(a[si] * 0.55, a[si + 1] * 0.55, a[si + 2] * 0.55);
+      chest.rotation.set(a[si] * 0.45, a[si + 1] * 0.45, a[si + 2] * 0.45);
       body.position.set(a[BODY], a[BODY + 1], a[BODY + 2]);
       body.rotation.set(a[BODY + 3], a[BODY + 4], a[BODY + 5]);
       last = ctx.time;
@@ -995,7 +1065,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       root.removeFromParent();
       geo.dispose();
       mesh.skeleton.dispose();
-      // Materials belong to the PlayerKit.
+      // Materials and the kit texture belong to the PlayerKit.
     },
   };
 }

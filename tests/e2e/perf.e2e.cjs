@@ -417,6 +417,8 @@ test(
           const render = gl3.render;
           gl3.render = function (...a) {
             render.apply(this, a);
+            // With post-processing (high quality) a frame is several passes: read after the one that draws to the canvas.
+            if (gl3.getRenderTarget() !== null) return;
             gl3.render = render;
             const gl = gl3.getContext();
             const w = 48;

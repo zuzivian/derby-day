@@ -67,15 +67,15 @@ async function waitFor(page, fn, arg, ms = 30_000) {
       return ctx.newPage();
     },
   };
-  for (const quality of ['low', 'high']) {
+  for (const quality of (process.env.QUALITIES || 'low,high').split(',')) {
     const kit = (process.env.CLUB_KIT || '').split(',').filter((c) => /^#[0-9a-f]{6}$/i.test(c));
     // eslint-disable-next-line no-new-func
     const mutateSave = kit.length === 2 ? new Function('save', `save.club.primary = '${kit[0]}'; save.club.secondary = '${kit[1]}';`) : undefined;
-    const page = await openApp(t, { width, height, prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d', query: `quality=${quality}`, mutateSave });
+    const page = await openApp(t, { width, height, prefs: { halfSeconds: 600 }, e2eHook: true, renderer: '3d', query: `quality=${quality}${process.env.TOD ? `&tod=${process.env.TOD}` : ''}`, mutateSave });
     await startRanked(page);
     await waitFor(page, () => window.__derbyMatch && window.__derbyMatch.phase === 'play');
     await page.waitForTimeout(1500);
-    await page.screenshot({ path: path.join(outDir, `${quality}-play-${width}x${height}.png`) });
+    await page.screenshot({ path: path.join(outDir, `${process.env.TOD || ''}${quality}-play-${width}x${height}.png`) });
     // The human keeper with the ball in his hands, everyone else stood still: the long view.
     await page.evaluate(() => {
       const s = window.__derbyMatch;
@@ -96,7 +96,7 @@ async function waitFor(page, fn, arg, ms = 30_000) {
       const k = s.players[s.controlled[s.humans[0] ? 0 : 1]];
       return `${document.querySelector('#pitch').dataset.camera}, controlled ${k.role} at ${k.pos.x.toFixed(1)}, ${k.pos.y.toFixed(1)}`;
     });
-    await page.screenshot({ path: path.join(outDir, `${quality}-long-${width}x${height}.png`) });
+    await page.screenshot({ path: path.join(outDir, `${process.env.TOD || ''}${quality}-long-${width}x${height}.png`) });
     console.log(`${quality}: camera ${cam}`);
     await page.context().close();
   }
