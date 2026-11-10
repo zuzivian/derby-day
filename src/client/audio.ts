@@ -226,9 +226,10 @@ export function goalMood(s: MatchState, team: 0 | 1): { side: 'for' | 'against';
   return { side: team === homeTeam(s) ? 'for' : 'against', big: gap === 0 || gap === 1 || matchSeconds(s) >= 4800 };
 }
 
-/** A goal the human's side let in: not an own goal, not a two-human match (both sides celebrate), not CPU v CPU. The scene tones down. */
-export function isConceded(s: MatchState, g: { team: 0 | 1; ownGoal: boolean }): boolean {
-  if (g.ownGoal || (s.humans[0] && s.humans[1]) || (!s.humans[0] && !s.humans[1])) return false;
+/** A goal the human's side let in (an own goal counts: `team` is the side it is credited to), except in a two-human
+ *  match (both sides celebrate) or CPU v CPU. The scene tones down. */
+export function isConceded(s: MatchState, g: { team: 0 | 1 }): boolean {
+  if ((s.humans[0] && s.humans[1]) || (!s.humans[0] && !s.humans[1])) return false;
   return g.team !== homeTeam(s);
 }
 

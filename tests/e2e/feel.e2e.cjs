@@ -38,7 +38,7 @@ const bannerHasGoal = () => {
   return !!b && !b.hidden && /goal/i.test(b.innerText);
 };
 
-test('a conceded goal gets a small subdued banner and a dark flash; a scored one and an own goal stay big', async (t) => {
+test('a conceded goal gets a small subdued banner and a dark flash; a scored one stays big, and an own goal into your net counts as conceded', async (t) => {
   const page = await inPlay(t);
   const home = await page.evaluate(() => (window.__derbyMatch.humans[0] ? 0 : 1));
   const opp = 1 - home;
@@ -67,7 +67,7 @@ test('a conceded goal gets a small subdued banner and a dark flash; a scored one
   await addGoal(page, opp, true);
   await page.waitForFunction(bannerHasGoal);
   g = await goalState(page);
-  expect(g.conceded, 'an own goal keeps the full celebration').toBe(false);
+  expect(g.conceded, 'an own goal credited to the other side is one you let in').toBe(true);
 });
 
 test('the result card counts Elo up, ends on the final text, and Watch goals is a small button', async (t) => {
