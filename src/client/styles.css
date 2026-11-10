@@ -348,6 +348,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .crest { flex: none; color: var(--ink); }
 /* Status: one row of chips that grows with the club. */
 .status-strip { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.status-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-md); }
 .status-strip .level-chip { margin-top: 0; height: 40px; padding: 3px 14px 3px 3px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
 .status-strip .level-badge { width: 32px; height: 32px; font-size: var(--fs-md); }
 .status-strip .xp-bar { min-width: 96px; max-width: 140px; }
@@ -464,7 +465,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tbl.ladder th.pos-col { color: var(--muted); }
 .tbl.ladder tr.you .pos-col { color: var(--ink); }
 .tbl.ladder .rec { min-width: 40px; padding-left: 4px; padding-right: 4px; font-variant-numeric: tabular-nums; }
-.tbl.ladder td.zero { color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.tbl.ladder td.zero { color: var(--muted); }
 /* Phones: the player tables keep #, name, position, OVR and the money column; the detail columns go. */
 /* Column tiers. The transfer tables (.has-action) lose their detail columns below
    1000 px, so the money column and the Sign/Sell button always fit; the Squad
@@ -503,6 +504,23 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .attr.t-b { color: var(--t-b); font-weight: 600; }
 .attr.t-c { color: var(--t-c); }
 .attr.t-d { color: var(--t-d); }
+/* Legend for the attribute colours, under the Squad heading; the attribute columns go below 600 px, so it does too. */
+.attr-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
+.attr-legend .lg::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: currentColor; }
+.attr-legend .t-a { color: var(--t-a); } .attr-legend .t-b { color: var(--t-b); } .attr-legend .t-c { color: var(--t-c); } .attr-legend .t-d { color: var(--t-d); }
+@media (max-width: 600px) { .attr-legend { display: none; } }
+.strength-note { font-weight: 500; }
+@media (max-width: 420px) { .strength-note { display: none; } }
+/* "▲ +N on bench": a better player is waiting for this slot. A real button, so Tab and Enter swap him in. */
+.bench-hint {
+  font: inherit; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .03em; line-height: 1; white-space: nowrap; cursor: pointer;
+  padding: 4px 8px; min-height: 22px; border-radius: var(--r-pill); border: 1px solid rgba(8, 24, 14, .5);
+  background: #ffd84d; color: #1b1500; box-shadow: 0 2px 5px rgba(0, 0, 0, .3);
+}
+.bench-hint:hover { background: #ffe680; }
+.bench-hint:active { transform: scale(.96); }
+@media (max-width: 640px) { .slot .bench-hint { flex: none; } }
+@media (pointer: coarse) { .bench-hint { min-height: 44px; padding-inline: 10px; } }
 .kit { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; margin-right: var(--sp-2); vertical-align: -2px; background: linear-gradient(90deg, var(--p) 50%, var(--s) 50%); border: 1px solid var(--line-strong); }
 
 /* Squad: the magnet board ------------------------------------------------------- */
@@ -729,7 +747,17 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions { justify-content: center; }
 .rs-foot .replay-actions .btn { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
 .rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
-.rs-close { width: 100%; }
+/* One big button fills the row; two (Play next and Back to Home) share it on one line each, a size down so the
+   labels never wrap and the footer stays as tall as with one. */
+.rs-actions { display: flex; gap: var(--sp-2); }
+.rs-actions > .btn { flex: 1 1 0; min-width: 0; }
+.rs-actions:has(> .btn + .btn) > .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px), (max-height: 500px) {
+  .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-md); padding-inline: 10px; }
+}
+@media (max-width: 360px) {
+  .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-sm); padding-inline: 6px; letter-spacing: 0; }
+}
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
 @media (max-height: 500px), (max-width: 360px) {
   .rs-foot { gap: var(--sp-2); padding: 10px var(--sp-3) 12px; }
@@ -760,7 +788,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-height: 500px) {
   .rs-foot { flex-direction: row; align-items: center; }
   .rs-foot .replay-actions { flex: 1 1 auto; }
-  .rs-foot .rs-close { width: auto; flex: 1 1 auto; }
+  .rs-foot .rs-actions { flex: 2 1 auto; }
+  .rs-foot .replay-actions { min-width: 0; }
 }
 
 /* Match ------------------------------------------------------------------------ */
@@ -911,6 +940,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pause-actions { gap: 6px; }
   .pause-card .pause-tactics { margin-top: 0; }
   .pause-card .pause-opt { margin-top: 0; justify-content: flex-start; text-align: left; }
+  /* The mentality sentence is still read out (aria-describedby) but costs three lines here, so "Controls and help" stays in view. */
+  .pause-card .qt-note { display: none; }
+  .pause-card .help-controls { grid-column: 1 / -1; }
+  .pause-card .help-controls summary { padding: 6px 0; }
+}
+/* Where it still needs to scroll (a short screen, a long Controls list), a soft shadow on the edge says there is more. */
+@media (max-height: 420px) and (orientation: landscape) {
+  .pause-card {
+    background-color: var(--surface);
+    background-image: linear-gradient(var(--surface) 30%, transparent), linear-gradient(transparent, var(--surface) 70%),
+      radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .28), transparent), radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .28), transparent);
+    background-position: center top, center bottom, center top, center bottom; background-repeat: no-repeat;
+    background-size: 100% 28px, 100% 28px, 100% 10px, 100% 10px; background-attachment: local, local, scroll, scroll;
+  }
 }
 @media (pointer: coarse) {
   .pause-card .hint { display: none; }
@@ -1040,6 +1083,34 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .training-head { align-items: center; }
   .training-head .eyebrow { display: none; }
 }
+/* Phones: the first-match celebration and the club step keep their actions on screen, a bar stuck to the bottom of the
+   viewport with the primary (Go to Home) full width on top, like .rs-foot in the result dialog. */
+@media (max-width: 640px) {
+  .ob-card:not(.ob-welcome) .ob-nav {
+    position: sticky; bottom: 0; z-index: 2; flex-direction: column-reverse; align-items: stretch; flex-wrap: nowrap; gap: var(--sp-2);
+    margin: 0 -20px -20px; padding: 12px 20px max(14px, env(safe-area-inset-bottom, 0px));
+    background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg);
+  }
+  .ob-card:not(.ob-welcome) .ob-nav .btn { width: 100%; justify-content: center; }
+  /* A control Tabbed to scrolls clear of the bar, never under it (the bar is about 120 px with its two buttons). */
+  html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 136px; }
+}
+/* Short landscape phones (750x342): the welcome card's heading and Kick off both fit with no scroll. */
+@media (max-height: 420px) and (orientation: landscape) {
+  .onboarding { gap: 8px; }
+  .ob-top .wordmark { font-size: 24px; }
+  .ob-card { padding: 12px 18px; gap: 8px; border-radius: var(--r-lg); }
+  .ob-title { font-size: 26px; line-height: 1.05; }
+  .ob-lede { font-size: 14px; }
+  .ob-versus { padding: 6px var(--sp-3); }
+  .ob-versus .crest { width: 34px; height: 38px; }
+  .ob-versus .side { gap: 2px; }
+  .ob-welcome .ob-kit, .ob-welcome .muted.small { display: none; }
+  .ob-card .kickoff { min-height: 44px; padding-block: 6px; }
+  .ob-card:not(.ob-welcome) .ob-nav { position: sticky; bottom: 0; z-index: 2; flex-direction: row-reverse; flex-wrap: nowrap; margin: 0 -18px -12px; padding: 8px 18px; background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .ob-card:not(.ob-welcome) .ob-nav .btn { width: auto; flex: 1 1 0; }
+  html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 80px; }
+}
 /* Phones held sideways: coach card left, pitch (with its pad) right, all inside the viewport. */
 @media (max-height: 520px) and (orientation: landscape) {
   #app:has(.training) { padding-block: 10px; }
@@ -1167,10 +1238,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .trophy-season .trophy-icon { color: var(--good); }
 .result-note:empty { display: none; }
 
+.comp-jump { display: none; }
+/* Room above a scrolled-to panel heading, so the toast (top of the viewport) never covers the fixture card below it. */
+.comp-title { scroll-margin-top: 76px; }
 @media (max-width: 960px) {
   .comp-top, .league-body { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
+  .comp-jump { display: flex; gap: var(--sp-2); }
   .comp-panel > .actions .btn { width: 100%; }
   .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
   .ties { gap: var(--sp-2); }
@@ -1317,6 +1392,24 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .so-howto { flex-direction: row; gap: 18px; font-size: var(--fs-sm); }
   .so-howto li { flex: 1; }
 }
+/* Short landscape: the result banner shrinks and sits just above the dive labels (--so-lbl-top, set from shootout.ts), never on them. */
+@media (max-height: 520px) and (orientation: landscape) {
+  .so-banner { top: calc(var(--so-lbl-top, 48%) - .9em); font-size: clamp(20px, 9vh, 38px); }
+}
+/* The end card: a line naming what the result means, over a win's confetti (confetti.ts). */
+.so-end-next { font-weight: 800; font-size: var(--fs-lg); letter-spacing: .02em; }
+#so-end[data-won="1"] .so-end-next { color: var(--good, #1f8a4c); }
+#so-end[data-won="0"] .so-end-next { color: var(--bad); }
+/* Forfeit has no place once a kick is being decided or the shootout is over. */
+.shootout[data-phase="result"] #so-leave, .shootout[data-phase="done"] #so-leave { visibility: hidden; pointer-events: none; }
+/* Touch: every in-play button is a full 44px target, and Forfeit sits apart from the primary action, quieter. */
+@media (pointer: coarse) {
+  .so-actions .btn, .so-actions #so-leave, #so-leave { min-height: 44px; }
+  /* Its own line under the strike and dive buttons (the row wraps), never beside them where a thumb could slip. */
+  #so-leave { margin-top: var(--sp-4); flex: 0 0 100%; }
+  #so-leave:not(.danger) { --btn-line: transparent; }
+  @media (orientation: landscape) and (max-height: 480px) { #so-leave { margin-top: var(--sp-2); flex: none; } }
+}
 @media (prefers-reduced-motion: reduce) {
   .so-banner, .so-banner[data-outcome] { animation: none; }
   .so-mark.fresh, .so-total.pop { animation: none; }
@@ -1439,6 +1532,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   box-shadow: var(--shadow-1); transition: border-color var(--dur) var(--ease-out), box-shadow var(--dur) var(--ease-out), transform var(--dur) var(--ease-out);
 }
 .mode-card:not(.locked):hover { border-color: var(--line-strong); box-shadow: var(--shadow-2); }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) { .mode-card:not(.locked):hover { transform: translateY(-2px); } }
 .mode-card:not(.locked):active { transform: scale(.985); background: var(--surface-2); transition-duration: var(--dur-press); }
 .mode-top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
 .mode-icon { position: relative; flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); background: linear-gradient(145deg, var(--surface-3), var(--surface-2)); color: var(--ink); border: 1px solid var(--line); }
@@ -1480,13 +1574,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .club-chip .crest { width: 24px; height: 27px; }
   .topbar .club-elo { font-size: var(--fs-xs); }
   .topbar .wordmark::after { height: 4px; }
-  .status-strip { gap: 6px; width: 100%; position: relative; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px 0; margin: -3px 0; }
-  .status-strip::-webkit-scrollbar { display: none; }
-  /* It scrolls sideways: an edge fades only on the side with more chips (--fl/--fr, set from scroll position in screenFx.ts), so a cut
-     chip reads as "more this way"; the end padding lets the last chip come fully clear of the fade. */
-  .status-strip { padding-right: 28px; --fl: 0px; --fr: 28px; -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent); }
+  /* Every chip shows: the strip wraps to two rows (level chip, lives and money; then rank and week), no scroller, no fade mask. */
+  .status-strip { gap: 6px; width: 100%; flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; }
   .status-strip > * { flex: none; }
-  .status-strip .level-chip { height: 34px; flex: 1 1 auto; min-width: 196px; padding-right: 12px; }
+  .status-strip .level-chip { height: 34px; flex: 1 1 140px; min-width: 0; padding-right: 10px; }
+  .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  /* The badge beside it shows the level, so "Level 45 · " takes no room (still in the text for screen readers) and the XP fits. */
+  .status-strip .xp-lv { font-size: 0; }
   .status-strip .xp-text { font-size: var(--fs-xs); }
   .status-strip .xp-bar { min-width: 60px; }
   .status-strip .level-badge { width: 28px; height: 28px; font-size: 14px; }
@@ -1580,6 +1674,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .status-strip::-webkit-scrollbar { display: none; }
   #app:has(.home) .status-strip > * { flex: none; }
   .home { gap: 8px; }
+  /* Room for the hero's "Win: +N Elo" line above Kick off. */
+  .home .hero-story { margin-bottom: 8px; }
   .home .hero { padding: 8px 20px 12px; gap: 4px; }
   .home .hero-len { display: none; }
   .home .hero .crest { width: 48px; height: 54px; }
@@ -1589,6 +1685,26 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .home .gauge { width: 110px; }
   .home .gauge-num { font-size: 30px; }
   .home .kickoff { min-height: 52px; padding-block: 8px; font-size: 26px; }
+}
+/* Landscape phones narrower than 800 px (iPhone 13 is 750 px of page): the whole top bar fits with no sideways pan, so the
+   money chip is never cut off. The club chip loses its Elo line, the level chip its words (the badge shows the level). */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 800px) {
+  #app:has(.home) .topbar { gap: 6px 10px; }
+  #app:has(.home) .topbar .wordmark { font-size: 22px; }
+  #app:has(.home) .topbar .club-elo { display: none; }
+  #app:has(.home) .topbar .club-name { max-width: 11ch; font-size: 15px; }
+  #app:has(.home) .topbar .club-chip .crest { width: 20px; height: 23px; }
+  #app:has(.home) .status-strip { gap: 4px; overflow: visible; }
+  /* The level chip gives way (its bar shrinks) so a wider system font never pushes the strip into a scroll. */
+  #app:has(.home) .status-strip .level-chip { height: 34px; min-width: 0; padding-right: 10px; flex: 0 1 auto; }
+  #app:has(.home) .status-strip .xp-text { display: none; }
+  #app:has(.home) .status-strip .xp { min-width: 0; }
+  #app:has(.home) .status-strip .xp-bar { min-width: 20px; width: 64px; max-width: 64px; }
+  #app:has(.home) .status-strip .stat { height: 34px; padding: 0 8px; gap: 4px; font-size: var(--fs-sm); }
+}
+/* Narrower still (568x320): the chips can't all fit, so the strip scrolls again rather than push the page sideways. */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 699px) {
+  #app:has(.home) .status-strip { overflow-x: auto; overflow-y: hidden; }
 }
 /* Very short landscape (568x320, a 200%-zoomed laptop): tighter still, so Kick off needs no scroll. */
 @media (max-height: 400px) and (orientation: landscape) {
@@ -1651,12 +1767,36 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pad-btn.shoot { border-style: double; border-width: 6px; }
   .pad-btn.down { border-color: Highlight; }
   .pad-btn.coach-pulse { outline: 3px solid Highlight; outline-offset: 3px; }
+  /* The kickoff button is a painted fill with no border of its own: give it an edge. */
+  .kickoff { border: 2px solid ButtonText; background: ButtonFace; color: ButtonText; forced-color-adjust: none; }
+  .kickoff:focus-visible { outline: 3px solid Highlight; }
+  /* The unseen-news dot is background-only. */
+  .tab-dot { background: Highlight; forced-color-adjust: none; }
+}
+
+/* More contrast requested. Light tokens: --muted #3a4458 is 8.2:1 on --surface-2 and 9.8:1 on white (was 5.9:1 at best);
+   --line #657570 is 4.9:1 on white, 4.4:1 on --surface-2. Dark tokens: --muted #c6d2cd is 9.9:1 on --surface-2 and
+   10.9:1 on --surface; --line #6c7f78 is 4.0:1 on --surface and 3.6:1 on --surface-2. Cards, buttons and inputs get 2px edges. */
+@media (prefers-contrast: more) {
+  :root { --muted: #3a4458; --line: #657570; --line-strong: #657570; --control-line: #4f5f5a; }
+  .panel, .btn, .chip, select, input[type="text"] { border-width: 2px; }
+  .panel, .btn, .chip { border-style: solid; border-color: var(--line); }
+  .btn { border-color: var(--btn-line, var(--line)); }
+  select, input[type="text"] { border-color: var(--control-line); }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --muted: #c6d2cd; --placeholder: #c6d2cd; --line: #6c7f78; --line-strong: #8a9c95; --control-line: #9aaba4; }
+}
+@media (prefers-contrast: more) {
+  :root[data-theme="dark"] { --muted: #c6d2cd; --placeholder: #c6d2cd; --line: #6c7f78; --line-strong: #8a9c95; --control-line: #9aaba4; }
 }
 
 /* Stakes and rivalry: the line under the Home hero and the fixture cards. */
-.hero-story { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: var(--fs-sm); color: var(--hero-ink); text-align: center; }
+.hero-story { margin: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 12px; font-size: var(--fs-sm); color: var(--story-ink, var(--hero-ink)); text-align: center; }
 .hero-story .story-win { font-weight: 700; font-variant-numeric: tabular-nums; }
-.derby { display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--hero-ink); color: var(--hero-bg, #0b3d2e); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.derby { display: inline-block; padding: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--story-ink, var(--hero-ink)); color: var(--story-bg, var(--hero-bg, #0b3d2e)); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+/* On a light/dark themed fixture card (not the dark Home hero) the story line uses the card's own ink. */
+.comp-next { --story-ink: var(--ink); --story-bg: var(--surface); }
 /* Progression cues: a rising young player, the room left in training. */
 .rise-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--good); white-space: nowrap; }
 @media (min-width: 641px) { .rise-tag::after { content: " Rising"; } }
@@ -1697,6 +1837,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .mk-note { display: block; font-size: var(--fs-2xs); font-weight: 700; color: var(--muted); white-space: nowrap; }
 .mk-note.up { color: var(--good); }
 .mk-note.short { color: var(--bad); }
+/* Under an armed Confirm the note wraps to the button's width, so it never widens the action column (a 320 px Sell table). */
+td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-inline-size: 100%; }
 
 /* Ladder story: your place, the gap to the club above, form; neighbours (the derby places) tinted; the form line on Club */
 .ladder-story { display: flex; flex-wrap: wrap; align-items: center; gap: 6px var(--sp-3); margin: 0 0 var(--sp-3); }
@@ -1715,3 +1857,49 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .cabinet li.season .trophy-icon { color: var(--good); }
 .cabinet li.empty { border-style: dashed; color: var(--muted); font-weight: 600; }
 .cabinet li.empty .trophy-icon { color: var(--line-strong); }
+
+/* The result dialog: "Watch goals" is a real (small, quiet) button; "Copy replay code" stays the text link. */
+.rs-foot .replay-actions .btn[data-replay="watch"] { --btn-bg: var(--surface-2); --btn-fg: var(--ink); --btn-line: var(--line); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.rs-foot .replay-actions .btn[data-replay="watch"]:hover { --btn-bg: var(--surface-3); }
+.rs-foot .replay-actions .btn[data-replay="watch"] svg { flex: none; }
+
+/* Transfers: upgrades stand out, the just-signed bar, phone detail under the name ------------------ */
+.name-sub { display: none; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); white-space: nowrap; }
+@media (max-width: 1000px) { .tbl.has-action .name-sub { display: block; } .tbl.has-action .up-chip { margin-left: 0; } }
+.up-chip { display: inline-block; margin: 2px 0 0 8px; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.5; padding: 0 7px; border-radius: var(--r-pill); white-space: nowrap; color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
+.signed-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--good) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); font-weight: 600; }
+.signed-bar > span { flex: 1 1 14em; min-width: 0; }
+@media (max-width: 600px) {
+  /* The XI mark is wanted on the Sell list: starters are easy to sell by mistake. */
+  .tbl td.name .pill.sell-xi { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
+}
+
+/* Training: key attributes, a sticky summary on phones ---------------------------------------------- */
+.key-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.5; padding: 0 6px; border-radius: var(--r-pill); color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); white-space: nowrap; }
+.attr-list li.off .attr-name, .attr-list li.off .attr-val, .attr-list li.off .bar { opacity: .55; }
+.attr-list li.best .attr-name { font-weight: 800; }
+.train-sticky { display: none; }
+@media (max-width: 700px) {
+  .train-sticky { display: flex; align-items: baseline; gap: var(--sp-3); position: sticky; top: 0; z-index: 5; margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3); padding: var(--sp-2) var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+  .train-sticky.none b { color: var(--warn, var(--bad)); }
+  .train-sticky .ts-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .train-sticky .ts-ovr { font-weight: 800; }
+}
+@media (max-width: 480px) { .key-tag { display: block; margin: 1px 0 0; width: max-content; } }
+
+/* Club: level, news and history lead; identity and rename fold away; the danger zone has its own panel at the end. */
+.club-grid .level-panel, .club-grid .customise, .club-grid .danger-panel { grid-column: 1 / -1; }
+.customise-fold > summary { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; list-style: none; min-height: 32px; }
+.customise-fold > summary::-webkit-details-marker { display: none; }
+.customise-fold > summary h2 { margin: 0; }
+.customise-fold > summary .tac-chev { margin-left: auto; }
+.customise-fold[open] > summary .tac-chev { transform: rotate(-135deg); }
+.customise-fold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: var(--r-sm); }
+.customise-body { display: grid; gap: var(--sp-4); margin-top: var(--sp-3); }
+.customise-body .identity-editor { border-top: 0; padding-top: 0; }
+.club-grid .danger-panel { padding: var(--sp-3); }
+
+/* Ladder: your row is easy to find: a stronger tint, a thicker edge and a "You" tag that stays visible on phones. */
+.tbl.ladder tr.you td { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.tbl.ladder tr.you td:first-child { box-shadow: inset 5px 0 0 var(--accent); }
+.tbl.ladder tr.you td.name .pill { position: static; width: auto; height: auto; overflow: visible; clip: auto; margin-left: 6px; background: var(--accent); color: var(--accent-ink); }

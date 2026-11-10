@@ -16,7 +16,7 @@
 import { CUP_ROUNDS, cupOpponent, seasonOpponent, seasonStanding } from '../meta/competitions.ts';
 import { expectedScore, kFactor } from '../meta/elo.ts';
 import { winChance, type Save } from '../meta/game.ts';
-import { clubLevel, isUnlocked, nextUnlocks, nextUnlockText, totalXpForLevel, unlockLevel, type UnlockId } from '../meta/levels.ts';
+import { clubLevel, isUnlocked, nextUnlocks, totalXpForLevel, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { rankedOpen, showGauge, warmupIdentity } from '../meta/warmup.ts';
 import { relayConfig } from '../net/config.ts';
 import { HALF_SECONDS, MENTALITY_LABEL } from '../sim/constants.ts';
@@ -263,12 +263,32 @@ function leagueCard(s: Save): string {
   </article>`;
 }
 
+/** A slim progress row: "Next: <unlock> at level N", a small bar from the start of this level to level N, and the XP still to go. */
+function nextRow(s: Save): string {
+  const next = nextUnlocks(s);
+  if (!next.length) return '';
+  const level = unlockLevel(s, next[0].id);
+  const xp = s.xp ?? 0;
+  const from = totalXpForLevel(clubLevel(s));
+  const to = totalXpForLevel(level);
+  const toGo = Math.max(0, to - xp);
+  const pct = Math.max(0, Math.min(100, Math.round(((xp - from) / Math.max(1, to - from)) * 100)));
+  const names = next.map((u) => u.name);
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  const togo = `${toGo.toLocaleString('en-GB')} XP to go`;
+  return `<div class="home-next" id="home-next">
+      <span class="home-next-text"><span class="level-next-label">Next</span><span class="home-next-name">${esc(list)} <span class="muted">at level ${level}</span></span></span>
+      <span class="xp-bar" role="progressbar" aria-label="Progress to level ${level}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-valuetext="${esc(togo)}"><span style="width:${pct}%"></span></span>
+      <span class="home-next-togo muted small">${togo}</span>
+    </div>`;
+}
+
 export function homeScreen(app: App): string {
   const s = app.save;
   // At level 1 there is only the hero and its Kick off; the other ways to play appear as they unlock.
   const cards = `${versusCard(s)}${practiceCard(s)}${cupCard(s)}${leagueCard(s)}`;
   // One quiet line, from level 2 on, saying what the next unlock is and how far off: the goal stays in sight at every level.
-  const next = clubLevel(s) >= 2 ? nextUnlockText(s) : null;
+  const next = clubLevel(s) >= 2 ? nextRow(s) : '';
   return `
   <div class="home">
     ${hero(app)}
@@ -276,6 +296,6 @@ export function homeScreen(app: App): string {
       <h2 id="modes-title" class="sr-only">Other ways to play</h2>
       <div class="mode-grid">${cards}</div>
     </section>` : ''}
-    ${next ? `<p class="home-next muted small" id="home-next"><span class="level-next-label">Next</span> ${esc(next)}</p>` : ''}
+    ${next}
   </div>`;
 }

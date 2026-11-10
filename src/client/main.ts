@@ -3,9 +3,9 @@ import { ensureSkill, learnSkill, opponentSetup } from '../meta/skill.ts';
 import { warmupTeam } from '../meta/warmup.ts';
 import { afterRender, beforeRender, queueReveal } from './screenFx.ts';
 import { completeFirstMatch } from './firstrun.ts';
-import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
+import { applyResult, buyPlayer, clubTeam, ensureElevenASide, lineupReady, newGame, offeredOpponent, refreshMarketIfStale, rerollIdentity, sellPlayer, salePrice, formatMoney, setFormation, setLineupSlot, setMentality, train, type Save } from '../meta/game.ts';
 import type { FormationId, Mentality } from '../sim/constants.ts';
-import { overall, type AttrKey } from '../meta/player.ts';
+import { fullName, overall, shortName, type AttrKey } from '../meta/player.ts';
 import { possessionShare } from '../sim/match.ts';
 import { scoreAwarded } from '../sim/rules.ts';
 import { int, makeRng } from '../sim/rng.ts';
@@ -16,6 +16,7 @@ import { competitionAction, competitionsScreen } from './competitions.ts';
 import { announce, autoFocus, reducedMotion, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
+import { setTacticsOpen } from './tactics.ts';
 import { flagIdentitySaved, levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
 import { avoidClash } from './kits.ts';
@@ -40,7 +41,7 @@ import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './vers
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
 import { introLine, stakesVs } from './stakes.ts';
-import { goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { setCustomiseOpen, goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -90,6 +91,8 @@ const bootWrite = writeSaveResult(app.save);
 let saved = bootWrite !== 'blocked' && bootWrite !== 'quota';
 /** True while a match, setup or the training ground owns #app. */
 let takeover = false;
+const GAME_TITLE = 'Derby Day';
+const SCREEN_TITLE: Record<Screen, string> = { home: '', club: 'Club', squad: 'Squad', transfers: 'Transfers', training: 'Training', ladder: 'Ladder', competitions: 'Competitions' };
 /** Where focus goes after the next render, when it isn't simply "where it was". */
 let pendingFocus: FocusKey | null = null;
 /** Selectors that get a one-shot flash class after the next render (a trained stat row, the money chip). */
@@ -159,7 +162,7 @@ function render() {
   pendingFocus = null;
   beforeRender(root);
   // A training gain badge belongs to the visit it happened in: entering any screen clears it.
-  if (root.dataset.shown !== app.screen) app.gain = null;
+  if (root.dataset.shown !== app.screen) { app.gain = null; app.signed = null; }
   root.innerHTML = shell(app, screens[app.screen](app));
   // The same dialog as before this render: no second entrance (styles.css .modal.seen).
   if (modalId && root.querySelector('.modal [id$="-title"]')?.id === modalId) root.querySelector('.modal')?.classList.add('seen');
@@ -167,6 +170,7 @@ function render() {
   const entered = root.dataset.shown !== app.screen;
   if (entered) root.querySelector('#panel')?.classList.add('enter');
   root.dataset.shown = app.screen;
+  document.title = SCREEN_TITLE[app.screen] ? `${SCREEN_TITLE[app.screen]} · ${GAME_TITLE}` : GAME_TITLE;
   // A new section opens at its title: the page isn't left at the last screen's scroll (a short page clamps it to a few px,
   // clipping the heading). Before focus is restored, so a focus target further down still scrolls itself into view.
   if (entered && app.screen !== 'ladder') window.scrollTo(0, 0);
@@ -190,7 +194,15 @@ function render() {
     root.querySelector<HTMLElement>('#levelup-title')?.focus();
     announce(levelUpAnnouncement(app.save));
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
-  else restoreFocus(root, key, '#main');
+  else {
+    // A focus target inside the closed "Customise club" fold (a level-up "Show me" link) opens it first.
+    const inside = key?.elId ? root.querySelector<HTMLElement>(`#${CSS.escape(key.elId)}`)?.closest('details[data-fold]') : null;
+    if (inside instanceof HTMLDetailsElement && !inside.open) {
+      inside.open = true;
+      setCustomiseOpen(true);
+    }
+    restoreFocus(root, key, '#main');
+  }
   afterRender(root);
   if (revealMark) placeMark(root, true);
   revealMark = false;
@@ -254,6 +266,7 @@ function focusMain(keepScroll = false) {
  */
 function startOnboarding() {
   takeover = true;
+  document.title = GAME_TITLE; // a match is not a management screen
   hideToast();
   const opp = warmupTeam(app.save, true);
   const stop = mountWelcome(root, {
@@ -296,6 +309,7 @@ function startFirstMatch(opp: { id: ClubIdentity; away: TeamSetup }) {
     persist();
     writePrefs(app.prefs);
     takeover = true;
+    document.title = GAME_TITLE; // a match is not a management screen
     if (gf > ga) getSound().stinger('win');
     const stop = mountAfterMatch(root, {
       save: s,
@@ -342,6 +356,7 @@ function startTraining() {
     return;
   }
   takeover = true;
+  document.title = GAME_TITLE; // a match is not a management screen
   hideToast();
   window.scrollTo({ top: 0 });
   const stop = mountTutorial(root, {
@@ -395,6 +410,7 @@ function playLive(
   const seed = int(s.rng, 1, 2 ** 31 - 1);
   matchOrigin = captureFocus(root) ?? keyFor({ action: 'play-ranked' });
   takeover = true;
+  document.title = GAME_TITLE; // a match is not a management screen
   hideToast();
   telemetry.track({ name: 'match_start', kind: label, controls: app.prefs.controls });
   const unmount = mountMatch(root, {
@@ -434,6 +450,7 @@ function playLive(
 /** Mount the live penalty shootout for a drawn cup tie and hand back its result. */
 function playShootout(opts: Omit<ShootoutViewOptions, 'onEnd'>, onDone: (r: ShootoutResult) => void) {
   takeover = true;
+  document.title = GAME_TITLE; // a match is not a management screen
   hideToast();
   const unmount = mountShootout(root, {
     ...opts,
@@ -467,6 +484,7 @@ function startMatch(ranked: boolean, opp: LadderClub | null, practiceLevel?: (ty
 function startVersus(mount: (root: HTMLElement, o: VersusOptions) => () => void) {
   matchOrigin = captureFocus(root);
   takeover = true;
+  document.title = GAME_TITLE; // a match is not a management screen
   hideToast();
   window.scrollTo({ top: 0 });
   const stop = mount(root, {
@@ -516,9 +534,14 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     rankBefore,
     derby,
     goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
-    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
+    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, s.trainingPoints, isUnlocked(s, 'training'), isUnlocked(s, 'squad')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
+  // Straight into the next ranked match, unless a level-up or the season review is waiting behind this card.
+  if (ranked && !forfeited && isUnlocked(s, 'ranked') && !levelUpOpen(s) && !reviewOpen(s)) {
+    app.result.again = { label: 'Play next', primary: true, run: () => startMatch(true, app.nextOpp) };
+    app.result.closeLabel = 'Back to Home';
+  }
   persist();
   app.screen = 'home';
   render();
@@ -559,6 +582,14 @@ function launch(btn: HTMLElement, start: () => void) {
     }
   });
 }
+
+// The tactics and "Customise club" folds keep their state across renders (toggle does not bubble: capture it).
+root.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement)) return;
+  if (d.dataset.fold === 'tactics') setTacticsOpen(d.open);
+  else if (d.dataset.fold === 'customise') setCustomiseOpen(d.open);
+}, true);
 
 // Quiet tick for switches and pickers (settings, pause menu, forms); mute and volume apply.
 document.addEventListener('change', (e) => {
@@ -663,6 +694,16 @@ root.addEventListener('click', (e) => {
     case 'play-online':
       if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
       return;
+    case 'bench-swap': {
+      const slot = Number(el.dataset.slot);
+      const b4 = teamStrength(s.squad, s.lineup, s.formation);
+      setLineupSlot(s, slot, id);
+      const af = teamStrength(s.squad, s.lineup, s.formation);
+      toast(af === b4 ? 'XI changed.' : `XI changed. XI strength ${b4} → ${af}.`);
+      pendingFocus = { elId: `slot-${slot}`, data: {}, index: 0 };
+      persist();
+      break;
+    }
     case 'auto-lineup':
       {
         const before = teamStrength(s.squad, s.lineup, s.formation);
@@ -687,7 +728,13 @@ root.addEventListener('click', (e) => {
       const bp = s.market.find((x) => x.id === id);
       const fit = bp ? fitFor(s, bp) : null;
       const r = buyPlayer(s, id);
-      toast(r.ok && bp ? `${r.message} ${fit ? `+${fit.d} at ${fit.label} over ${fit.who}: put them in that slot in Squad.` : 'Bench cover.'}` : r.message, r.ok);
+      toast(r.ok && bp ? (fit ? r.message : `${r.message} Added to the bench.`) : r.message, r.ok);
+      if (r.ok && bp && fit) {
+        // The Start button sits in the market panel, so the next step is one press away (and announced).
+        app.signed = { id: bp.id, slot: fit.slot, label: fit.label, d: fit.d, who: fit.who };
+        pendingFocus = keyFor({ action: 'start-xi', id: bp.id });
+        announce(`${shortName(bp)} would start at ${fit.label}, plus ${fit.d} over ${fit.who}. Start at ${fit.label} is the next button.`);
+      } else if (r.ok) app.signed = null;
       if (r.ok) {
         persist();
         getSound().stinger('train');
@@ -695,13 +742,37 @@ root.addEventListener('click', (e) => {
       }
       break;
     }
+    case 'start-xi': {
+      const slot = Number(el.dataset.slot);
+      const sp = s.squad.find((x) => x.id === id);
+      app.signed = null;
+      if (!sp || !Number.isInteger(slot)) break;
+      const b4 = teamStrength(s.squad, s.lineup, s.formation);
+      setLineupSlot(s, slot, id);
+      const af = teamStrength(s.squad, s.lineup, s.formation);
+      toast(`XI strength ${b4} → ${af}`);
+      announce(`${shortName(sp)} now starts. XI strength ${b4} to ${af}.`);
+      persist();
+      flash = ['.tab[data-screen="squad"]'];
+      break;
+    }
+    case 'signed-dismiss':
+      app.signed = null;
+      announce('Kept on the bench.');
+      break;
     case 'sell':
       app.confirmSell = id;
+      {
+        const sp = s.squad.find((x) => x.id === id);
+        const at = sp ? s.lineup.indexOf(sp.id) : -1;
+        if (sp) announce(`Confirm sale of ${fullName(sp)} for ${formatMoney(salePrice(sp))}.${at >= 0 ? ' He is a starter.' : ''} Press again to sell.`);
+      }
       break;
     case 'sell-confirm': {
+      const budgetBefore = s.budget;
       const r = sellPlayer(s, id);
       app.confirmSell = null;
-      toast(r.message, r.ok);
+      toast(r.ok ? `${r.message} Budget ${formatMoney(budgetBefore)} → ${formatMoney(s.budget)}` : r.message, r.ok);
       if (r.ok) persist();
       break;
     }

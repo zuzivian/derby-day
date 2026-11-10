@@ -10,7 +10,7 @@ import { createMatch, matchMinute, possessionShare, step, type MatchOptions } fr
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { controlsHelp } from './controls.ts';
-import { getSound, homeTeam } from './audio.ts';
+import { getSound, homeTeam, isConceded } from './audio.ts';
 import { fullTimeMoment, goalMoment } from './moments.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
@@ -147,6 +147,13 @@ const MOUSE_HINT = hint(
   `Hold <b>right click</b> for power. Without the ball <b>right click</b> tackles (far away it slides), <b>left click</b> switches player. Your player runs to the pointer, faster the further it is. Also: hold <b>C</b> loft · <b>Shift</b> sprint · <b>E</b> switch · <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1–5</b> mentality (1 Park the bus … 5 High press).`,
 );
 
+/** The same line for a keyboard player: the keys first, the mouse as the extra. */
+const KEYS_HINT = hint(
+  `<b>WASD</b> run · <b>Space</b> pass · <b>F</b> shoot · <b>C</b> loft · <b>E</b> switch · <b>Shift</b> sprint · <b>V</b> camera · <b>Esc</b> pause`,
+  `Hold <b>F</b> for power, hold <b>C</b> to loft. Without the ball <b>Space</b> tackles. Arrows run too. The mouse works any time: <b>left click</b> pass, <b>right click</b> shoot. Also: <b>wheel</b> or <b>+/−</b> zoom · <b>P</b> pause · <b>1–5</b> mentality (1 Park the bus … 5 High press).`,
+);
+const pointerHint = (mode: 'mouse' | 'keys'): string => (coarsePointer() ? TOUCH_HINT : mode === 'keys' ? KEYS_HINT : MOUSE_HINT);
+
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
@@ -188,7 +195,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
         <button class="pad-btn shoot" id="pad-shoot" type="button" aria-label="Shoot">Shoot</button>
       </div>
     </div>
-    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? (coarsePointer() ? TOUCH_HINT : MOUSE_HINT)}</p>
+    <p class="controls-hint clamp" id="controls-hint">${o.controlsHint ?? pointerHint(o.controls ?? 'mouse')}</p>
     <button class="hint-more" id="hint-more" type="button" aria-expanded="false" aria-controls="controls-hint">All controls</button>
   </section>`;
 
@@ -554,6 +561,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   function banner(text: string, ms: number, sub?: string, tone?: string) {
     hud.word(text, ms, sub, tone);
+    root.querySelector<HTMLElement>('#banner')?.classList.remove('conceded');
     bannerUntil = performance.now() + ms;
   }
 
@@ -578,8 +586,14 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     o.onEnd(s, forfeited);
   }
 
+  // The controls line follows the scheme in use: touch WASD and it talks keys, move the mouse and it talks clicks.
+  let hintMode = o.controls ?? 'mouse';
   function frame(now: number) {
     raf = requestAnimationFrame(frame);
+    if (!o.controlsHint && input.mode && input.mode() !== hintMode) {
+      hintMode = input.mode();
+      $('controls-hint').innerHTML = pointerHint(hintMode);
+    }
     // Up to 0.2 s of catch-up per frame, so a slow GPU (or a software renderer) drops frames, not game time.
     const elapsed = Math.min(0.2, (now - last) / 1000);
     last = now;
@@ -669,7 +683,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
     // never the replayed one.
     // (Also while a goal, card or half-time word is up: coach.css hides the tip then, so it must not age or be replaced unseen.)
-    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden])');
+    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden]), .hud-word.conceded:not([hidden])');
     coach?.setPaused(paused || !!replay || wordUp);
     if (!replay) coach?.update(s, paused || wordUp ? 0 : elapsed * 1000);
 
@@ -691,11 +705,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
       const mo = goalMoment(s.goals, s.goals.length - 1, { derby, dist: goalDist });
-      banner(mo?.word ?? 'Goal!', mo ? 2400 : 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      // A goal the human's side let in: a small, quiet banner and a dim dark flash (fx.ts drops the confetti too).
+      const conceded = isConceded(s, ev);
+      if (conceded) {
+        banner(`Goal · ${s.teams[ev.team].name}`, 1800, `${ev.scorer} ${ev.minute}'`);
+        root.querySelector<HTMLElement>('#banner')?.classList.add('conceded');
+      } else banner(mo?.word ?? 'Goal!', mo ? 2400 : 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
       // A quick white flash over the pitch as the net moves (CSS drops it under reduced motion).
-      wrapEl.classList.remove('goal-flash');
+      wrapEl.classList.remove('goal-flash', 'conceded');
       void wrapEl.offsetWidth;
       wrapEl.classList.add('goal-flash');
+      if (conceded) wrapEl.classList.add('conceded');
       // The scorer's number pops (the sides' own score cells, not the HUD's text writes below).
       const cell = ev.team === 0 ? sbH : sbA;
       cell.classList.remove('bump');

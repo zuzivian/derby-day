@@ -8,7 +8,7 @@
 import { attackDir } from '../sim/field.ts';
 import type { MatchState } from '../sim/types.ts';
 import { goalMoment } from './moments.ts';
-import { crowdLevel, goalMood, resultMood, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
+import { crowdLevel, goalMood, isConceded, resultMood, detectSfx, getSound, initialSnapshot, snapshot, type SfxEvent, type Snapshot } from './audio.ts';
 
 export interface Juice {
   /** Call after every sim step with the live state. */
@@ -264,7 +264,15 @@ export function mountJuice(root: HTMLElement, s: MatchState, ex?: { derby?: bool
     }
   };
 
-  function goal(team: 0 | 1, big: boolean) {
+  function goal(team: 0 | 1, big: boolean, conceded = false) {
+    if (conceded) {
+      // A goal let in: no shake, no confetti, a soft dark dip instead of the white flash.
+      if (!reducedMotion() && flash) {
+        flash.style.background = '#000';
+        animate(flash, [{ opacity: 0 }, { opacity: 0.28, offset: 0.2 }, { opacity: 0 }], { duration: 700, easing: 'ease-out' });
+      }
+      return;
+    }
     buzz(big ? [40, 60, 80, 60, 140] : [40, 60, 80]);
     if (reducedMotion()) {
       // No shake or particles: a slow, soft wash of the scorer's colour.
@@ -300,7 +308,7 @@ export function mountJuice(root: HTMLElement, s: MatchState, ex?: { derby?: bool
     if (ev.type === 'goal') {
       const mo = goalMoment(cur.goals, cur.goals.length - 1, { derby: ex?.derby, dist: ex?.shotDist?.() });
       const m = goalMood(cur, ev.team);
-      goal(ev.team, mo?.level === 2);
+      goal(ev.team, mo?.level === 2, isConceded(cur, cur.goals[cur.goals.length - 1]));
       // A big moment: the home cheer holds longer, and the biggest add a short win jingle over it.
       sound.react(m.side, m.big || !!mo, mo?.level ?? 0);
       if (mo?.level === 2 && m.side === 'for') sound.stinger('win');

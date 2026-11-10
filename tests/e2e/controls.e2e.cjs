@@ -430,6 +430,15 @@ test('keys still work as the secondary scheme: WASD runs, Shift sprints, Space p
   expect((await ball(page)).vx, 'Space passed the ball on').toBeGreaterThan(3);
 });
 
+test('training ground: Tab follows the visual order: Leave practice, Restart, Pause, then the pitch', async (t) => {
+  const page = await openApp(t, { prefs: PREFS, renderer: '2d' });
+  await goTab(page, SEL.clubScreen);
+  await page.locator('[data-action="replay-tutorial"]').click();
+  await page.waitForSelector('#tr-pitch');
+  const order = await page.$$eval('.training button, .training canvas', (els) => els.filter((e) => e.offsetParent !== null && !e.closest('[hidden]') && e.tabIndex >= 0).map((e) => e.id));
+  expect(order.slice(0, 4), 'DOM order of the first stops').toEqual(['tr-skip', 'tr-again', 'tr-pause', 'tr-pitch']);
+});
+
 test('training ground: the move and pass drills are done with the pointer', async (t) => {
   // The 2D view: these tests place the pointer by world metres, and the 3D camera follows play.
   const page = await openApp(t, { prefs: PREFS, e2eHook: true, renderer: '2d' });

@@ -296,7 +296,7 @@ test('onboarding: the first match ends in a celebration with XP that names what 
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   const text = await page.locator('.ob-celebrate').innerText();
   expect(text, 'XP for the match and the milestone').toMatch(/\+\d+ XP/);
-  expect(text, 'first match milestone').toContain('first match 80');
+  expect(text, 'first match milestone').toContain('First match 80');
   expect(text, 'no "practice (Easy)" jargon').notToContain('practice');
   expect(text, 'names what level 2 opens, once').toMatch(/Now open: Squad, vs Player and Practice\./);
   await page.waitForFunction(() => /(won|lost|draw)[^.]*\.\s*\d+ XP earned\./i.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
@@ -461,6 +461,7 @@ test('onboarding: at level 1-2 the header badge is not a button; from the Club t
 test('onboarding: a club can be renamed from the Club tab at any time', async (t) => {
   const page = await openApp(t, { level: 4, mutateSave: (save) => { save.club.played = 9; } });
   await page.locator(SEL.tabFor('club')).click();
+  await page.locator('.customise-fold > summary').click(); // rename lives under "Customise club"
   await page.locator('#club-rename').fill('Harbour Lights');
   await page.locator('.rename-form [type="submit"]').click();
   await page.waitForFunction(() => /Harbour Lights/.test(document.querySelector('.club-name')?.textContent || ''));

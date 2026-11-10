@@ -5,7 +5,7 @@ import { formationOf, type Role } from '../sim/constants.ts';
 import { tacticsPanel } from './tactics.ts';
 import { autoLineup, teamStrength, type LadderClub } from '../meta/club.ts';
 import { kFactor } from '../meta/elo.ts';
-import { askingPrice, formatMoney, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
+import { askingPrice, formatMoney, MARKET_REFRESH_MS, signed, ladderTable, MIN_SQUAD, salePrice, type ResultSummary, type Save } from '../meta/game.ts';
 import { isUnlocked, squadCap, unlockLevel, type UnlockId } from '../meta/levels.ts';
 import { ATTR_KEYS, ATTR_LABEL, ATTR_NAME, fullName, marketValue, shortName, nation, overall, ratingAs, trainingRange, type AttrKey, type Player } from '../meta/player.ts';
 import type { CrestPattern } from '../meta/names.ts';
@@ -89,6 +89,8 @@ export interface App {
   result: ResultView | null;
   /** The last training gain, for the badge on its row. */
   gain?: { id: string; attr: AttrKey; n: number; up: boolean } | null;
+  /** The player just signed who would upgrade a slot: Transfers offers "Start at <POS>" until the screen changes. */
+  signed?: { id: string; slot: number; label: string; d: number; who: string } | null;
 }
 
 /** Which unlock opens each tab (Competitions opens with either the Cup or the League). */
@@ -124,8 +126,9 @@ export const PRACTICE = [
 export const practiceUnlocked = (save: Save, id: string): boolean => isUnlocked(save, id === 'hard' ? 'practice-hard' : id === 'normal' ? 'practice-normal' : 'practice');
 
 /** One helpful line under a ranked loss or draw: what the match still gave you. */
-export function rankedNote(gf: number, ga: number, sessions: number, trainingOpen: boolean): string {
-  const lead = gf === ga ? 'A point shared.' : ga - gf === 1 ? 'So close.' : 'Not this time.';
+export function rankedNote(gf: number, ga: number, sessions: number, trainingOpen: boolean, squadOpen = false): string {
+  // A heavy defeat (3+) with Squad open offers a concrete next step instead of a bare commiseration.
+  const lead = gf === ga ? 'A point shared.' : ga - gf === 1 ? 'So close.' : ga - gf >= 3 && squadOpen ? 'Not this time. Try High press from Pause, or rework the XI in Squad.' : 'Not this time.';
   return `${lead} ${trainingOpen && sessions > 0 ? `Your ${sessions} training session${sessions === 1 ? ' is' : 's are'} waiting in Training.` : 'The prize money and XP are yours either way.'}`;
 }
 
@@ -254,21 +257,18 @@ function nextUp(s: Save): string {
  * The Club tab: everything that used to crowd the first view. Elo history and
  * results, replays, the club level panel, club news, the tutorial and reset.
  */
+/** Whether "Customise club" is expanded: kept across renders, opened when a level-up link targets a control inside it. */
+let customiseOpen = false;
+export const setCustomiseOpen = (open: boolean): void => void (customiseOpen = open);
+
 export function clubScreen(app: App): string {
   const s = app.save;
+  const fresh = !s.history.length && s.eloHistory.length <= 1;
+  const identity = identityControls(s);
   return `
   <div class="club-grid">
     ${nextUp(s)}
-    <article class="panel form">
-      <h2 class="eyebrow">Club rating (Elo)</h2>
-      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
-      ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
-      <h3 class="eyebrow">Recent</h3>
-      ${s.history.length > 1 ? `<p class="form-line">Form ${formPips(s, 8)}</p>` : ''}
-      ${formChips(s)}
-      ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
-    </article>
-
+    ${levelPanel(s)}
     <article class="panel news">
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n, i) => `<li${i ? '' : ' class="latest"'}>${esc(n)}</li>`).join('')}</ul>
@@ -277,19 +277,40 @@ export function clubScreen(app: App): string {
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
         <button class="btn small" data-action="open-backup">Back up or restore</button>
       </div>
-      ${identityControls(s)}
-      <form class="rename-form" data-form="rename" novalidate>
-        <label for="club-rename">Club name</label>
-        <div class="rename-row">
-          <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
-          <button class="btn small" type="submit">Save name</button>
-          ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
-        </div>
-        <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
-      </form>
       <p class="muted small">Saved in this browser only. Use Back up or restore to keep a copy.</p>
+    </article>
+    <article class="panel form">
+      <h2 class="eyebrow">Club rating (Elo)</h2>
+      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
+      ${fresh
+        ? emptyState('Play your first ranked match to fill your Elo, form and replays.', LADDER)
+        : `${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
+      <h3 class="eyebrow">Recent</h3>
+      ${s.history.length > 1 ? `<p class="form-line">Form ${formPips(s, 8)}</p>` : ''}
+      ${formChips(s)}`}
+      ${isUnlocked(s, 'replays') ? recentReplaysHtml(fresh) : ''}
+    </article>
+    ${historyPanel(s)}
+    <article class="panel customise">
+      <details class="customise-fold" data-fold="customise"${customiseOpen ? ' open' : ''}>
+        <summary><h2 class="eyebrow" id="customise-title">Customise club</h2><span class="muted small">${identity ? 'Crest, kit colours and club name' : 'Club name'}</span><span class="tac-chev" aria-hidden="true"></span></summary>
+        <div class="customise-body">
+          ${identity}
+          <form class="rename-form" data-form="rename" novalidate>
+            <label for="club-rename">Club name</label>
+            <div class="rename-row">
+              <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
+              <button class="btn small" type="submit">Save name</button>
+              ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
+            </div>
+            <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
+          </form>
+        </div>
+      </details>
+    </article>
+    <article class="panel danger-panel">
       <div class="danger-zone" role="group" aria-labelledby="dz-title">
-        <h3 id="dz-title" class="eyebrow">Danger zone</h3>
+        <h2 id="dz-title" class="eyebrow">Danger zone</h2>
         ${app.confirmReset
           ? `<p><strong>Delete ${esc(s.club.name)}?</strong> Its squad and ${s.club.played} matches are removed from this browser. Back it up first if you might want it back. This cannot be undone.</p>
         <div class="dz-actions"><button class="btn small" data-action="reset-cancel">Keep it</button><button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button></div>`
@@ -297,9 +318,6 @@ export function clubScreen(app: App): string {
         <div class="dz-actions"><button class="btn small danger" data-action="reset">Start a new club</button></div>`}
       </div>
     </article>
-
-    ${levelPanel(s)}
-    ${historyPanel(s)}
   </div>`;
 }
 
@@ -347,10 +365,10 @@ function profileInfo(s: Save, p: Player): string {
 /** Read-only attribute bars, each with its number as text. */
 const attrBars = (p: Player): string => `<ul class="attr-list ro">${ATTR_KEYS.filter((k) => k !== 'goalkeeping' || p.role === 'GK').map((k) => `<li><span class="attr-name">${ATTR_NAME[k]}</span><span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span><span class="attr-val">${p.attrs[k]}</span></li>`).join('')}</ul>`;
 
-function playerRow(p: Player, extra: string, starter = false, showNumber = true, prof?: { s: Save; open: boolean }): string {
+function playerRow(p: Player, extra: string, starter = false, showNumber = true, prof?: { s: Save; open: boolean }, nameExtra = ''): string {
   const name = prof
     ? `<button class="name-btn" data-action="profile" data-id="${p.id}" aria-expanded="${prof.open}" aria-controls="prof-${p.id}">${nameCell(p)}</button>`
-    : nameCell(p);
+    : nameCell(p) + nameExtra;
   return `<tr${starter ? ' class="starter"' : ''}>
     ${showNumber ? `<td class="num">${p.number}</td>` : ''}
     <td class="name">${name}${starter ? ' <span class="pill">XI</span>' : ''}</td>
@@ -367,13 +385,13 @@ function playerRow(p: Player, extra: string, starter = false, showNumber = true,
 const attrHead = ATTR_KEYS.map((k) => `<th class="num opt" title="${ATTR_NAME[k]}">${ATTR_LABEL[k]}</th>`).join('');
 
 /** The biggest upgrade `p` would be on a current starter, by slot (rated as that slot's role), or null when nobody in the XI is worse. */
-export function fitFor(s: Save, p: Player): { d: number; label: string; who: string } | null {
-  let best: { d: number; label: string; who: string } | null = null;
+export function fitFor(s: Save, p: Player): { d: number; label: string; who: string; slot: number } | null {
+  let best: { d: number; label: string; who: string; slot: number } | null = null;
   formationOf(s.formation).forEach((f, i) => {
     const cur = s.squad.find((x) => x.id === s.lineup[i]);
     if (!cur) return;
     const d = ratingAs(p, f.role) - ratingAs(cur, f.role);
-    if (d > 0 && (!best || d > best.d)) best = { d, label: f.label, who: cur.last };
+    if (d > 0 && (!best || d > best.d)) best = { d, label: f.label, who: cur.last, slot: i };
   });
   return best;
 }
@@ -390,11 +408,17 @@ export function squadScreen(app: App): string {
       .join('');
     // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board, with
     // room between keeper and centre-backs; y keeps wing-backs' badges and pickers on the pitch.
+    // The best bench player for this slot, when he would rate higher there than the starter.
+    const bench = cur ? s.squad.filter((p) => !s.lineup.includes(p.id)).sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))[0] : undefined;
+    const up = bench && cur ? ratingAs(bench, f.role) - ratingAs(cur, f.role) : 0;
+    const hint = bench && up > 0
+      ? `<button type="button" class="bench-hint" data-action="bench-swap" data-slot="${slot}" data-id="${bench.id}" aria-label="${esc(`Swap in ${fullName(bench)} for ${fullName(cur!)} at ${f.label}: plus ${up} in that slot`)}"><span aria-hidden="true">▲ +${up} on bench</span></button>`
+      : '';
     return `<div class="slot" style="--x:${(5 + ((f.x - 0.02) / 0.58) * 87).toFixed(1)}%;--y:${(5 + f.y * 90).toFixed(1)}%">
       <span class="magnet">${cur?.number ?? '?'}</span>
       <label class="slot-label"><span class="slot-role">${f.label}</span>
         <select id="slot-${slot}" data-change="slot" data-slot="${slot}">${options}</select>
-      </label>
+      </label>${hint}
     </div>`;
   }).join('');
   return `
@@ -402,12 +426,13 @@ export function squadScreen(app: App): string {
     ${academyPanel(app)}
     ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacking <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacks <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength" title="The average rating of your eleven, each rated for the slot he fills">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b><span class="muted small strength-note">avg. of the XI in their slots</span></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
-    <article class="panel">
+    <article class="panel squad-table">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
+      <p class="attr-legend" aria-hidden="true"><span class="lg t-a">80+ elite</span><span class="lg t-b">68–79 good</span><span class="lg t-c">55–67 fair</span><span class="lg t-d">under 55 weak</span></p>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id), true, { s, open: app.profile === p.id })).join('')}</tbody>
@@ -421,37 +446,50 @@ export function squadScreen(app: App): string {
 export function transfersScreen(app: App): string {
   const s = app.save;
   const roles: (Role | 'ALL')[] = ['ALL', 'GK', 'DEF', 'MID', 'FWD'];
-  const market = s.market.filter((p) => app.marketRole === 'ALL' || p.role === app.marketRole);
+  // Upgrades first (stable within each group, so the OVR order of the market holds).
+  const rows = s.market.filter((p) => app.marketRole === 'ALL' || p.role === app.marketRole).map((p) => ({ p, fit: fitFor(s, p) }));
+  const market = [...rows.filter((r) => r.fit), ...rows.filter((r) => !r.fit)];
   const cap = squadCap(s);
   const full = s.squad.length >= cap;
+  const sg = app.signed;
+  const signedP = sg ? s.squad.find((x) => x.id === sg.id) : undefined;
+  const signedBar = sg && signedP && s.lineup[sg.slot] !== sg.id
+    ? `<div class="signed-bar"><span><b>${esc(shortName(signedP))}</b> would start at ${sg.label}: +${sg.d} over ${esc(sg.who)}.</span><button class="btn small primary" data-action="start-xi" data-id="${signedP.id}" data-slot="${sg.slot}" aria-label="Start ${esc(fullName(signedP))} at ${sg.label}, replacing ${esc(sg.who)}">Start at ${sg.label}</button><button class="btn small" data-action="signed-dismiss" aria-label="Keep ${esc(shortName(signedP))} on the bench">Bench</button></div>`
+    : '';
   return `
   <div class="stack">
     <article class="panel">
       <div class="board-head">
-        <h2 class="eyebrow">Transfer market<span class="eyebrow-more"> · refreshes after every ranked match</span></h2>
+        <h2 class="eyebrow">Transfer market<span class="eyebrow-more"> · refreshes after every match</span></h2>
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
+      ${signedBar}
       <div class="table-scroll"><table class="tbl has-action">
         <thead><tr><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
-        <tbody>${market.length ? market.map((p) => {
+        <tbody>${market.length ? market.map(({ p, fit }) => {
           const price = askingPrice(p);
           const can = price <= s.budget && !full;
-          const fit = fitFor(s, p);
-          const note = `<span class="mk-note${fit ? ' up' : ''}">${fit ? `+${fit.d} at ${fit.label}` : 'bench'}</span>${price > s.budget ? `<span class="mk-note short">${formatMoney(price - s.budget)} short</span>` : ''}`;
-          return playerRow(p, `<td class="num mk-price"${fit ? ` title="An upgrade at ${fit.label} on ${esc(fit.who)} (+${fit.d} in that slot)"` : ''}>${formatMoney(price)}${note}</td><td><button class="btn small${can ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false);
+          const note = `${fit ? '' : '<span class="mk-note">bench</span>'}${price > s.budget ? `<span class="mk-note short">${formatMoney(price - s.budget)} short</span>` : ''}`;
+          const sub = `<span class="name-sub">${p.age} · POT ${potentialText(p)}</span>${fit ? `<span class="up-chip">Upgrade +${fit.d} at ${fit.label}</span>` : ''}`;
+          return playerRow(p, `<td class="num mk-price"${fit ? ` title="An upgrade at ${fit.label} on ${esc(fit.who)} (+${fit.d} in that slot)"` : ''}>${formatMoney(price)}${note}</td><td><button class="btn small${can && fit ? ' primary' : ''}" data-action="buy" data-id="${p.id}" aria-label="Sign ${esc(fullName(p))}${fit ? `, an upgrade of ${fit.d} at ${fit.label}` : ''}"${can ? '' : ' aria-disabled="true"'}>Sign</button></td>`, false, false, undefined, sub);
         }).join('') : `<tr><td colspan="15" class="muted">No players at that position right now. Try another filter.</td></tr>`}</tbody>
       </table></div>
-      <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. Player-to-player trading arrives with accounts; see the roadmap.</p>
+      <p class="muted small">Budget ${formatMoney(s.budget)}${full ? ` · squad full (${cap}), sell before you sign` : ''}. New names arrive after every match, and when you open the game more than ${MARKET_REFRESH_MS / 3600000} hours after the last refresh.</p>
     </article>
     <article class="panel">
       <h2 class="eyebrow">Sell<span class="eyebrow-more" id="sell-more" aria-hidden="true"> · CPU clubs pay 80% of value · minimum squad ${MIN_SQUAD}</span></h2>
       <div class="table-scroll"><table class="tbl compact has-action" aria-label="Sell" aria-describedby="sell-more">
         <thead><tr><th class="num opt-phone">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th><th class="num">Offer</th><th><span class="sr-only">Sell</span></th></tr></thead>
-        <tbody>${s.squad.map((p) => `<tr${s.lineup.includes(p.id) ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}${s.lineup.includes(p.id) ? ' <span class="pill">XI</span>' : ''}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
+        <tbody>${s.squad.map((p) => {
+          const slot = s.lineup.indexOf(p.id);
+          const slotLabel = slot >= 0 ? (formationOf(s.formation)[slot]?.label ?? p.role) : '';
+          const confirmText = slot >= 0 ? `Confirm: sells a starter (${slotLabel}) for ${formatMoney(salePrice(p))}` : `Confirm sale of ${fullName(p)} for ${formatMoney(salePrice(p))}`;
+          return `<tr${slot >= 0 ? ' class="starter"' : ''}><td class="num opt-phone">${p.number}</td><td class="name">${nameCell(p)}${slot >= 0 ? ` <span class="pill sell-xi">XI<span class="sr-only"> starter at ${slotLabel}</span></span>` : ''}</td><td class="opt">${esc(nation(p))}</td><td class="num opt">${p.age}</td><td class="opt-narrow"><span class="pos pos-${p.role}">${p.role}</span></td><td class="num ovr">${overall(p)}</td><td class="num muted opt">${potentialText(p)}</td><td class="num">${formatMoney(salePrice(p))}</td><td>${
           app.confirmSell === p.id
-            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="Confirm sale of ${esc(fullName(p))} for ${formatMoney(salePrice(p))}">Confirm<span class="opt-phone">sale</span></button>`
+            ? `<button class="btn small danger" data-action="sell-confirm" data-id="${p.id}" aria-label="${esc(confirmText)}">Confirm<span class="opt-phone">sale</span></button>${slot >= 0 ? `<span class="mk-note short" aria-hidden="true">sells a starter (${slotLabel})</span>` : ''}`
             : `<button class="btn small" data-action="sell" data-id="${p.id}" aria-label="Sell ${esc(fullName(p))}">Sell</button>`
-        }</td></tr>`).join('')}</tbody>
+        }</td></tr>`;
+        }).join('')}</tbody>
       </table></div>
     </article>
   </div>`;
@@ -459,20 +497,33 @@ export function transfersScreen(app: App): string {
 
 // ---------------------------------------------------------------------------
 
+/** How much each attribute counts toward `p`'s rating in his own role (0 = not at all), measured through ratingAs so it follows the real weights. */
+export function roleWeights(p: Player): Record<AttrKey, number> {
+  const w = {} as Record<AttrKey, number>;
+  for (const k of ATTR_KEYS) w[k] = (ratingAs({ ...p, attrs: { ...p.attrs, [k]: 100 } }, p.role) - ratingAs({ ...p, attrs: { ...p.attrs, [k]: 0 } }, p.role)) / 100;
+  return w;
+}
+
 export function trainingScreen(app: App): string {
   const s = app.save;
   const p = s.squad.find((x) => x.id === app.trainee) ?? firstRising(s) ?? s.squad[0];
   const relevant = (k: AttrKey) => k !== 'goalkeeping' || p.role === 'GK';
+  const w = roleWeights(p);
+  const byWeight = ATTR_KEYS.filter(relevant).sort((a, b) => w[b] - w[a]); // stable: ties keep the list order
+  const key = new Set(byWeight.slice(0, 2).filter((k) => w[k] > 0));
+  const best = byWeight.find((k) => w[k] > 0 && p.attrs[k] < 99); // the suggested session: the biggest lever that can still grow
+  const sessions = `${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left`;
   return `
   <div class="training-grid">
     <article class="panel roster">
-      <h2 class="eyebrow train-head">Training<span class="train-left${s.trainingPoints ? '' : ' none'}">${s.trainingPoints} session${s.trainingPoints === 1 ? '' : 's'} left</span></h2>
+      <h2 class="eyebrow train-head">Training<span class="train-left${s.trainingPoints ? '' : ' none'}">${sessions}</span></h2>
       <ul class="roster-list">${s.squad.map((x) => `<li><button class="roster-btn${x.id === p.id ? ' on' : ''}" data-action="trainee" data-id="${x.id}" aria-pressed="${x.id === p.id}">
         ${chip(x, 'roster-name')}<span class="roster-age">${x.age}</span><span class="roster-ovr">${overall(x)}<small>/${potentialText(x)}</small></span>
       </button></li>`).join('')}</ul>
       <p class="muted small train-rule">Sessions earned per match: ranked win +3, other results +2, friendlies +1.</p>
     </article>
     <article class="panel trainee">
+      <div class="train-sticky${s.trainingPoints ? '' : ' none'}" aria-hidden="true"><b>${sessions}</b><span class="ts-name">${esc(fullName(p))}</span><span class="ts-ovr">OVR ${overall(p)}</span></div>
       <div class="trainee-head">
         <span class="magnet big">${p.number}</span>
         <div><h2>${esc(fullName(p))}</h2><div class="muted">${p.role} · ${p.age} · ${esc(nation(p))}</div></div>
@@ -483,17 +534,18 @@ export function trainingScreen(app: App): string {
         const r = trainingRange(p, ATTR_KEYS.find((k) => p.attrs[k] < 99) ?? 'pace'); // the same for every attribute below the cap (maxed ones say Max)
         const say = !s.trainingPoints ? 'No sessions left. Play a match to earn more.'
           : r.odds < 1 ? `At potential: a session adds +1 about ${Math.round(r.odds * 100)}% of the time, otherwise nothing.`
-          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `+${r.lo} to +${r.hi}`} to the attribute you pick.`;
+          : `One session adds ${r.lo === r.hi ? '+' + r.hi : `+${r.lo} to +${r.hi}`} to the attribute you pick.${best ? ` Best for a ${p.role}: ${ATTR_NAME[best].toLowerCase()}.` : ''}`;
         return `<p class="train-preview${s.trainingPoints ? '' : ' none'}">${say}</p>`;
       })()}
       <ul class="attr-list">${ATTR_KEYS.filter(relevant).map((k) => {
         const g = app.gain && app.gain.id === p.id && app.gain.attr === k ? app.gain : null;
         const max = p.attrs[k] >= 99;
-        return `<li>
-        <span class="attr-name">${ATTR_NAME[k]}</span>
+        const off = w[k] === 0;
+        return `<li${off ? ' class="off"' : k === best ? ' class="best"' : ''}>
+        <span class="attr-name">${ATTR_NAME[k]}${key.has(k) ? `<span class="key-tag">Key for ${p.role}</span>` : ''}${off ? `<span class="sr-only"> (does not affect a ${p.role}'s rating)</span>` : ''}</span>
         <span class="bar" aria-hidden="true"><span style="width:${p.attrs[k]}%"></span></span>
         <span class="attr-val${g?.n ? ' tick' : ''}">${p.attrs[k]}${g ? `<b class="gain${g.n ? '' : ' zero'}" aria-hidden="true">${g.n ? '+' + g.n : '+0'}</b>` : ''}</span>
-        <button class="btn small" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="${max ? `${ATTR_NAME[k]} is at its maximum, ${p.attrs[k]}` : `Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}`}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
+        <button class="btn small${k === best && s.trainingPoints > 0 ? ' primary' : ''}" data-action="train" data-id="${p.id}" data-attr="${k}" aria-label="${max ? `${ATTR_NAME[k]} is at its maximum, ${p.attrs[k]}` : `Train ${ATTR_NAME[k].toLowerCase()}, now ${p.attrs[k]}${key.has(k) ? `, key for ${p.role}${k === best ? ', suggested' : ''}` : off ? `, does not affect ${p.role} rating` : ''}`}"${s.trainingPoints > 0 && !max ? '' : ' aria-disabled="true"'}>${max ? 'Max' : 'Train'}</button>
       </li>`;
       }).join('')}</ul>
       <p class="muted small">Under-21s grow fastest, and a player at their potential rarely improves.</p>
@@ -637,8 +689,8 @@ function cardsRow(a: TeamStats, b: TeamStats, us: string, them: string): string 
   </li>`;
 }
 
-function rewardChip(cls: string, icon: string, label: string, main: string, sub = ''): string {
-  return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main">${main}</b></li>`;
+function rewardChip(cls: string, icon: string, label: string, main: string, sub = '', count = false): string {
+  return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main"${count ? ' data-count' : ''}>${main}</b></li>`;
 }
 
 export const CUP_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V6h3V3Zm0 5H6a2 2 0 0 0 1 1.7V8Zm10 0v1.7A2 2 0 0 0 18 8h-1Z" fill="currentColor"/></svg>`;
@@ -662,8 +714,8 @@ function resultModal(app: App): string {
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
-        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 1 ? 'up' : d < -1 ? 'down' : 'level'}`, d > 1 ? RS_UP : d < -1 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
-        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`) : '',
+        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 1 ? 'up' : d < -1 ? 'down' : 'level'}`, d > 1 ? RS_UP : d < -1 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`, true) : '',
+        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`, true) : '',
         // A forfeit's cost (forfeitCost in game.ts), so walking off is never free.
         sum.fine || sum.owed ? rewardChip('rs-money', COIN, 'Forfeit fine', sum.fine ? `−${formatMoney(sum.fine)}` : '±0', sum.owed ? `and ${sum.owed} XP owed from your next matches` : '') : '',
         sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : `kept until Training opens at level ${unlockLevel(app.save, 'training')}`) : '',
@@ -730,9 +782,11 @@ function resultModal(app: App): string {
       </div>
       </div>
       <footer class="rs-foot">
-        ${again && r.again?.primary ? again : ''}
-        <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Next match' : 'Back to the club'))}</button>
-        ${again && !r.again?.primary ? again : ''}
+        <div class="rs-actions">
+          ${again && r.again?.primary ? again : ''}
+          <button class="btn${r.again?.primary ? '' : ' primary'} big rs-close" data-action="close-result">${esc(r.closeLabel ?? (r.ranked ? 'Continue' : 'Back to the club'))}</button>
+          ${again && !r.again?.primary ? again : ''}
+        </div>
         ${isUnlocked(app.save, 'replays') ? resultReplayHtml() : ''}
       </footer>
     </div>

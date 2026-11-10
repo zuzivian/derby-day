@@ -409,3 +409,80 @@ test('replay: on a phone held sideways the picture is large and the controls sit
   }
   await page.keyboard.press('Escape');
 });
+
+test('replay: on a big desktop the card grows to 1120 px and the shortcuts are grouped under a label', async (t) => {
+  const big = await openApp(t, { width: 1440, height: 900 });
+  await storeReplay(big, goalCode());
+  await big.locator('.rp-row [data-replay="watch"]').click();
+  await big.locator(VIEWER).waitFor();
+  const card = await big.locator('.replay-card').boundingBox();
+  expect(card.width, 'card wider than the old 880 cap').toBeGreaterThan(1000);
+  expect(card.width, 'card capped at 1120').toBeLessThanOrEqual(1120.5);
+  const stage = await big.locator('#rv-canvas').boundingBox();
+  expect(stage.width, 'picture still sized from the viewport height').toBeLessThanOrEqual((900 - 350) * 1.531 + 1);
+  expect(await big.locator('.rp-keys-label').innerText(), 'label').toMatch(/shortcuts/i);
+  expect(await big.locator('.rp-keys kbd').count(), 'key caps').toBeGreaterThanOrEqual(8);
+  const wide = await pageWidths(big);
+  expect(wide.scrollWidth, 'no sideways scroll').toBeLessThanOrEqual(wide.innerWidth);
+  await big.keyboard.press('Escape');
+
+  const small = await openApp(t, { width: 1100, height: 900 });
+  await storeReplay(small, goalCode());
+  await small.locator('.rp-row [data-replay="watch"]').click();
+  await small.locator(VIEWER).waitFor();
+  expect((await small.locator('.replay-card').boundingBox()).width, 'below 1280 px the card keeps its 880 cap').toBeLessThanOrEqual(880.5);
+});
+
+test('replay: with touch every viewer control is a 44 px target, the legend is hidden, and a phone on its side needs no scrolling', async (t) => {
+  for (const [w, h] of [[390, 844], [750, 342]]) {
+    const page = await openApp(t, { width: w, height: h, hasTouch: true });
+    await storeReplay(page, goalCode());
+    await page.locator('.rp-row [data-replay="watch"]').click();
+    await page.locator(VIEWER).waitFor();
+    const r = await page.evaluate(() => {
+      const out = {};
+      const sels = { close: '[data-rp="close"]', prev: '[data-rp="prev"]', play: '[data-rp="play"]', next: '[data-rp="next"]', slow: '[data-rp="slow"]', copy: '[data-rp="copy"]', scrub: '#rv-scrub', chip: '.rp-clips .btn', mark: '.rp-mark' };
+      for (const [k, s] of Object.entries(sels)) {
+        const el = document.querySelector(s);
+        if (el) out[k] = Math.round(el.getBoundingClientRect().height);
+      }
+      // The camera chip keeps a compact look with a 44 px invisible margin (::before inset -8px).
+      const cam = document.querySelector('.rp-cam:not([hidden])');
+      if (cam) out.cam = Math.round(cam.getBoundingClientRect().height + 16);
+      const layer = document.querySelector('.replay-layer');
+      return { out, keys: getComputedStyle(document.querySelector('.rp-keys')).display, over: layer.scrollHeight - layer.clientHeight };
+    });
+    for (const [k, v] of Object.entries(r.out)) expect(v, `${w}x${h}: ${k} is at least 44 px tall`).toBeGreaterThanOrEqual(44);
+    expect(r.keys, `${w}x${h}: keyboard legend hidden on touch`).toBe('none');
+    expect(r.over, `${w}x${h}: the viewer does not scroll`).toBeLessThanOrEqual(0);
+    await page.keyboard.press('Escape');
+  }
+});
+
+test('replay: where the browser can share, touch users get "Share replay"; a cancelled sheet does nothing and a failed one falls back to copying', async (t) => {
+  const code = goalCode();
+  for (const mode of ['ok', 'abort', 'fail']) {
+    const page = await openApp(t, {
+      width: 390, height: 844, hasTouch: true,
+      init: `(() => { const m = ${JSON.stringify(mode)}; window.__shared = [];
+        navigator.share = (d) => { window.__shared.push(d); return m === 'ok' ? Promise.resolve() : Promise.reject(Object.assign(new Error('x'), { name: m === 'abort' ? 'AbortError' : 'NotAllowedError' })); };
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText: (c) => { window.__clip = c; return Promise.resolve(); } }, configurable: true }); })()`,
+    });
+    await storeReplay(page, code);
+    const btn = page.locator('.rp-row [data-replay="copy"]');
+    expect(await btn.innerText(), `${mode}: label says Share`).toBe('Share');
+    expect(await btn.getAttribute('aria-label'), `${mode}: accessible name`).toMatch(/^Share replay code/);
+    await btn.click();
+    await page.waitForTimeout(300);
+    const st = await page.evaluate(() => ({ shared: window.__shared, clip: window.__clip || null, toast: !!document.querySelector('.toast'), box: !!document.querySelector('.replay-codebox') }));
+    expect(st.shared.length, `${mode}: share sheet opened once`).toBe(1);
+    expect(st.shared[0], `${mode}: payload`).toEqual({ title: 'Derby Day replay', text: code });
+    if (mode === 'fail') expect(st.clip, 'failed share falls back to the clipboard').toBe(code);
+    else expect(st.clip, `${mode}: clipboard untouched`).toBe(null);
+    if (mode === 'abort') expect(st.toast || st.box, 'cancelled: nothing shown').toBe(false);
+    await page.locator('.rp-row [data-replay="watch"]').click();
+    await page.locator(VIEWER).waitFor();
+    expect(await page.locator('[data-rp="copy"]').innerText(), `${mode}: viewer button label`).toBe('Share replay');
+    await page.keyboard.press('Escape');
+  }
+});

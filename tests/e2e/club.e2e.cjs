@@ -1,7 +1,7 @@
 // Club management: training, transfers, lineup persistence.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, nextVisit, goTab, readSave, pageWidths } = require('./lib/helpers.cjs');
+const { SEL, openApp, nextVisit, goTab, readSave, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
 
 test('training spends a session and shows a toast', async (t) => {
   const page = await openApp(t);
@@ -88,6 +88,8 @@ test('tactics board: formation and mentality are radio groups that save, survive
     expect(await page.locator(SEL.formationChecked).getAttribute('value'), 'default formation').toBe('4-4-2');
     expect(await page.locator(SEL.mentalityChecked).getAttribute('value'), 'default mentality').toBe('balanced');
 
+    // On a phone the tactics fold starts collapsed to a one-line summary: open it first.
+    if (!(await page.locator('.tac-fold').evaluate((d) => d.open))) await page.locator('.tac-fold > summary').click();
     // Pick by clicking the card (the label), the way a mouse user does.
     await page.locator(`label:has(${SEL.formationRadio('3-5-2')})`).click();
     let save = await readSave(page);
@@ -131,4 +133,240 @@ test('mouse targets are at least 24 px: the profile name buttons in the squad', 
     expect(hs.length, `${screen}: name buttons`).toBeGreaterThan(0);
     expect(Math.min(...hs), `${screen}: the smallest name button`).toBeGreaterThanOrEqual(24);
   }
+});
+
+test('Sell keeps focus on the same row when it becomes Confirm, and announces it', async (t) => {
+  const page = await openApp(t);
+  await goTab(page, 'transfers');
+  const sells = page.locator(SEL.sellAny);
+  expect(await sells.count(), 'at least two sell rows').toBeGreaterThan(1);
+  const id = await sells.first().getAttribute('data-id');
+  await sells.first().focus();
+  await page.keyboard.press('Enter');
+  await page.locator(SEL.sellConfirm(id)).waitFor();
+  const focused = await page.evaluate(() => ({ action: document.activeElement?.dataset.action, id: document.activeElement?.dataset.id }));
+  expect(focused.action, 'focus stays on the swapped button').toBe('sell-confirm');
+  expect(focused.id, 'same row, not the next one').toBe(id);
+  await page.waitForFunction(() => /Confirm sale of .+ for .+\. Press again to sell\./.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
+});
+
+test('document title follows the screen; status strip is keyboard reachable', async (t) => {
+  const page = await openApp(t);
+  expect(await page.title(), 'home title').toBe('Derby Day');
+  await goTab(page, 'squad');
+  expect(await page.title(), 'squad title').toBe('Squad · Derby Day');
+  await goTab(page, 'transfers');
+  expect(await page.title(), 'transfers title').toBe('Transfers · Derby Day');
+  const strip = page.locator('.status-strip');
+  expect(await strip.getAttribute('role'), 'strip role').toBe('group');
+  expect(await strip.getAttribute('aria-label'), 'strip label').toBeTruthy();
+  // Where every chip shows it is no tab stop; where it scrolls (a 568x320 landscape phone) the keyboard can reach it.
+  expect(await strip.getAttribute('tabindex'), 'no extra stop on a wide screen').toBe(null);
+});
+
+test('the status strip is a tab stop only where it scrolls, re-checked on rotation', async (t) => {
+  const page = await openApp(t, { width: 568, height: 320, level: 99 });
+  const strip = page.locator('.status-strip');
+  const scrolls = await strip.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  expect(scrolls, 'the strip scrolls at 568x320').toBe(true);
+  expect(await strip.getAttribute('tabindex'), 'focusable where it scrolls').toBe('0');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForFunction(() => !document.querySelector('.status-strip').hasAttribute('tabindex'), null, { timeout: 3000 });
+});
+
+// Runs inside the page (openApp stringifies it), so it cannot use anything from this file.
+const strongFirst = (save) => {
+  const ATTRS = ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'goalkeeping', 'stamina'];
+  save.budget = 500_000_000;
+  const star = save.market[0];
+  for (const k of ATTRS) star.attrs[k] = 99;
+  star.potential = 99;
+  const dud = save.market[1];
+  for (const k of ATTRS) dud.attrs[k] = 5;
+  dud.potential = 5;
+};
+
+for (const size of [{ width: 1440, height: 900 }, { width: 390, height: 844, hasTouch: true }]) {
+  test(`transfers at ${size.width}px: upgrades are primary, chipped and first; signing offers Start at <POS>`, async (t) => {
+    const page = await openApp(t, { ...size, mutateSave: strongFirst });
+    const before = await readSave(page);
+    const star = before.market[0];
+    const dud = before.market[1];
+    await goTab(page, 'transfers');
+    const rows = page.locator('.panel:has(.has-action) tbody tr').filter({ has: page.locator('[data-action="buy"]') });
+    expect(await rows.first().locator('[data-action="buy"]').getAttribute('data-id'), 'upgrade sorted first').toBe(star.id);
+    expect(await rows.first().locator('.up-chip').innerText(), 'chip text').toMatch(/^Upgrade \+\d+ at [A-Z]+/);
+    expect(await rows.first().locator('[data-action="buy"]').getAttribute('class'), 'upgrade Sign is primary').toMatch(/primary/);
+    const dudBtn = page.locator(`[data-action="buy"][data-id="${dud.id}"]`);
+    expect(await dudBtn.getAttribute('class'), 'non-upgrade Sign is not primary').toBe('btn small');
+    expect(await page.locator(`tr:has([data-id="${dud.id}"]) .up-chip`).count(), 'no chip on non-upgrade').toBe(0);
+    if (size.width < 1000) expect(await rows.first().locator('.name-sub').isVisible(), 'age and POT under the name on phones').toBe(true);
+
+    await page.locator(`[data-action="buy"][data-id="${star.id}"]`).click();
+    const start = page.locator(`[data-action="start-xi"][data-id="${star.id}"]`);
+    await start.waitFor();
+    expect(await page.evaluate(() => document.activeElement?.dataset.action), 'focus moves to Start').toBe('start-xi');
+    expect((await page.locator(SEL.toast).innerText()).length, 'short toast (name, price, first-signing XP)').toBeLessThan(80);
+    const slot = Number(await start.getAttribute('data-slot'));
+    const b4 = await readSave(page);
+    expect(b4.lineup[slot] === star.id, 'not started yet').toBe(false);
+    await start.click();
+    await page.waitForFunction(() => /XI strength \d+ → \d+/.test(document.querySelector('.toast')?.textContent ?? ''));
+    expect((await readSave(page)).lineup[slot], 'in the XI slot').toBe(star.id);
+    expect(await page.locator('.signed-bar').count(), 'bar gone').toBe(0);
+  });
+}
+
+test('transfers: a non-upgrade signing says it joins the bench, with no Start button', async (t) => {
+  const page = await openApp(t, { mutateSave: strongFirst });
+  const dud = (await readSave(page)).market[1];
+  await goTab(page, 'transfers');
+  await page.locator(`[data-action="buy"][data-id="${dud.id}"]`).click();
+  await page.locator(SEL.toast).waitFor();
+  expect(await page.locator(SEL.toast).innerText(), 'bench toast').toMatch(/bench/i);
+  expect(await page.locator('[data-action="start-xi"]').count(), 'no Start button').toBe(0);
+});
+
+test('transfers: selling a starter says so, shows the XI chip on phones, and the toast shows the budget change', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  const save = await readSave(page);
+  const id = save.lineup[1];
+  await goTab(page, 'transfers');
+  await page.locator(SEL.sell(id)).click();
+  const confirm = page.locator(SEL.sellConfirm(id));
+  expect(await confirm.getAttribute('aria-label'), 'confirm label').toMatch(/^Confirm: sells a starter \([A-Z]+\) for ƒ/);
+  const chip = page.locator(`tr:has([data-id="${id}"]) .pill.sell-xi`);
+  const box = await chip.boundingBox();
+  expect(box && box.width > 8 && box.height > 8, 'XI chip is visible on a phone').toBe(true);
+  await confirm.click();
+  await page.locator(SEL.toast).waitFor();
+  expect(await page.locator(SEL.toast).innerText(), 'budget change').toMatch(/Budget ƒ[\d.,]+[km]? → ƒ/i);
+});
+
+test('training: key attributes are tagged for the role, the best one is suggested, none is disabled; phones get a sticky summary', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'training');
+  expect(await page.locator('.key-tag').count(), 'two key attributes').toBe(2);
+  expect(await page.locator('.attr-list li.best').count(), 'one suggested').toBe(1);
+  expect(await page.locator('.attr-list [data-action="train"][aria-disabled="true"]').count(), 'every choice stays available').toBe(0);
+  const sticky = page.locator('.train-sticky');
+  expect(await sticky.isVisible(), 'sticky bar on phones').toBe(true);
+  expect(await sticky.innerText(), 'sessions, name and OVR').toMatch(/\d+ sessions? left[\s\S]*OVR \d+/);
+  await page.locator('.attr-list li.best [data-action="train"]').click();
+  await page.locator(SEL.toast).waitFor();
+  await page.waitForTimeout(100);
+  const covers = await page.evaluate(() => {
+    const a = document.querySelector('.toast')?.getBoundingClientRect();
+    const g = document.querySelector('.attr-list li:has(.gain)')?.getBoundingClientRect();
+    return !!(a && g && a.bottom > g.top && a.top < g.bottom);
+  });
+  expect(covers, 'toast does not cover the gain row').toBe(false);
+});
+
+// --- Squad, Club and Ladder polish -------------------------------------------------------------------------------
+
+test('squad on a phone: the XI board comes before tactics, which fold to a one-line summary and expand by keyboard', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'squad');
+  const order = await page.evaluate(() => {
+    const y = (sel) => document.querySelector(sel).getBoundingClientRect().top;
+    return { board: y('.squad-grid .board'), tactics: y('.squad-grid .tactics') };
+  });
+  expect(order.board, 'XI board above tactics').toBeLessThan(order.tactics);
+  const fold = page.locator('.tac-fold');
+  expect(await fold.evaluate((d) => d.open), 'tactics start collapsed on a phone').toBe(false);
+  expect((await page.locator('.tac-fold > summary').innerText()).replace(/\s+/g, ' '), 'summary shows shape and mentality').toMatch(/4-4-2 · Balanced/);
+  await page.locator('.tac-fold > summary').focus();
+  await page.keyboard.press('Enter');
+  expect(await fold.evaluate((d) => d.open), 'Enter expands').toBe(true);
+  await page.locator(`label:has(${SEL.mentalityRadio('attacking')})`).click();
+  expect(await fold.evaluate((d) => d.open), 'stays open across the re-render').toBe(true);
+  const notes = await page.$$eval('.tac-step', (els) => els.filter((e) => getComputedStyle(e.querySelector('.tac-step-note')).display !== 'none').length);
+  expect(notes, 'only the selected mentality shows its description').toBe(1);
+});
+
+test('squad: a bench player who rates higher in a slot shows a "+N on bench" badge that swaps him in', async (t) => {
+  const page = await openApp(t, {
+    mutateSave: (s) => {
+      // Put the weakest outfielders in the XI so the bench holds upgrades.
+      const ovr = (p) => Object.values(p.attrs).reduce((a, b) => a + b, 0);
+      const out = s.squad.filter((p) => p.role !== 'GK').sort((a, b) => ovr(a) - ovr(b));
+      const keeper = s.lineup.find((id) => s.squad.find((p) => p.id === id).role === 'GK');
+      s.lineup = [keeper, ...out.slice(0, s.lineup.length - 1).map((p) => p.id)];
+    },
+  });
+  await goTab(page, 'squad');
+  const hint = page.locator('.bench-hint').first();
+  expect(await hint.count(), 'a bench hint is shown').toBe(1);
+  expect(await hint.innerText(), 'text').toMatch(/^▲ \+\d+ on bench$/);
+  expect(await hint.getAttribute('aria-label'), 'label names both players').toMatch(/^Swap in .+ for .+ at .+: plus \d+/);
+  const slot = await hint.getAttribute('data-slot');
+  const id = await hint.getAttribute('data-id');
+  await hint.focus();
+  await page.keyboard.press('Enter');
+  const save = await readSave(page);
+  expect(save.lineup[Number(slot)], 'the bench player is now in the slot').toBe(id);
+});
+
+test('squad: the attribute colour legend and the XI strength meaning are shown', async (t) => {
+  const page = await openApp(t, { width: 1280, height: 800 });
+  await goTab(page, 'squad');
+  expect((await page.locator('.attr-legend').innerText()).replace(/\s+/g, ' '), 'legend tiers').toMatch(/80\+.*68.*55.*55/);
+  expect(await page.locator('.strength-note').count(), 'XI strength meaning').toBe(1);
+});
+
+test('club: identity and rename fold under "Customise club"; the danger zone is its own last panel; level-up links open the fold', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true, xp: totalXpForLevel(18) - 3 });
+  await goTab(page, 'training');
+  await page.locator(SEL.train).first().click();
+  await page.locator(SEL.levelUp).waitFor();
+  await page.locator(SEL.levelUpGo).click();
+  await page.locator(SEL.levelUp).waitFor({ state: 'detached' });
+  expect(await page.locator('.customise-fold').evaluate((d) => d.open), 'fold opened for the crest target').toBe(true);
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'crest picker focused').toBe('crest-select');
+  const order = await page.evaluate(() => {
+    const top = (s) => document.querySelector(s).getBoundingClientRect().top + scrollY;
+    return { level: top('.level-panel'), news: top('.news'), custom: top('.customise'), danger: top('.danger-panel') };
+  });
+  expect(order.level, 'level before news').toBeLessThan(order.news);
+  expect(order.news, 'news before customise').toBeLessThan(order.custom);
+  expect(order.custom, 'danger zone last').toBeLessThan(order.danger);
+  expect(await page.locator('.news .identity-editor, .news .rename-form, .news .danger-zone').count(), 'nothing of that left in the news card').toBe(0);
+});
+
+test('club: customise is collapsed by default and a fresh club shows one empty line instead of three', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'club');
+  expect(await page.locator('.customise-fold').evaluate((d) => d.open), 'collapsed').toBe(false);
+  expect(await page.locator('#club-rename').isVisible(), 'rename hidden until opened').toBe(false);
+  expect(await page.locator('.club-grid .form .empty-state').count(), 'one merged empty state').toBe(1);
+  expect(await page.locator('.club-grid .form .empty-state').innerText(), 'text').toMatch(/Play your first ranked match to fill your Elo, form and replays/);
+  expect(await page.locator('#replay-paste').count(), 'the paste box is still there').toBe(1);
+});
+
+test('ladder: your row is tagged "You" and tinted, visible on a phone', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'ladder');
+  const pill = page.locator('tr.you .pill');
+  expect(await pill.isVisible(), 'the You tag is visible at 390 px').toBe(true);
+  expect(await pill.innerText(), 'tag text').toMatch(/you/i);
+  expect((await pageWidths(page)).scrollWidth, 'no sideways scroll').toBeLessThanOrEqual(390);
+});
+
+test('squad: on touch the "+N on bench" badge is a 44 px target', async (t) => {
+  const page = await openApp(t, {
+    width: 390,
+    height: 844,
+    hasTouch: true,
+    mutateSave: (s) => {
+      const ovr = (p) => Object.values(p.attrs).reduce((a, b) => a + b, 0);
+      const out = s.squad.filter((p) => p.role !== 'GK').sort((a, b) => ovr(a) - ovr(b));
+      const keeper = s.lineup.find((id) => s.squad.find((p) => p.id === id).role === 'GK');
+      s.lineup = [keeper, ...out.slice(0, s.lineup.length - 1).map((p) => p.id)];
+    },
+  });
+  await goTab(page, 'squad');
+  const heights = await page.evaluate(() => [...document.querySelectorAll('.bench-hint')].map((e) => Math.round(e.getBoundingClientRect().height)));
+  expect(heights.length > 0, 'bench hints are shown').toBe(true);
+  for (const h of heights) expect(h, 'badge height').toBeGreaterThanOrEqual(44);
 });

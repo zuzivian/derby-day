@@ -67,7 +67,10 @@ export function showToast(text: string, ok = true, ms = 3600): void {
   t.textContent = text;
   placeToast(t);
   // Empty first, then fill, so an identical message is announced again.
-  toastShowTimer = window.setTimeout(() => el.appendChild(t), 30);
+  toastShowTimer = window.setTimeout(() => {
+    placeToast(t); // the screen has re-rendered since the toast was made: re-check what it would cover
+    el.appendChild(t);
+  }, 30);
   toastTimer = window.setTimeout(() => {
     t.classList.add('out');
     toastTimer = window.setTimeout(hideToast, 160);
@@ -83,7 +86,22 @@ export function showToast(text: string, ok = true, ms = 3600): void {
 function placeToast(t: HTMLElement): void {
   const bar = document.querySelector('.tabs') ?? document.querySelector('.topbar');
   const below = bar && !document.querySelector('.modal') ? bar.getBoundingClientRect().bottom : 0;
-  t.style.top = below > 0 ? `${Math.round(below + 8)}px` : '';
+  const top = below > 0 ? Math.round(below + 8) : 14;
+  t.style.top = below > 0 ? `${top}px` : '';
+  t.style.bottom = '';
+  // Keep clear of what the action just changed (the Training gain row) and of the sticky trainee bar:
+  // when the top slot would cover them, the toast takes the bottom edge instead.
+  const covered = (y0: number, y1: number): number =>
+    ['.attr-list li:has(.gain)', '.train-sticky'].reduce((n, sel, i) => {
+      const el = document.querySelector<HTMLElement>(sel);
+      const r = el && el.getClientRects().length ? el.getBoundingClientRect() : null;
+      return n + (r && r.bottom > y0 && r.top < y1 ? (i === 0 ? 100 : 1) : 0);
+    }, 0);
+  const h = 56;
+  if (covered(top, top + h) > covered(innerHeight - 12 - h, innerHeight - 12)) {
+    t.style.top = 'auto';
+    t.style.bottom = 'calc(12px + env(safe-area-inset-bottom, 0px))';
+  }
 }
 
 function onToastScroll(): void {
@@ -175,6 +193,16 @@ export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?:
     () => (key.elId ? pick(`#${CSS.escape(key.elId)}`)[0] : undefined),
     () => (Object.keys(key.data).length ? pick(selectorFor(key.data))[0] : undefined),
     () => (key.data.id && !key.data.action ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
+    () => {
+      // The swapped control on the SAME row (same data-id) wins over any positional guess.
+      const a = key.data.action;
+      if (!a || !key.data.id) return undefined;
+      for (const name of [a, ...(ALIASES[a] ?? [])]) {
+        const same = pick(`[data-action="${CSS.escape(name)}"][data-id="${CSS.escape(key.data.id)}"]`);
+        if (same.length) return same[0];
+      }
+      return undefined;
+    },
     () => {
       const a = key.data.action;
       if (!a) return undefined;

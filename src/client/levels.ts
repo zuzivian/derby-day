@@ -44,7 +44,7 @@ export function levelChip(s: Save): string {
       ? `<button class="level-badge tier-${badgeTier(p.level)}" type="button" data-action="level-open" aria-label="Club level ${p.level}: show unlocks">${p.level}</button>`
       : `<span class="level-badge tier-${badgeTier(p.level)}" role="img" aria-label="Club level ${p.level}">${p.level}</span>`}
     <div class="xp">
-      <span class="xp-text" id="xp-text">${esc(levelText(p))}</span>
+      <span class="xp-text" id="xp-text">${esc(levelText(p)).replace(/^(Level \d+ · )/, '<span class="xp-lv">$1</span>')}</span>
       <span class="xp-bar" role="progressbar" aria-labelledby="xp-text" aria-valuemin="0" aria-valuemax="${p.needed}" aria-valuenow="${now}" aria-valuetext="${esc(`Level ${p.level}, ${valueText}`)}"><span style="width:${pct}%"></span></span>
     </div>
   </div>`;
@@ -115,14 +115,17 @@ export function xpCardHtml(s: Save, gain: XpGain | undefined, forfeited: boolean
   const pct = (p: ReturnType<typeof levelForXp>) => (p.maxed ? 100 : Math.max(0, Math.min(100, (p.intoLevel / p.needed) * 100)));
   const from = up ? 0 : pct(before);
   const to = pct(after);
-  const [head, ...rest] = xpSummary(gain).split(': ');
+  const [head] = xpSummary(gain).split(': ');
+  // One part repeats the total ("+50 XP: loss 50"), so it shows the reason alone; several show each share.
+  const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+  const parts = gain.parts.length === 1 ? cap(gain.parts[0]!.label) : gain.parts.map((p) => `${cap(p.label)} ${p.xp.toLocaleString('en-GB')}`).join(' · ');
   const lvFrom = Math.min(gain.levelBefore, before.level);
   const lvTo = Math.max(gain.levelAfter, after.level);
   const next = nextUnlockText(s);
   return `<div class="xp-card${up ? ' is-levelup' : ''}" style="--xp-from:${pct(before).toFixed(1)}%;--xp-to:${to.toFixed(1)}%;--xp-start:${from.toFixed(1)}%">
     <span class="level-badge tier-${badgeTier(after.level)}" aria-hidden="true">${up ? `<span class="xp-lv-old">${before.level}</span><span class="xp-lv-new">${after.level}</span>` : `<span>${after.level}</span>`}</span>
     <div class="xp-card-body">
-      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(rest.join(': '))}</span></p>
+      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(parts)}</span></p>
       <span class="xp-card-track" aria-hidden="true"><span class="xp-card-fill"></span></span>
       <p class="xp-card-level">${esc(levelText(after))}</p>
       ${up || after.maxed || !next ? '' : `<p class="xp-card-next">Next: ${esc(next)}</p>`}
@@ -188,7 +191,7 @@ export function identityControls(s: Save): string {
     <div class="identity-preview${fresh ? ' fresh' : ''}">${crestSvg(c, 76)}
       <div class="identity-meta"><strong>${esc(c.name)}</strong>
         <span class="identity-saved" aria-hidden="true">${fresh ? '✓ Saved' : 'Saves as you pick'}</span></div></div>
-    ${crest ? `<fieldset class="identity-set"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
+    ${crest ? `<fieldset class="identity-set" id="crest-select" tabindex="-1"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
     ${kit ? `${swatches('kit-primary', 'Kit colour', 'Shirt and crest.', c.primary, c.secondary)}${swatches('kit-secondary', 'Trim colour', 'Must differ from the kit.', c.secondary, c.primary)}` : ''}
   </fieldset>`;
 }

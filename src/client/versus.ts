@@ -969,7 +969,7 @@ function mountNetMatch(root: HTMLElement, o: NetMatchOptions): () => void {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
       banner('Goal!', 2000, `${ev.scorer} ${ev.minute}'`);
-      announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}.`);
+      announce(`Goal for ${s.teams[ev.team].name}. ${ev.scorer}, minute ${ev.minute}. ${home.name} ${s.score[0]}, ${away.name} ${s.score[1]}.`);
     }
     if (s.phase === 'halftime' && !shownHalftime) {
       shownHalftime = true;
