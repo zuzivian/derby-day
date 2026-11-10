@@ -520,7 +520,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .bench-hint:hover { background: #ffe680; }
 .bench-hint:active { transform: scale(.96); }
 @media (max-width: 640px) { .slot .bench-hint { flex: none; } }
-@media (pointer: coarse) { .bench-hint { min-height: 32px; padding-inline: 10px; } }
+@media (pointer: coarse) { .bench-hint { min-height: 44px; padding-inline: 10px; } }
 .kit { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; margin-right: var(--sp-2); vertical-align: -2px; background: linear-gradient(90deg, var(--p) 50%, var(--s) 50%); border: 1px solid var(--line-strong); }
 
 /* Squad: the magnet board ------------------------------------------------------- */

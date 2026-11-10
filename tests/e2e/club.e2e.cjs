@@ -352,3 +352,21 @@ test('ladder: your row is tagged "You" and tinted, visible on a phone', async (t
   expect(await pill.innerText(), 'tag text').toMatch(/you/i);
   expect((await pageWidths(page)).scrollWidth, 'no sideways scroll').toBeLessThanOrEqual(390);
 });
+
+test('squad: on touch the "+N on bench" badge is a 44 px target', async (t) => {
+  const page = await openApp(t, {
+    width: 390,
+    height: 844,
+    hasTouch: true,
+    mutateSave: (s) => {
+      const ovr = (p) => Object.values(p.attrs).reduce((a, b) => a + b, 0);
+      const out = s.squad.filter((p) => p.role !== 'GK').sort((a, b) => ovr(a) - ovr(b));
+      const keeper = s.lineup.find((id) => s.squad.find((p) => p.id === id).role === 'GK');
+      s.lineup = [keeper, ...out.slice(0, s.lineup.length - 1).map((p) => p.id)];
+    },
+  });
+  await goTab(page, 'squad');
+  const heights = await page.evaluate(() => [...document.querySelectorAll('.bench-hint')].map((e) => Math.round(e.getBoundingClientRect().height)));
+  expect(heights.length > 0, 'bench hints are shown').toBe(true);
+  for (const h of heights) expect(h, 'badge height').toBeGreaterThanOrEqual(44);
+});
