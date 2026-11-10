@@ -99,3 +99,20 @@
 /* Pause-menu mentality: hover and press, as the tactics board cards have. */
 .qt-step:hover { border-color: var(--ink); background: var(--surface-2); }
 .qt-step:active { transform: scale(.97); }
+
+/* The panel folds under its heading: open on desktop, one summary line ("4-4-2 · Balanced") on phones. */
+.tac-fold > summary { list-style: none; cursor: pointer; flex-wrap: nowrap; }
+.tac-fold > summary::-webkit-details-marker { display: none; }
+.tac-fold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: var(--r-sm); }
+.tac-fold > summary .tac-now { margin-left: auto; }
+.tac-chev { width: 8px; height: 8px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg) translateY(-2px); flex: none; transition: transform var(--dur) var(--ease-out); }
+.tac-fold[open] > summary .tac-chev { transform: rotate(-135deg); }
+.tac-body { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-3); }
+@media (prefers-reduced-motion: reduce) { .tac-chev { transition: none; } }
+/* On phones the lineup comes first (after any academy offer) and the tactics fold sits after it. */
+@media (max-width: 720px) {
+  .squad-grid > .rv-panel { order: 0; }
+  .squad-grid > .board { order: 1; }
+  .squad-grid > .tactics { order: 2; }
+  .squad-grid > .squad-table { order: 3; }
+}

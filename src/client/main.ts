@@ -16,6 +16,7 @@ import { competitionAction, competitionsScreen } from './competitions.ts';
 import { announce, autoFocus, reducedMotion, captureFocus, focusKeyOf, hideToast, initLiveRegions, restoreFocus, showToast, tabFromKey, trapTab, type FocusKey } from './a11y.ts';
 import { award, claimMilestone, ensureLevelFields, isUnlocked, markUnlocksSeen, unlockLevel, pendingUnlocks, replaySlots, xpSummary, type PracticeLevel, type UnlockId } from '../meta/levels.ts';
 import { setClubName, setCrest, setKit, validateClubName } from '../meta/identity.ts';
+import { setTacticsOpen } from './tactics.ts';
 import { flagIdentitySaved, levelUpAnnouncement, levelUpOpen } from './levels.ts';
 import { setReplaySlots } from './replayStore.ts';
 import { avoidClash } from './kits.ts';
@@ -40,7 +41,7 @@ import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './vers
 import { inviteCode, relayConfig } from '../net/config.ts';
 import { homeScreen } from './home.ts';
 import { introLine, stakesVs } from './stakes.ts';
-import { goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
+import { setCustomiseOpen, goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
 const root = document.getElementById('app')!;
 
@@ -193,7 +194,15 @@ function render() {
     root.querySelector<HTMLElement>('#levelup-title')?.focus();
     announce(levelUpAnnouncement(app.save));
   } else if (!app.result && !levelUp && reviewOpen(app.save) && !hadReview) root.querySelector<HTMLElement>('#review-title')?.focus();
-  else restoreFocus(root, key, '#main');
+  else {
+    // A focus target inside the closed "Customise club" fold (a level-up "Show me" link) opens it first.
+    const inside = key?.elId ? root.querySelector<HTMLElement>(`#${CSS.escape(key.elId)}`)?.closest('details[data-fold]') : null;
+    if (inside instanceof HTMLDetailsElement && !inside.open) {
+      inside.open = true;
+      setCustomiseOpen(true);
+    }
+    restoreFocus(root, key, '#main');
+  }
   afterRender(root);
   if (revealMark) placeMark(root, true);
   revealMark = false;
@@ -574,6 +583,14 @@ function launch(btn: HTMLElement, start: () => void) {
   });
 }
 
+// The tactics and "Customise club" folds keep their state across renders (toggle does not bubble: capture it).
+root.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLDetailsElement)) return;
+  if (d.dataset.fold === 'tactics') setTacticsOpen(d.open);
+  else if (d.dataset.fold === 'customise') setCustomiseOpen(d.open);
+}, true);
+
 // Quiet tick for switches and pickers (settings, pause menu, forms); mute and volume apply.
 document.addEventListener('change', (e) => {
   const t = e.target;
@@ -677,6 +694,16 @@ root.addEventListener('click', (e) => {
     case 'play-online':
       if (isUnlocked(s, 'link') && relayConfig()) startVersus(mountOnline);
       return;
+    case 'bench-swap': {
+      const slot = Number(el.dataset.slot);
+      const b4 = teamStrength(s.squad, s.lineup, s.formation);
+      setLineupSlot(s, slot, id);
+      const af = teamStrength(s.squad, s.lineup, s.formation);
+      toast(af === b4 ? 'XI changed.' : `XI changed. XI strength ${b4} → ${af}.`);
+      pendingFocus = { elId: `slot-${slot}`, data: {}, index: 0 };
+      persist();
+      break;
+    }
     case 'auto-lineup':
       {
         const before = teamStrength(s.squad, s.lineup, s.formation);

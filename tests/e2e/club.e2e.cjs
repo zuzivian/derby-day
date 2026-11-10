@@ -1,7 +1,7 @@
 // Club management: training, transfers, lineup persistence.
 
 const { test, expect } = require('./lib/harness.cjs');
-const { SEL, openApp, nextVisit, goTab, readSave, pageWidths } = require('./lib/helpers.cjs');
+const { SEL, openApp, nextVisit, goTab, readSave, pageWidths, totalXpForLevel } = require('./lib/helpers.cjs');
 
 test('training spends a session and shows a toast', async (t) => {
   const page = await openApp(t);
@@ -170,4 +170,94 @@ test('the status strip is a tab stop only where it scrolls, re-checked on rotati
   expect(await strip.getAttribute('tabindex'), 'focusable where it scrolls').toBe('0');
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.waitForFunction(() => !document.querySelector('.status-strip').hasAttribute('tabindex'), null, { timeout: 3000 });
+});
+
+// --- Squad, Club and Ladder polish -------------------------------------------------------------------------------
+
+test('squad on a phone: the XI board comes before tactics, which fold to a one-line summary and expand by keyboard', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'squad');
+  const order = await page.evaluate(() => {
+    const y = (sel) => document.querySelector(sel).getBoundingClientRect().top;
+    return { board: y('.squad-grid .board'), tactics: y('.squad-grid .tactics') };
+  });
+  expect(order.board, 'XI board above tactics').toBeLessThan(order.tactics);
+  const fold = page.locator('.tac-fold');
+  expect(await fold.evaluate((d) => d.open), 'tactics start collapsed on a phone').toBe(false);
+  expect((await page.locator('.tac-fold > summary').innerText()).replace(/\s+/g, ' '), 'summary shows shape and mentality').toMatch(/4-4-2 · Balanced/);
+  await page.locator('.tac-fold > summary').focus();
+  await page.keyboard.press('Enter');
+  expect(await fold.evaluate((d) => d.open), 'Enter expands').toBe(true);
+  await page.locator(`label:has(${SEL.mentalityRadio('attacking')})`).click();
+  expect(await fold.evaluate((d) => d.open), 'stays open across the re-render').toBe(true);
+  const notes = await page.$$eval('.tac-step', (els) => els.filter((e) => getComputedStyle(e.querySelector('.tac-step-note')).display !== 'none').length);
+  expect(notes, 'only the selected mentality shows its description').toBe(1);
+});
+
+test('squad: a bench player who rates higher in a slot shows a "+N on bench" badge that swaps him in', async (t) => {
+  const page = await openApp(t, {
+    mutateSave: (s) => {
+      // Put the weakest outfielders in the XI so the bench holds upgrades.
+      const ovr = (p) => Object.values(p.attrs).reduce((a, b) => a + b, 0);
+      const out = s.squad.filter((p) => p.role !== 'GK').sort((a, b) => ovr(a) - ovr(b));
+      const keeper = s.lineup.find((id) => s.squad.find((p) => p.id === id).role === 'GK');
+      s.lineup = [keeper, ...out.slice(0, s.lineup.length - 1).map((p) => p.id)];
+    },
+  });
+  await goTab(page, 'squad');
+  const hint = page.locator('.bench-hint').first();
+  expect(await hint.count(), 'a bench hint is shown').toBe(1);
+  expect(await hint.innerText(), 'text').toMatch(/^▲ \+\d+ on bench$/);
+  expect(await hint.getAttribute('aria-label'), 'label names both players').toMatch(/^Swap in .+ for .+ at .+: plus \d+/);
+  const slot = await hint.getAttribute('data-slot');
+  const id = await hint.getAttribute('data-id');
+  await hint.focus();
+  await page.keyboard.press('Enter');
+  const save = await readSave(page);
+  expect(save.lineup[Number(slot)], 'the bench player is now in the slot').toBe(id);
+});
+
+test('squad: the attribute colour legend and the XI strength meaning are shown', async (t) => {
+  const page = await openApp(t, { width: 1280, height: 800 });
+  await goTab(page, 'squad');
+  expect((await page.locator('.attr-legend').innerText()).replace(/\s+/g, ' '), 'legend tiers').toMatch(/80\+.*68.*55.*55/);
+  expect(await page.locator('.strength-note').count(), 'XI strength meaning').toBe(1);
+});
+
+test('club: identity and rename fold under "Customise club"; the danger zone is its own last panel; level-up links open the fold', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true, xp: totalXpForLevel(18) - 3 });
+  await goTab(page, 'training');
+  await page.locator(SEL.train).first().click();
+  await page.locator(SEL.levelUp).waitFor();
+  await page.locator(SEL.levelUpGo).click();
+  await page.locator(SEL.levelUp).waitFor({ state: 'detached' });
+  expect(await page.locator('.customise-fold').evaluate((d) => d.open), 'fold opened for the crest target').toBe(true);
+  expect(await page.evaluate(() => document.activeElement && document.activeElement.id), 'crest picker focused').toBe('crest-select');
+  const order = await page.evaluate(() => {
+    const top = (s) => document.querySelector(s).getBoundingClientRect().top + scrollY;
+    return { level: top('.level-panel'), news: top('.news'), custom: top('.customise'), danger: top('.danger-panel') };
+  });
+  expect(order.level, 'level before news').toBeLessThan(order.news);
+  expect(order.news, 'news before customise').toBeLessThan(order.custom);
+  expect(order.custom, 'danger zone last').toBeLessThan(order.danger);
+  expect(await page.locator('.news .identity-editor, .news .rename-form, .news .danger-zone').count(), 'nothing of that left in the news card').toBe(0);
+});
+
+test('club: customise is collapsed by default and a fresh club shows one empty line instead of three', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'club');
+  expect(await page.locator('.customise-fold').evaluate((d) => d.open), 'collapsed').toBe(false);
+  expect(await page.locator('#club-rename').isVisible(), 'rename hidden until opened').toBe(false);
+  expect(await page.locator('.club-grid .form .empty-state').count(), 'one merged empty state').toBe(1);
+  expect(await page.locator('.club-grid .form .empty-state').innerText(), 'text').toMatch(/Play your first ranked match to fill your Elo, form and replays/);
+  expect(await page.locator('#replay-paste').count(), 'the paste box is still there').toBe(1);
+});
+
+test('ladder: your row is tagged "You" and tinted, visible on a phone', async (t) => {
+  const page = await openApp(t, { width: 390, height: 844, hasTouch: true });
+  await goTab(page, 'ladder');
+  const pill = page.locator('tr.you .pill');
+  expect(await pill.isVisible(), 'the You tag is visible at 390 px').toBe(true);
+  expect(await pill.innerText(), 'tag text').toMatch(/you/i);
+  expect((await pageWidths(page)).scrollWidth, 'no sideways scroll').toBeLessThanOrEqual(390);
 });

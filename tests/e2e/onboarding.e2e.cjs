@@ -461,6 +461,7 @@ test('onboarding: at level 1-2 the header badge is not a button; from the Club t
 test('onboarding: a club can be renamed from the Club tab at any time', async (t) => {
   const page = await openApp(t, { level: 4, mutateSave: (save) => { save.club.played = 9; } });
   await page.locator(SEL.tabFor('club')).click();
+  await page.locator('.customise-fold > summary').click(); // rename lives under "Customise club"
   await page.locator('#club-rename').fill('Harbour Lights');
   await page.locator('.rename-form [type="submit"]').click();
   await page.waitForFunction(() => /Harbour Lights/.test(document.querySelector('.club-name')?.textContent || ''));

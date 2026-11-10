@@ -202,7 +202,7 @@
 
 /* Danger zone */
 .danger-zone { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid color-mix(in srgb, var(--bad) 50%, transparent); border-radius: var(--r-md); background: color-mix(in srgb, var(--bad) 6%, var(--surface)); }
-.danger-zone h3 { margin: 0; color: var(--bad); }
+.danger-zone h2, .danger-zone h3 { margin: 0; color: var(--bad); }
 .danger-zone p { margin: 0; }
 .dz-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 

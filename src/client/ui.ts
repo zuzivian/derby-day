@@ -255,21 +255,18 @@ function nextUp(s: Save): string {
  * The Club tab: everything that used to crowd the first view. Elo history and
  * results, replays, the club level panel, club news, the tutorial and reset.
  */
+/** Whether "Customise club" is expanded: kept across renders, opened when a level-up link targets a control inside it. */
+let customiseOpen = false;
+export const setCustomiseOpen = (open: boolean): void => void (customiseOpen = open);
+
 export function clubScreen(app: App): string {
   const s = app.save;
+  const fresh = !s.history.length && s.eloHistory.length <= 1;
+  const identity = identityControls(s);
   return `
   <div class="club-grid">
     ${nextUp(s)}
-    <article class="panel form">
-      <h2 class="eyebrow">Club rating (Elo)</h2>
-      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
-      ${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
-      <h3 class="eyebrow">Recent</h3>
-      ${s.history.length > 1 ? `<p class="form-line">Form ${formPips(s, 8)}</p>` : ''}
-      ${formChips(s)}
-      ${isUnlocked(s, 'replays') ? recentReplaysHtml() : ''}
-    </article>
-
+    ${levelPanel(s)}
     <article class="panel news">
       <h2 class="eyebrow" id="news-title" tabindex="-1">Club news${isUnlocked(s, 'calendar') ? ` · Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}` : ''}</h2>
       <ul class="news-list">${s.news.slice(-8).reverse().map((n, i) => `<li${i ? '' : ' class="latest"'}>${esc(n)}</li>`).join('')}</ul>
@@ -278,19 +275,40 @@ export function clubScreen(app: App): string {
         ${isUnlocked(s, 'drills') ? `<button class="btn small" id="replay-tutorial" data-action="replay-tutorial">Practice skills</button>` : ''}
         <button class="btn small" data-action="open-backup">Back up or restore</button>
       </div>
-      ${identityControls(s)}
-      <form class="rename-form" data-form="rename" novalidate>
-        <label for="club-rename">Club name</label>
-        <div class="rename-row">
-          <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
-          <button class="btn small" type="submit">Save name</button>
-          ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
-        </div>
-        <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
-      </form>
       <p class="muted small">Saved in this browser only. Use Back up or restore to keep a copy.</p>
+    </article>
+    <article class="panel form">
+      <h2 class="eyebrow">Club rating (Elo)</h2>
+      <div class="elo-row"><span class="elo-big">${s.club.elo}</span><span class="record${s.club.played ? '' : ' unset'}">${s.club.won}W ${s.club.drawn}D ${s.club.lost}L · ${s.club.gf}–${s.club.ga}</span></div>
+      ${fresh
+        ? emptyState('Play your first ranked match to fill your Elo, form and replays.', LADDER)
+        : `${s.eloHistory.length > 1 ? sparkline(s.eloHistory) : emptyState('Your Elo chart starts with your first ranked match.', LADDER)}
+      <h3 class="eyebrow">Recent</h3>
+      ${s.history.length > 1 ? `<p class="form-line">Form ${formPips(s, 8)}</p>` : ''}
+      ${formChips(s)}`}
+      ${isUnlocked(s, 'replays') ? recentReplaysHtml(fresh) : ''}
+    </article>
+    ${historyPanel(s)}
+    <article class="panel customise">
+      <details class="customise-fold" data-fold="customise"${customiseOpen ? ' open' : ''}>
+        <summary><h2 class="eyebrow" id="customise-title">Customise club</h2><span class="muted small">${identity ? 'Crest, kit colours and club name' : 'Club name'}</span><span class="tac-chev" aria-hidden="true"></span></summary>
+        <div class="customise-body">
+          ${identity}
+          <form class="rename-form" data-form="rename" novalidate>
+            <label for="club-rename">Club name</label>
+            <div class="rename-row">
+              <input id="club-rename" name="club-name" type="text" autocomplete="off" spellcheck="false" maxlength="${NAME_MAX + 8}" placeholder="${esc(s.club.name)}" aria-describedby="club-rename-hint">
+              <button class="btn small" type="submit">Save name</button>
+              ${s.club.played === 0 ? `<button class="btn small" type="button" data-action="reroll">New name and colours</button>` : ''}
+            </div>
+            <p id="club-rename-hint" class="muted small">${NAME_MIN} to ${NAME_MAX} characters: letters, numbers, spaces and . ' - &amp;</p>
+          </form>
+        </div>
+      </details>
+    </article>
+    <article class="panel danger-panel">
       <div class="danger-zone" role="group" aria-labelledby="dz-title">
-        <h3 id="dz-title" class="eyebrow">Danger zone</h3>
+        <h2 id="dz-title" class="eyebrow">Danger zone</h2>
         ${app.confirmReset
           ? `<p><strong>Delete ${esc(s.club.name)}?</strong> Its squad and ${s.club.played} matches are removed from this browser. Back it up first if you might want it back. This cannot be undone.</p>
         <div class="dz-actions"><button class="btn small" data-action="reset-cancel">Keep it</button><button class="btn small danger" data-action="reset-confirm">Delete this club and start over</button></div>`
@@ -298,9 +316,6 @@ export function clubScreen(app: App): string {
         <div class="dz-actions"><button class="btn small danger" data-action="reset">Start a new club</button></div>`}
       </div>
     </article>
-
-    ${levelPanel(s)}
-    ${historyPanel(s)}
   </div>`;
 }
 
@@ -391,11 +406,17 @@ export function squadScreen(app: App): string {
       .join('');
     // Base shape x runs 0.02 (keeper) to about 0.6 (strikers): spread it over the board, with
     // room between keeper and centre-backs; y keeps wing-backs' badges and pickers on the pitch.
+    // The best bench player for this slot, when he would rate higher there than the starter.
+    const bench = cur ? s.squad.filter((p) => !s.lineup.includes(p.id)).sort((a, b) => ratingAs(b, f.role) - ratingAs(a, f.role))[0] : undefined;
+    const up = bench && cur ? ratingAs(bench, f.role) - ratingAs(cur, f.role) : 0;
+    const hint = bench && up > 0
+      ? `<button type="button" class="bench-hint" data-action="bench-swap" data-slot="${slot}" data-id="${bench.id}" aria-label="${esc(`Swap in ${fullName(bench)} for ${fullName(cur!)} at ${f.label}: plus ${up} in that slot`)}"><span aria-hidden="true">▲ +${up} on bench</span></button>`
+      : '';
     return `<div class="slot" style="--x:${(5 + ((f.x - 0.02) / 0.58) * 87).toFixed(1)}%;--y:${(5 + f.y * 90).toFixed(1)}%">
       <span class="magnet">${cur?.number ?? '?'}</span>
       <label class="slot-label"><span class="slot-role">${f.label}</span>
         <select id="slot-${slot}" data-change="slot" data-slot="${slot}">${options}</select>
-      </label>
+      </label>${hint}
     </div>`;
   }).join('');
   return `
@@ -403,12 +424,13 @@ export function squadScreen(app: App): string {
     ${academyPanel(app)}
     ${tacticsPanel(s.formation, s.mentality, (id) => (id === (s.formation ?? '4-4-2') ? teamStrength(s.squad, s.lineup, id) : teamStrength(s.squad, autoLineup(s.squad, id), id)))}
     <article class="panel board">
-      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacks <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b></div></div>
+      <div class="board-head"><h2 class="eyebrow">Starting XI · ${s.formation ?? '4-4-2'} · attacks <span aria-hidden="true">→</span><span class="sr-only">to the right</span></h2><div class="strength" title="The average rating of your eleven, each rated for the slot he fills">XI strength <b>${teamStrength(s.squad, s.lineup, s.formation)}</b><span class="muted small strength-note">avg. of the XI in their slots</span></div></div>
       <div class="mini-pitch">${slots}</div>
       <div class="actions"><button class="btn" data-action="auto-lineup">Pick my best XI</button><span class="muted small">Ratings shown are for that slot. Out-of-position players lose a lot.</span></div>
     </article>
-    <article class="panel">
+    <article class="panel squad-table">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
+      <p class="attr-legend" aria-hidden="true"><span class="lg t-a">80+ elite</span><span class="lg t-b">68–79 good</span><span class="lg t-c">55–67 fair</span><span class="lg t-d">under 55 weak</span></p>
       <div class="table-scroll"><table class="tbl">
         <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id), true, { s, open: app.profile === p.id })).join('')}</tbody>

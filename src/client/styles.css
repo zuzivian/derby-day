@@ -504,6 +504,23 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .attr.t-b { color: var(--t-b); font-weight: 600; }
 .attr.t-c { color: var(--t-c); }
 .attr.t-d { color: var(--t-d); }
+/* Legend for the attribute colours, under the Squad heading; the attribute columns go below 600 px, so it does too. */
+.attr-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
+.attr-legend .lg::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: currentColor; }
+.attr-legend .t-a { color: var(--t-a); } .attr-legend .t-b { color: var(--t-b); } .attr-legend .t-c { color: var(--t-c); } .attr-legend .t-d { color: var(--t-d); }
+@media (max-width: 600px) { .attr-legend { display: none; } }
+.strength-note { font-weight: 500; }
+@media (max-width: 420px) { .strength-note { display: none; } }
+/* "▲ +N on bench": a better player is waiting for this slot. A real button, so Tab and Enter swap him in. */
+.bench-hint {
+  font: inherit; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .03em; line-height: 1; white-space: nowrap; cursor: pointer;
+  padding: 4px 8px; min-height: 22px; border-radius: var(--r-pill); border: 1px solid rgba(8, 24, 14, .5);
+  background: #ffd84d; color: #1b1500; box-shadow: 0 2px 5px rgba(0, 0, 0, .3);
+}
+.bench-hint:hover { background: #ffe680; }
+.bench-hint:active { transform: scale(.96); }
+@media (max-width: 640px) { .slot .bench-hint { flex: none; } }
+@media (pointer: coarse) { .bench-hint { min-height: 32px; padding-inline: 10px; } }
 .kit { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; margin-right: var(--sp-2); vertical-align: -2px; background: linear-gradient(90deg, var(--p) 50%, var(--s) 50%); border: 1px solid var(--line-strong); }
 
 /* Squad: the magnet board ------------------------------------------------------- */
@@ -1819,3 +1836,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions .btn[data-replay="watch"] { --btn-bg: var(--surface-2); --btn-fg: var(--ink); --btn-line: var(--line); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .rs-foot .replay-actions .btn[data-replay="watch"]:hover { --btn-bg: var(--surface-3); }
 .rs-foot .replay-actions .btn[data-replay="watch"] svg { flex: none; }
+
+/* Club: level, news and history lead; identity and rename fold away; the danger zone has its own panel at the end. */
+.club-grid .level-panel, .club-grid .customise, .club-grid .danger-panel { grid-column: 1 / -1; }
+.customise-fold > summary { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; list-style: none; min-height: 32px; }
+.customise-fold > summary::-webkit-details-marker { display: none; }
+.customise-fold > summary h2 { margin: 0; }
+.customise-fold > summary .tac-chev { margin-left: auto; }
+.customise-fold[open] > summary .tac-chev { transform: rotate(-135deg); }
+.customise-fold > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: var(--r-sm); }
+.customise-body { display: grid; gap: var(--sp-4); margin-top: var(--sp-3); }
+.customise-body .identity-editor { border-top: 0; padding-top: 0; }
+.club-grid .danger-panel { padding: var(--sp-3); }
+
+/* Ladder: your row is easy to find: a stronger tint, a thicker edge and a "You" tag that stays visible on phones. */
+.tbl.ladder tr.you td { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.tbl.ladder tr.you td:first-child { box-shadow: inset 5px 0 0 var(--accent); }
+.tbl.ladder tr.you td.name .pill { position: static; width: auto; height: auto; overflow: visible; clip: auto; margin-left: 6px; background: var(--accent); color: var(--accent-ink); }
