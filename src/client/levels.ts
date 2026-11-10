@@ -44,7 +44,7 @@ export function levelChip(s: Save): string {
       ? `<button class="level-badge tier-${badgeTier(p.level)}" type="button" data-action="level-open" aria-label="Club level ${p.level}: show unlocks">${p.level}</button>`
       : `<span class="level-badge tier-${badgeTier(p.level)}" role="img" aria-label="Club level ${p.level}">${p.level}</span>`}
     <div class="xp">
-      <span class="xp-text" id="xp-text">${esc(levelText(p))}</span>
+      <span class="xp-text" id="xp-text">${esc(levelText(p)).replace(/^(Level \d+ · )/, '<span class="xp-lv">$1</span>')}</span>
       <span class="xp-bar" role="progressbar" aria-labelledby="xp-text" aria-valuemin="0" aria-valuemax="${p.needed}" aria-valuenow="${now}" aria-valuetext="${esc(`Level ${p.level}, ${valueText}`)}"><span style="width:${pct}%"></span></span>
     </div>
   </div>`;

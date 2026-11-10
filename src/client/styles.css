@@ -1528,6 +1528,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .status-strip > * { flex: none; }
   .status-strip .level-chip { height: 34px; flex: 1 1 140px; min-width: 0; padding-right: 10px; }
   .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  /* The badge beside it shows the level, so "Level 45 · " takes no room (still in the text for screen readers) and the XP fits. */
+  .status-strip .xp-lv { font-size: 0; }
   .status-strip .xp-text { font-size: var(--fs-xs); }
   .status-strip .xp-bar { min-width: 60px; }
   .status-strip .level-badge { width: 28px; height: 28px; font-size: 14px; }

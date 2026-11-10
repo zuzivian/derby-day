@@ -49,6 +49,10 @@ test('mobilefit: portrait phone status strip wraps and shows every chip, no scro
   expect(info.mask === 'none' || info.mask === '', `no fade mask (${info.mask})`).toBe(true);
   expect(info.chips.length, 'chips').toBeGreaterThanOrEqual(4);
   for (const c of info.chips) expect(c.r <= c.w + 1 && c.l >= -1, `chip inside the strip ${JSON.stringify(c)}`).toBe(true);
+  // The XP figures show whole: "Level N · " is left to the badge (and screen readers), so nothing ellipsizes.
+  const xp = await page.locator('.status-strip .xp-text').evaluate((el) => ({ sw: el.scrollWidth, cw: el.clientWidth, name: el.textContent }));
+  expect(xp.sw, `XP text fits ${JSON.stringify(xp)}`).toBeLessThanOrEqual(xp.cw + 1);
+  expect(xp.name, 'the accessible text still names the level').toMatch(/^Level \d+ · /);
 });
 
 test('mobilefit: portrait coach tip stays clear of the camera and zoom buttons, which have names', async (t) => {
