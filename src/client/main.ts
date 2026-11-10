@@ -516,7 +516,7 @@ function endMatch(m: MatchState, forfeited: boolean, ranked: boolean, opp: Ladde
     rankBefore,
     derby,
     goals: forfeited || scoreAwarded(m) ? undefined : goalOrder(m.goals),
-    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, summary?.trainingPoints ?? 0, isUnlocked(s, 'training')) : undefined,
+    tip: ranked && !forfeited && gf <= ga ? rankedNote(gf, ga, s.trainingPoints, isUnlocked(s, 'training')) : undefined,
   };
   if (ranked) app.nextOpp = offeredOpponent(s);
   persist();
