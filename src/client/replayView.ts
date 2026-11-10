@@ -37,7 +37,7 @@ export function resultReplayHtml(): string {
   if (!last) return '';
   const goals = last.replay.goals.length;
   return `<div class="replay-actions">
-    ${goals ? `<button class="btn" data-replay="watch" data-id="${esc(last.id)}">Watch goals (${goals})</button>` : ''}
+    ${goals ? `<button class="btn small" data-replay="watch" data-id="${esc(last.id)}"><svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false"><path d="M7 4.5v15l12-7.5Z" fill="currentColor"/></svg> Watch goals (${goals})</button>` : ''}
     <button class="btn" data-replay="copy" data-id="${esc(last.id)}">Copy replay code</button>
   </div>`;
 }

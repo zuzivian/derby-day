@@ -637,8 +637,8 @@ function cardsRow(a: TeamStats, b: TeamStats, us: string, them: string): string 
   </li>`;
 }
 
-function rewardChip(cls: string, icon: string, label: string, main: string, sub = ''): string {
-  return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main">${main}</b></li>`;
+function rewardChip(cls: string, icon: string, label: string, main: string, sub = '', count = false): string {
+  return `<li class="rs-chip ${cls}"><span class="rs-chip-icon">${icon}</span><span class="rs-chip-text"><span class="rs-chip-label">${label}</span>${sub ? `<span class="rs-chip-sub">${sub}</span>` : ''}</span><b class="rs-chip-main"${count ? ' data-count' : ''}>${main}</b></li>`;
 }
 
 export const CUP_ICON = `<svg class="trophy-icon" viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M7 3h10v3h3v2a4 4 0 0 1-4 4h-.3A5 5 0 0 1 13 14.9V18h3v3H8v-3h3v-3.1A5 5 0 0 1 8.3 12H8a4 4 0 0 1-4-4V6h3V3Zm0 5H6a2 2 0 0 0 1 1.7V8Zm10 0v1.7A2 2 0 0 0 18 8h-1Z" fill="currentColor"/></svg>`;
@@ -662,8 +662,8 @@ function resultModal(app: App): string {
   const ladderMove = r.rankBefore && rankNow && r.rankBefore !== rankNow ? ` <span class="nowrap">· Ladder #${r.rankBefore} → <b>#${rankNow}</b></span>` : '';
   const chips = sum
     ? [
-        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 1 ? 'up' : d < -1 ? 'down' : 'level'}`, d > 1 ? RS_UP : d < -1 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`) : '',
-        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`) : '',
+        r.ranked || d !== 0 ? rewardChip(`rs-elo ${d > 1 ? 'up' : d < -1 ? 'down' : 'level'}`, d > 1 ? RS_UP : d < -1 ? RS_DOWN : RS_LEVEL, 'Elo', signed(d), `${r.eloBefore} → <b>${r.eloAfter}</b>${ladderMove}`, true) : '',
+        sum.money > 0 ? rewardChip('rs-money', COIN, 'Prize money', `+${formatMoney(sum.money)}`, isUnlocked(app.save, 'transfers') ? '' : `kept until Transfers opens at level ${unlockLevel(app.save, 'transfers')}`, true) : '',
         // A forfeit's cost (forfeitCost in game.ts), so walking off is never free.
         sum.fine || sum.owed ? rewardChip('rs-money', COIN, 'Forfeit fine', sum.fine ? `−${formatMoney(sum.fine)}` : '±0', sum.owed ? `and ${sum.owed} XP owed from your next matches` : '') : '',
         sum.trainingPoints > 0 ? rewardChip('rs-sessions', RS_SESSIONS, `Training session${sum.trainingPoints === 1 ? '' : 's'}`, `+${sum.trainingPoints}`, isUnlocked(app.save, 'training') ? '' : `kept until Training opens at level ${unlockLevel(app.save, 'training')}`) : '',

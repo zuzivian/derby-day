@@ -10,7 +10,7 @@ import { createMatch, matchMinute, possessionShare, step, type MatchOptions } fr
 import type { HumanInput, MatchEvent, MatchState, TeamInputs } from '../sim/types.ts';
 import { announce, trapTab } from './a11y.ts';
 import { controlsHelp } from './controls.ts';
-import { getSound, homeTeam } from './audio.ts';
+import { getSound, homeTeam, isConceded } from './audio.ts';
 import { fullTimeMoment, goalMoment } from './moments.ts';
 import { mountCoach, type CoachOptions } from './coach.ts';
 import { mountJuice } from './fx.ts';
@@ -561,6 +561,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
 
   function banner(text: string, ms: number, sub?: string, tone?: string) {
     hud.word(text, ms, sub, tone);
+    root.querySelector<HTMLElement>('#banner')?.classList.remove('conceded');
     bannerUntil = performance.now() + ms;
   }
 
@@ -704,11 +705,17 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
       const ev = s.goals[s.goals.length - 1];
       lastGoals = s.goals.length;
       const mo = goalMoment(s.goals, s.goals.length - 1, { derby, dist: goalDist });
-      banner(mo?.word ?? 'Goal!', mo ? 2400 : 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
+      // A goal the human's side let in: a small, quiet banner and a dim dark flash (fx.ts drops the confetti too).
+      const conceded = isConceded(s, ev);
+      if (conceded) {
+        banner(`Goal · ${s.teams[ev.team].name}`, 1800, `${ev.scorer} ${ev.minute}'`);
+        root.querySelector<HTMLElement>('#banner')?.classList.add('conceded');
+      } else banner(mo?.word ?? 'Goal!', mo ? 2400 : 2000, `${ev.scorer} ${ev.minute}'`, s.teams[ev.team].primary);
       // A quick white flash over the pitch as the net moves (CSS drops it under reduced motion).
-      wrapEl.classList.remove('goal-flash');
+      wrapEl.classList.remove('goal-flash', 'conceded');
       void wrapEl.offsetWidth;
       wrapEl.classList.add('goal-flash');
+      if (conceded) wrapEl.classList.add('conceded');
       // The scorer's number pops (the sides' own score cells, not the HUD's text writes below).
       const cell = ev.team === 0 ? sbH : sbA;
       cell.classList.remove('bump');

@@ -31,6 +31,7 @@ export function afterRender(root: HTMLElement): void {
     strip.addEventListener('scroll', () => stripFade(strip), { passive: true });
   }
   armXpCard(root);
+  countUpChips(root);
   const sel = reveal;
   reveal = null;
   if (sel && matchMedia('(max-width: 860px)').matches) {
@@ -78,4 +79,32 @@ export function armXpCard(root: HTMLElement): void {
     { threshold: 0.6 },
   ));
   io.observe(card);
+}
+
+/** The result card's Elo and prize-money values count up from zero over ~600 ms. The text ends as the final value
+ *  (and is the final value until the first frame; aria-label always is), so readers and tests see the same string; skipped under reduced motion. */
+export function countUpChips(root: HTMLElement): void {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (const el of root.querySelectorAll<HTMLElement>('.modal .rs-chip-main[data-count]:not([data-counted])')) {
+    el.dataset.counted = '1';
+    const final = el.textContent ?? '';
+    const m = /\d+(\.\d+)?/.exec(final);
+    if (!m) continue;
+    const to = parseFloat(m[0]);
+    const dp = m[1] ? m[1].length - 1 : 0;
+    if (!(to > 0)) continue;
+    const pre = final.slice(0, m.index);
+    const post = final.slice(m.index + m[0].length);
+    el.setAttribute('aria-label', final);
+    el.setAttribute('role', 'text');
+    const t0 = performance.now();
+    const frame = (now: number) => {
+      if (!el.isConnected) return;
+      const k = Math.min(1, (now - t0) / 600);
+      el.textContent = k >= 1 ? final : `${pre}${(to * (1 - (1 - k) ** 3)).toFixed(dp)}${post}`;
+      if (k < 1) requestAnimationFrame(frame);
+    };
+    el.textContent = `${pre}${(0).toFixed(dp)}${post}`;
+    requestAnimationFrame(frame);
+  }
 }
