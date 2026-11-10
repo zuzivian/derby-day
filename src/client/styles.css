@@ -1388,9 +1388,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Touch: every in-play button is a full 44px target, and Forfeit sits apart from the primary action, quieter. */
 @media (pointer: coarse) {
   .so-actions .btn, .so-actions #so-leave, #so-leave { min-height: 44px; }
-  #so-leave { margin-top: var(--sp-4); }
+  /* Its own line under the strike and dive buttons (the row wraps), never beside them where a thumb could slip. */
+  #so-leave { margin-top: var(--sp-4); flex: 0 0 100%; }
   #so-leave:not(.danger) { --btn-line: transparent; }
-  @media (orientation: landscape) and (max-height: 480px) { #so-leave { margin-top: var(--sp-2); } }
+  @media (orientation: landscape) and (max-height: 480px) { #so-leave { margin-top: var(--sp-2); flex: none; } }
 }
 @media (prefers-reduced-motion: reduce) {
   .so-banner, .so-banner[data-outcome] { animation: none; }
