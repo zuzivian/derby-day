@@ -283,7 +283,7 @@ export function openViewer(replay: Replay, code: string, opener: HTMLElement | n
     <div class="rp-foot">
       <button class="btn small ghost" data-rp="copy">Copy replay code</button>
       <span class="muted small">${formatSize(codeSize(code))}</span>
-      <span class="muted small rp-keys">Space play · ← → step · Shift+← → second · PgUp PgDn goal · S slow-mo · V camera · Esc close</span>
+      <span class="muted small rp-keys" aria-label="Keyboard shortcuts"><span class="rp-keys-label">Shortcuts</span> <span><kbd>Space</kbd> play</span> <span><kbd>←</kbd><kbd>→</kbd> step</span> <span><kbd>Shift</kbd>+<kbd>←</kbd><kbd>→</kbd> second</span> <span><kbd>PgUp</kbd><kbd>PgDn</kbd> goal</span> <span><kbd>S</kbd> slow-mo</span> <span><kbd>V</kbd> camera</span> <span><kbd>Esc</kbd> close</span></span>
     </div>
   </div>`;
   const q = <T extends HTMLElement>(sel: string) => el.querySelector<T>(sel)!;
