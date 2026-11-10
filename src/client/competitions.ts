@@ -420,6 +420,8 @@ function playCompetitionMatch(kind: 'cup' | 'season', ctx: CompContext): boolean
           youClub: s.club,
           oppClub: opp,
           label,
+          // A win leads to the next round, or the trophy from the final.
+          nextRound: CUP_ROUNDS[s.cup!.round + 1]?.toLowerCase() ?? null,
         },
         (r) => {
           // Walking out of a shootout is a forfeit: recorded 0–3, nothing paid.
