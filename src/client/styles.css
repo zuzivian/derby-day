@@ -1574,12 +1574,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .club-chip .crest { width: 24px; height: 27px; }
   .topbar .club-elo { font-size: var(--fs-xs); }
   .topbar .wordmark::after { height: 4px; }
-  /* Every chip shows: the strip wraps to two rows (level chip, lives and money; then rank and week), no scroller, no fade mask. */
+  /* Every chip shows: the strip wraps (level chip on its own row, the stat chips on the next), no scroller, no fade mask. */
   .status-strip { gap: 6px; width: 100%; flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; }
   /* The level chip owns the first row and the stat chips share the second equally, so a long figure (a 3-digit
      rank, a wide font) can never strand one chip alone on a row; at the narrowest widths they wrap two and two. */
   .status-strip > * { flex: none; }
-  .status-strip > .stat { flex: 1 1 auto; justify-content: center; }
+  .status-strip > .stat { flex: 1 1 auto; justify-content: center; position: relative; }
   .status-strip .level-chip { height: 34px; flex: 1 1 100%; min-width: 0; padding-right: 10px; }
   .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   /* The badge beside it shows the level, so "Level 45 · " takes no room (still in the text for screen readers) and the XP fits. */
@@ -1620,8 +1620,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .mode-title { font-size: var(--fs-xl); }
 }
 /* Large text on a phone (em here follows the browser's text size): the half-width Cup and League cards would split their titles mid-word, so they go full width too. */
-@media (max-width: 20em) {
+@media (max-width: 19.9375em) {
   .mode-card[data-mode] { grid-column: 1 / -1; }
+}
+/* Landscape phones up to 640 px wide keep the one-row strip: the level chip shares its row, the stats keep their size. */
+@media (max-width: 40em) and (orientation: landscape) {
+  .status-strip .level-chip { flex: 1 1 140px; }
+  .status-strip > .stat { flex: none; justify-content: flex-start; }
 }
 @media (max-width: 25em) {
   .status-strip { gap: 4px; }

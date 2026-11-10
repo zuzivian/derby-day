@@ -147,3 +147,14 @@ for (const vp of [{ width: 390, height: 844 }, { width: 375, height: 667 }, { wi
     for (const c of stats) expect(c.numH, `figure on one line ${JSON.stringify(c)}`).toBeLessThan(24);
   });
 }
+
+// Small landscape phones (568x320) must not pan sideways on Home, and on other tabs the strip stays one row: the
+// portrait two-row strip once leaked into landscape and a centred chip pushed its hidden label past the page edge.
+test('mobilefit: 568x320 landscape keeps Home unpanned and the Squad strip on one row', async (t) => {
+  const page = await openApp(t, { width: 568, height: 320, hasTouch: true, mutateSave: (s) => { s.club.elo = 900; } });
+  const home = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  expect(home.sw, `Home has no sideways pan ${JSON.stringify(home)}`).toBeLessThanOrEqual(home.cw);
+  await goTab(page, 'squad');
+  const tops = await page.locator(SEL.statusStrip).evaluate((el) => [...el.children].filter((c) => c.getClientRects().length).map((c) => Math.round(c.getBoundingClientRect().top)));
+  expect(new Set(tops).size, `Squad strip on one row ${JSON.stringify(tops)}`).toBe(1);
+});

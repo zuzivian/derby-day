@@ -141,7 +141,8 @@ test('management tables have accessible names (squad, transfers, league)', async
   const page = await openApp(t);
   for (const screen of ['squad', 'transfers']) {
     await goTab(page, screen);
-    const unnamed = await page.$$eval('main table', (els) => els.filter((e) => !e.getAttribute('aria-label') && !e.getAttribute('aria-labelledby') && !e.querySelector('caption')).length);
+    const [total, unnamed] = await page.$$eval('main table', (els) => [els.length, els.filter((e) => !e.getAttribute('aria-label') && !e.getAttribute('aria-labelledby') && !e.querySelector('caption')).length]);
+    expect(total, `${screen}: renders a table`).toBeGreaterThanOrEqual(1);
     expect(unnamed, `${screen}: tables without an accessible name`).toBe(0);
   }
   await goTab(page, 'competitions');
