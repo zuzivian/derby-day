@@ -107,4 +107,4 @@
 .ob-welcome .ob-versus { color: var(--ink); }
 
 /* A goal, a card or the half/full-time words take the middle of the pitch for a couple of seconds: the tip steps aside rather than sit on them. */
-.pitch-wrap:has(.hud-word[data-tone]:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap:has(.hud-word.recap:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap.replaying :is(.coach-tip, .coach-intro) { visibility: hidden; }
+.pitch-wrap:has(.hud-word[data-tone]:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap:has(.hud-word.recap:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap:has(.hud-word.conceded:not([hidden])) :is(.coach-tip, .coach-intro), .pitch-wrap.replaying :is(.coach-tip, .coach-intro) { visibility: hidden; }

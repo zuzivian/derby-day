@@ -730,9 +730,17 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions { justify-content: center; }
 .rs-foot .replay-actions .btn { --btn-bg: transparent; --btn-fg: var(--muted); --btn-line: transparent; box-shadow: none; text-decoration: underline; text-underline-offset: 3px; }
 .rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
-/* One big button fills the row; two (Play next and Back to Home) share it, so the card body keeps its height. */
+/* One big button fills the row; two (Play next and Back to Home) share it on one line each, a size down so the
+   labels never wrap and the footer stays as tall as with one. */
 .rs-actions { display: flex; gap: var(--sp-2); }
 .rs-actions > .btn { flex: 1 1 0; min-width: 0; }
+.rs-actions:has(> .btn + .btn) > .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 480px), (max-height: 500px) {
+  .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-md); padding-inline: 10px; }
+}
+@media (max-width: 360px) {
+  .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-sm); padding-inline: 6px; letter-spacing: 0; }
+}
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
 @media (max-height: 500px), (max-width: 360px) {
   .rs-foot { gap: var(--sp-2); padding: 10px var(--sp-3) 12px; }
@@ -763,7 +771,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @media (max-height: 500px) {
   .rs-foot { flex-direction: row; align-items: center; }
   .rs-foot .replay-actions { flex: 1 1 auto; }
-  .rs-foot .rs-actions { flex: 1 1 auto; }
+  .rs-foot .rs-actions { flex: 2 1 auto; }
+  .rs-foot .replay-actions { min-width: 0; }
 }
 
 /* Match ------------------------------------------------------------------------ */
@@ -1066,6 +1075,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
     background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg);
   }
   .ob-card:not(.ob-welcome) .ob-nav .btn { width: 100%; justify-content: center; }
+  /* A control Tabbed to scrolls clear of the bar, never under it (the bar is about 120 px with its two buttons). */
+  html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 136px; }
 }
 /* Short landscape phones (750x342): the welcome card's heading and Kick off both fit with no scroll. */
 @media (max-height: 420px) and (orientation: landscape) {
@@ -1081,6 +1092,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .ob-card .kickoff { min-height: 44px; padding-block: 6px; }
   .ob-card:not(.ob-welcome) .ob-nav { position: sticky; bottom: 0; z-index: 2; flex-direction: row-reverse; flex-wrap: nowrap; margin: 0 -18px -12px; padding: 8px 18px; background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg); }
   .ob-card:not(.ob-welcome) .ob-nav .btn { width: auto; flex: 1 1 0; }
+  html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 80px; }
 }
 /* Phones held sideways: coach card left, pitch (with its pad) right, all inside the viewport. */
 @media (max-height: 520px) and (orientation: landscape) {
@@ -1624,7 +1636,6 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .status-strip > * { flex: none; }
   .home { gap: 8px; }
   /* Room for the hero's "Win: +N Elo" line above Kick off. */
-  .home .hero { padding-bottom: 18px; }
   .home .hero-story { margin-bottom: 8px; }
   .home .hero { padding: 8px 20px 12px; gap: 4px; }
   .home .hero-len { display: none; }
@@ -1651,6 +1662,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .status-strip .xp { min-width: 0; }
   #app:has(.home) .status-strip .xp-bar { min-width: 20px; width: 64px; max-width: 64px; }
   #app:has(.home) .status-strip .stat { height: 34px; padding: 0 8px; gap: 4px; font-size: var(--fs-sm); }
+}
+/* Narrower still (568x320): the chips can't all fit, so the strip scrolls again rather than push the page sideways. */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 699px) {
+  #app:has(.home) .status-strip { overflow-x: auto; overflow-y: hidden; }
 }
 /* Very short landscape (568x320, a 200%-zoomed laptop): tighter still, so Kick off needs no scroll. */
 @media (max-height: 400px) and (orientation: landscape) {

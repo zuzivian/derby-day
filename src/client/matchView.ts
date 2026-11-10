@@ -683,7 +683,7 @@ export function mountMatch(root: HTMLElement, o: MatchViewOptions): () => void {
     // Coach tips: hidden behind the pause menu and while an instant replay plays; they watch the live match only,
     // never the replayed one.
     // (Also while a goal, card or half-time word is up: coach.css hides the tip then, so it must not age or be replaced unseen.)
-    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden])');
+    const wordUp = !!root.querySelector('.hud-word[data-tone]:not([hidden]), .hud-word.recap:not([hidden]), .hud-word.conceded:not([hidden])');
     coach?.setPaused(paused || !!replay || wordUp);
     if (!replay) coach?.update(s, paused || wordUp ? 0 : elapsed * 1000);
 

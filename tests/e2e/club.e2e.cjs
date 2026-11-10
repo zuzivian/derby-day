@@ -156,7 +156,18 @@ test('document title follows the screen; status strip is keyboard reachable', as
   await goTab(page, 'transfers');
   expect(await page.title(), 'transfers title').toBe('Transfers · Derby Day');
   const strip = page.locator('.status-strip');
-  expect(await strip.getAttribute('tabindex'), 'strip focusable').toBe('0');
   expect(await strip.getAttribute('role'), 'strip role').toBe('group');
   expect(await strip.getAttribute('aria-label'), 'strip label').toBeTruthy();
+  // Where every chip shows it is no tab stop; where it scrolls (a 568x320 landscape phone) the keyboard can reach it.
+  expect(await strip.getAttribute('tabindex'), 'no extra stop on a wide screen').toBe(null);
+});
+
+test('the status strip is a tab stop only where it scrolls, re-checked on rotation', async (t) => {
+  const page = await openApp(t, { width: 568, height: 320, level: 99 });
+  const strip = page.locator('.status-strip');
+  const scrolls = await strip.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+  expect(scrolls, 'the strip scrolls at 568x320').toBe(true);
+  expect(await strip.getAttribute('tabindex'), 'focusable where it scrolls').toBe('0');
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.waitForFunction(() => !document.querySelector('.status-strip').hasAttribute('tabindex'), null, { timeout: 3000 });
 });

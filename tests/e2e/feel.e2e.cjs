@@ -80,10 +80,12 @@ test('the result card counts Elo up, ends on the final text, and Watch goals is 
   await page.locator(SEL.modal).waitFor({ timeout: 60_000 });
   const chip = page.locator('.modal .rs-elo .rs-chip-main[data-count]');
   expect(await chip.count(), 'the Elo value is a counting chip').toBe(1);
-  const label = await chip.getAttribute('aria-label');
-  if (label !== null) {
-    // What a reader says is the final value from the first frame; the visible text settles on it.
-    await page.waitForFunction((l) => document.querySelector('.modal .rs-elo .rs-chip-main').textContent === l, label, { timeout: 3000 });
+  // While it counts, a reader gets the final value (an sr-only twin) and the moving digits are aria-hidden.
+  const said = await chip.evaluate((el) => el.querySelector('.sr-only')?.textContent ?? null);
+  if (said !== null) {
+    expect(await chip.evaluate((el) => el.querySelector('[aria-hidden="true"]') !== null), 'moving digits hidden from readers').toBe(true);
+    // The visible text settles on that same value, as one plain string.
+    await page.waitForFunction((l) => { const e = document.querySelector('.modal .rs-elo .rs-chip-main'); return e.textContent === l && !e.children.length; }, said, { timeout: 4000 });
   }
   expect(await chip.innerText(), 'final text is a signed Elo change').toMatch(/^[+−-]?\d+$|^±0$|^0$/);
   const btn = page.locator('.modal [data-replay="watch"]');
@@ -109,4 +111,16 @@ test('big desktop (1440x900, 3D): bigger scoreboard, radar clear of it', async (
   expect(r.score, 'score font').toBe(28);
   expect(r.clock, 'clock font').toBe(18);
   expect(r.radar.top >= r.tl.bottom, `radar (${r.radar.top}) under the scoreboard (${r.tl.bottom})`).toBe(true);
+});
+
+test('a coach tip steps aside for a conceded goal too, as it does for a scored one', async (t) => {
+  const page = await openApp(t, { e2eHook: true, prefs: { ...PREFS, coachSeen: [] } });
+  await startRanked(page);
+  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+  await page.waitForSelector('.coach-tip.on:not([hidden])', { timeout: 30_000 });
+  const home = await page.evaluate(() => (window.__derbyMatch.humans[0] ? 0 : 1));
+  await addGoal(page, 1 - home);
+  await page.waitForFunction(() => document.getElementById('banner').classList.contains('conceded'));
+  const vis = await page.locator('.coach-tip').evaluate((el) => getComputedStyle(el).visibility);
+  expect(vis, 'the tip is hidden while the conceded banner is up').toBe('hidden');
 });
