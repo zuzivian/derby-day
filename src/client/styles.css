@@ -1902,6 +1902,7 @@ td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-in
 /* Club: level, news and history lead; identity and rename fold away; the danger zone has its own panel at the end. */
 .club-grid .level-panel, .club-grid .customise, .club-grid .danger-panel { grid-column: 1 / -1; }
 .customise-fold > summary { display: flex; align-items: center; gap: var(--sp-3); cursor: pointer; list-style: none; min-height: 32px; }
+@media (pointer: coarse) { .customise-fold > summary { min-height: 44px; } }
 .customise-fold > summary::-webkit-details-marker { display: none; }
 .customise-fold > summary h2 { margin: 0; }
 .customise-fold > summary .tac-chev { margin-left: auto; }
