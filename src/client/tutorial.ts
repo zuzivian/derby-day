@@ -142,8 +142,8 @@ export function mountTutorial(container: HTMLElement, o: TutorialOptions): () =>
       </div>
     </div>
     <div class="pitch-wrap training-pitch">
-      <canvas id="tr-pitch" class="pitch-canvas" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Training pitch" aria-describedby="coach-title coach-text"></canvas>
       <button class="pitch-pause" id="tr-pause" type="button" aria-keyshortcuts="Escape P">Pause</button>
+      <canvas id="tr-pitch" class="pitch-canvas" tabindex="0" role="application" aria-roledescription="pitch" aria-label="Training pitch" aria-describedby="coach-title coach-text"></canvas>
       <div class="pause" id="tr-paused" hidden>
         <div class="pause-card" role="dialog" aria-modal="true" aria-labelledby="tr-paused-title">
           <h2 id="tr-paused-title">Paused</h2>
