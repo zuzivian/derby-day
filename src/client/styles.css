@@ -1741,3 +1741,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .cabinet li.season .trophy-icon { color: var(--good); }
 .cabinet li.empty { border-style: dashed; color: var(--muted); font-weight: 600; }
 .cabinet li.empty .trophy-icon { color: var(--line-strong); }
+
+/* The result dialog: "Watch goals" is a real (small, quiet) button; "Copy replay code" stays the text link. */
+.rs-foot .replay-actions .btn[data-replay="watch"] { --btn-bg: var(--surface-2); --btn-fg: var(--ink); --btn-line: var(--line); text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.rs-foot .replay-actions .btn[data-replay="watch"]:hover { --btn-bg: var(--surface-3); }
+.rs-foot .replay-actions .btn[data-replay="watch"] svg { flex: none; }
