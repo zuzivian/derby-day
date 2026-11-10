@@ -914,6 +914,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pause-actions { gap: 6px; }
   .pause-card .pause-tactics { margin-top: 0; }
   .pause-card .pause-opt { margin-top: 0; justify-content: flex-start; text-align: left; }
+  /* The mentality sentence is still read out (aria-describedby) but costs three lines here, so "Controls and help" stays in view. */
+  .pause-card .qt-note { display: none; }
+  .pause-card .help-controls { grid-column: 1 / -1; }
+  .pause-card .help-controls summary { padding: 6px 0; }
+}
+/* Where it still needs to scroll (a short screen, a long Controls list), a soft shadow on the edge says there is more. */
+@media (max-height: 420px) and (orientation: landscape) {
+  .pause-card {
+    background-color: var(--surface);
+    background-image: linear-gradient(var(--surface) 30%, transparent), linear-gradient(transparent, var(--surface) 70%),
+      radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, .28), transparent), radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, .28), transparent);
+    background-position: center top, center bottom, center top, center bottom; background-repeat: no-repeat;
+    background-size: 100% 28px, 100% 28px, 100% 10px, 100% 10px; background-attachment: local, local, scroll, scroll;
+  }
 }
 @media (pointer: coarse) {
   .pause-card .hint { display: none; }
@@ -1042,6 +1056,31 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .training-pitch { width: 100%; }
   .training-head { align-items: center; }
   .training-head .eyebrow { display: none; }
+}
+/* Phones: the first-match celebration and the club step keep their actions on screen, a bar stuck to the bottom of the
+   viewport with the primary (Go to Home) full width on top, like .rs-foot in the result dialog. */
+@media (max-width: 640px) {
+  .ob-card:not(.ob-welcome) .ob-nav {
+    position: sticky; bottom: 0; z-index: 2; flex-direction: column-reverse; align-items: stretch; flex-wrap: nowrap; gap: var(--sp-2);
+    margin: 0 -20px -20px; padding: 12px 20px max(14px, env(safe-area-inset-bottom, 0px));
+    background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg);
+  }
+  .ob-card:not(.ob-welcome) .ob-nav .btn { width: 100%; justify-content: center; }
+}
+/* Short landscape phones (750x342): the welcome card's heading and Kick off both fit with no scroll. */
+@media (max-height: 420px) and (orientation: landscape) {
+  .onboarding { gap: 8px; }
+  .ob-top .wordmark { font-size: 24px; }
+  .ob-card { padding: 12px 18px; gap: 8px; border-radius: var(--r-lg); }
+  .ob-title { font-size: 26px; line-height: 1.05; }
+  .ob-lede { font-size: 14px; }
+  .ob-versus { padding: 6px var(--sp-3); }
+  .ob-versus .crest { width: 34px; height: 38px; }
+  .ob-versus .side { gap: 2px; }
+  .ob-welcome .ob-kit, .ob-welcome .muted.small { display: none; }
+  .ob-card .kickoff { min-height: 44px; padding-block: 6px; }
+  .ob-card:not(.ob-welcome) .ob-nav { position: sticky; bottom: 0; z-index: 2; flex-direction: row-reverse; flex-wrap: nowrap; margin: 0 -18px -12px; padding: 8px 18px; background: var(--surface); border-top: 1px solid var(--line); border-radius: 0 0 var(--r-lg) var(--r-lg); }
+  .ob-card:not(.ob-welcome) .ob-nav .btn { width: auto; flex: 1 1 0; }
 }
 /* Phones held sideways: coach card left, pitch (with its pad) right, all inside the viewport. */
 @media (max-height: 520px) and (orientation: landscape) {
@@ -1484,13 +1523,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .club-chip .crest { width: 24px; height: 27px; }
   .topbar .club-elo { font-size: var(--fs-xs); }
   .topbar .wordmark::after { height: 4px; }
-  .status-strip { gap: 6px; width: 100%; position: relative; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 3px 0; margin: -3px 0; }
-  .status-strip::-webkit-scrollbar { display: none; }
-  /* It scrolls sideways: an edge fades only on the side with more chips (--fl/--fr, set from scroll position in screenFx.ts), so a cut
-     chip reads as "more this way"; the end padding lets the last chip come fully clear of the fade. */
-  .status-strip { padding-right: 28px; --fl: 0px; --fr: 28px; -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent); mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent); }
+  /* Every chip shows: the strip wraps to two rows (level chip, lives and money; then rank and week), no scroller, no fade mask. */
+  .status-strip { gap: 6px; width: 100%; flex-wrap: wrap; overflow: visible; padding: 0; margin: 0; }
   .status-strip > * { flex: none; }
-  .status-strip .level-chip { height: 34px; flex: 1 1 auto; min-width: 196px; padding-right: 12px; }
+  .status-strip .level-chip { height: 34px; flex: 1 1 140px; min-width: 0; padding-right: 10px; }
+  .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .status-strip .xp-text { font-size: var(--fs-xs); }
   .status-strip .xp-bar { min-width: 60px; }
   .status-strip .level-badge { width: 28px; height: 28px; font-size: 14px; }
@@ -1584,6 +1621,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .status-strip::-webkit-scrollbar { display: none; }
   #app:has(.home) .status-strip > * { flex: none; }
   .home { gap: 8px; }
+  /* Room for the hero's "Win: +N Elo" line above Kick off. */
+  .home .hero { padding-bottom: 18px; }
+  .home .hero-story { margin-bottom: 8px; }
   .home .hero { padding: 8px 20px 12px; gap: 4px; }
   .home .hero-len { display: none; }
   .home .hero .crest { width: 48px; height: 54px; }
@@ -1593,6 +1633,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .home .gauge { width: 110px; }
   .home .gauge-num { font-size: 30px; }
   .home .kickoff { min-height: 52px; padding-block: 8px; font-size: 26px; }
+}
+/* Landscape phones narrower than 800 px (iPhone 13 is 750 px of page): the whole top bar fits with no sideways pan, so the
+   money chip is never cut off. The club chip loses its Elo line, the level chip its words (the badge shows the level). */
+@media (max-height: 520px) and (orientation: landscape) and (max-width: 800px) {
+  #app:has(.home) .topbar { gap: 6px 10px; }
+  #app:has(.home) .topbar .wordmark { font-size: 22px; }
+  #app:has(.home) .topbar .club-elo { display: none; }
+  #app:has(.home) .topbar .club-name { max-width: 11ch; font-size: 15px; }
+  #app:has(.home) .topbar .club-chip .crest { width: 20px; height: 23px; }
+  #app:has(.home) .status-strip { gap: 4px; overflow: visible; }
+  #app:has(.home) .status-strip .level-chip { height: 34px; min-width: 0; padding-right: 10px; }
+  #app:has(.home) .status-strip .xp-text { display: none; }
+  #app:has(.home) .status-strip .xp-bar { min-width: 48px; max-width: 64px; }
+  #app:has(.home) .status-strip .stat { height: 34px; padding: 0 8px; gap: 4px; font-size: var(--fs-sm); }
 }
 /* Very short landscape (568x320, a 200%-zoomed laptop): tighter still, so Kick off needs no scroll. */
 @media (max-height: 400px) and (orientation: landscape) {
