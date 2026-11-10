@@ -48,6 +48,15 @@ test('home: from level 3 Kick off is ranked, and the win-chance gauge waits for 
   expect(await ranked.locator(`${SEL.hero} .gauge[role="img"]`).getAttribute('aria-label'), 'gauge has a text equivalent once shown').toMatch(/^Win chance \d+%$/);
 });
 
+test('home: the next unlock is a slim progress row with a bar and the XP to go', async (t) => {
+  const page = await openApp(t, { xp: 660 });
+  const row = page.locator('#home-next');
+  expect(await row.innerText(), 'row text').toMatch(/Next\s*The Cup and Practice: Hard at level 5[\s\S]*340 XP to go/i);
+  const bar = row.locator('[role="progressbar"]');
+  expect(await bar.getAttribute('aria-valuenow'), 'bar fraction of this level (60 of 400 XP)').toBe('15');
+  expect(await bar.getAttribute('aria-valuetext'), 'bar text').toBe('340 XP to go');
+});
+
 test('home: Kick off starts a ranked match against the opponent shown', async (t) => {
   const page = await openApp(t, { level: 3, prefs: SHORT, fast: true });
   const opp = (await page.locator(`${SEL.hero} .hero-name`).nth(1).innerText()).trim();
