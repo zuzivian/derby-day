@@ -348,6 +348,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .crest { flex: none; color: var(--ink); }
 /* Status: one row of chips that grows with the club. */
 .status-strip { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
+.status-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-md); }
 .status-strip .level-chip { margin-top: 0; height: 40px; padding: 3px 14px 3px 3px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
 .status-strip .level-badge { width: 32px; height: 32px; font-size: var(--fs-md); }
 .status-strip .xp-bar { min-width: 96px; max-width: 140px; }
@@ -464,7 +465,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tbl.ladder th.pos-col { color: var(--muted); }
 .tbl.ladder tr.you .pos-col { color: var(--ink); }
 .tbl.ladder .rec { min-width: 40px; padding-left: 4px; padding-right: 4px; font-variant-numeric: tabular-nums; }
-.tbl.ladder td.zero { color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.tbl.ladder td.zero { color: var(--muted); }
 /* Phones: the player tables keep #, name, position, OVR and the money column; the detail columns go. */
 /* Column tiers. The transfer tables (.has-action) lose their detail columns below
    1000 px, so the money column and the Sign/Sell button always fit; the Squad
@@ -1652,6 +1653,28 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pad-btn.shoot { border-style: double; border-width: 6px; }
   .pad-btn.down { border-color: Highlight; }
   .pad-btn.coach-pulse { outline: 3px solid Highlight; outline-offset: 3px; }
+  /* The kickoff button is a painted fill with no border of its own: give it an edge. */
+  .kickoff { border: 2px solid ButtonText; background: ButtonFace; color: ButtonText; forced-color-adjust: none; }
+  .kickoff:focus-visible { outline: 3px solid Highlight; }
+  /* The unseen-news dot is background-only. */
+  .tab-dot { background: Highlight; forced-color-adjust: none; }
+}
+
+/* More contrast requested. Light tokens: --muted #3a4458 is 8.2:1 on --surface-2 and 9.8:1 on white (was 5.9:1 at best);
+   --line #657570 is 4.9:1 on white, 4.4:1 on --surface-2. Dark tokens: --muted #c6d2cd is 9.9:1 on --surface-2 and
+   10.9:1 on --surface; --line #6c7f78 is 4.0:1 on --surface and 3.6:1 on --surface-2. Cards, buttons and inputs get 2px edges. */
+@media (prefers-contrast: more) {
+  :root { --muted: #3a4458; --line: #657570; --line-strong: #657570; --control-line: #4f5f5a; }
+  .panel, .btn, .chip, select, input[type="text"] { border-width: 2px; }
+  .panel, .btn, .chip { border-style: solid; border-color: var(--line); }
+  .btn { border-color: var(--btn-line, var(--line)); }
+  select, input[type="text"] { border-color: var(--control-line); }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --muted: #c6d2cd; --placeholder: #c6d2cd; --line: #6c7f78; --line-strong: #8a9c95; --control-line: #9aaba4; }
+}
+@media (prefers-contrast: more) {
+  :root[data-theme="dark"] { --muted: #c6d2cd; --placeholder: #c6d2cd; --line: #6c7f78; --line-strong: #8a9c95; --control-line: #9aaba4; }
 }
 
 /* Stakes and rivalry: the line under the Home hero and the fixture cards. */

@@ -162,7 +162,7 @@ function statusStrip(s: Save): string {
     isUnlocked(s, 'calendar') ? `<div class="stat week" title="Season and week">${CAL}<span class="stat-num" aria-hidden="true">S${s.year ?? 1} · W${weekOfYear(s)}</span><span class="sr-only">Season ${s.year ?? 1}, week ${weekOfYear(s)} of ${SEASON_WEEKS}</span></div>` : '',
   ].filter(Boolean);
   const chip = `<div class="club-chip">${crestSvg(c, 30)}<div class="club-chip-text"><div class="club-name">${esc(c.name)}</div><div class="club-elo">Elo <b>${c.elo}</b>${isUnlocked(s, 'league') ? ` · ${divisionName(playerDivision(s))}` : ''}</div></div></div>`;
-  return `${chip}<div class="status-strip" role="group" aria-label="Club status">${items.join('')}</div>`;
+  return `${chip}<div class="status-strip" role="group" aria-label="Club status" tabindex="0">${items.join('')}</div>`;
 }
 
 export function shell(app: App, body: string): string {
