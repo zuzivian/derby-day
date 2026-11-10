@@ -88,6 +88,8 @@ test('tactics board: formation and mentality are radio groups that save, survive
     expect(await page.locator(SEL.formationChecked).getAttribute('value'), 'default formation').toBe('4-4-2');
     expect(await page.locator(SEL.mentalityChecked).getAttribute('value'), 'default mentality').toBe('balanced');
 
+    // On a phone the tactics fold starts collapsed to a one-line summary: open it first.
+    if (!(await page.locator('.tac-fold').evaluate((d) => d.open))) await page.locator('.tac-fold > summary').click();
     // Pick by clicking the card (the label), the way a mouse user does.
     await page.locator(`label:has(${SEL.formationRadio('3-5-2')})`).click();
     let save = await readSave(page);
