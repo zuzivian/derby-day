@@ -50,6 +50,8 @@ interface Slot {
   event?: (t0: number) => AnimEvent;
   at?: number;
   every?: number;
+  /** Turning at this rate (rad/s) while running. */
+  turn?: number;
 }
 
 const SLOTS: Slot[] = [
@@ -61,6 +63,8 @@ const SLOTS: Slot[] = [
   { label: 'dribble', speed: 5, hasBall: true },
   { label: 'back', speed: 2.5, heading: Math.PI },
   { label: 'side', speed: 2.5, heading: Math.PI / 2 },
+  { label: 'turn', speed: 5, turn: 2.2 },
+  { label: 'gk shuffle', speed: 1.2, heading: Math.PI / 2, keeper: true, keeperSet: 1 },
   { label: 'pass', speed: 0, event: (t0) => ({ kind: 'kick', style: 'pass', t0, dir: { x: 1, y: 0 }, power: 0.5 }), at: 0.2, every: 1.4 },
   { label: 'shot', speed: 3, event: (t0) => ({ kind: 'kick', style: 'shot', t0, dir: { x: 1, y: 0 }, power: 1 }), at: 0.2, every: 1.4 },
   { label: 'slide', speed: 0, event: (t0) => ({ kind: 'tackle', t0, failed: false, slide: true }), at: 0.2, every: 1.8 },
@@ -129,7 +133,7 @@ const players = picked.map((sl, j) => {
   const m = createProceduralPlayer(kit, look);
   scene.add(m.object);
   // Every player faces +x (screen right in the side view), so all are seen in profile from the side camera.
-  return { sl, m, x: x0 + j * SPACING };
+  return { sl, m, x: x0 + j * SPACING, pos: { x: HALF_W, y: HALF_H } };
 });
 const ball = new Mesh(new SphereGeometry(0.15, 16, 12), new MeshStandardMaterial({ color: '#f4f4f4', roughness: 0.4 }));
 ball.castShadow = true;
@@ -162,10 +166,15 @@ function placeCamera() {
 }
 placeCamera();
 
-/** Body moving at speed along the slot's heading while facing +x (sim x right, sim y down = scene z). */
-function bodyFor(sl: Slot): SimBody {
-  const hd = sl.heading ?? 0;
-  return { pos: { x: HALF_W, y: HALF_H }, vel: { x: Math.cos(hd) * sl.speed, y: Math.sin(hd) * sl.speed }, facing: { x: 1, y: 0 }, sprinting: sl.speed > 7, role: sl.keeper ? 'GK' : 'CM' } as SimBody;
+/**
+ * Body moving at speed along the slot's heading while facing +x (sim x right, sim y down = scene z), or
+ * turning at `turn` rad/s. The sim position really moves (planted feet are held in world space); the
+ * drawing is pinned to the slot afterwards.
+ */
+function bodyFor(sl: Slot, pos: { x: number; y: number }, t: number): SimBody {
+  const f = (sl.turn ?? 0) * t;
+  const hd = (sl.heading ?? 0) + f;
+  return { pos, vel: { x: Math.cos(hd) * sl.speed, y: Math.sin(hd) * sl.speed }, facing: { x: Math.cos(f), y: Math.sin(f) }, sprinting: sl.speed > 7, role: sl.keeper ? 'GK' : 'CM' } as SimBody;
 }
 
 const ctx: PlayerContext = { time: 0, dtSim: 1 / 60, lead: 0, keeperSet: 0, throwHold: false, holding: false, hasBall: false, wall: false, reducedMotion: false };
@@ -188,10 +197,14 @@ function step(dt: number) {
     ctx.dtSim = dt;
     ctx.keeperSet = sl.keeperSet ?? 0;
     ctx.hasBall = !!sl.hasBall;
-    const body = bodyFor(sl);
+    const body = bodyFor(sl, p.pos, clock);
+    p.pos.x += body.vel.x * dt;
+    p.pos.y += body.vel.y * dt;
+    body.pos = { ...p.pos };
     p.m.update(dt, body, evs, ctx);
-    // Pin the player to its slot (the model places itself at the sim position, here the origin).
-    p.m.object.position.x += p.x;
+    // Pin the drawing to its slot.
+    p.m.object.position.x = p.x;
+    p.m.object.position.z = 0;
     p.m.object.updateMatrixWorld(true);
     if (sl.hasBall) ball.position.set(p.x + 0.75, 0.15, 0);
     ball.visible = players.some((pp) => pp.sl.hasBall);

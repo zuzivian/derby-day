@@ -441,6 +441,11 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   let later: AnimEvent | null = null;
   /** Gait cycle, 0..1 (two steps): the left foot lands at 0, the right at 0.5. */
   let cyc = Math.random();
+  /** Each foot's spot on the grass (scene metres) while it is planted. */
+  const footL = { locked: false, wx: 0, wz: 0 };
+  const footR = { locked: false, wx: 0, wz: 0 };
+  /** The heading the model is drawn at this frame (root.rotation.y), for the planted feet. */
+  let yawNow = 0;
   /** Smoothed forward acceleration, m/s². */
   let accS = 0;
   /** Where the head is turned to follow the ball (rad, + to his left), and tipped down to it. */
@@ -556,7 +561,10 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       S = sMax;
     }
     cyc = (cyc + freq * dtSim) % 1;
-    const crouch = 0.035 * gait + 0.02 * run + 0.035 * sprint;
+    // A keeper set for a shot crouches with his feet wide, standing or shuffling across his line: the legs come from the
+    // same IK, so his feet stay planted as he shuffles.
+    const set = keeperW * (1 - smooth(1.5, 4, speed));
+    const crouch = 0.035 * gait + 0.02 * run + 0.035 * sprint + 0.16 * set;
     const bobA = 0.016 * gait * (1 - run) - 0.028 * run;
     const bodyY = -crouch + bobA * Math.cos(4 * Math.PI * (cyc - beta / 2));
     const twist = (0.06 + 0.1 * run) * gait * (1 - lat);
@@ -567,12 +575,14 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
     P.set('pelvis', 0, pelvisYaw, pelvisRoll);
     // Feet: planted through stance (moving back under him at exactly his speed, so they never skate),
     // then swung forward, the heel kicking up behind at a run.
-    const lift = 0.07 * smooth(0.1, 1.4, speed) + 0.1 * run + 0.14 * sprint;
+    const lift = (0.07 * smooth(0.1, 1.4, speed) + 0.1 * run + 0.14 * sprint) * (1 - 0.4 * set);
+    // Running with the ball: the right foot pokes it on once a stride, reaching on and low at the end of its swing.
+    const touch = dribbleW * smooth(1, 2.5, speed) * (reduced ? 0 : 1);
     const heel = 0.08 * run + 0.22 * sprint;
     const centre = -0.06 * S * run;
     for (const left of [true, false]) {
       const p = (cyc + (left ? 0 : 0.5)) % 1;
-      const width = (left ? 1 : -1) * (LEG.hipX * (1 - 0.35 * run) + 0.05 * lat);
+      const width = (left ? 1 : -1) * (LEG.hipX * (1 - 0.35 * run) + 0.05 * lat + 0.13 * set);
       let along: number;
       let fy = 0;
       let toe = 0;
@@ -587,8 +597,39 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
         along = centre + S * (-0.5 + e) - heel * 0.9 * Math.sin(Math.PI * Math.min(1, u / 0.7)) * (1 - u);
         fy = lift * Math.sin(Math.PI * u) ** 0.8 + heel * Math.sin(Math.PI * Math.min(1, u / 0.75)) ** 2 * (1 - 0.6 * u);
         toe = 0.5 * gait * (1 - smooth(0, 0.5, u)) - 0.15 * gait * smooth(0.6, 1, u);
+        if (!left && touch > 0) {
+          const poke = touch * Math.sin(Math.PI * Math.max(0, Math.min(1, (u - 0.45) / 0.55)));
+          along += 0.28 * poke;
+          fy *= 1 - 0.5 * poke;
+          toe += 0.35 * poke;
+        }
       }
-      legIK(P, left, width + mx * along, ANKLE_Y + fy, mz * along, toe * (1 - 0.6 * backw), bodyY, pelvisYaw, pelvisRoll);
+      // Planted feet hold their spot on the grass through turns and changes of pace: locked in world space while
+      // down, released if the body has moved too far from where the gait would put the foot (a cut, a seek).
+      let tx = width + mx * along;
+      let tz = mz * along;
+      const fl = left ? footL : footR;
+      if (p < beta) {
+        const cy = Math.cos(yawNow);
+        const sy = Math.sin(yawNow);
+        if (!fl.locked) {
+          fl.wx = root.position.x + h * (tx * cy + tz * sy);
+          fl.wz = root.position.z + h * (-tx * sy + tz * cy);
+          fl.locked = true;
+        }
+        const dx = (fl.wx - root.position.x) / h;
+        const dz = (fl.wz - root.position.z) / h;
+        const lx = dx * cy - dz * sy;
+        const lz = dx * sy + dz * cy;
+        if ((lx - tx) ** 2 + (lz - tz) ** 2 > 0.2 * 0.2) fl.locked = false;
+        else {
+          tx = lx;
+          tz = lz;
+        }
+      } else fl.locked = false;
+      legIK(P, left, tx, ANKLE_Y + fy, tz, toe * (1 - 0.6 * backw), bodyY, pelvisYaw, pelvisRoll);
+      // Knees out over the toes in a keeper's wide crouch, not knocked together.
+      if (set > 0.01) P.add(left ? 'hipL' : 'hipR', 0, (left ? 0.3 : -0.3) * set, 0);
     }
     // Arms swing against the legs (the left forward as the right leg comes through), elbows bent more at speed.
     const sw = Math.cos(2 * Math.PI * cyc);
@@ -622,11 +663,9 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
   function stances(P: Pose) {
     if (keeperW > 0.01) {
       stance.copy(P);
-      stance.set('hipL', -0.55, 0, 0.22).set('hipR', -0.55, 0, -0.22);
-      stance.set('knL', 0.95).set('knR', 0.95).set('anL', -0.35).set('anR', -0.35);
+      // The crouch and the wide feet come from locomotion (its IK); here the trunk, head and hands.
       stance.set('spine', 0.42, 0, 0).set('head', -0.3);
       stance.set('shL', -0.5, 0, 0.55).set('shR', -0.5, 0, -0.55).set('elL', -0.7).set('elR', -0.7);
-      stance.a[BODY + 1] = -0.16;
       P.blend(stance, keeperW * (1 - smooth(1.5, 4, speedS)));
     }
     if (windedW > 0.01) {
@@ -907,6 +946,7 @@ export function createProceduralPlayer(kit: PlayerKit, look: PlayerLook): Player
       yaw = damp(yaw, yaw + angleDelta(yaw, target), 14, dt);
       if (dt > 0) turnS = damp(turnS, ctx.dtSim > 0 ? angleDelta(yaw0, yaw) / dt : 0, 8, dt);
       root.rotation.y = yaw;
+      yawNow = yaw;
 
       // Velocity in the player's frame, smoothed so the gait never jumps.
       const fx = Math.sin(yaw);
