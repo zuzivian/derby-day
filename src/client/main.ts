@@ -167,6 +167,17 @@ function render() {
   const entered = root.dataset.shown !== app.screen;
   if (entered) root.querySelector('#panel')?.classList.add('enter');
   root.dataset.shown = app.screen;
+  // The tab bar is rebuilt every render, so it starts scrolled to the left: bring the open tab fully into view (horizontally
+  // only, so the page does not move). Instant, never smooth: the bar is new each time.
+  const openTab = root.querySelector<HTMLElement>('.tab[aria-current="page"]');
+  const tabBar = openTab?.parentElement;
+  if (openTab && tabBar && tabBar.scrollWidth > tabBar.clientWidth) {
+    const pad = 12;
+    const t = openTab.getBoundingClientRect();
+    const box = tabBar.getBoundingClientRect();
+    if (t.left - pad < box.left) tabBar.scrollLeft += t.left - pad - box.left;
+    else if (t.right + pad > box.right) tabBar.scrollLeft += t.right + pad - box.right;
+  }
   // A new section opens at its title: the page isn't left at the last screen's scroll (a short page clamps it to a few px,
   // clipping the heading). Before focus is restored, so a focus target further down still scrolls itself into view.
   if (entered && app.screen !== 'ladder') window.scrollTo(0, 0);

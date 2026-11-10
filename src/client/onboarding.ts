@@ -62,7 +62,9 @@ export function mountWelcome(root: HTMLElement, o: WelcomeOptions): () => void {
     else if (el?.dataset.action === 'skip-onboarding') o.onSkip();
   };
   root.addEventListener('click', onClick);
-  autoFocus(root.querySelector<HTMLElement>('#ob-kickoff'));
+  // Focus must not scroll the page: on a short landscape phone Kick off is below the fold and the heading would be pushed out of view.
+  autoFocus(root.querySelector<HTMLElement>('#ob-kickoff'), { preventScroll: true });
+  window.scrollTo({ top: 0 });
   return () => root.removeEventListener('click', onClick);
 }
 
