@@ -27,6 +27,10 @@ export const LinearFilter: number;
 export const LinearMipmapLinearFilter: number;
 export const NearestFilter: number;
 export const DynamicDrawUsage: number;
+export const HalfFloatType: number;
+export const UnsignedByteType: number;
+export const NoBlending: number;
+export const RGBAFormat: number;
 
 export class Vector2 {
   constructor(x?: number, y?: number);
@@ -97,7 +101,7 @@ export class Matrix4 {
 }
 
 export class Color {
-  constructor(c?: string | number | Color);
+  constructor(c?: string | number | Color, g?: number, b?: number);
   r: number;
   g: number;
   b: number;
@@ -443,6 +447,16 @@ export class WebGLRenderer {
   forceContextLoss(): void;
   getContext(): WebGL2RenderingContext;
   [k: string]: any;
+}
+
+export class WebGLRenderTarget {
+  constructor(width?: number, height?: number, options?: { type?: number; format?: number; samples?: number; depthBuffer?: boolean; stencilBuffer?: boolean; minFilter?: number; magFilter?: number; generateMipmaps?: boolean });
+  width: number;
+  height: number;
+  texture: Texture;
+  samples: number;
+  setSize(width: number, height: number): void;
+  dispose(): void;
 }
 
 export class Bone extends Object3D {

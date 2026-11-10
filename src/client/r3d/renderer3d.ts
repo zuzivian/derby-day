@@ -18,6 +18,8 @@ import { GroundFx } from './groundfx3d.ts';
 import { PlayerKit, colorDist, createProceduralPlayer, keeperPair, lookFor, type AnimEvent, type Player3D, type PlayerContext, type SimBody } from './player3d.ts';
 import { HALF_H, HALF_W, hash01, prefersReducedMotion, sx, sz, wx, wy } from './space.ts';
 import { buildStadium, type Stadium } from './stadium.ts';
+import { ATMOSPHERES, pickTimeOfDay, todQuery, type Atmosphere } from './atmosphere.ts';
+import { PostFX } from './post.ts';
 import { QualityGovernor, type GovernorState } from './governor.ts';
 import { FRAME_BUDGET, FRAME_PARTS } from './budget.ts';
 import { watchPixelRatio, type PixelRatioWatch } from '../dpr.ts';
@@ -295,6 +297,15 @@ export class Renderer3D implements MatchRenderer {
   private scene = new Scene();
   private cam = new MatchCamera();
   private sun: DirectionalLight;
+  private hemi: HemisphereLight;
+  private fill: DirectionalLight;
+  /** This match's time of day and its lighting (atmosphere.ts). */
+  private atmo: Atmosphere = ATMOSPHERES.day;
+  /** Bloom, vignette and tone mapping at high quality (post.ts); null draws straight to the canvas. */
+  private post: PostFX | null = null;
+  /** Under floodlights: each player's fainter shadows thrown away from the other pylons. */
+  private spokes: InstancedMesh | null = null;
+  private spokeMat: MeshBasicMaterial | null = null;
   private stadium: Stadium | null = null;
   private kit = new PlayerKit();
   private players: Player3D[] = [];
@@ -400,6 +411,7 @@ export class Renderer3D implements MatchRenderer {
     scene.background = new Color('#9cc8f0');
     scene.fog = new Fog('#c6dcf0', 220, 1100);
     const hemi = new HemisphereLight('#d6ebff', '#4d7d3a', 1.5);
+    this.hemi = hemi;
     scene.add(hemi);
     // Low afternoon sun from behind the camera's left shoulder: players lit from the front, long
     // diagonal shadows away up the pitch, the near stand's shadow across the near touchline.
@@ -422,7 +434,13 @@ export class Renderer3D implements MatchRenderer {
     scene.add(this.sun, this.sun.target);
     const fill = new DirectionalLight('#dce8ff', 0.35);
     fill.position.set(30, 40, 60);
+    this.fill = fill;
     scene.add(fill);
+    // High quality draws through bloom and a vignette (post.ts). Frame stats then add up every pass of a frame.
+    if (hi && !/[?&]post=off\b/.test(location.search)) {
+      this.post = new PostFX(this.gl);
+      this.gl.info.autoReset = false;
+    }
 
     // Drawn in the transparent pass (fully opaque) after the player dots, so the ball is never
     // hidden under one (dots3d.ts DOT_ORDER); its shadow blob (renderOrder 1) comes after them too.
@@ -604,7 +622,9 @@ export class Renderer3D implements MatchRenderer {
     this.teamsKey = key;
     if (!this.stadium) {
       const aniso = Math.min(8, this.gl.capabilities.getMaxAnisotropy());
-      this.stadium = buildStadium({ teams: s.teams, quality: this.opts.quality, anisotropy: aniso });
+      this.atmo = ATMOSPHERES[pickTimeOfDay(s.teams[0].name, s.teams[1].name, todQuery())];
+      this.applyAtmosphere();
+      this.stadium = buildStadium({ teams: s.teams, quality: this.opts.quality, anisotropy: aniso, atmosphere: this.atmo });
       this.scene.add(this.stadium.group);
     }
     for (const p of this.players) p.dispose();
@@ -675,6 +695,8 @@ export class Renderer3D implements MatchRenderer {
     if (this.lost) return;
     this.dpr.check();
     const t0 = performance.now();
+    // With post-processing a frame is several render() calls: its stats are reset here, once, and add up.
+    if (this.post) this.gl.info.reset();
     this.build(s);
     const now = t0 / 1000;
     const dt = this.lastNow ? Math.min(0.1, Math.max(0, now - this.lastNow)) : 1 / 60;
@@ -844,6 +866,7 @@ export class Renderer3D implements MatchRenderer {
       this.feet.count = s.players.length;
       this.feet.instanceMatrix.needsUpdate = true;
     }
+    if (this.spokes && this.stadium) this.drawSpokes(s);
 
     // Ball: in someone's hands (see handsOf), or where the sim has it.
     const holder = b.owner >= 0 ? s.players[b.owner] : null;
@@ -1017,7 +1040,8 @@ export class Renderer3D implements MatchRenderer {
     const fx = Math.round(tgt.x / texel) * texel;
     const fz = Math.round((tgt.z - 6) / texel) * texel;
     this.sun.target.position.set(fx, 0, fz);
-    this.sun.position.set(fx - 55, 70, fz + 78);
+    const ko = this.atmo.key.offset;
+    this.sun.position.set(fx + ko[0], ko[1], fz + ko[2]);
     this.sun.target.updateMatrixWorld();
 
     if (this.aim) {
@@ -1047,7 +1071,8 @@ export class Renderer3D implements MatchRenderer {
     // a second draw of every caster).
     if (this.shadowEvery > 1) this.gl.shadowMap.needsUpdate = ++this.frameNo % this.shadowEvery === 0;
     const tSubmit = performance.now();
-    this.gl.render(this.scene, this.cam.camera);
+    if (this.post) this.post.render(this.scene, this.cam.camera);
+    else this.gl.render(this.scene, this.cam.camera);
 
     // Frame stats, and the quality governor: slow machines step down (governor.ts).
     const tEnd = performance.now();
@@ -1070,11 +1095,86 @@ export class Renderer3D implements MatchRenderer {
       this.canvas.dataset.fps = String(this.fps);
       this.canvas.dataset.cpuMs = ms.toFixed(1);
       this.canvas.dataset.calls = String(this.gl.info.render.calls);
+      this.canvas.dataset.tod = this.atmo.tod;
       this.canvas.dataset.tris = String(this.gl.info.render.triangles);
       // Average ms per frame over the last second, e.g. "setup:0.2 players:1.1 stadium:0.3 scene:0.4 submit:2.0".
       this.canvas.dataset.parts = FRAME_PARTS.map((k, i) => `${k}:${(pm[i] / (this.fpsLast || 1)).toFixed(2)}`).join(' ');
       pm.fill(0);
     }
+  }
+
+  /** Light the scene for this match's time of day (atmosphere.ts). */
+  private applyAtmosphere(): void {
+    const a = this.atmo;
+    const scene = this.scene;
+    (scene.background as Color).set(a.background);
+    const fog = scene.fog as Fog;
+    fog.color.set(a.fog.color);
+    fog.near = a.fog.near;
+    fog.far = a.fog.far;
+    this.hemi.color.set(a.hemi.sky);
+    this.hemi.groundColor.set(a.hemi.ground);
+    this.hemi.intensity = a.hemi.intensity;
+    this.sun.color.set(a.key.color);
+    this.sun.intensity = a.key.intensity;
+    this.fill.color.set(a.fill.color);
+    this.fill.intensity = a.fill.intensity;
+    this.fill.position.set(...a.fill.position);
+    this.fill.updateMatrixWorld();
+    if (this.post) Object.assign(this.post.settings, a.post);
+    this.canvas.dataset.tod = a.tod;
+    // Floodlight shadows: one per player for each pylon but the key light's, faint and long.
+    if (a.spokes > 0 && !this.spokes) {
+      this.spokeMat = new MeshBasicMaterial({ map: this.blobMat.map, transparent: true, depthWrite: false, toneMapped: false, opacity: a.spokes });
+      this.spokes = new InstancedMesh(new PlaneGeometry(1, 1).rotateX(-Math.PI / 2), this.spokeMat, 26 * 3);
+      this.spokes.frustumCulled = false;
+      this.spokes.renderOrder = 1;
+      this.spokes.count = 0;
+      this.scene.add(this.spokes);
+    }
+  }
+
+  private spokeQ = new Quaternion();
+  private spokeS = new Vector3();
+  private spokeP = new Vector3();
+  private spokeUp = new Vector3(0, 1, 0);
+
+  /** Each player's floodlight shadows: away from every pylon but the one the key light stands for, longer the lower the light. */
+  private drawSpokes(s: MatchState): void {
+    const spokes = this.spokes!;
+    const lights = this.stadium!.lights;
+    const ko = this.atmo.key.offset;
+    // The pylon the key light stands for: the one most in its direction.
+    let keyI = 0;
+    let best = -Infinity;
+    lights.forEach((l, i) => {
+      const d = l.x * ko[0] + l.z * ko[2];
+      if (d > best) {
+        best = d;
+        keyI = i;
+      }
+    });
+    let n = 0;
+    for (const p of s.players) {
+      if (p.sentOff) continue;
+      const o = this.players[p.i].object.position;
+      for (let i = 0; i < lights.length && n < spokes.instanceMatrix.count; i++) {
+        if (i === keyI) continue;
+        const l = lights[i];
+        const dx = o.x - l.x;
+        const dz = o.z - l.z;
+        const d = Math.sqrt(dx * dx + dz * dz) || 1;
+        // A 2 m figure's shadow from a lamp at the pylon's height.
+        const len = Math.min(6, (2.0 * d) / Math.max(10, l.y - 2));
+        this.spokeQ.setFromAxisAngle(this.spokeUp, Math.atan2(dx, dz));
+        this.spokeP.set(o.x + (dx / d) * len * 0.5, 0.012, o.z + (dz / d) * len * 0.5);
+        this.spokeS.set(0.7, 1, len);
+        this.m4.compose(this.spokeP, this.spokeQ, this.spokeS);
+        spokes.setMatrixAt(n++, this.m4);
+      }
+    }
+    spokes.count = n;
+    spokes.instanceMatrix.needsUpdate = true;
   }
 
   private applyLevel(st: GovernorState): void {
@@ -1202,6 +1302,10 @@ export class Renderer3D implements MatchRenderer {
     this.feet?.geometry.dispose();
     this.feet?.dispose();
     this.sun.shadow.map?.dispose();
+    this.post?.dispose();
+    this.spokes?.geometry.dispose();
+    this.spokes?.dispose();
+    this.spokeMat?.dispose();
     this.gl.dispose();
     this.gl.forceContextLoss();
     delete this.canvas.dataset.renderer;
