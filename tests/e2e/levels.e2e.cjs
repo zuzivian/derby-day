@@ -73,10 +73,12 @@ test('levels: a warm-up match awards XP, shown in the result dialog and the head
   const rec = save.history.at(-1);
   expect(save.xp, 'some XP').toBeGreaterThanOrEqual(50);
   const line = (await page.locator(SEL.xpGain).innerText()).replace(/\s+/g, ' ');
-  const result = rec.goalsFor > rec.goalsAgainst ? 'win 120' : rec.goalsFor === rec.goalsAgainst ? 'draw 80' : 'loss 50';
-  expect(line, 'result line').toMatch(new RegExp(`^\\+${save.xp} XP: ${result}`));
+  const result = rec.goalsFor > rec.goalsAgainst ? 'Win 120' : rec.goalsFor === rec.goalsAgainst ? 'Draw 80' : 'Loss 50';
+  // A lone part names the reason without repeating the total ("+50 XP: Loss").
+  const alone = save.xp === 50; // a loss with no goals, no clean sheet and no milestone
+  expect(line, 'result line').toMatch(new RegExp(`^\\+${save.xp} XP: ${alone ? result.split(' ')[0] + '$' : result}`));
   if (rec.goalsFor) expect(line, 'goals').toContain(`${rec.goalsFor} goal`);
-  if (!rec.goalsAgainst) expect(line, 'clean sheet').toContain('clean sheet 20');
+  if (!rec.goalsAgainst) expect(line, 'clean sheet').toContain('Clean sheet 20');
   await page.locator(SEL.modalClose).click();
   // Level 2 (Squad) is 100 XP away, so a draw or a win also opens the level-up dialog.
   if (save.xp >= 100) {

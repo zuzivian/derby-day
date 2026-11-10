@@ -296,7 +296,7 @@ test('onboarding: the first match ends in a celebration with XP that names what 
   await page.waitForSelector('.ob-celebrate', { timeout: 90_000 });
   const text = await page.locator('.ob-celebrate').innerText();
   expect(text, 'XP for the match and the milestone').toMatch(/\+\d+ XP/);
-  expect(text, 'first match milestone').toContain('first match 80');
+  expect(text, 'first match milestone').toContain('First match 80');
   expect(text, 'no "practice (Easy)" jargon').notToContain('practice');
   expect(text, 'names what level 2 opens, once').toMatch(/Now open: Squad, vs Player and Practice\./);
   await page.waitForFunction(() => /(won|lost|draw)[^.]*\.\s*\d+ XP earned\./i.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });

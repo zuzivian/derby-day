@@ -115,14 +115,17 @@ export function xpCardHtml(s: Save, gain: XpGain | undefined, forfeited: boolean
   const pct = (p: ReturnType<typeof levelForXp>) => (p.maxed ? 100 : Math.max(0, Math.min(100, (p.intoLevel / p.needed) * 100)));
   const from = up ? 0 : pct(before);
   const to = pct(after);
-  const [head, ...rest] = xpSummary(gain).split(': ');
+  const [head] = xpSummary(gain).split(': ');
+  // One part repeats the total ("+50 XP: loss 50"), so it shows the reason alone; several show each share.
+  const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+  const parts = gain.parts.length === 1 ? cap(gain.parts[0]!.label) : gain.parts.map((p) => `${cap(p.label)} ${p.xp.toLocaleString('en-GB')}`).join(' · ');
   const lvFrom = Math.min(gain.levelBefore, before.level);
   const lvTo = Math.max(gain.levelAfter, after.level);
   const next = nextUnlockText(s);
   return `<div class="xp-card${up ? ' is-levelup' : ''}" style="--xp-from:${pct(before).toFixed(1)}%;--xp-to:${to.toFixed(1)}%;--xp-start:${from.toFixed(1)}%">
     <span class="level-badge tier-${badgeTier(after.level)}" aria-hidden="true">${up ? `<span class="xp-lv-old">${before.level}</span><span class="xp-lv-new">${after.level}</span>` : `<span>${after.level}</span>`}</span>
     <div class="xp-card-body">
-      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(rest.join(': '))}</span></p>
+      <p class="xp-gain"><b>${esc(head)}</b><span class="xp-colon">: </span><span class="xp-parts">${esc(parts)}</span></p>
       <span class="xp-card-track" aria-hidden="true"><span class="xp-card-fill"></span></span>
       <p class="xp-card-level">${esc(levelText(after))}</p>
       ${up || after.maxed || !next ? '' : `<p class="xp-card-next">Next: ${esc(next)}</p>`}
