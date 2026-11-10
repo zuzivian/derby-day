@@ -10,7 +10,7 @@
 .replay-paste { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
 .replay-paste-row { display: flex; gap: 8px; }
 .replay-paste input {
-  flex: 1 1 auto; min-width: 0; font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+  flex: 1 1 auto; min-width: 0; font: inherit; font-size: .875rem; color: var(--ink); background: var(--surface);
   border: 1.5px solid var(--control-line); border-radius: var(--r-sm); padding: 5px 8px;
 }
 .replay-msg { margin: 0; min-height: 1.3em; color: var(--muted); }
@@ -62,16 +62,16 @@
   background: var(--surface-2); border: 1px solid var(--control-line); border-bottom-width: 2px; border-radius: 4px;
 }
 /* A big desktop: room for a wider picture (the stage still sizes from the viewport height). */
-@media (min-width: 1280px) and (min-height: 860px) {
+@media (min-width: 80em) and (min-height: 53.75em) {
   .replay-card.replay-viewer { width: min(1120px, 100%); }
   /* Wider card, same viewport budget: head, chips, scrubber, controls and footer need about 350px below the picture. */
   .replay-viewer .rp-stage { width: min(100%, calc((100vh - 350px) * 1.531)); width: min(100%, calc((100dvh - 350px) * 1.531)); }
 }
 .replay-code { width: 100%; font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; font-size: var(--fs-xs); color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--control-line); border-radius: var(--r-sm); padding: 8px; resize: vertical; word-break: break-all; }
 
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .replay-card { padding: 12px; gap: 10px; }
-  .rp-title { font-size: 22px; }
+  .rp-title { font-size: 1.375rem; }
   .replay-canvas { width: 100%; }
   .rp-controls { display: grid; grid-template-columns: 1fr 1fr; }
   .rp-controls .btn { min-width: 0; }
@@ -94,7 +94,7 @@
   .rp-mark::before { top: 14px; }
 }
 /* A phone on its side: the picture takes the height, everything else stacks beside it. */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 32.5em) {
   .replay-layer { padding: 6px max(8px, env(safe-area-inset-right, 0px)) 6px max(8px, env(safe-area-inset-left, 0px)); }
   .replay-viewer {
     display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 300px); grid-template-rows: auto auto auto auto auto 1fr; gap: 6px 12px; padding: 8px; align-content: start;
@@ -103,7 +103,7 @@
   .replay-viewer .rp-head { grid-area: head; } .replay-viewer .rp-stage { grid-area: stage; align-self: center; }
   .replay-viewer .rp-clips { grid-area: clips; } .replay-viewer .rp-scrub { grid-area: scrub; flex-wrap: wrap; gap: 0 8px; }
   .replay-viewer .rp-controls { grid-area: controls; } .replay-viewer .rp-status { grid-area: status; } .replay-viewer .rp-foot { grid-area: foot; align-self: end; }
-  .replay-viewer .rp-title { font-size: 17px; line-height: 1.1; }
+  .replay-viewer .rp-title { font-size: 1.0625rem; line-height: 1.1; }
   .replay-viewer .rp-heading p { display: none; }
   .replay-viewer .rp-stage { width: min(100%, calc((100dvh - 28px) * 1.531)); }
   .replay-viewer .rp-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
@@ -112,7 +112,7 @@
   .replay-viewer .rp-status:empty { display: none; }
 }
 /* A phone on its side with touch: keep the 44px targets, and make room by compacting the chrome. */
-@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+@media (orientation: landscape) and (max-height: 32.5em) and (pointer: coarse) {
   .replay-layer .replay-viewer .rp-controls .btn { min-height: 44px; padding: 2px 8px; }
   .replay-layer .replay-viewer .rp-controls { gap: 4px; }
   .replay-layer .replay-viewer .rp-foot { gap: 2px 10px; }
