@@ -149,3 +149,19 @@ test('3D view: instant replays can be turned off in the pause menu', async (t) =
   await waitFor(page, (t0) => window.__derbyMatch.tick > t0 + 60 * 4, start, 30_000);
   expect((await pitchData(page)).replay, 'no replay').toBe(undefined);
 });
+
+test('3D view: every shader program compiles, at each time of day and both qualities', async (t) => {
+  // three only reports a broken patched shader (a crowd or player material) by drawing nothing, so check its programs.
+  for (const [quality, tod] of [['high', 'day'], ['high', 'night'], ['low', 'dusk']]) {
+    const page = await openApp(t, { prefs: LONG, renderer: '3d', query: `quality=${quality}&tod=${tod}&debug3d` });
+    await startRanked(page);
+    if ((await pitchData(page)).renderer !== '3d') return; // no WebGL2 here
+    await page.waitForTimeout(1500);
+    const broken = await page.evaluate(() =>
+      window.__derby3d.gl.info.programs.filter((p) => p.diagnostics && !p.diagnostics.runnable).map((p) => `${p.name || p.cacheKey.slice(0, 40)}: ${(p.diagnostics.fragmentShader.log || p.diagnostics.vertexShader.log || p.diagnostics.programLog).slice(0, 200)}`),
+    );
+    expect(broken, `${quality} quality, ${tod}: shader programs that failed to compile`).toEqual([]);
+    expect((await pitchData(page)).tod, 'the time of day asked for').toBe(tod);
+    await page.context().close();
+  }
+});
