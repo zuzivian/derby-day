@@ -132,3 +132,31 @@ test('mouse targets are at least 24 px: the profile name buttons in the squad', 
     expect(Math.min(...hs), `${screen}: the smallest name button`).toBeGreaterThanOrEqual(24);
   }
 });
+
+test('Sell keeps focus on the same row when it becomes Confirm, and announces it', async (t) => {
+  const page = await openApp(t);
+  await goTab(page, 'transfers');
+  const sells = page.locator(SEL.sellAny);
+  expect(await sells.count(), 'at least two sell rows').toBeGreaterThan(1);
+  const id = await sells.first().getAttribute('data-id');
+  await sells.first().focus();
+  await page.keyboard.press('Enter');
+  await page.locator(SEL.sellConfirm(id)).waitFor();
+  const focused = await page.evaluate(() => ({ action: document.activeElement?.dataset.action, id: document.activeElement?.dataset.id }));
+  expect(focused.action, 'focus stays on the swapped button').toBe('sell-confirm');
+  expect(focused.id, 'same row, not the next one').toBe(id);
+  await page.waitForFunction(() => /Confirm sale of .+ for .+\. Press again to sell\./.test(document.getElementById('sr-announcer')?.textContent || ''), null, { timeout: 3000 });
+});
+
+test('document title follows the screen; status strip is keyboard reachable', async (t) => {
+  const page = await openApp(t);
+  expect(await page.title(), 'home title').toBe('Derby Day');
+  await goTab(page, 'squad');
+  expect(await page.title(), 'squad title').toBe('Squad · Derby Day');
+  await goTab(page, 'transfers');
+  expect(await page.title(), 'transfers title').toBe('Transfers · Derby Day');
+  const strip = page.locator('.status-strip');
+  expect(await strip.getAttribute('tabindex'), 'strip focusable').toBe('0');
+  expect(await strip.getAttribute('role'), 'strip role').toBe('group');
+  expect(await strip.getAttribute('aria-label'), 'strip label').toBeTruthy();
+});

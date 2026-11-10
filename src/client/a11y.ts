@@ -176,6 +176,16 @@ export function restoreFocus(root: HTMLElement, key: FocusKey | null, fallback?:
     () => (Object.keys(key.data).length ? pick(selectorFor(key.data))[0] : undefined),
     () => (key.data.id && !key.data.action ? pick(`[data-id="${CSS.escape(key.data.id)}"]`)[0] : undefined),
     () => {
+      // The swapped control on the SAME row (same data-id) wins over any positional guess.
+      const a = key.data.action;
+      if (!a || !key.data.id) return undefined;
+      for (const name of [a, ...(ALIASES[a] ?? [])]) {
+        const same = pick(`[data-action="${CSS.escape(name)}"][data-id="${CSS.escape(key.data.id)}"]`);
+        if (same.length) return same[0];
+      }
+      return undefined;
+    },
+    () => {
       const a = key.data.action;
       if (!a) return undefined;
       for (const name of [a, ...(ALIASES[a] ?? [])]) {
