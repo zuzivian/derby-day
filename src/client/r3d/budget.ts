@@ -33,9 +33,12 @@ export interface FrameBudget {
 // the most room over what is spent today, since celebrations land there. GPU counts: about 20% over.
 // 2026-11-09, the continuous player bodies (body3d.ts, about 3,300 triangles each at high quality, 2,300 at low, one
 // draw call instead of two): max seen low 78 calls, 165k tris; high 163 calls, 484k tris. Inside the budgets as they are.
+// 2026-11-10, times of day, post-processing and the stadium dressing (dugouts, photographers, banners, LED boards): high
+// draws through post.ts, eight full-screen passes on small targets that cost far less than scene draws, so its call
+// budget goes from 190 to 210. Max seen in open play: high 178 calls at night, 183 at dusk, 477-481k tris; low 85 calls.
 export const FRAME_BUDGET: Record<Quality, FrameBudget> = {
   low: { ms: { setup: 0.3, players: 1.7, stadium: 0.6, scene: 0.5, submit: 2.9 }, calls: 140, tris: 190_000 },
-  high: { ms: { setup: 0.3, players: 2.1, stadium: 0.9, scene: 0.6, submit: 4.1 }, calls: 190, tris: 520_000 },
+  high: { ms: { setup: 0.3, players: 2.1, stadium: 0.9, scene: 0.6, submit: 4.1 }, calls: 210, tris: 520_000 },
 };
 
 /** The CPU total of a budget, ms. */
