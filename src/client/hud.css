@@ -45,7 +45,7 @@
 @media (pointer: coarse) {
   .pitch-zoom { display: flex; }
 }
-.hud-mode { font: 600 .75rem/1 'Barlow', system-ui, sans-serif; background: rgba(8, 12, 11, .5); border-radius: 3px; padding: 4px 8px; }
+.hud-mode { font: 600 .75rem/1 'Barlow', system-ui, sans-serif; background: rgba(8, 12, 11, .66); border-radius: 3px; padding: 4px 8px; }
 
 .hud .hud-word {
   top: 40%; display: flex; flex-direction: column; align-items: center; gap: 2px; color: #fff; transform: translate(-50%, -50%) skewX(-8deg);
