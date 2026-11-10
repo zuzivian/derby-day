@@ -53,6 +53,11 @@ export function formationSvg(id: FormationId): string {
 
 export const signedN = (n: number): string => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '±0');
 
+/** Whether the tactics panel is expanded: unset until the player toggles it, then kept across renders. Closed by default on phones. */
+let foldOpen: boolean | null = null;
+export const setTacticsOpen = (open: boolean): void => void (foldOpen = open);
+const onPhone = (): boolean => typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
+
 /** The tactics panel for the Squad screen. */
 export function tacticsPanel(formation: FormationId | undefined, mentality: Mentality | undefined, strengthOf?: (id: FormationId) => number): string {
   const f = formation ?? '4-4-2';
@@ -76,7 +81,9 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
   ).join('');
   return `
     <article class="panel tactics" aria-labelledby="tactics-title">
-      <div class="board-head"><h2 class="eyebrow" id="tactics-title">Tactics</h2><div class="tac-now">${f} · <b>${MENTALITY_LABEL[m]}</b></div></div>
+      <details class="tac-fold" data-fold="tactics"${(foldOpen ?? !onPhone()) ? ' open' : ''}>
+      <summary class="board-head"><h2 class="eyebrow" id="tactics-title">Tactics</h2><span class="tac-now">${f} · <b>${MENTALITY_LABEL[m]}</b></span><span class="tac-chev" aria-hidden="true"></span></summary>
+      <div class="tac-body">
       <fieldset class="tac-group">
         <legend class="tac-legend">Formation</legend>
         <div class="tac-cards">${cards}</div>
@@ -86,6 +93,8 @@ export function tacticsPanel(formation: FormationId | undefined, mentality: Ment
         <legend class="tac-legend">Mentality <span class="muted">· how your CPU teammates defend, press and attack</span></legend>
         <div class="tac-steps">${steps}</div>
       </fieldset>
+      </div>
+      </details>
     </article>`;
 }
 

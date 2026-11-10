@@ -191,7 +191,7 @@ export function identityControls(s: Save): string {
     <div class="identity-preview${fresh ? ' fresh' : ''}">${crestSvg(c, 76)}
       <div class="identity-meta"><strong>${esc(c.name)}</strong>
         <span class="identity-saved" aria-hidden="true">${fresh ? '✓ Saved' : 'Saves as you pick'}</span></div></div>
-    ${crest ? `<fieldset class="identity-set"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
+    ${crest ? `<fieldset class="identity-set" id="crest-select" tabindex="-1"><legend>Crest</legend><div class="crest-opts">${CREST_PATTERNS.map((p) => `<label class="crest-opt"><input type="radio" class="sr-only" name="crest" id="crest-${p}" value="${p}" data-change="crest"${p === c.crest ? ' checked' : ''}>${crestSvg({ ...c, crest: p }, 38)}<span>${cap(p)}</span></label>`).join('')}</div></fieldset>` : ''}
     ${kit ? `${swatches('kit-primary', 'Kit colour', 'Shirt and crest.', c.primary, c.secondary)}${swatches('kit-secondary', 'Trim colour', 'Must differ from the kit.', c.secondary, c.primary)}` : ''}
   </fieldset>`;
 }

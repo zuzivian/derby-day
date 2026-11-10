@@ -53,7 +53,7 @@ export function resultReplayHtml(): string {
 }
 
 /** The "Recent replays" list and the paste box, for the Club screen under Recent. */
-export function recentReplaysHtml(): string {
+export function recentReplaysHtml(quiet = false): string {
   const list = recentReplays();
   const rows = list
     .map(({ id, replay }) => {
@@ -71,9 +71,10 @@ export function recentReplaysHtml(): string {
       </li>`;
     })
     .join('');
+  // quiet: the Club screen already says "play your first match", so an empty list adds no heading or box of its own.
   return `<div class="replays">
-    <h3 class="eyebrow">Recent replays</h3>
-    ${rows ? `<ul class="replay-list">${rows}</ul>` : emptyState(`Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).`, EMPTY_ICON.play)}
+    ${quiet && !rows ? '' : `<h3 class="eyebrow">Recent replays</h3>`}
+    ${rows ? `<ul class="replay-list">${rows}</ul>` : quiet ? '' : emptyState(`Your last ${replaySlots()} matches are kept here to watch again (fewer if they are very long).`, EMPTY_ICON.play)}
     <div class="replay-paste">
       <label for="replay-paste" class="small">Paste replay code</label>
       <div class="replay-paste-row">
