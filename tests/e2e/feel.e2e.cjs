@@ -33,6 +33,10 @@ const goalState = (page) =>
     size: parseFloat(getComputedStyle(document.getElementById('banner')).fontSize),
   }));
 
+/** The last goal's banner has gone, so the next wait sees the next goal's banner and not a leftover (a slow CI
+ *  runner can keep one up past any fixed pause). */
+const bannerClear = (page) => page.waitForFunction(() => { const b = document.getElementById('banner'); return !b || b.hidden || !/goal/i.test(b.innerText); }, null, { timeout: 15_000 });
+
 const bannerHasGoal = () => {
   const b = document.getElementById('banner');
   return !!b && !b.hidden && /goal/i.test(b.innerText);
@@ -52,7 +56,7 @@ test('a conceded goal gets a small subdued banner and a dark flash; a scored one
   expect(/255, 255, 255|#fff/i.test(g.flash), 'no white flash from the juice layer').toBe(false);
   const small = g.size;
 
-  await page.waitForTimeout(2200);
+  await bannerClear(page);
   await addGoal(page, home);
   await page.waitForFunction(() => {
     const b = document.getElementById('banner');
@@ -63,7 +67,7 @@ test('a conceded goal gets a small subdued banner and a dark flash; a scored one
   expect(g.word.includes('·'), 'big word, no team suffix').toBe(false);
   expect(g.size > small * 1.5, `scored word (${g.size}px) is bigger than the conceded one (${small}px)`).toBe(true);
 
-  await page.waitForTimeout(2600);
+  await bannerClear(page);
   await addGoal(page, opp, true);
   await page.waitForFunction(bannerHasGoal);
   g = await goalState(page);
