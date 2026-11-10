@@ -360,7 +360,7 @@ function revealHeading(id: string, now = false): void {
     h.focus({ preventScroll: true });
     // A wide screen shows both panels near the top already: only move the page when the heading is off-screen or the screen is narrow.
     const top = h.getBoundingClientRect().top;
-    if (!now && !matchMedia('(max-width: 640px)').matches && top >= 0 && top < innerHeight * 0.6) return;
+    if (!now && !matchMedia('(max-width: 40em)').matches && top >= 0 && top < innerHeight * 0.6) return;
     h.scrollIntoView({ block: 'start', behavior: reducedMotion() || !now ? 'auto' : 'smooth' });
   };
   if (now) go();

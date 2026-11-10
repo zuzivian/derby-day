@@ -29,7 +29,7 @@ const CSS = `
 .juice-flash { opacity: 0; }
 .juice-label {
   position: absolute; left: 50%; bottom: 11%; transform: translateX(-50%); pointer-events: none; opacity: 0;
-  font-family: var(--font-display, inherit); font-weight: 800; font-size: clamp(14px, 2.4vw, 22px); letter-spacing: .32em;
+  font-family: var(--font-display, inherit); font-weight: 800; font-size: clamp(.875rem, 2.4vw, 1.375rem); letter-spacing: .32em;
   text-transform: uppercase; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 0 rgba(0, 0, 0, .5), 0 0 12px rgba(0, 0, 0, .4); white-space: nowrap;
 }
 .juice-mute {

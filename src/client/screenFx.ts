@@ -35,7 +35,7 @@ export function afterRender(root: HTMLElement): void {
   countUpChips(root);
   const sel = reveal;
   reveal = null;
-  if (sel && matchMedia('(max-width: 860px)').matches) {
+  if (sel && matchMedia('(max-width: 53.75em)').matches) {
     const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
     root.querySelector<HTMLElement>(sel)?.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
   }

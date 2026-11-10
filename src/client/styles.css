@@ -18,17 +18,17 @@
   --r-lg: 14px;
   --r-xl: 20px;
   --r-pill: 999px;
-  --fs-2xs: 11px;
-  --fs-xs: 12px;
-  --fs-sm: 13px;
-  --fs-md: 15px;
-  --fs-lg: 17px;
-  --fs-xl: 20px;
-  --fs-2xl: 24px;
-  --fs-feature: 28px; /* titles of feature cards: Competitions, Training */
-  --fs-3xl: 32px;
-  --fs-4xl: 44px;
-  --fs-5xl: 64px;
+  --fs-2xs: .6875rem;
+  --fs-xs: .75rem;
+  --fs-sm: .8125rem;
+  --fs-md: .9375rem;
+  --fs-lg: 1.0625rem;
+  --fs-xl: 1.25rem;
+  --fs-2xl: 1.5rem;
+  --fs-feature: 1.75rem; /* titles of feature cards: Competitions, Training */
+  --fs-3xl: 2rem;
+  --fs-4xl: 2.75rem;
+  --fs-5xl: 4rem;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
   --ease-spring: cubic-bezier(.34, 1.56, .64, 1);
   /* Motion: press feedback, hover/state changes, entrances. Reduced motion zeroes all of them (see the global rule). */
@@ -195,7 +195,7 @@ body {
 /* First paint, before the script has drawn anything: the wordmark and its underline, in CSS only. There is no DOM
    behind it (#app is :empty), so it vanishes the moment render() fills the page. */
 #app:empty { min-height: 50vh; align-items: flex-start; }
-#app:empty::before { content: 'Derby Day'; font-family: var(--font-display); font-weight: 900; font-size: 34px; line-height: 1; letter-spacing: -.01em; text-transform: uppercase; }
+#app:empty::before { content: 'Derby Day'; font-family: var(--font-display); font-weight: 900; font-size: 2.125rem; line-height: 1; letter-spacing: -.01em; text-transform: uppercase; }
 /* No underline in the splash: the header's is sized to the real wordmark, so a guessed one jumped on boot. */
 @media (prefers-reduced-motion: no-preference) { #app:empty::before { animation: boot-pulse 1.2s ease-in-out infinite alternate; } }
 @keyframes boot-pulse { from { opacity: .45; } to { opacity: 1; } }
@@ -228,7 +228,7 @@ kbd { font: 700 var(--fs-xs)/1 var(--font-body); padding: 2px 6px; border: 1px s
   display: inline-flex; align-items: center; justify-content: center; gap: var(--sp-2);
   min-height: 40px; padding: var(--sp-2) var(--sp-4); border-radius: var(--r-md);
   border: 1px solid var(--btn-line); background: var(--btn-bg); color: var(--btn-fg);
-  font: 700 14px/1.2 var(--font-body); letter-spacing: .01em; text-align: center; text-decoration: none;
+  font: 700 .875rem/1.2 var(--font-body); letter-spacing: .01em; text-align: center; text-decoration: none;
   box-shadow: var(--shadow-1);
   transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-press) var(--ease-out), filter var(--dur) var(--ease-out);
 }
@@ -267,7 +267,7 @@ kbd { font: 700 var(--fs-xs)/1 var(--font-body); padding: 2px 6px; border: 1px s
 
 /* Form controls */
 select, input[type="text"] {
-  font: inherit; font-size: 14px; color: var(--ink); background-color: var(--surface);
+  font: inherit; font-size: .875rem; color: var(--ink); background-color: var(--surface);
   border: 1px solid var(--control-line); border-radius: var(--r-sm); padding: 6px 10px; min-height: 34px; max-width: 100%;
   transition: border-color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
 }
@@ -295,7 +295,7 @@ option { background: var(--surface); color: var(--ink); }
 .chip:active, .roster-btn:active { transform: scale(.97); background: var(--surface-3); }
 .chip:active { transition-duration: var(--dur-press); }
 .chip.on { border-color: var(--ink); background: var(--ink); color: var(--surface); }
-.pos { display: inline-block; min-width: 36px; text-align: center; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.6; letter-spacing: .07em; border-radius: var(--r-xs); padding: 0 5px; color: #fff; }
+.pos { display: inline-block; min-width: 2.25rem; text-align: center; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.6; letter-spacing: .07em; border-radius: var(--r-xs); padding: 0 5px; color: #fff; }
 .pos-GK { background: #9a6110; }
 .pos-DEF { background: #1f5fa8; }
 .pos-MID { background: #1d7f47; }
@@ -309,7 +309,7 @@ option { background: var(--surface); color: var(--ink); }
 
 /* Club rename form */
 .rename-form { display: grid; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--line); }
-.rename-form label { font-size: 14px; font-weight: 700; color: var(--ink); }
+.rename-form label { font-size: .875rem; font-weight: 700; color: var(--ink); }
 .rename-row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
 .rename-row input { flex: 1 1 180px; min-width: 0; }
 .rename-row .btn { flex: none; min-height: 34px; }
@@ -336,13 +336,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Top bar ------------------------------------------------------------------- */
 .topbar { display: flex; align-items: center; gap: 10px 20px; flex-wrap: wrap; justify-content: flex-start; }
-.wordmark { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 40px; line-height: 1; letter-spacing: -.01em; text-transform: uppercase; }
+.wordmark { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 2.5rem; line-height: 1; letter-spacing: -.01em; text-transform: uppercase; }
 .wordmark::after { content: ''; display: block; height: 5px; margin-top: 2px; border-radius: 3px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #ffd60a)); transform: skewX(-18deg) scaleX(.92); transform-origin: left; }
-.topbar .wordmark { font-size: 34px; margin-right: auto; }
+.topbar .wordmark { font-size: 2.125rem; margin-right: auto; }
 .club-chip { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; color: var(--ink); }
 .club-chip-text { min-width: 0; }
-.club-name { font-family: var(--font-display); font-weight: 800; font-size: 22px; line-height: 1.1; }
-.topbar .club-name { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
+.club-name { font-family: var(--font-display); font-weight: 800; font-size: 1.375rem; line-height: 1.1; }
+.topbar .club-name { font-size: 1.125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 30ch; }
 .club-elo { font-size: var(--fs-sm); color: var(--muted); font-variant-numeric: tabular-nums; }
 .club-elo b { color: var(--ink); }
 .crest { flex: none; color: var(--ink); }
@@ -350,9 +350,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .status-strip { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
 .status-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-md); }
 .status-strip .level-chip { margin-top: 0; height: 40px; padding: 3px 14px 3px 3px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
-.status-strip .level-badge { width: 32px; height: 32px; font-size: var(--fs-md); }
+.status-strip .level-badge { width: 2rem; height: 2rem; font-size: var(--fs-md); }
 .status-strip .xp-bar { min-width: 96px; max-width: 140px; }
-.stat { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stat { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 700; font-size: .875rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .status-strip .stat { height: 40px; padding: 0 14px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid transparent; box-shadow: none; cursor: default; user-select: none; }
 .stat .icon { color: var(--muted); }
 .money .icon { color: var(--warn); }
@@ -401,19 +401,19 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .club-grid .news, .club-grid .form { align-self: start; }
 /* Club history spans the grid, with its records in two columns, so no column is left empty beside it. */
 .club-grid .history-panel { grid-column: 1 / -1; }
-@media (min-width: 900px) {
+@media (min-width: 56.25em) {
   .history-panel .history-marks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--sp-6); }
   .history-panel .history-marks > li:nth-child(2) { border-top: 0; }
 }
 .versus { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: var(--sp-3); }
 .side { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; min-width: 0; }
 .side-name { font-family: var(--font-display); font-weight: 800; font-size: var(--fs-2xl); line-height: 1.05; text-wrap: balance; }
-.side-elo { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
-.vs { font-family: var(--font-marker); color: var(--accent); font-size: 26px; transform: rotate(-6deg); }
+.side-elo { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .875rem; }
+.vs { font-family: var(--font-marker); color: var(--accent); font-size: 1.625rem; transform: rotate(-6deg); }
 .facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); margin: 0; }
 .facts div { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: var(--sp-2) var(--sp-3); min-width: 0; }
 .facts dt { font-size: var(--fs-2xs); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.facts dd { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.facts dd { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 1.625rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
 
 .elo-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
 .elo-big { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-5xl); line-height: .9; font-variant-numeric: tabular-nums; }
@@ -425,7 +425,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .spark-dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
 .results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .results li { display: grid; grid-template-columns: 26px 44px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px var(--sp-2); border-radius: var(--r-sm); background: var(--surface-2); font-variant-numeric: tabular-nums; }
-.res { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: var(--r-sm); font-weight: 800; font-size: var(--fs-sm); color: var(--on-status); }
+.res { display: inline-grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: var(--r-sm); font-weight: 800; font-size: var(--fs-sm); color: var(--on-status); }
 .res-W { background: var(--good); }
 .res-D { background: var(--muted); }
 .res-L { background: var(--bad); }
@@ -447,7 +447,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Tables --------------------------------------------------------------------- */
 .table-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--sp-2)); padding: 0 var(--sp-2); }
-.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 14px; white-space: nowrap; }
+.tbl { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .875rem; white-space: nowrap; }
 .tbl th { text-align: left; font-size: var(--fs-2xs); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-weight: 800; padding: var(--sp-2) 10px; border-bottom: 1px solid var(--line-strong); }
 .tbl th.num { text-align: right; }
 .tbl td { padding: 9px 10px; border-bottom: 1px solid var(--line); }
@@ -458,7 +458,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .tbl tr.you td { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
 .tbl tr.you td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 /* Short tables (Sell): the name takes the spare width, the numbers sit together on the right. */
-@media (min-width: 601px) { .tbl.compact td.name { min-width: 200px; } }
+@media (min-width: 37.5625em) { .tbl.compact td.name { min-width: 200px; } }
 /* Ladder: a narrow centred position column, and P/W/D/L as one tight cluster beside Elo. */
 .tbl.ladder td.name { width: 100%; }
 .tbl.ladder .pos-col { width: 44px; text-align: center; padding-left: 0; padding-right: 0; color: var(--muted); }
@@ -473,10 +473,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
    Sell table's number, and the narrowest phones move the position chip under
    the name. Every table fits its box from 320 px up, with no sideways scroll. */
 .tbl .only-narrow { display: none; }
-@media (max-width: 1000px) {
+@media (max-width: 62.5em) {
   .tbl.has-action .opt { display: none; }
 }
-@media (max-width: 600px) {
+@media (max-width: 37.5em) {
   .tbl .opt, .tbl .opt-phone { display: none; }
   .tbl th, .tbl td { padding-left: 5px; padding-right: 5px; }
   /* Names wrap between words; a surname too long for the column ends in an ellipsis instead of
@@ -487,10 +487,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .tbl td.name .pill { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .tbl .btn.small { padding-left: 10px; padding-right: 10px; }
 }
-@media (max-width: 480px) {
+@media (max-width: 30em) {
   .eyebrow-more { display: none; }
 }
-@media (max-width: 420px) {
+@media (max-width: 26.25em) {
   .tbl .opt-narrow { display: none; }
   .tbl .only-narrow { display: table; margin-top: 3px; }
   .tbl td.name { font-size: var(--fs-sm); }
@@ -508,9 +508,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .attr-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 var(--sp-2); font-size: var(--fs-xs); color: var(--muted); }
 .attr-legend .lg::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: currentColor; }
 .attr-legend .t-a { color: var(--t-a); } .attr-legend .t-b { color: var(--t-b); } .attr-legend .t-c { color: var(--t-c); } .attr-legend .t-d { color: var(--t-d); }
-@media (max-width: 600px) { .attr-legend { display: none; } }
+@media (max-width: 37.5em) { .attr-legend { display: none; } }
 .strength-note { font-weight: 500; }
-@media (max-width: 420px) { .strength-note { display: none; } }
+@media (max-width: 26.25em) { .strength-note { display: none; } }
 /* "▲ +N on bench": a better player is waiting for this slot. A real button, so Tab and Enter swap him in. */
 .bench-hint {
   font: inherit; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .03em; line-height: 1; white-space: nowrap; cursor: pointer;
@@ -519,14 +519,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .bench-hint:hover { background: #ffe680; }
 .bench-hint:active { transform: scale(.96); }
-@media (max-width: 640px) { .slot .bench-hint { flex: none; } }
+@media (max-width: 40em) { .slot .bench-hint { flex: none; } }
 @media (pointer: coarse) { .bench-hint { min-height: 44px; padding-inline: 10px; } }
 .kit { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; margin-right: var(--sp-2); vertical-align: -2px; background: linear-gradient(90deg, var(--p) 50%, var(--s) 50%); border: 1px solid var(--line-strong); }
 
 /* Squad: the magnet board ------------------------------------------------------- */
 .squad-grid { display: flex; flex-direction: column; gap: var(--sp-4); }
 .strength { color: var(--muted); font-weight: 600; display: inline-flex; align-items: baseline; gap: 6px; }
-.strength b { color: var(--ink); font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; }
+.strength b { color: var(--ink); font-family: var(--font-display); font-weight: 900; font-size: 1.625rem; line-height: 1; }
 .mini-pitch {
   position: relative; aspect-ratio: 64 / 44; width: 100%; max-width: 860px; align-self: center; border-radius: var(--r-lg); border: 2px solid color-mix(in srgb, var(--chalk) 85%, transparent);
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12), inset 0 0 60px rgba(0, 0, 0, .22), var(--shadow-2);
@@ -539,12 +539,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .slot:hover, .slot:focus-within { z-index: 2; }
 .slot:first-child { left: calc(var(--x) + 6%); }
 .magnet {
-  display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; flex: none;
+  display: inline-grid; place-items: center; width: 2.125rem; height: 2.125rem; border-radius: 50%; flex: none;
   background: radial-gradient(circle at 35% 28%, color-mix(in srgb, var(--accent) 65%, #fff) 0, var(--accent) 55%, color-mix(in srgb, var(--accent) 80%, #000) 100%);
-  color: var(--accent-ink); font-family: var(--font-display); font-weight: 900; font-size: 18px;
+  color: var(--accent-ink); font-family: var(--font-display); font-weight: 900; font-size: 1.125rem;
   box-shadow: inset 0 -3px 0 rgba(0, 0, 0, .22), 0 4px 8px rgba(0, 0, 0, .35);
 }
-.magnet.big { width: 56px; height: 56px; font-size: 26px; }
+.magnet.big { width: 3.5rem; height: 3.5rem; font-size: 1.625rem; }
 .slot-label { display: flex; flex-direction: column; align-items: center; gap: 3px; }
 .slot-role { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .1em; color: var(--chalk); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); background: rgba(8, 24, 14, .55); border-radius: var(--r-xs); padding: 0 6px; }
 .slot select {
@@ -555,7 +555,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .slot select:hover { border-color: #f3f6f1; }
 /* Wide pitches have room for whole names (phones keep the full-width select below). */
-@media (min-width: 900px) { .slot select { max-width: 190px; } }
+@media (min-width: 56.25em) { .slot select { max-width: 190px; } }
 
 /* Training -------------------------------------------------------------------- */
 .train-head { display: flex; justify-content: flex-start; align-items: baseline; }
@@ -574,9 +574,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .roster-ovr { font-weight: 800; }
 .roster-ovr small { font-weight: 500; opacity: .7; }
 .trainee-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
-.trainee-head h2 { font-size: 30px; }
+.trainee-head h2 { font-size: 1.875rem; }
 .ovr-block { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
-.ovr-big { font-family: var(--font-display); font-weight: 900; font-size: 52px; line-height: .9; }
+.ovr-big { font-family: var(--font-display); font-weight: 900; font-size: 3.25rem; line-height: .9; }
 .attr-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
 .attr-list li { display: grid; grid-template-columns: 104px minmax(0, 1fr) 32px auto; gap: var(--sp-3); align-items: center; }
 .attr-name { font-weight: 600; }
@@ -593,7 +593,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .toast::before {
   content: '\2713'; flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  background: var(--xp-fill); color: var(--on-status); font-size: 14px; font-weight: 900;
+  background: var(--xp-fill); color: var(--on-status); font-size: .875rem; font-weight: 900;
 }
 .toast.bad { background: var(--bad); color: var(--on-status); }
 .toast.bad::before { content: '!'; background: var(--on-status); color: var(--bad); }
@@ -643,7 +643,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-hero::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--rs-title), transparent); opacity: .7; }
 .rs-eyebrow { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: rgba(243, 246, 241, .82); }
 .result-title {
-  margin: 2px 0 12px; font-family: var(--font-display); font-weight: 900; font-size: 56px; line-height: .92; letter-spacing: .05em; text-transform: uppercase;
+  margin: 2px 0 12px; font-family: var(--font-display); font-weight: 900; font-size: 3.5rem; line-height: .92; letter-spacing: .05em; text-transform: uppercase;
   color: var(--rs-title); text-shadow: 0 3px 0 rgba(0, 0, 0, .35), 0 0 36px var(--rs-glow);
   animation: rs-slam .55s var(--ease-spring) both;
 }
@@ -651,10 +651,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .result-score { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--sp-3) var(--sp-6); }
 .rs-team { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 .rs-crest .crest { display: block; color: #f3f6f1; filter: drop-shadow(0 8px 12px rgba(0, 0, 0, .45)); }
-.rs-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1.05; letter-spacing: .04em; text-transform: uppercase; text-wrap: balance; overflow-wrap: break-word; max-width: 100%; }
+.rs-name { font-family: var(--font-display); font-weight: 800; font-size: 1.1875rem; line-height: 1.05; letter-spacing: .04em; text-transform: uppercase; text-wrap: balance; overflow-wrap: break-word; max-width: 100%; }
 .rs-code { display: none; }
 .rs-mid { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 6px; }
-.big-score { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 900; font-size: 84px; line-height: .9; font-variant-numeric: tabular-nums; text-shadow: 0 4px 0 rgba(0, 0, 0, .3); }
+.big-score { display: flex; align-items: center; gap: 12px; font-family: var(--font-display); font-weight: 900; font-size: 5.25rem; line-height: .9; font-variant-numeric: tabular-nums; text-shadow: 0 4px 0 rgba(0, 0, 0, .3); }
 .big-score .lo { opacity: .55; }
 /* The score lands after the title's slam: each number pops in turn (reduced motion: the global rule below makes it instant). */
 .big-score > span { animation: rs-score .5s var(--ease-spring) both; animation-delay: .35s; }
@@ -675,7 +675,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-dash { opacity: .45; font-size: .6em; }
 .rs-pens { font-size: var(--fs-sm); font-weight: 800; letter-spacing: .04em; padding: 2px 10px; border-radius: var(--r-pill); background: rgba(0, 0, 0, .3); }
 .rs-glance { margin: 8px 0 0; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: rgba(243, 246, 241, .78); font-variant-numeric: tabular-nums; }
-@media (min-width: 721px) and (min-height: 561px) { .rs-glance { display: none; } } /* the stats panel is in view beside it */
+@media (min-width: 45.0625em) and (min-height: 35.0625em) { .rs-glance { display: none; } } /* the stats panel is in view beside it */
 .rs-scorers { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--fs-sm); line-height: 1.3; color: #dde8e1; }
 .rs-scorers li { text-align: center; }
 .rs-scorers .icon { display: inline-block; vertical-align: -2px; margin-right: 5px; opacity: .8; }
@@ -722,10 +722,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 @keyframes rs-pop { from { transform: translateY(8px); opacity: 0; } }
 .rs-chip-icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-sm); background: var(--surface-3); color: var(--muted); }
 .rs-chip-text { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); }
-.rs-chip-label { font-weight: 700; font-size: 14px; }
+.rs-chip-label { font-weight: 700; font-size: .875rem; }
 .rs-chip-sub { font-size: var(--fs-sm); font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
 .rs-chip-sub b { color: var(--ink); }
-.rs-chip-main { font-family: var(--font-display); font-weight: 900; font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rs-chip-main { font-family: var(--font-display); font-weight: 900; font-size: 1.625rem; line-height: 1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .rs-elo.up { border-color: color-mix(in srgb, var(--good) 45%, var(--line)); background: color-mix(in srgb, var(--good) 8%, var(--surface-2)); }
 .rs-elo.up .rs-chip-icon { background: color-mix(in srgb, var(--good) 18%, var(--surface)); color: var(--good); }
 .rs-elo.up .rs-chip-main { color: var(--good); }
@@ -752,14 +752,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-actions { display: flex; gap: var(--sp-2); }
 .rs-actions > .btn { flex: 1 1 0; min-width: 0; }
 .rs-actions:has(> .btn + .btn) > .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 480px), (max-height: 500px) {
+@media (max-width: 30em), (max-height: 31.25em) {
   .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-md); padding-inline: 10px; }
 }
-@media (max-width: 360px) {
+@media (max-width: 22.5em) {
   .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-sm); padding-inline: 6px; letter-spacing: 0; }
 }
 /* Short screens (a landscape phone, 200% zoom) and the narrowest phones: a compact footer. */
-@media (max-height: 500px), (max-width: 360px) {
+@media (max-height: 31.25em), (max-width: 22.5em) {
   .rs-foot { gap: var(--sp-2); padding: 10px var(--sp-3) 12px; }
   .rs-foot .replay-actions { flex-wrap: nowrap; gap: var(--sp-2); }
   .rs-foot .replay-actions .btn { flex: 1 1 0; min-width: 0; padding: 6px 8px; font-size: var(--fs-sm); min-height: 36px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -767,11 +767,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 /* Short screens (600 px tall or less: a small phone, a landscape phone, 200% zoom): a compact hero,
    so the rewards and the XP card are on screen when the dialog opens. */
-@media (max-height: 600px) {
+@media (max-height: 37.5em) {
   .result-card .rs-hero { padding: 10px var(--sp-4) 12px; }
   .result-card .rs-eyebrow { font-size: var(--fs-2xs); }
-  .result-card .result-title { font-size: 30px; margin-bottom: 6px; }
-  .result-card .big-score { font-size: 48px; }
+  .result-card .result-title { font-size: 1.875rem; margin-bottom: 6px; }
+  .result-card .big-score { font-size: 3rem; }
   .result-card .rs-crest .crest { width: 38px; height: 42px; }
   .result-card .rs-name { font-size: var(--fs-md); }
   .result-card .rs-panel { padding-top: 12px; padding-bottom: 12px; gap: 8px; }
@@ -785,7 +785,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
      chips above it hold (an Elo chip with a ladder move wraps to two lines at 320 px). */
   .result-card .rs-rewards > .xp-card { order: -1; }
 }
-@media (max-height: 500px) {
+@media (max-height: 31.25em) {
   .rs-foot { flex-direction: row; align-items: center; }
   .rs-foot .replay-actions { flex: 1 1 auto; }
   .rs-foot .rs-actions { flex: 2 1 auto; }
@@ -808,7 +808,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .pitch-pause:hover { background: rgba(15, 21, 19, .85); }
 .banner {
   position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-3deg); pointer-events: none;
-  font-family: var(--font-display); font-weight: 900; font-size: clamp(28px, 6vw, 64px); text-transform: uppercase; color: #ffd60a;
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(1.75rem, 6vw, 4rem); text-transform: uppercase; color: #ffd60a;
   text-shadow: 0 3px 0 #0f1513, 0 0 24px rgba(0, 0, 0, .5); white-space: nowrap; animation: pop .35s ease-out;
 }
 @keyframes pop { from { transform: translate(-50%, -50%) rotate(-3deg) scale(.6); opacity: 0; } }
@@ -856,35 +856,35 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 
 /* 320 px (a small phone, or 400% zoom): the play-mode card titles must not push the page sideways. */
-@media (max-width: 360px) {
+@media (max-width: 22.5em) {
   .mode-title { font-size: var(--fs-lg); letter-spacing: .02em; overflow-wrap: anywhere; }
 }
 
 /* Narrow screens --------------------------------------------------------------- */
-@media (max-width: 860px) {
+@media (max-width: 53.75em) {
   .club-grid, .training-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* Laptop-height screens: a tighter hero so stats and rewards fit without scrolling. */
-@media (min-width: 721px) and (max-height: 860px) {
+@media (min-width: 45.0625em) and (max-height: 53.75em) {
   .rs-hero { padding: 14px var(--sp-6) 16px; }
-  .result-title { font-size: 46px; margin-bottom: 8px; }
-  .big-score { font-size: 72px; }
+  .result-title { font-size: 2.875rem; margin-bottom: 8px; }
+  .big-score { font-size: 4.5rem; }
   .rs-crest .crest { width: 52px; height: 57px; }
   .rs-panel { padding: 14px var(--sp-6); gap: 10px; }
   .rs-stats { gap: 7px; }
 }
-@media (max-width: 720px) {
+@media (max-width: 45em) {
   .rs-body { grid-template-columns: minmax(0, 1fr); }
   .rs-panel + .rs-panel { border-left: 0; border-top: 1px solid var(--line); }
   /* One column: what you won comes first, the stats after it. */
   .rs-body .rs-rewards { order: -1; border-top: 0; }
   .rs-body .rs-stats-panel { border-top: 1px solid var(--line); }
 }
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   #app { gap: 14px; padding-top: var(--sp-4); }
   .wordmark { font-size: var(--fs-3xl); }
-  .side-name { font-size: 19px; }
-  .facts dd { font-size: 22px; }
+  .side-name { font-size: 1.1875rem; }
+  .facts dd { font-size: 1.375rem; }
   .panel { padding: var(--sp-4); border-radius: var(--r-lg); }
   .tab { padding: 9px var(--sp-3); font-size: var(--fs-md); }
   .tab.on::after { left: 10px; right: 10px; }
@@ -892,14 +892,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .slot, .slot:first-child { position: static; transform: none; flex-direction: row; justify-content: flex-start; gap: 10px; }
   .slot-label { flex: 1 1 auto; min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: var(--sp-2); }
   .slot select { max-width: none; width: 100%; font-size: var(--fs-sm); min-height: 34px; }
-  .slot .magnet { width: 34px; height: 34px; font-size: 16px; }
+  .slot .magnet { width: 2.125rem; height: 2.125rem; font-size: 1rem; }
   .attr-list li { grid-template-columns: 92px minmax(0, 1fr) 28px auto; gap: var(--sp-2); }
   .attr-name { font-size: var(--fs-sm); }
   .modal { padding: var(--sp-2); }
   .modal-card { padding: 20px; border-radius: var(--r-lg); }
   .modal-card.result-card { padding: 0; }
   .rs-hero { padding: var(--sp-4) var(--sp-3) 18px; }
-  .result-title { font-size: 46px; margin-bottom: 10px; }
+  .result-title { font-size: 2.875rem; margin-bottom: 10px; }
   /* Crest, code and score on one row; each side's scorers in its own half below. */
   .result-score { grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr); grid-template-areas: "ca mid mid cb" "na mid mid nb" "sa sa sb sb"; gap: 4px 6px; }
   .rs-team { display: contents; }
@@ -912,23 +912,23 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .rs-mid { grid-area: mid; padding-top: 0; }
   .rs-crest { justify-self: center; }
   .rs-crest .crest { width: 52px; height: 57px; }
-  .rs-name { justify-self: center; font-size: 18px; letter-spacing: .1em; }
+  .rs-name { justify-self: center; font-size: 1.125rem; letter-spacing: .1em; }
   .rs-full { display: none; }
   .rs-code { display: inline; }
   .big-score { font-size: var(--fs-5xl); gap: var(--sp-2); }
   .rs-scorers { margin-top: 6px; font-size: var(--fs-xs); }
   .rs-panel { padding: var(--sp-4); }
   .rs-foot { padding: var(--sp-3) var(--sp-4) var(--sp-4); border-radius: 0 0 var(--r-lg) var(--r-lg); }
-  .rs-chip-main { font-size: 23px; }
+  .rs-chip-main { font-size: 1.4375rem; }
   .pause-card { padding: 20px; }
-  .pause-card h2 { font-size: 36px; }
+  .pause-card h2 { font-size: 2.25rem; }
   .rs-team:first-child .rs-scorers { align-items: flex-start; }
   .rs-team:last-child .rs-scorers { align-items: flex-end; }
   .rs-team:first-child .rs-scorers li { text-align: left; }
   .rs-team:last-child .rs-scorers li { text-align: right; }
 }
 /* Phones held sideways: a compact pause card that fits the short pitch, scrolling if it must. */
-@media (max-height: 520px) and (orientation: landscape) {
+@media (max-height: 32.5em) and (orientation: landscape) {
   .pause { padding: var(--sp-2); }
   .pause-card { padding: 12px 16px; width: min(560px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 20px; row-gap: 6px; align-content: start; text-align: center; }
   .pause-card h2 { grid-column: 1 / -1; }
@@ -946,7 +946,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pause-card .help-controls summary { padding: 6px 0; }
 }
 /* Where it still needs to scroll (a short screen, a long Controls list), a soft shadow on the edge says there is more. */
-@media (max-height: 420px) and (orientation: landscape) {
+@media (max-height: 26.25em) and (orientation: landscape) {
   .pause-card {
     background-color: var(--surface);
     background-image: linear-gradient(var(--surface) 30%, transparent), linear-gradient(transparent, var(--surface) 70%),
@@ -959,7 +959,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .pause-card .hint { display: none; }
 }
 /* Portrait phones (down to 320x568): a tighter pause card so Resume ... Sound fit without scrolling. */
-@media ((max-height: 600px) or (max-width: 480px)) and (orientation: portrait) {
+@media ((max-height: 37.5em) or (max-width: 30em)) and (orientation: portrait) {
   .pause { padding: 4px; }
   .pause-card { gap: 8px; padding: 12px 14px; }
   .pause-card h2 { font-size: var(--fs-feature); }
@@ -977,12 +977,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Onboarding ---------------------------------------------------------------- */
 .onboarding { display: flex; flex-direction: column; gap: 20px; }
 .ob-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-.ob-top .wordmark { font-size: 34px; }
+.ob-top .wordmark { font-size: 2.125rem; }
 .ob-main { min-width: 0; }
 .ob-card { max-width: 720px; margin: 0 auto; width: 100%; gap: 18px; padding: 28px; border-radius: var(--r-xl); box-shadow: var(--shadow-2); }
 .ob-title { font-size: var(--fs-4xl); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
 .ob-title:focus { outline: none; }
-.ob-lede { margin: 0; font-size: 18px; font-weight: 500; max-width: 60ch; }
+.ob-lede { margin: 0; font-size: 1.125rem; font-weight: 500; max-width: 60ch; }
 .ob-card p { margin: 0; }
 .ob-welcome { overflow: hidden; color: #f3f6f1; border-color: transparent; background: radial-gradient(70% 90% at 85% 0%, rgba(255, 214, 10, .16), transparent 60%), repeating-linear-gradient(90deg, #1f5a37 0 64px, #23633d 64px 128px); }
 .ob-welcome .muted { color: #d3e3d8; }
@@ -995,9 +995,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .ob-club { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-lg); background: linear-gradient(135deg, var(--surface-2), var(--surface)); }
 .ob-club .crest { filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .25)); }
 .ob-club-text { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.ob-club-name { font-family: var(--font-display); font-weight: 900; font-size: 36px; line-height: 1; text-transform: uppercase; overflow-wrap: anywhere; }
+.ob-club-name { font-family: var(--font-display); font-weight: 900; font-size: 2.25rem; line-height: 1; text-transform: uppercase; overflow-wrap: anywhere; }
 .ob-club-meta { display: flex; align-items: center; gap: 10px; }
-.ob-short { font-family: var(--font-display); font-weight: 800; font-size: 18px; letter-spacing: .12em; padding: 1px var(--sp-2); border-radius: var(--r-xs); background: var(--ink); color: var(--surface); }
+.ob-short { font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; letter-spacing: .12em; padding: 1px var(--sp-2); border-radius: var(--r-xs); background: var(--ink); color: var(--surface); }
 .ob-kit { display: inline-flex; gap: 4px; }
 .ob-kit span { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--control-line); }
 .ob-name-form { display: flex; flex-direction: column; gap: 6px; }
@@ -1015,7 +1015,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .controls-card { display: flex; flex-direction: column; gap: 6px; }
 .controls-title { font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .controls-table { white-space: normal; }
-.controls-table th[scope="row"] { font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); border-bottom: 1px solid var(--line); width: 34%; }
+.controls-table th[scope="row"] { font-size: .875rem; letter-spacing: 0; text-transform: none; color: var(--ink); border-bottom: 1px solid var(--line); width: 34%; }
 .ob-versus { padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-2); border: 1px solid var(--line); }
 
 /* Training ground ------------------------------------------------------------- */
@@ -1033,17 +1033,17 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .coach-count { font-size: var(--fs-xs); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
 .coach-dots { list-style: none; margin: 0; padding: 0; display: flex; gap: 10px; font-size: var(--fs-sm); color: var(--muted); }
 .coach-dots li { display: flex; align-items: center; gap: 4px; }
-.coach-dots li::before { content: ''; box-sizing: border-box; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--control-line); font-size: 10px; line-height: 10px; text-align: center; font-weight: 800; color: #fff; }
+.coach-dots li::before { content: ''; box-sizing: border-box; width: .875rem; height: .875rem; border-radius: 50%; border: 2px solid var(--control-line); font-size: .625rem; line-height: .625rem; text-align: center; font-weight: 800; color: #fff; }
 .coach-dots li.on { color: var(--ink); font-weight: 700; }
 .coach-dots li.on::before { border-color: var(--accent); background: var(--accent); }
 .coach-dots li.done::before { content: '✓'; border-color: var(--xp-fill); background: var(--xp-fill); }
-.coach-title { font-size: 26px; font-weight: 900; text-transform: uppercase; }
-.coach-text { margin: 0; font-size: 16px; max-width: 72ch; }
+.coach-title { font-size: 1.625rem; font-weight: 900; text-transform: uppercase; }
+.coach-text { margin: 0; font-size: 1rem; max-width: 72ch; }
 /* Every drill's copy and every note is laid invisibly in the same cell (tutorial.ts showDrill), so the card
    is always as tall as the longest and the pitch never moves under the pointer. */
 .coach-stack { display: grid; }
 .coach-stack > * { grid-area: 1 / 1; min-width: 0; }
-.coach-ghosts { display: grid; visibility: hidden; pointer-events: none; max-width: 72ch; font-size: 16px; }
+.coach-ghosts { display: grid; visibility: hidden; pointer-events: none; max-width: 72ch; font-size: 1rem; }
 .coach-note + .coach-ghosts { font-weight: 700; }
 .coach-ghosts > span { grid-area: 1 / 1; }
 .coach-note { margin: 0; font-weight: 700; min-height: 1.5em; }
@@ -1071,13 +1071,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .pad-btn.locked.down { background-color: rgba(15, 21, 19, .55); }
 .pad-btn.shoot.locked.down { background-color: rgba(207, 51, 38, .75); }
 
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .ob-card { padding: 20px; border-radius: var(--r-lg); }
-  .ob-title { font-size: 34px; }
-  .ob-club-name { font-size: 26px; }
+  .ob-title { font-size: 2.125rem; }
+  .ob-club-name { font-size: 1.625rem; }
   .ob-nav .btn.big { padding: 10px var(--sp-4); }
   .training-title { font-size: var(--fs-2xl); }
-  .coach-title { font-size: 21px; }
+  .coach-title { font-size: 1.3125rem; }
   .coach-text, .coach-ghosts { font-size: var(--fs-md); }
   .training-pitch { width: 100%; }
   .training-head { align-items: center; }
@@ -1085,7 +1085,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 /* Phones: the first-match celebration and the club step keep their actions on screen, a bar stuck to the bottom of the
    viewport with the primary (Go to Home) full width on top, like .rs-foot in the result dialog. */
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .ob-card:not(.ob-welcome) .ob-nav {
     position: sticky; bottom: 0; z-index: 2; flex-direction: column-reverse; align-items: stretch; flex-wrap: nowrap; gap: var(--sp-2);
     margin: 0 -20px -20px; padding: 12px 20px max(14px, env(safe-area-inset-bottom, 0px));
@@ -1096,12 +1096,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 136px; }
 }
 /* Short landscape phones (750x342): the welcome card's heading and Kick off both fit with no scroll. */
-@media (max-height: 420px) and (orientation: landscape) {
+@media (max-height: 26.25em) and (orientation: landscape) {
   .onboarding { gap: 8px; }
-  .ob-top .wordmark { font-size: 24px; }
+  .ob-top .wordmark { font-size: 1.5rem; }
   .ob-card { padding: 12px 18px; gap: 8px; border-radius: var(--r-lg); }
-  .ob-title { font-size: 26px; line-height: 1.05; }
-  .ob-lede { font-size: 14px; }
+  .ob-title { font-size: 1.625rem; line-height: 1.05; }
+  .ob-lede { font-size: .875rem; }
   .ob-versus { padding: 6px var(--sp-3); }
   .ob-versus .crest { width: 34px; height: 38px; }
   .ob-versus .side { gap: 2px; }
@@ -1112,14 +1112,14 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   html:has(.ob-card:not(.ob-welcome) .ob-nav) { scroll-padding-bottom: 80px; }
 }
 /* Phones held sideways: coach card left, pitch (with its pad) right, all inside the viewport. */
-@media (max-height: 520px) and (orientation: landscape) {
+@media (max-height: 32.5em) and (orientation: landscape) {
   #app:has(.training) { padding-block: 10px; }
   .training { display: grid; grid-template-columns: minmax(0, 36%) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); column-gap: var(--sp-3); row-gap: 6px; align-items: start; justify-items: stretch; }
   .training-head { grid-column: 1; grid-row: 1; }
   .training-head .eyebrow { display: none; }
   .training-title { font-size: var(--fs-xl); line-height: 1.05; }
   .coach { grid-column: 1; grid-row: 2; padding: 8px 12px 8px 16px; gap: 2px; max-height: calc(100dvh - 80px); overflow-y: auto; }
-  .coach-title { font-size: 18px; }
+  .coach-title { font-size: 1.125rem; }
   .coach-text, .coach-note { font-size: var(--fs-sm); }
   .coach-ghosts { display: none; }
   .coach-done .coach-actions { order: 1; }
@@ -1146,12 +1146,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .comp-panel p { margin: 0; }
 .comp-panel .actions { margin-top: auto; }
 .comp-prizes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.comp-prizes dd { font-size: 22px; }
+.comp-prizes dd { font-size: 1.375rem; }
 .comp-next { display: flex; flex-direction: column; gap: var(--sp-3); align-items: stretch; padding: var(--sp-4); border: 1px solid var(--line); border-radius: var(--r-lg); background: linear-gradient(135deg, var(--surface-2), var(--surface)); }
 .comp-next .btn { align-self: center; }
 .comp-versus { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
 .comp-side-name { font-family: var(--font-display); font-weight: 800; font-size: var(--fs-xl); line-height: 1.05; text-wrap: balance; }
-.comp-versus .vs { font-size: 22px; }
+.comp-versus .vs { font-size: 1.375rem; }
 .comp-status { padding: var(--sp-3) 14px; border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface-2); }
 .comp-status.good { border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
 .comp-status.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, var(--surface)); }
@@ -1195,7 +1195,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* League table + fixtures */
 .league-table tbody th[scope="row"] {
-  font-size: 14px; letter-spacing: 0; text-transform: none; color: var(--ink); font-weight: 600; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line);
+  font-size: .875rem; letter-spacing: 0; text-transform: none; color: var(--ink); font-weight: 600; text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line);
 }
 .league-table tr.you th { background: color-mix(in srgb, var(--accent) 12%, transparent); font-weight: 700; }
 .league-table abbr { text-decoration: none; }
@@ -1204,9 +1204,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* A shape as well as a colour: up and down arrows in the zone rows and the key. */
 .league-table tr.zone-up td:first-child::before, .key-up::before { content: '\25B2'; content: '\25B2' / ''; }
 .league-table tr.zone-down td:first-child::before, .key-down::before { content: '\25BC'; content: '\25BC' / ''; }
-.league-table tr[class*="zone-"] td:first-child::before { font-size: 8px; margin-right: 3px; vertical-align: 1px; }
+.league-table tr[class*="zone-"] td:first-child::before { font-size: .5rem; margin-right: 3px; vertical-align: 1px; }
 .league-key { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0; }
-.key { display: inline-block; width: 12px; height: 12px; border-radius: 3px; color: var(--on-status); font-size: 8px; line-height: 12px; text-align: center; vertical-align: 1px; }
+.key { display: inline-block; width: .75rem; height: .75rem; border-radius: 3px; color: var(--on-status); font-size: .5rem; line-height: .75rem; text-align: center; vertical-align: 1px; }
 .key-up { background: var(--good); }
 .key-down { background: var(--bad); margin-left: 10px; }
 .matchdays { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-content: start; }
@@ -1241,10 +1241,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .comp-jump { display: none; }
 /* Room above a scrolled-to panel heading, so the toast (top of the viewport) never covers the fixture card below it. */
 .comp-title { scroll-margin-top: 76px; }
-@media (max-width: 960px) {
+@media (max-width: 60em) {
   .comp-top, .league-body { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .comp-jump { display: flex; gap: var(--sp-2); }
   .comp-panel > .actions .btn { width: 100%; }
   .bracket { grid-template-columns: minmax(0, 1fr); padding: 10px; }
@@ -1266,11 +1266,11 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-board { width: min(100%, 820px); display: flex; flex-direction: column; gap: 4px; background: #0f1513; color: #f3f6f1; border-radius: var(--r-md); padding: var(--sp-2) 14px; position: relative; }
 .so-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 3px 6px; border-radius: var(--r-sm); border: 1.5px solid transparent; }
 .so-row.kicking { border-color: #ffd60a; }
-.so-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.so-name { font-family: var(--font-display); font-weight: 800; font-size: 1.1875rem; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .so-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.so-you { flex: none;  font-family: var(--font-body); font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #ffd60a; color: #0f1513; border-radius: var(--r-pill); padding: 1px 6px; line-height: 1.4; }
+.so-you { flex: none;  font-family: var(--font-body); font-size: .625rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; background: #ffd60a; color: #0f1513; border-radius: var(--r-pill); padding: 1px 6px; line-height: 1.4; }
 .so-marks { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.so-mark { width: 22px; text-align: center; font-size: var(--fs-xl); line-height: 1.1; font-weight: 700; color: #6b7a74; border-bottom: 2px solid transparent; }
+.so-mark { width: 1.375rem; text-align: center; font-size: var(--fs-xl); line-height: 1.1; font-weight: 700; color: #6b7a74; border-bottom: 2px solid transparent; }
 .so-mark.scored { color: #5fd08e; }
 .so-mark.fresh { animation: so-mark .6s var(--ease-out); }
 .so-row.decisive { border-color: #ff8a7a; background: rgba(255, 138, 122, .1); }
@@ -1305,7 +1305,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 #so-canvas { display: block; width: 100%; aspect-ratio: 16 / 10; border-radius: var(--r-md); background: #1b2a24; touch-action: none; cursor: crosshair; }
 .so-banner {
   position: absolute; left: 50%; top: 52%; transform: translate(-50%, -50%) rotate(-3deg); pointer-events: none;
-  font-family: var(--font-display); font-weight: 900; font-size: clamp(24px, 6vw, 60px); text-transform: uppercase; color: #ffd60a;
+  font-family: var(--font-display); font-weight: 900; font-size: clamp(1.5rem, 6vw, 3.75rem); text-transform: uppercase; color: #ffd60a;
   text-shadow: 0 3px 0 #0f1513, 0 0 24px rgba(0, 0, 0, .5); white-space: nowrap; animation: pop .35s ease-out;
 }
 /* Per outcome: green when the kick went your way, coral when it did not; a goal bursts a little bigger. */
@@ -1330,10 +1330,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-card h2 { margin: 0; font-size: var(--fs-3xl); font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
 .so-card p { margin: 0; }
 .so-card :focus-visible { outline-color: var(--focus); }
-.so-howto { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; font-size: 14px; }
+.so-howto { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); text-align: left; font-size: .875rem; }
 .so-info { width: min(100%, 820px); display: flex; flex-direction: column; gap: 2px; text-align: center; min-height: 3.4em; }
 .so-who { margin: 0; font-size: var(--fs-lg); }
-.so-help { margin: 0; font-size: 14px; color: var(--muted); }
+.so-help { margin: 0; font-size: .875rem; color: var(--muted); }
 .so-skip { margin: 0; font-size: var(--fs-sm); font-weight: 600; color: var(--muted); min-height: 1.3em; opacity: 0; transition: opacity .3s; }
 .so-skip.on { opacity: 1; }
 .so-nowrap { white-space: nowrap; }
@@ -1343,20 +1343,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .so-dive .btn { min-width: 108px; }
 #so-leave { min-height: 36px; padding-inline: var(--sp-4); font-size: var(--fs-sm); }
 
-@media (max-width: 640px), (max-height: 480px) {
+@media (max-width: 40em), (max-height: 30em) {
   /* The intro and end cards are taller than the pitch on a phone: show them as full-screen sheets. */
   .so-overlay { position: fixed; inset: 0; z-index: 45; border-radius: 0; place-items: safe center; padding: max(var(--sp-4), env(safe-area-inset-top, 0px)) max(var(--sp-4), env(safe-area-inset-right, 0px)) max(var(--sp-4), env(safe-area-inset-bottom, 0px)) max(var(--sp-4), env(safe-area-inset-left, 0px)); }
 }
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   #so-canvas { aspect-ratio: 4 / 3; }
-  @media (min-height: 760px) { #so-canvas { aspect-ratio: 1 / 1; } }
+  @media (min-height: 47.5em) { #so-canvas { aspect-ratio: 1 / 1; } }
   .so-stage { width: 100%; }
-  .so-name { font-size: 16px; }
+  .so-name { font-size: 1rem; }
   .so-row { gap: 6px; padding: 3px 2px; }
   .so-board { padding: var(--sp-2) var(--sp-2); }
-  .so-mark { width: 17px; font-size: var(--fs-lg); }
+  .so-mark { width: 1.0625rem; font-size: var(--fs-lg); }
   .so-marks { gap: 3px; }
-  .so-total { font-size: 26px; }
+  .so-total { font-size: 1.625rem; }
   .so-row .crest { display: none; }
   .so-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .so-card { padding: var(--sp-3); gap: var(--sp-2); }
@@ -1365,7 +1365,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #so-leave { min-height: 44px; }
 }
 /* Landscape phone: the pitch takes the full height on the right; scoreboard, text and buttons stack on the left. */
-@media (max-height: 480px) and (orientation: landscape) {
+@media (max-height: 30em) and (orientation: landscape) {
   #app:has(.shootout) { padding-block: 8px; }
   .shootout { display: grid; grid-template-columns: minmax(262px, 38%) minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); column-gap: 12px; row-gap: 6px; align-items: start; height: calc(100vh - 16px); height: calc(100dvh - 16px); }
   .so-board { grid-column: 1; grid-row: 1; width: 100%; padding: 6px 8px; gap: 2px; }
@@ -1376,10 +1376,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .so-name { font-size: var(--fs-md); }
   .so-row { gap: 6px; padding: 2px; grid-template-columns: minmax(0, 1fr) auto auto; }
   .so-row .crest { display: none; }
-  .so-mark { width: 14px; font-size: var(--fs-md); }
+  .so-mark { width: .875rem; font-size: var(--fs-md); }
   .so-marks { gap: 3px; }
   .so-total { font-size: var(--fs-2xl); }
-  .so-who { font-size: 14px; }
+  .so-who { font-size: .875rem; }
   .so-help { font-size: var(--fs-xs); }
   .so-skip { font-size: var(--fs-xs); }
   .so-dive { flex-wrap: nowrap; gap: 6px; }
@@ -1388,13 +1388,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .so-actions #so-leave { min-height: 34px; }
   .so-overlay { place-items: safe center; }
   .so-card { max-width: 640px; padding: 12px 18px; gap: 8px; }
-  .so-card h2 { font-size: 22px; }
+  .so-card h2 { font-size: 1.375rem; }
   .so-howto { flex-direction: row; gap: 18px; font-size: var(--fs-sm); }
   .so-howto li { flex: 1; }
 }
 /* Short landscape: the result banner shrinks and sits just above the dive labels (--so-lbl-top, set from shootout.ts), never on them. */
-@media (max-height: 520px) and (orientation: landscape) {
-  .so-banner { top: calc(var(--so-lbl-top, 48%) - .9em); font-size: clamp(20px, 9vh, 38px); }
+@media (max-height: 32.5em) and (orientation: landscape) {
+  .so-banner { top: calc(var(--so-lbl-top, 48%) - .9em); font-size: clamp(1.25rem, 9vh, 2.375rem); }
 }
 /* The end card: a line naming what the result means, over a win's confetti (confetti.ts). */
 .so-end-next { font-weight: 800; font-size: var(--fs-lg); letter-spacing: .02em; }
@@ -1408,7 +1408,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   /* Its own line under the strike and dive buttons (the row wraps), never beside them where a thumb could slip. */
   #so-leave { margin-top: var(--sp-4); flex: 0 0 100%; }
   #so-leave:not(.danger) { --btn-line: transparent; }
-  @media (orientation: landscape) and (max-height: 480px) { #so-leave { margin-top: var(--sp-2); flex: none; } }
+  @media (orientation: landscape) and (max-height: 30em) { #so-leave { margin-top: var(--sp-2); flex: none; } }
 }
 @media (prefers-reduced-motion: reduce) {
   .so-banner, .so-banner[data-outcome] { animation: none; }
@@ -1468,19 +1468,19 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
     radial-gradient(120% 90% at 50% 120%, rgba(0, 0, 0, .35), transparent 60%);
 }
 .hero-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2) var(--sp-3); position: relative; }
-.hero-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); white-space: nowrap; font-size: 22px; text-transform: uppercase; letter-spacing: .05em; }
+.hero-title { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); white-space: nowrap; font-size: 1.375rem; text-transform: uppercase; letter-spacing: .05em; }
 .hero-tag { font-family: var(--font-body); font-size: var(--fs-xs); font-weight: 800; letter-spacing: .1em; padding: 2px var(--sp-2); border-radius: var(--r-pill); background: var(--hero-ink); color: var(--hero-felt); }
-.hero-len { white-space: nowrap; font-weight: 700; font-size: 14px; color: var(--hero-muted); font-variant-numeric: tabular-nums; border: 1px solid var(--hero-line); background: rgba(0, 0, 0, .18); border-radius: var(--r-pill); padding: 3px 12px; }
+.hero-len { white-space: nowrap; font-weight: 700; font-size: .875rem; color: var(--hero-muted); font-variant-numeric: tabular-nums; border: 1px solid var(--hero-line); background: rgba(0, 0, 0, .18); border-radius: var(--r-pill); padding: 3px 12px; }
 .hero-match { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: start; gap: var(--sp-4); }
 .hero-side { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; min-width: 0; }
 .hero .crest { color: var(--hero-ink); filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .4)); }
 .hero-name { font-family: var(--font-display); font-weight: 800; font-size: var(--fs-feature); line-height: 1.05; text-wrap: balance; overflow-wrap: anywhere; text-shadow: 0 2px 0 rgba(0, 0, 0, .2); }
 .hero-elo { display: flex; align-items: center; gap: var(--sp-2); color: var(--hero-muted); font-variant-numeric: tabular-nums; font-size: var(--fs-md); }
-.hero-elo b { color: var(--hero-ink); font-size: 18px; }
+.hero-elo b { color: var(--hero-ink); font-size: 1.125rem; }
 .mini-spark polyline { fill: none; stroke: var(--gauge); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .mini-spark circle { fill: var(--gauge); }
 .form-strip { list-style: none; margin: 0; padding: 0; display: flex; gap: 4px; }
-.form-chip { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); font-weight: 800; font-size: var(--fs-xs); color: var(--on-status); }
+.form-chip { display: inline-grid; place-items: center; width: 1.375rem; height: 1.375rem; border-radius: var(--r-xs); font-weight: 800; font-size: var(--fs-xs); color: var(--on-status); }
 .form-chip.empty { border: 1.5px dashed var(--hero-line); }
 .form-empty { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .8; }
 .form-chip.res-W { background: var(--good); }
@@ -1500,7 +1500,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .gauge-track { stroke: var(--hero-line); }
 .gauge-fill { stroke: var(--gauge); filter: drop-shadow(0 0 6px rgba(255, 214, 10, .45)); }
 .gauge-text { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.gauge-num { font-family: var(--font-display); font-weight: 900; font-size: 40px; font-variant-numeric: tabular-nums; }
+.gauge-num { font-family: var(--font-display); font-weight: 900; font-size: 2.5rem; font-variant-numeric: tabular-nums; }
 .gauge-num small { font-size: var(--fs-xl); margin-left: 1px; }
 .gauge-label { font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--hero-muted); margin-top: 2px; }
 .stakes { display: flex; gap: 6px; }
@@ -1511,7 +1511,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background: linear-gradient(180deg, color-mix(in srgb, var(--kick) 82%, #fff) 0%, var(--kick) 48%, color-mix(in srgb, var(--kick) 85%, #000) 100%);
   color: var(--kick-ink);
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .28), inset 0 -4px 0 rgba(0, 0, 0, .22), 0 6px 0 rgba(0, 0, 0, .32), 0 18px 36px -12px rgba(0, 0, 0, .65);
-  font-family: var(--font-display); font-weight: 900; font-size: 30px; letter-spacing: .07em; text-transform: uppercase;
+  font-family: var(--font-display); font-weight: 900; font-size: 1.875rem; letter-spacing: .07em; text-transform: uppercase;
   transition: transform var(--dur-press) var(--ease-out), filter var(--dur) var(--ease-out), box-shadow var(--dur-press) var(--ease-out);
 }
 .kickoff::after { content: ''; position: absolute; top: 0; bottom: 0; left: -40%; width: 30%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .35), transparent); transform: skewX(-18deg); transition: left .5s var(--ease-out); pointer-events: none; }
@@ -1536,12 +1536,12 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .mode-card:not(.locked):active { transform: scale(.985); background: var(--surface-2); transition-duration: var(--dur-press); }
 .mode-top { display: flex; align-items: flex-start; gap: var(--sp-3); min-width: 0; }
 .mode-icon { position: relative; flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: var(--r-lg); background: linear-gradient(145deg, var(--surface-3), var(--surface-2)); color: var(--ink); border: 1px solid var(--line); }
-.mode-title { font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
+.mode-title { font-size: 1.375rem; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
 .mode-sub { margin: 2px 0 0; font-size: var(--fs-sm); color: var(--muted); font-weight: 600; }
 .mode-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; margin-top: auto; }
 .mode-btn {
   appearance: none; cursor: pointer; flex: 1 1 0; min-width: 0; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: var(--sp-2) 10px; border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); font-weight: 700; font-size: 14px; white-space: nowrap;
+  padding: var(--sp-2) 10px; border-radius: var(--r-md); border: 1px solid var(--line-strong); background: var(--surface-2); color: var(--ink); font-weight: 700; font-size: .875rem; white-space: nowrap;
   box-shadow: var(--shadow-1); transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out), transform var(--dur-press) var(--ease-out), filter var(--dur) var(--ease-out);
 }
 .mode-btn:hover { background: var(--surface-3); border-color: var(--control-line); }
@@ -1553,7 +1553,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .bars rect.off { fill: none; stroke: currentColor; stroke-width: 1; opacity: .5; }
 .diff-btn.is-locked { cursor: default; border-style: dashed; border-color: var(--control-line); background: transparent; color: var(--muted); box-shadow: none; }
 .diff-btn.is-locked:hover { background: transparent; border-color: var(--control-line); }
-.lvl { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 4px; border-radius: var(--r-pill); background: var(--muted); color: var(--surface); font-size: var(--fs-xs); }
+.lvl { display: inline-grid; place-items: center; min-width: 1.25rem; height: 1.25rem; padding: 0 4px; border-radius: var(--r-pill); background: var(--muted); color: var(--surface); font-size: var(--fs-xs); }
 .mode-card.locked { background: transparent; border-style: dashed; border-color: var(--control-line); justify-content: center; box-shadow: none; }
 .mode-card.locked .mode-icon { background: transparent; color: var(--muted); border: 1.5px dashed var(--control-line); }
 .mode-card.locked .mode-title { color: var(--muted); }
@@ -1562,13 +1562,13 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   background: var(--ink); color: var(--surface); font-size: var(--fs-xs); font-weight: 800; font-variant-numeric: tabular-nums; border: 2px solid var(--bg);
 }
 
-@media (max-width: 960px) {
+@media (max-width: 60em) {
   .mode-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-auto-flow: dense; } /* dense: a half card moves up beside a lone due card, so no cell is left empty */
   /* Stacked, the waiting fixtures come straight after Kick off, and a lone last card fills the row. */
   .mode-card.due { order: -1; }
   .mode-grid > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .topbar { gap: 8px 12px; }
   .topbar .wordmark { font-size: var(--fs-2xl); }
   .topbar .club-chip .crest { width: 24px; height: 27px; }
@@ -1583,7 +1583,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .status-strip .xp-lv { font-size: 0; }
   .status-strip .xp-text { font-size: var(--fs-xs); }
   .status-strip .xp-bar { min-width: 60px; }
-  .status-strip .level-badge { width: 28px; height: 28px; font-size: 14px; }
+  .status-strip .level-badge { width: 1.75rem; height: 1.75rem; font-size: .875rem; }
   .status-strip .xp { flex: 1 1 auto; }
   .status-strip .xp-bar { max-width: none; }
   .status-strip .stat { height: 34px; padding: 0 9px; gap: 4px; font-size: var(--fs-sm); }
@@ -1592,29 +1592,33 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .topbar .club-chip { flex: 0 1 auto; min-width: 0; }
   .topbar .club-elo { white-space: nowrap; }
   .hero-mid::before { width: 84px; height: 84px; }
-  .topbar .club-name { max-width: 100%; font-size: 16px; }
+  .topbar .club-name { max-width: 100%; font-size: 1rem; }
   .hero { padding: 14px var(--sp-3) var(--sp-4); gap: var(--sp-3); border-radius: var(--r-lg); }
-  .hero-title { font-size: 19px; }
+  .hero-title { font-size: 1.1875rem; }
   .hero-tag { letter-spacing: .06em; }
   .hero-len { font-size: var(--fs-sm); padding: 2px 10px; }
   .hero-match { gap: 12px; }
   .hero .crest { width: 60px; height: 66px; }
-  .hero-name { font-size: 18px; }
+  .hero-name { font-size: 1.125rem; }
   .hero-elo { font-size: var(--fs-sm); flex-direction: column; gap: 2px; }
   .hero-elo b { font-size: var(--fs-md); }
-  .form-chip { width: 17px; height: 17px; font-size: 10px; border-radius: var(--r-xs); }
+  .form-chip { width: 1.0625rem; height: 1.0625rem; font-size: .625rem; border-radius: var(--r-xs); }
   .form-strip { gap: 3px; }
   .gauge { width: 104px; }
-  .gauge-num { font-size: 30px; }
+  .gauge-num { font-size: 1.875rem; }
   .gauge-num small { font-size: var(--fs-md); }
-  .gauge-label { font-size: 10px; letter-spacing: .06em; }
-  .kickoff { width: 100%; font-size: 26px; min-height: 60px; }
+  .gauge-label { font-size: .625rem; letter-spacing: .06em; }
+  .kickoff { width: 100%; font-size: 1.625rem; min-height: 60px; }
   .mode-grid { gap: 10px; }
   .mode-card[data-mode="player"], .mode-card[data-mode="practice"] { grid-column: 1 / -1; }
   .mode-card { padding: var(--sp-3); }
   .mode-card.locked .mode-top { gap: 14px; }
   .mode-icon { width: 46px; height: 46px; }
   .mode-title { font-size: var(--fs-xl); }
+}
+/* Large text on a phone (em here follows the browser's text size): the half-width Cup and League cards would split their titles mid-word, so they go full width too. */
+@media (max-width: 20em) {
+  .mode-card[data-mode] { grid-column: 1 / -1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .kickoff, .kickoff::after { transition: none; }
@@ -1646,28 +1650,28 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Tablets (641-900 px: iPad and Galaxy Tab held upright) --------------------------------- */
 /* All seven tabs fit the bar, so Club is not hidden behind the scroll fade. */
-@media (min-width: 641px) and (max-width: 900px) {
+@media (min-width: 40.0625em) and (max-width: 56.25em) {
   .tab { padding: 10px var(--sp-2); font-size: var(--fs-md); letter-spacing: .05em; }
   .tab.on::after { left: 10px; right: 10px; }
 }
 /* Training: the list and the player's Train buttons side by side from 701 px, the detail card staying in view. */
-@media (min-width: 701px) and (max-width: 860px) {
+@media (min-width: 43.8125em) and (max-width: 53.75em) {
   .training-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); }
   .training-grid > .panel.trainee { position: sticky; top: 12px; }
 }
-@media (max-width: 700px) {
+@media (max-width: 43.75em) {
   .training-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* Large touch screens: Pass / Shoot grow and sit a little further in from the bezel. */
-@media (pointer: coarse) and (min-width: 768px) and (min-height: 521px) {
+@media (pointer: coarse) and (min-width: 48em) and (min-height: 32.5625em) {
   .pad-btn { width: 84px; height: 84px; font-size: var(--fs-md); }
   .touch-pad { right: 28px; bottom: 24px; gap: 16px; }
 }
 /* Landscape phones (844x390, 932x430): a compact Home so Kick off is in the first screen. */
-@media (max-height: 520px) and (orientation: landscape) {
+@media (max-height: 32.5em) and (orientation: landscape) {
   #app:has(.home) { padding-top: max(8px, env(safe-area-inset-top, 0px)); gap: 8px; }
   #app:has(.home) .topbar { flex-wrap: nowrap; gap: 8px 14px; }
-  #app:has(.home) .topbar .wordmark { font-size: 26px; white-space: nowrap; flex: none; }
+  #app:has(.home) .topbar .wordmark { font-size: 1.625rem; white-space: nowrap; flex: none; }
   #app:has(.home) .topbar .club-chip { min-width: 0; }
   #app:has(.home) .topbar .club-name { max-width: 16ch; }
   #app:has(.home) .status-strip { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; flex: 1 1 0; min-width: 0; justify-content: flex-start; }
@@ -1679,20 +1683,20 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .home .hero { padding: 8px 20px 12px; gap: 4px; }
   .home .hero-len { display: none; }
   .home .hero .crest { width: 48px; height: 54px; }
-  .home .hero-name { font-size: 22px; }
+  .home .hero-name { font-size: 1.375rem; }
   .home .hero-mid { padding: 0; }
   .home .hero-mid::before { display: none; }
   .home .gauge { width: 110px; }
-  .home .gauge-num { font-size: 30px; }
-  .home .kickoff { min-height: 52px; padding-block: 8px; font-size: 26px; }
+  .home .gauge-num { font-size: 1.875rem; }
+  .home .kickoff { min-height: 52px; padding-block: 8px; font-size: 1.625rem; }
 }
 /* Landscape phones narrower than 800 px (iPhone 13 is 750 px of page): the whole top bar fits with no sideways pan, so the
    money chip is never cut off. The club chip loses its Elo line, the level chip its words (the badge shows the level). */
-@media (max-height: 520px) and (orientation: landscape) and (max-width: 800px) {
+@media (max-height: 32.5em) and (orientation: landscape) and (max-width: 50em) {
   #app:has(.home) .topbar { gap: 6px 10px; }
-  #app:has(.home) .topbar .wordmark { font-size: 22px; }
+  #app:has(.home) .topbar .wordmark { font-size: 1.375rem; }
   #app:has(.home) .topbar .club-elo { display: none; }
-  #app:has(.home) .topbar .club-name { max-width: 11ch; font-size: 15px; }
+  #app:has(.home) .topbar .club-name { max-width: 11ch; font-size: .9375rem; }
   #app:has(.home) .topbar .club-chip .crest { width: 20px; height: 23px; }
   #app:has(.home) .status-strip { gap: 4px; overflow: visible; }
   /* The level chip gives way (its bar shrinks) so a wider system font never pushes the strip into a scroll. */
@@ -1703,35 +1707,35 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .status-strip .stat { height: 34px; padding: 0 8px; gap: 4px; font-size: var(--fs-sm); }
 }
 /* Narrower still (568x320): the chips can't all fit, so the strip scrolls again rather than push the page sideways. */
-@media (max-height: 520px) and (orientation: landscape) and (max-width: 699px) {
+@media (max-height: 32.5em) and (orientation: landscape) and (max-width: 43.6875em) {
   #app:has(.home) .status-strip { overflow-x: auto; overflow-y: hidden; }
 }
 /* Very short landscape (568x320, a 200%-zoomed laptop): tighter still, so Kick off needs no scroll. */
-@media (max-height: 400px) and (orientation: landscape) {
+@media (max-height: 25em) and (orientation: landscape) {
   .home .hero .crest { width: 34px; height: 38px; }
-  .home .hero-name { font-size: 18px; }
+  .home .hero-name { font-size: 1.125rem; }
   .home .hero-story { font-size: var(--fs-xs); }
   .home .hero { padding: 6px 16px 8px; gap: 2px; }
-  .home .kickoff { min-height: 44px; font-size: 22px; }
+  .home .kickoff { min-height: 44px; font-size: 1.375rem; }
   .tabs { margin-block: 0; }
 }
-@media (max-height: 340px) and (orientation: landscape) {
+@media (max-height: 21.25em) and (orientation: landscape) {
   .home .hero-story { display: none; }
   .home .hero-side { gap: 2px; }
 }
 /* Big screens (1920 up): the whole UI scales so it is not a small island in empty space. Not the match or the training ground (their canvas math must stay 1:1); the match's pause card scales on its own. */
-@media (min-width: 1800px) and (min-height: 900px) {
+@media (min-width: 112.5em) and (min-height: 56.25em) {
   #app:not(:has(> .match, > .training)) { zoom: 1.25; }
   #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.25; }
 }
 /* The desktop radar sits under the (now scaled) scoreboard: move it down to clear it. */
-@media (min-width: 1800px) and (min-height: 900px) and (pointer: fine) {
+@media (min-width: 112.5em) and (min-height: 56.25em) and (pointer: fine) {
   #app #pitch ~ .hud .hud-radar { top: 100px; }
 }
-@media (min-width: 2400px) and (min-height: 1200px) and (pointer: fine) {
+@media (min-width: 150em) and (min-height: 75em) and (pointer: fine) {
   #app #pitch ~ .hud .hud-radar { top: 120px; }
 }
-@media (min-width: 2400px) and (min-height: 1200px) {
+@media (min-width: 150em) and (min-height: 75em) {
   #app:not(:has(> .match, > .training)) { zoom: 1.5; }
   #app:has(> .match) :is(.pause-card, .hud-tl, .hud-tr, .hud-me, .controls-hint, .hint-more, .juice-mute) { zoom: 1.5; }
 }
@@ -1799,7 +1803,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .comp-next { --story-ink: var(--ink); --story-bg: var(--surface); }
 /* Progression cues: a rising young player, the room left in training. */
 .rise-tag { display: inline-block; margin-left: 6px; font-size: var(--fs-2xs); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--good); white-space: nowrap; }
-@media (min-width: 641px) { .rise-tag::after { content: " Rising"; } }
+@media (min-width: 40.0625em) { .rise-tag::after { content: " Rising"; } }
 .roster-btn.on .rise-tag { color: inherit; }
 .room { font-size: var(--fs-sm); font-weight: 700; color: var(--good); }
 .room.done { color: var(--muted); font-weight: 500; }
@@ -1826,7 +1830,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .pot-max { position: absolute; top: -3px; width: 3px; height: 16px; margin-left: -1px; background: var(--ink); border-radius: 2px; }
 .prof-line { margin: 4px 0; }
 .prof-info { padding: 0 0 var(--sp-3); }
-@media (max-width: 640px) { .prof { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 40em) { .prof { grid-template-columns: minmax(0, 1fr); } }
 .roster-name .rise-tag::after { content: none; }
 
 /* Season arc: standing against the promotion places, your division on the ladder */
@@ -1865,11 +1869,11 @@ td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-in
 
 /* Transfers: upgrades stand out, the just-signed bar, phone detail under the name ------------------ */
 .name-sub { display: none; font-size: var(--fs-2xs); font-weight: 600; color: var(--muted); white-space: nowrap; }
-@media (max-width: 1000px) { .tbl.has-action .name-sub { display: block; } .tbl.has-action .up-chip { margin-left: 0; } }
+@media (max-width: 62.5em) { .tbl.has-action .name-sub { display: block; } .tbl.has-action .up-chip { margin-left: 0; } }
 .up-chip { display: inline-block; margin: 2px 0 0 8px; font-size: var(--fs-2xs); font-weight: 800; line-height: 1.5; padding: 0 7px; border-radius: var(--r-pill); white-space: nowrap; color: var(--good); background: color-mix(in srgb, var(--good) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); }
 .signed-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: color-mix(in srgb, var(--good) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 40%, transparent); font-weight: 600; }
 .signed-bar > span { flex: 1 1 14em; min-width: 0; }
-@media (max-width: 600px) {
+@media (max-width: 37.5em) {
   /* The XI mark is wanted on the Sell list: starters are easy to sell by mistake. */
   .tbl td.name .pill.sell-xi { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
 }
@@ -1879,13 +1883,13 @@ td .btn + .mk-note.short { white-space: normal; inline-size: min-content; min-in
 .attr-list li.off .attr-name, .attr-list li.off .attr-val, .attr-list li.off .bar { opacity: .55; }
 .attr-list li.best .attr-name { font-weight: 800; }
 .train-sticky { display: none; }
-@media (max-width: 700px) {
+@media (max-width: 43.75em) {
   .train-sticky { display: flex; align-items: baseline; gap: var(--sp-3); position: sticky; top: 0; z-index: 5; margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3); padding: var(--sp-2) var(--sp-4); background: var(--surface); border-bottom: 1px solid var(--line); border-radius: var(--r-lg) var(--r-lg) 0 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
   .train-sticky.none b { color: var(--warn, var(--bad)); }
   .train-sticky .ts-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .train-sticky .ts-ovr { font-weight: 800; }
 }
-@media (max-width: 480px) { .key-tag { display: block; margin: 1px 0 0; width: max-content; } }
+@media (max-width: 30em) { .key-tag { display: block; margin: 1px 0 0; width: max-content; } }
 
 /* Club: level, news and history lead; identity and rename fold away; the danger zone has its own panel at the end. */
 .club-grid .level-panel, .club-grid .customise, .club-grid .danger-panel { grid-column: 1 / -1; }
