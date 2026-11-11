@@ -147,7 +147,7 @@
 .hud-tag[hidden] { display: none; }
 /* The kind of free kick being taken: under the call tag, quiet for a direct one, the referee's yellow for an indirect one. */
 .hud-fk {
-  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  position: absolute; left: 50%; top: calc(24.8px + 1.2rem); transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
   font: italic 700 .75rem/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: var(--r-xs); padding: 3px 9px;
 }
 .hud-fk b { font-family: var(--font-display); font-weight: 900; font-size: .875rem; letter-spacing: .06em; text-transform: uppercase; }
@@ -157,7 +157,7 @@
 .hud-fk[hidden] { display: none; }
 /* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
 .hud-prompt {
-  position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
+  position: absolute; left: 50%; top: calc(24.8px + 1.2rem); transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
   font: italic 700 .8125rem/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: var(--r-xs); padding: 4px 10px;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
 }
@@ -206,9 +206,10 @@
   .hud-replay { top: 50px; }
   /* The referee's tag (advantage, added time) under the score bar, not over the score and clock. */
   .hud-tag { top: 50px; font-size: var(--fs-2xs); padding: 3px 8px; }
-  .hud-fk { top: 78px; font-size: var(--fs-2xs); }
+  /* Under the call tag, whose height grows with the text size: the offset is the tag's top (50px) + its height in rem. */
+  .hud-fk { top: calc(62.4px + .975rem); font-size: var(--fs-2xs); }
   .hud-fk small { display: none; }
-  .hud-prompt { top: 78px; font-size: var(--fs-2xs); padding: 3px 8px; }
+  .hud-prompt { top: calc(62.4px + .975rem); font-size: var(--fs-2xs); padding: 3px 8px; }
   .hud-prompt b { font-size: var(--fs-sm); }
   .hud-tag b { font-size: var(--fs-sm); }
   .hud-replay small { font-size: var(--fs-2xs); max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -301,7 +302,7 @@
   /* The centred calls go under those two rows of 44 px buttons, not across the camera chip and zoom. */
   .hud-tag, .hud-replay { top: 112px; }
   .hud .hud-word.intro { top: 215px; }
-  .hud-fk, .hud-prompt { top: 142px; }
+  .hud-fk, .hud-prompt { top: calc(126.4px + .975rem); }
   /* A long prompt wraps inside the pitch instead of running off a narrow phone. */
   .hud-prompt { white-space: normal; text-align: center; width: max-content; max-width: calc(100% - 28px); }
   /* The 2D pitch is fitted whole, so the KICK-OFF label clears the prompt above it (3D's camera frames it elsewhere). */
