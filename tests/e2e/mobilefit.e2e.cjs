@@ -176,3 +176,12 @@ for (const [name, vp] of [['desktop', { width: 1280, height: 800 }], ['portrait 
     expect(m.badgeBottom, `badge bottom inside the chip ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.chipBottom);
   });
 }
+
+// A full-width iPhone 14 in landscape (844x390) once fell outside the compact top bar's width range, so the rank and
+// week chips pushed Home about 50 px sideways.
+test('mobilefit: 844x390 landscape Home has no sideways pan', async (t) => {
+  const page = await openApp(t, { width: 844, height: 390, hasTouch: true, mutateSave: (s) => { s.club.elo = 900; } });
+  await page.waitForTimeout(300);
+  const d = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  expect(d.sw, `Home has no sideways pan ${JSON.stringify(d)}`).toBeLessThanOrEqual(d.cw);
+});

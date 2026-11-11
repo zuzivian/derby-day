@@ -1709,9 +1709,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .home .gauge-num { font-size: 1.875rem; }
   .home .kickoff { min-height: 52px; padding-block: 8px; font-size: 1.625rem; }
 }
-/* Landscape phones narrower than 800 px (iPhone 13 is 750 px of page): the whole top bar fits with no sideways pan, so the
+/* Landscape phones up to 932 px wide (iPhone 13 is 750 px of page, an iPhone 14 at full width 844): the whole top bar fits with no sideways pan, so the
    money chip is never cut off. The club chip loses its Elo line, the level chip its words (the badge shows the level). */
-@media (max-height: 32.5em) and (orientation: landscape) and (max-width: 50em) {
+@media (max-height: 32.5em) and (orientation: landscape) and (max-width: 58.25em) {
   #app:has(.home) .topbar { gap: 6px 10px; }
   #app:has(.home) .topbar .wordmark { font-size: 1.375rem; }
   #app:has(.home) .topbar .club-elo { display: none; }
