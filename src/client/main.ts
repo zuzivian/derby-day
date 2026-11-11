@@ -39,7 +39,7 @@ import { clubLevel } from '../meta/levels.ts';
 import { mountTutorial } from './tutorial.ts';
 import { mountLink, mountLocal2P, mountOnline, type VersusOptions } from './versus.ts';
 import { inviteCode, relayConfig } from '../net/config.ts';
-import { homeScreen } from './home.ts';
+import { fitHeroNames, homeScreen } from './home.ts';
 import { introLine, stakesVs } from './stakes.ts';
 import { setCustomiseOpen, goalOrder, fitFor, clubScreen, ladderScreen, rankedNote, rankOf, PRACTICE, practiceUnlocked, screenUnlocked, shell, squadScreen, trainingScreen, transfersScreen, type App, type Screen } from './ui.ts';
 
@@ -204,6 +204,7 @@ function render() {
     restoreFocus(root, key, '#main');
   }
   afterRender(root);
+  fitHeroNames(root);
   if (revealMark) placeMark(root, true);
   revealMark = false;
 }
@@ -250,7 +251,9 @@ function syncHint(marks: string[]) {
   hintOn = app.screen;
   root.querySelector('#panel, main')?.insertAdjacentHTML('afterbegin', hintHtml(app.screen, text));
 }
-window.addEventListener('resize', () => placeMark(root, false));
+window.addEventListener('resize', () => { fitHeroNames(root); placeMark(root, false); });
+// The web font arrives after the first render and changes the word widths.
+document.fonts?.ready.then(() => fitHeroNames(root));
 window.addEventListener('scroll', () => placeMark(root, false), { passive: true });
 
 /** Focus the main region. After setup the page stays at the top, so the header and Kick off are in view. */
