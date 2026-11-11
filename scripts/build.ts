@@ -6,11 +6,13 @@
 // Build-time environment (all optional; empty = off, see docs/OPS.md):
 //   DERBY_ERROR_URL       where crash reports are sent (errors.ts)
 //   DERBY_TELEMETRY_URL   where anonymous usage counts are sent (telemetry.ts)
+//   DERBY_NO_WSTRIM       1 = keep whitespace between tags in HTML templates (scripts/html-trim.ts; used to prove the trim changes nothing)
 //   DERBY_BUILD_ID        build id for crash details and the offline cache (default: Vercel's commit, else git's, else a timestamp)
 
 import { watch } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { glslMinPlugin } from './glsl-min';
+import { htmlTrimPlugin } from './html-trim';
 import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -178,7 +180,8 @@ async function build(): Promise<void> {
     entrypoints: [`${root}src/client/boot.ts`],
     target: 'browser',
     minify: true,
-    plugins: [glslMinPlugin],
+    // DERBY_NO_WSTRIM=1 keeps the template whitespace (for comparing builds by hand).
+    plugins: process.env.DERBY_NO_WSTRIM ? [glslMinPlugin] : [glslMinPlugin, htmlTrimPlugin],
     format: 'esm',
     define: {
       __BUILD_ID__: JSON.stringify(id),

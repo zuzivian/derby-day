@@ -212,6 +212,76 @@ test('shootout: a touch phone gets touch wording', async (t) => {
   expect(help).notToContain('Click');
 });
 
+/** Large text as the browser setting does it: a bigger root size, em breakpoints scaled with it (a page-set root does not move them), wide letter-spacing. */
+async function largeText(page, rootPx) {
+  await page.evaluate((px) => {
+    const k = px / 16;
+    for (const el of document.querySelectorAll('style')) {
+      el.textContent = el.textContent.replace(/@media([^{]*)\{/g, (m, c) => `@media${c.replace(/([\d.]+)em/g, (mm, n) => `${parseFloat(n) * k}em`)}{`);
+    }
+    const st = document.createElement('style');
+    st.textContent = `html{font-size:${px}px !important} *{letter-spacing:.06em !important}`;
+    document.head.appendChild(st);
+  }, rootPx);
+  await page.waitForTimeout(200);
+}
+
+// At 20 and 24 px roots (125% and 150% text) on a 390x844 phone the keeper's three dive buttons all stay on screen
+// without scrolling, and the scoreboard names are not cut to "Wyn...".
+for (const rootPx of [20, 24]) {
+  test(`shootout: at a ${rootPx}px root on a phone every dive button is on screen and the names are readable`, async (t) => {
+    const page = await reachShootout(t, { width: 390, height: 844, hasTouch: true, mutateSave: (s) => { s.club.name = 'Wynbridge Rovers'; } });
+    await largeText(page, rootPx);
+    await page.locator(S.start).tap();
+    // Play as the taker until the keeper's turn comes up (the draw order decides who starts).
+    for (let k = 0; k < 8; k++) {
+      await waitPhase(page, ['aim', 'telegraph', 'done']);
+      if ((await phaseOf(page)) === 'telegraph') break;
+      await playOneKick(page);
+      await page.waitForTimeout(520);
+      await page.keyboard.press('Space').catch(() => {});
+    }
+    expect(await phaseOf(page), 'reached the keeper phase').toBe('telegraph');
+    const m = await page.evaluate(() => {
+      window.scrollTo(0, 0); // "without scrolling": measured from the top of the page
+      const vh = window.innerHeight;
+      const btns = [...document.querySelectorAll('#so-dive [data-dive]')].map((b) => { const r = b.getBoundingClientRect(); return { d: b.dataset.dive, top: Math.round(r.top), bottom: Math.round(r.bottom), w: Math.round(r.width) }; });
+      const names = [...document.querySelectorAll('.so-name-t')].map((n) => ({ t: n.textContent, clipped: n.scrollWidth > n.clientWidth + 1 }));
+      return { vh, btns, names, scrollY: window.scrollY, docH: document.documentElement.scrollHeight };
+    });
+    expect(m.btns.length, 'three dive buttons').toBe(3);
+    for (const b of m.btns) expect(b.bottom, `dive button ${b.d} inside the viewport ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.vh);
+    for (const b of m.btns) expect(b.top, `dive button ${b.d} not above the top ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(0);
+    for (const n of m.names) expect(n.clipped, `scoreboard name shown whole ${JSON.stringify(m.names)}`).toBe(false);
+  });
+}
+
+// Home hero at a 24 px root, 390x844: a long club name wraps between words, never inside one.
+for (const rootPx of [20, 24]) {
+  test(`shootout: (home) at a ${rootPx}px root a long club name in the hero wraps at word boundaries`, async (t) => {
+    const page = await openApp(t, { width: 390, height: 844, hasTouch: true, mutateSave: (s) => { s.club.name = 'Örnstad Vale Lamplighters'; } });
+    await largeText(page, rootPx);
+    const broken = await page.evaluate(() => {
+      const out = [];
+      for (const el of document.querySelectorAll('.hero-name')) {
+        const box = el.getBoundingClientRect();
+        // Each word measured alone: a word wider than the column can only be broken mid-word.
+        for (const w of el.textContent.split(/\s+/)) {
+          const s = document.createElement('span');
+          s.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+          s.textContent = w;
+          el.appendChild(s);
+          const wide = s.getBoundingClientRect().width;
+          s.remove();
+          if (wide > box.width + 0.5) out.push({ word: w, wide: Math.round(wide), col: Math.round(box.width) });
+        }
+      }
+      return out;
+    });
+    expect(broken, `words wider than the name column (would break mid-word) ${JSON.stringify(broken)}`).toEqual([]);
+  });
+}
+
 test('shootout: mouse wording flips to touch wording on the first touch pointerdown', async (t) => {
   // A wide viewport with a fine pointer: mouse wording at mount, then a touch pointerdown.
   const page = await reachShootout(t);
@@ -252,18 +322,18 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
   expect(r.bannerBottom, 'banner ends above the LEFT/CENTRE/RIGHT labels').toBeLessThanOrEqual(r.lblTop + 1);
   expect(r.bannerTop, 'banner stays on the canvas').toBeGreaterThanOrEqual(0);
   expect(r.bannerH, 'banner is capped in short landscape').toBeLessThanOrEqual(60);
-  // Record in the page, as each change lands, whether the end card is still hidden when the phase turns 'done', and
+  // Record in the page, as each change lands, whether the end card is still hidden at the decision, and
   // how long after the decision it appears. Checking afterwards over several browser round trips raced the 300 ms
   // beat on a slow CI runner. The beat is timed from the decision itself (Forfeit is hidden in the same task that
-  // starts the end-card timer), not from data-phase, which the next animation frame mirrors and a busy runner delays.
+  // starts the end-card timer), not from data-phase, which the next animation frame mirrors and a busy runner delays (CI saw
+  // data-phase reach 'done' after the card was already up).
   const leaveHiddenBefore = await page.evaluate(() => {
     const sec = document.querySelector('.shootout');
     const end = document.querySelector('#so-end');
     const leave = document.querySelector('#so-leave');
-    const w = (window.__soEnd = { hiddenAtDone: null, decidedAt: 0, shownAt: 0 });
+    const w = (window.__soEnd = { hiddenAtDecision: null, decidedAt: 0, shownAt: 0 });
     new MutationObserver(() => {
-      if (!w.decidedAt && leave.hidden) w.decidedAt = performance.now();
-      if (w.hiddenAtDone === null && sec.dataset.phase === 'done') w.hiddenAtDone = end.hidden;
+      if (!w.decidedAt && leave.hidden) { w.decidedAt = performance.now(); w.hiddenAtDecision = end.hidden; }
       if (w.decidedAt && !w.shownAt && !end.hidden) w.shownAt = performance.now();
     }).observe(sec, { attributes: true, subtree: true, attributeFilter: ['data-phase', 'hidden'] });
     return leave.hidden;
@@ -282,7 +352,7 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
   // Phase is 'done' while the end card is still held back for a beat.
   await page.locator(S.end).waitFor({ state: 'visible' });
   const beat = await page.evaluate(() => window.__soEnd);
-  expect(beat.hiddenAtDone, `end card waits a beat after the last kick ${JSON.stringify(beat)}`).toBe(true);
+  expect(beat.hiddenAtDecision, `end card waits a beat after the last kick ${JSON.stringify(beat)}`).toBe(true);
   expect(beat.decidedAt, `the decision hid Forfeit ${JSON.stringify(beat)}`).toBeGreaterThan(0);
   expect(beat.shownAt - beat.decidedAt, `the beat lasts ${JSON.stringify(beat)}`).toBeGreaterThanOrEqual(250);
   const title = await page.locator(S.endTitle).textContent();
