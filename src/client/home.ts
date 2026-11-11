@@ -133,6 +133,42 @@ const lockBadge = (level: number) => `<span class="lock-badge" aria-hidden="true
 // ---------------------------------------------------------------------------
 // The hero: vs CPU, ranked, the next opponent
 
+/**
+ * A club name with one very long word has nowhere to wrap, so on a narrow column (a small phone, large text) it spills out of
+ * the column or breaks mid-word. Shrink just that name until its longest word fits, in rem so it still follows the text-size
+ * setting. A name that fits keeps the stylesheet's size (18px at default text), so nothing changes for it. Call after every
+ * render and on resize.
+ */
+export function fitHeroNames(root: ParentNode): void {
+  const rootPx = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  for (const el of root.querySelectorAll<HTMLElement>('.hero-name')) {
+    el.style.removeProperty('font-size');
+    if (rootPx <= 16) continue;
+    const col = el.parentElement?.clientWidth ?? 0;
+    if (!col) continue;
+    const probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+    el.appendChild(probe);
+    const words = (el.textContent ?? '').split(/\s+/);
+    const widest = () => {
+      let w = 0;
+      for (const word of words) {
+        probe.textContent = word;
+        w = Math.max(w, probe.getBoundingClientRect().width);
+      }
+      return w;
+    };
+    // Text width is not exactly linear in the size (hinting, letter-spacing), so step toward the fit a few times.
+    // 0.375rem floor (9px at 150% text): a name that needs less is left at the floor, and the hero clips what is left rather than the page panning.
+    let rem = parseFloat(getComputedStyle(el).fontSize) / rootPx;
+    for (let i = 0; i < 4 && widest() > col && rem > 0.375; i++) {
+      rem = Math.max(0.375, rem * (col / widest()) - 0.002);
+      el.style.fontSize = `${rem}rem`;
+    }
+    probe.remove();
+  }
+}
+
 function hero(app: App): string {
   const s = app.save;
   const c = s.club;
