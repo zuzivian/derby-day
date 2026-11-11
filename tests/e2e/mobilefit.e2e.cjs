@@ -62,7 +62,8 @@ test('mobilefit: portrait coach tip stays clear of the camera and zoom buttons, 
   await page.waitForSelector('#ob-kickoff');
   await page.click('#ob-kickoff');
   await page.waitForSelector('.coach-tip:not([hidden])', { timeout: 30_000 });
-  await page.waitForTimeout(600);
+  // Measure the settled card: it slides in over .25s (a 6 px rise), which a busy machine can stretch past a fixed wait.
+  await page.waitForFunction(() => { const c = getComputedStyle(document.querySelector('.coach-tip')); return c.opacity === '1' && (c.transform === 'none' || c.transform === 'matrix(1, 0, 0, 1, 0, 0)'); }, null, { timeout: 15_000 });
   const tip = await rect(page, '.coach-tip');
   for (const sel of ['[data-zoom="1"]', '[data-zoom="-1"]', '.pitch-cam', '.hud-menu']) {
     const r = await rect(page, sel);
@@ -119,4 +120,41 @@ test('mobilefit: after a tab change the open tab is fully inside the scrolling t
     });
     expect(fit.l >= 0 && fit.r <= 0, `${screen} tab inside the bar ${JSON.stringify(fit)}`).toBe(true);
   }
+});
+
+// The "#30" ladder chip once dropped onto a row of its own at 390 px, and wider CI fonts made it worse. Under +0.06em of
+// letter-spacing the stat chips must still sit together on one row below the level chip (no orphan), and every chip's
+// text stays on one line.
+for (const vp of [{ width: 390, height: 844 }, { width: 375, height: 667 }, { width: 430, height: 932 }]) {
+  test(`mobilefit: the ladder rank chip never wraps alone at ${vp.width}px, even with wide letter-spacing`, async (t) => {
+    const page = await openApp(t, { ...vp, hasTouch: true, mutateSave: (s) => { s.club.elo = 900; } });
+    await page.addStyleTag({ content: '.status-strip, .status-strip * { letter-spacing: .06em !important; }' });
+    await page.waitForTimeout(150);
+    const info = await page.locator(SEL.statusStrip).evaluate((el) => {
+      const kids = [...el.children].filter((c) => c.getClientRects().length);
+      const box = el.getBoundingClientRect();
+      return {
+        w: Math.round(box.width),
+        rank: (el.querySelector('.stat.rank .stat-num') || {}).textContent,
+        chips: kids.map((c) => { const r = c.getBoundingClientRect(); const n = c.querySelector('.stat-num'); return { cls: c.className.split(' ').slice(0, 2).join('.'), top: Math.round(r.top), h: Math.round(r.height), right: Math.round(r.right - box.left), numH: n ? Math.round(n.getBoundingClientRect().height) : 0 }; }),
+      };
+    });
+    expect(info.rank, 'rank chip exists with a #N figure').toMatch(/^#\d+$/);
+    const stats = info.chips.filter((c) => c.cls.startsWith('stat'));
+    expect(stats.length, 'stat chips shown').toBeGreaterThanOrEqual(4);
+    expect(new Set(stats.map((c) => c.top)).size, `stat chips share one row ${JSON.stringify(info)}`).toBe(1);
+    for (const c of info.chips) expect(c.right, `chip inside the strip ${JSON.stringify(c)}`).toBeLessThanOrEqual(info.w + 1);
+    for (const c of stats) expect(c.numH, `figure on one line ${JSON.stringify(c)}`).toBeLessThan(24);
+  });
+}
+
+// Small landscape phones (568x320) must not pan sideways on Home, and on other tabs the strip stays one row: the
+// portrait two-row strip once leaked into landscape and a centred chip pushed its hidden label past the page edge.
+test('mobilefit: 568x320 landscape keeps Home unpanned and the Squad strip on one row', async (t) => {
+  const page = await openApp(t, { width: 568, height: 320, hasTouch: true, mutateSave: (s) => { s.club.elo = 900; } });
+  const home = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  expect(home.sw, `Home has no sideways pan ${JSON.stringify(home)}`).toBeLessThanOrEqual(home.cw);
+  await goTab(page, 'squad');
+  const tops = await page.locator(SEL.statusStrip).evaluate((el) => [...el.children].filter((c) => c.getClientRects().length).map((c) => Math.round(c.getBoundingClientRect().top)));
+  expect(new Set(tops).size, `Squad strip on one row ${JSON.stringify(tops)}`).toBe(1);
 });

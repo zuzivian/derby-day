@@ -433,7 +433,7 @@ export function squadScreen(app: App): string {
     <article class="panel squad-table">
       <h2 class="eyebrow">Squad · ${s.squad.length}/${squadCap(s)}</h2>
       <p class="attr-legend" aria-hidden="true"><span class="lg t-a">80+ elite</span><span class="lg t-b">68–79 good</span><span class="lg t-c">55–67 fair</span><span class="lg t-d">under 55 weak</span></p>
-      <div class="table-scroll"><table class="tbl">
+      <div class="table-scroll"><table class="tbl" aria-label="Squad">
         <thead><tr><th class="num">#</th><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Value</th></tr></thead>
         <tbody>${[...s.squad].sort((a, b) => formation.findIndex((f) => f.role === a.role) - formation.findIndex((f) => f.role === b.role) || overall(b) - overall(a)).map((p) => playerRow(p, `<td class="num">${formatMoney(marketValue(p))}</td>`, s.lineup.includes(p.id), true, { s, open: app.profile === p.id })).join('')}</tbody>
       </table></div>
@@ -464,7 +464,7 @@ export function transfersScreen(app: App): string {
         <div class="chips" role="group" aria-label="Filter by position">${roles.map((r) => `<button class="chip${app.marketRole === r ? ' on' : ''}" data-action="market-role" data-role="${r}" aria-pressed="${app.marketRole === r}">${r === 'ALL' ? 'All' : r}</button>`).join('')}</div>
       </div>
       ${signedBar}
-      <div class="table-scroll"><table class="tbl has-action">
+      <div class="table-scroll"><table class="tbl has-action" aria-label="Transfer market">
         <thead><tr><th>Name</th><th class="opt">Nation</th><th class="num opt">Age</th><th class="opt-narrow"><abbr title="Position">Pos</abbr></th><th class="num"><abbr title="Overall rating">OVR</abbr></th><th class="num opt"><abbr title="Potential">POT</abbr></th>${attrHead}<th class="num">Price</th><th><span class="sr-only">Sign</span></th></tr></thead>
         <tbody>${market.length ? market.map(({ p, fit }) => {
           const price = askingPrice(p);

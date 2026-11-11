@@ -1,5 +1,5 @@
 /* Tactics board (src/client/tactics.ts): formation cards and the mentality scale. */
-.tactics .tac-now { color: var(--muted); font-size: 14px; }
+.tactics .tac-now { color: var(--muted); font-size: .875rem; }
 .tactics .tac-now b { color: var(--ink); }
 .tac-group { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 .tac-legend { padding: 0; margin-bottom: 8px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -23,7 +23,7 @@
 .tac-dot { fill: var(--chalk); stroke: rgba(0, 0, 0, .35); stroke-width: .6; }
 .tac-dot.tac-GK { fill: var(--marker); }
 .tac-card.on .tac-dot:not(.tac-GK), .tac-card:has(input:checked) .tac-dot:not(.tac-GK) { fill: var(--accent); stroke: var(--chalk); }
-.tac-name { font-family: var(--font-display); font-weight: 800; font-size: 18px; line-height: 1; letter-spacing: .02em; }
+.tac-name { font-family: var(--font-display); font-weight: 800; font-size: 1.125rem; line-height: 1; letter-spacing: .02em; }
 
 .tac-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
 .tac-step {
@@ -38,25 +38,25 @@
 .tac-pips i { flex: 1; height: 6px; border-radius: 3px; background: var(--line); }
 .tac-pips i.lit { background: var(--muted); }
 .tac-step.on .tac-pips i.lit, .tac-step:has(input:checked) .tac-pips i.lit { background: var(--accent); }
-.tac-step-name { font-family: var(--font-display); font-weight: 800; font-size: 19px; line-height: 1.05; }
+.tac-step-name { font-family: var(--font-display); font-weight: 800; font-size: 1.1875rem; line-height: 1.05; }
 .tac-step-note { font-size: var(--fs-sm); line-height: 1.35; color: var(--muted); }
 
 /* The opponent's shape on the home hero. */
-.hero-tactic { font-size: 14px; color: var(--hero-muted); letter-spacing: .02em; }
+.hero-tactic { font-size: .875rem; color: var(--hero-muted); letter-spacing: .02em; }
 .hero-tactic b { color: var(--hero-ink); font-weight: 700; }
 
-@media (max-width: 860px) {
+@media (max-width: 53.75em) {
   .tac-steps { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .tac-step { display: grid; grid-template-columns: 64px minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: center; padding: 10px 12px; }
   .tac-pips { grid-row: 1 / span 2; }
-  .tac-step-name { font-size: 18px; }
+  .tac-step-name { font-size: 1.125rem; }
   /* Only the chosen step keeps its description, so the lineup stays near the top on a phone. */
   .tac-step:not(.on):not(:has(input:checked)) .tac-step-note { display: none; }
   .tac-step:not(.on):not(:has(input:checked)) { padding-block: 8px; }
 }
-@media (max-width: 640px) {
+@media (max-width: 40em) {
   .tac-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .tac-name { font-size: 16px; }
+  .tac-name { font-size: 1rem; }
 }
 @media (prefers-reduced-motion: reduce) {
   .tac-card, .tac-step { transition: none; }
@@ -78,10 +78,10 @@
   .qt-step, .tac-step { min-height: 44px; }
 }
 /* Tablets: nine formations in clean rows (3x3 up to 760 px, one row beyond) instead of 7+2 orphans. */
-@media (min-width: 641px) and (max-width: 760px) {
+@media (min-width: 40.0625em) and (max-width: 47.5em) {
   .tac-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-@media (min-width: 761px) and (max-width: 1100px) {
+@media (min-width: 47.5625em) and (max-width: 68.75em) {
   .tac-cards { grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
   .tac-card { padding-inline: 3px; }
 }
@@ -110,7 +110,7 @@
 .tac-body { display: flex; flex-direction: column; gap: var(--sp-4); margin-top: var(--sp-3); }
 @media (prefers-reduced-motion: reduce) { .tac-chev { transition: none; } }
 /* On phones the lineup comes first (after any academy offer) and the tactics fold sits after it. */
-@media (max-width: 720px) {
+@media (max-width: 45em) {
   .squad-grid > .rv-panel { order: 0; }
   .squad-grid > .board { order: 1; }
   .squad-grid > .tactics { order: 2; }

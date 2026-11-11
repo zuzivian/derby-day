@@ -252,6 +252,18 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
   expect(r.bannerBottom, 'banner ends above the LEFT/CENTRE/RIGHT labels').toBeLessThanOrEqual(r.lblTop + 1);
   expect(r.bannerTop, 'banner stays on the canvas').toBeGreaterThanOrEqual(0);
   expect(r.bannerH, 'banner is capped in short landscape').toBeLessThanOrEqual(60);
+  // Record, in the page and in the same task as the change, whether the end card is still hidden when the phase
+  // turns 'done', and when it then appears. Checking afterwards over several browser round trips raced the 300 ms
+  // beat on a slow CI runner.
+  await page.evaluate(() => {
+    const sec = document.querySelector('.shootout');
+    const end = document.querySelector('#so-end');
+    const w = (window.__soEnd = { hiddenAtDone: null, doneAt: 0, shownAt: 0 });
+    new MutationObserver(() => {
+      if (w.hiddenAtDone === null && sec.dataset.phase === 'done') { w.hiddenAtDone = end.hidden; w.doneAt = performance.now(); }
+      if (w.doneAt && !w.shownAt && !end.hidden) w.shownAt = performance.now();
+    }).observe(sec, { attributes: true, subtree: true, attributeFilter: ['data-phase', 'hidden'] });
+  });
   await page.waitForTimeout(520);
   await page.keyboard.press('Space').catch(() => {});
   for (let k = 0; k < 60; k++) {
@@ -262,9 +274,11 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
     await page.keyboard.press('Space').catch(() => {});
     await waitPhase(page, ['aim', 'telegraph', 'done']);
   }
-  // Phase is 'done' as the end card is still held back for a beat.
-  expect(await page.locator(S.end).isHidden(), 'end card waits a beat after the last kick').toBe(true);
+  // Phase is 'done' while the end card is still held back for a beat.
   await page.locator(S.end).waitFor({ state: 'visible' });
+  const beat = await page.evaluate(() => window.__soEnd);
+  expect(beat.hiddenAtDone, `end card waits a beat after the last kick ${JSON.stringify(beat)}`).toBe(true);
+  expect(beat.shownAt - beat.doneAt, `the beat lasts ${JSON.stringify(beat)}`).toBeGreaterThanOrEqual(250);
   const title = await page.locator(S.endTitle).textContent();
   const won = /You win/.test(title);
   const next = await page.locator('#so-end-next').innerText();

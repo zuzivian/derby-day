@@ -14,23 +14,23 @@
 .hud-bars { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .hud-bar {
   display: flex; align-items: center; gap: 10px; background: rgba(8, 12, 11, .66); border-radius: var(--r-xs); padding: 3px 10px;
-  font-weight: 800; font-size: 21px; line-height: 1.15; letter-spacing: .05em; white-space: nowrap; box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset;
+  font-weight: 800; font-size: 1.3125rem; line-height: 1.15; letter-spacing: .05em; white-space: nowrap; box-shadow: 0 1px 0 rgba(255, 255, 255, .08) inset;
 }
 .hud-goals { display: inline-flex; gap: 6px; font-variant-numeric: tabular-nums; color: #ffd60a; }
 .hud-dash { color: rgba(255, 255, 255, .7); }
 .hud-clock.late { color: #ffd37a; box-shadow: 0 0 0 1px rgba(255, 211, 122, .55), 0 0 12px rgba(255, 190, 70, .35); animation: late-pulse 2.4s ease-in-out infinite; }
 @keyframes late-pulse { 50% { box-shadow: 0 0 0 1px rgba(255, 211, 122, .9), 0 0 18px rgba(255, 190, 70, .6); } }
 @media (prefers-reduced-motion: reduce) { .hud-clock.late { animation: none; } }
-.hud-clock { font-size: 16px; padding: 2px 9px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
+.hud-clock { font-size: 1rem; padding: 2px 9px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
 
 .hud-tr { position: absolute; right: 10px; top: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .hud-menu, .pitch-cam {
   appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: var(--r-xs);
-  background: rgba(8, 12, 11, .66); color: #fff; font: 800 14px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px;
+  background: rgba(8, 12, 11, .66); color: #fff; font: 800 .875rem/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; padding: 5px 9px;
 }
 .hud-menu:hover, .pitch-cam:hover { background: rgba(8, 12, 11, .86); }
 .hud-menu kbd {
-  font: 700 11px/1 'Barlow', system-ui, sans-serif; letter-spacing: 0; text-transform: none; color: #111; background: #f4f4f4; border-radius: 3px;
+  font: 700 .6875rem/1 'Barlow', system-ui, sans-serif; letter-spacing: 0; text-transform: none; color: #111; background: #f4f4f4; border-radius: 3px;
   padding: 3px 5px; box-shadow: 0 2px 0 #9aa0a6;
 }
 .pitch-cam { font-size: var(--fs-2xs); padding: 3px 7px; pointer-events: auto; background: rgba(8, 12, 11, .6); color: rgba(255, 255, 255, .92); transition: background .25s, color .25s; }
@@ -40,25 +40,25 @@
 .pitch-zoom { display: none; gap: 4px; pointer-events: auto; }
 .pitch-zoom button {
   appearance: none; border: 0; border-radius: var(--r-xs); width: 32px; height: 32px; background: rgba(8, 12, 11, .6); color: #fff;
-  font: 800 20px/1 var(--font-display); touch-action: manipulation; cursor: pointer;
+  font: 800 1.25rem/1 var(--font-display); touch-action: manipulation; cursor: pointer;
 }
 @media (pointer: coarse) {
   .pitch-zoom { display: flex; }
 }
-.hud-mode { font: 600 12px/1 'Barlow', system-ui, sans-serif; background: rgba(8, 12, 11, .5); border-radius: 3px; padding: 4px 8px; }
+.hud-mode { font: 600 .75rem/1 'Barlow', system-ui, sans-serif; background: rgba(8, 12, 11, .66); border-radius: 3px; padding: 4px 8px; }
 
 .hud .hud-word {
   top: 40%; display: flex; flex-direction: column; align-items: center; gap: 2px; color: #fff; transform: translate(-50%, -50%) skewX(-8deg);
-  font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: clamp(38px, 9vw, 104px); letter-spacing: .02em; line-height: .95;
+  font-family: var(--font-display); font-style: italic; font-weight: 900; font-size: clamp(2.375rem, 9vw, 6.5rem); letter-spacing: .02em; line-height: .95;
   text-shadow: 0 4px 0 rgba(0, 0, 0, .55), 0 0 28px rgba(0, 0, 0, .45); animation: hud-pop .32s ease-out;
 }
-.hud .hud-word.intro { top: 15%; font-size: clamp(24px, 5vw, 56px); }
+.hud .hud-word.intro { top: 15%; font-size: clamp(1.5rem, 5vw, 3.5rem); }
 .hud .hud-word.intro small { font-size: .4em; }
-@media (max-height: 460px) { .hud .hud-word.intro { top: 12%; font-size: 26px; } }
+@media (max-height: 28.75em) { .hud .hud-word.intro { top: 12%; font-size: 1.625rem; } }
 /* Half/full-time recap: plain readable lines on a dark plate, not the display-size sub. */
 .hud .hud-word.recap { gap: 5px; top: 54%; width: 94%; } /* below the KICK-OFF label that comes up as the half ends */
-.hud .hud-word.recap small { font-size: clamp(11px, 2.9vw, 15px); letter-spacing: .05em; padding: 2px 9px; border-radius: 4px; background: rgba(8, 12, 11, .66); text-shadow: none; text-align: center; max-width: 100%; text-wrap: balance; }
-.hud .hud-word.recap small:first-of-type { font-size: clamp(14px, 4vw, 22px); letter-spacing: .08em; }
+.hud .hud-word.recap small { font-size: clamp(.6875rem, 2.9vw, .9375rem); letter-spacing: .05em; padding: 2px 9px; border-radius: 4px; background: rgba(8, 12, 11, .66); text-shadow: none; text-align: center; max-width: 100%; text-wrap: balance; }
+.hud .hud-word.recap small:first-of-type { font-size: clamp(.875rem, 4vw, 1.375rem); letter-spacing: .08em; }
 .hud .hud-word.recap small:last-child:not(:nth-of-type(-n+2)) { opacity: .85; }
 .hud .hud-word small { font-size: .26em; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 /* The word's 4 px drop shadow read as a second, ghosted line under the small scorer line: a shadow to its own size. */
@@ -88,7 +88,7 @@
   background: rgba(0, 0, 0, .5); box-shadow: 0 0 0 1px rgba(255, 255, 255, .5); opacity: 0; transition: opacity .15s;
 }
 .hud-power-label {
-  position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 11px/1 var(--font-display);
+  position: absolute; right: 0; bottom: calc(100% + 4px); font: italic 800 .6875rem/1 var(--font-display);
   letter-spacing: .12em; text-transform: uppercase; color: #fff; text-shadow: 0 1px 2px #000, 0 0 3px #000;
 }
 /* Your man: shirt number, name and his legs (energy), above the power bar. */
@@ -100,13 +100,13 @@
 .hud-me[hidden] { display: none; }
 .hud-me-no {
   grid-row: 1 / 3; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
-  font: 900 14px/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
+  font: 900 .875rem/1 var(--font-display); box-shadow: 0 0 0 2px #ff8a1c;
 }
-.hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 14px/1.1 var(--font-display); color: #ffb35c; }
+.hud-me-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: italic 800 .875rem/1.1 var(--font-display); color: #ffb35c; }
 .hud .hud-me { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto 10px; }
 .hud-me-name { grid-column: 2 / 4; }
 .hud-me-legs { grid-column: 2; }
-.hud-me-st { grid-column: 3; text-align: right; font: italic 800 10px/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: #5fd08e; }
+.hud-me-st { grid-column: 3; text-align: right; font: italic 800 .625rem/1 var(--font-display); letter-spacing: .08em; text-transform: uppercase; color: #5fd08e; }
 .hud-me.winded .hud-me-st { color: #ff8a73; }
 .hud-me-legs { display: block; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .18); overflow: hidden; }
 .hud-me-legs i { display: block; height: 100%; width: 100%; background: #5fd08e; transition: width .4s; }
@@ -124,7 +124,7 @@
 }
 .hud-hold.hot { background: rgba(196, 44, 24, .85); }
 
-.pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 13px/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
+.pause-opt { display: flex; align-items: center; gap: 8px; justify-content: center; margin-top: 12px; font: 600 .8125rem/1.3 'Barlow', system-ui, sans-serif; cursor: pointer; }
 .pause-opt[hidden] { display: none; }
 .pause-opt input { width: 16px; height: 16px; accent-color: var(--accent); }
 .pause-volume input { width: 140px; max-width: 100%; flex: 1 1 100px; min-width: 0; height: 20px; }
@@ -135,22 +135,22 @@
   position: absolute; left: 50%; top: 12px; transform: translateX(-50%) skewX(-8deg); display: flex; flex-direction: column; align-items: center;
   font-style: italic; font-weight: 900; text-transform: uppercase; animation: hud-pop .32s ease-out;
 }
-.hud-replay span { font-size: clamp(26px, 4.4vw, 46px); letter-spacing: .04em; line-height: 1; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45); }
-.hud-replay small { font: 700 11px/1.2 'Barlow', system-ui, sans-serif; font-style: normal; letter-spacing: .04em; text-transform: none; background: rgba(8, 12, 11, .55); border-radius: 3px; padding: 2px 7px; margin-top: 3px; }
+.hud-replay span { font-size: clamp(1.625rem, 4.4vw, 2.875rem); letter-spacing: .04em; line-height: 1; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45); }
+.hud-replay small { font: 700 .6875rem/1.2 'Barlow', system-ui, sans-serif; font-style: normal; letter-spacing: .04em; text-transform: none; background: rgba(8, 12, 11, .55); border-radius: 3px; padding: 2px 7px; margin-top: 3px; }
 .hud-replay[hidden] { display: none; }
 /* A call made while play goes on (Advantage): small, at the top, out of the way. */
 .hud-tag {
   position: absolute; left: 50%; top: 12px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .7); border-radius: var(--r-xs); padding: 4px 10px;
+  font: italic 700 .8125rem/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .7); border-radius: var(--r-xs); padding: 4px 10px;
 }
-.hud-tag b { font-family: var(--font-display); font-weight: 900; font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
+.hud-tag b { font-family: var(--font-display); font-weight: 900; font-size: 1rem; letter-spacing: .06em; text-transform: uppercase; color: #ffd60a; }
 .hud-tag[hidden] { display: none; }
 /* The kind of free kick being taken: under the call tag, quiet for a direct one, the referee's yellow for an indirect one. */
 .hud-fk {
   position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 12px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: var(--r-xs); padding: 3px 9px;
+  font: italic 700 .75rem/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .6); border-radius: var(--r-xs); padding: 3px 9px;
 }
-.hud-fk b { font-family: var(--font-display); font-weight: 900; font-size: 14px; letter-spacing: .06em; text-transform: uppercase; }
+.hud-fk b { font-family: var(--font-display); font-weight: 900; font-size: .875rem; letter-spacing: .06em; text-transform: uppercase; }
 .hud-fk.indirect { background: rgba(8, 12, 11, .78); box-shadow: inset 0 0 0 1.5px #ffd60a; }
 .hud-fk.indirect b { color: #ffd60a; }
 .hud-fk small { font-weight: 600; font-size: var(--fs-2xs); opacity: .85; margin-left: 4px; }
@@ -158,7 +158,7 @@
 /* A human's kick-off waiting: who kicks off and with which key, under the scoreboard, until it is taken. */
 .hud-prompt {
   position: absolute; left: 50%; top: 44px; transform: translateX(-50%) skewX(-8deg); white-space: nowrap; pointer-events: none;
-  font: italic 700 13px/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: var(--r-xs); padding: 4px 10px;
+  font: italic 700 .8125rem/1.2 'Barlow', system-ui, sans-serif; color: #fff; background: rgba(8, 12, 11, .78); border-radius: var(--r-xs); padding: 4px 10px;
   box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .5);
 }
 .hud-prompt b { font-family: var(--font-display); font-weight: 900; font-size: var(--fs-md); letter-spacing: .04em; }
@@ -178,12 +178,12 @@
 }
 .pitch-wrap .juice-mute { top: auto; right: auto; left: 10px; bottom: 10px; width: 32px; height: 32px; }
 
-@media (max-width: 640px), (max-height: 520px) {
+@media (max-width: 40em), (max-height: 32.5em) {
   .hud-tl { left: 6px; top: 6px; gap: 5px; }
   .hud-tr { right: 6px; top: 6px; gap: 4px; }
   .hud-club .crest { width: 18px; height: 20px; }
   .hud-club b { font-size: var(--fs-2xs); padding: 0 3px; }
-  .hud-bar { font-size: 14px; gap: 6px; padding: 2px 6px; }
+  .hud-bar { font-size: .875rem; gap: 6px; padding: 2px 6px; }
   .hud-clock { font-size: var(--fs-xs); }
   .hud-menu { font-size: var(--fs-2xs); padding: 3px 6px; gap: 4px; }
   .hud-menu kbd { font-size: var(--fs-2xs); padding: 2px 3px; }
@@ -196,7 +196,7 @@
   .hud-me { right: 6px; bottom: 34px; width: 128px; padding: 3px 7px 4px 4px; gap: 2px 6px; grid-template-rows: auto 4px; }
   .hud-me-no { width: 20px; height: 20px; font-size: var(--fs-2xs); }
   .hud-me-name { font-size: var(--fs-xs); }
-  .hud-power-label { font-size: 10px; }
+  .hud-power-label { font-size: .625rem; }
   .hud-hold { right: 6px; bottom: 24px; font-size: var(--fs-2xs); padding: 2px 6px; }
   /* A small card: the Sprint / Tired word shares the name's row, so his legs keep the full width. */
   .hud .hud-me { grid-template-rows: auto 4px; }
@@ -214,7 +214,7 @@
   .hud-replay small { font-size: var(--fs-2xs); max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pitch-wrap .juice-mute { left: 6px; bottom: 6px; width: 28px; height: 28px; }
 }
-@media (max-width: 640px) and (orientation: portrait) {
+@media (max-width: 40em) and (orientation: portrait) {
   /* Taller, to use the phone's height (the 3D camera fits any shape). */
   #pitch.pitch-3d, #pitch[data-renderer="2d"] { aspect-ratio: 9 / 16; max-height: calc(100dvh - 110px); }
   .hud-radar { width: 72px; }
@@ -229,11 +229,11 @@
   .hud-radar { left: 60px; transform: none; }
 }
 /* Landscape phones: no room above the buttons without covering play; the card sits at the bottom, beside the radar. */
-@media (pointer: coarse) and (max-height: 520px) {
+@media (pointer: coarse) and (max-height: 32.5em) {
   .hud-me { right: auto; left: 168px; bottom: 8px; }
 }
 /* Where the card stays bottom right (touch landscape with room), the keeper's count sits above it. */
-@media (pointer: coarse) and (orientation: landscape) and (min-height: 521px) {
+@media (pointer: coarse) and (orientation: landscape) and (min-height: 32.5625em) {
   .hud-hold { bottom: 162px; }
 }
 /* Phones held upright: the player card moves out of open play and the right thumb zone to the bottom
@@ -244,7 +244,7 @@
 /* The controlled man is off-screen: an arrow on the frame edge with his name (renderer3d.ts). */
 .edge-mark {
   position: absolute; transform: translate(-50%, -50%); pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
-  font: italic 800 12px/1 var(--font-display); color: var(--c, #ff8a1c); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; z-index: 1;
+  font: italic 800 .75rem/1 var(--font-display); color: var(--c, #ff8a1c); text-shadow: 0 1px 2px #000, 0 0 4px #000; white-space: nowrap; z-index: 1;
 }
 .edge-mark i {
   width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 16px solid var(--c, #ff8a1c);
@@ -255,7 +255,7 @@
 #pitch[data-camera="end"] ~ .hud .hud-radar { left: 52px; transform: none; }
 /* Mouse and keyboard at desktop size: the radar sits top left, under the score and over the stands,
    so the near touchline (where the side camera puts wing play) stays clear. Any camera. */
-@media (pointer: fine) and (min-width: 641px) and (min-height: 521px) {
+@media (pointer: fine) and (min-width: 40.0625em) and (min-height: 32.5625em) {
   #pitch ~ .hud .hud-radar, #pitch[data-camera="end"] ~ .hud .hud-radar { left: 10px; top: 80px; bottom: auto; transform: none; }
 }
 /* The 2D view already shows the whole pitch: no radar over it. */
@@ -271,7 +271,7 @@
   .pitch-wrap .juice-mute { width: 44px; height: 44px; }
 }
 /* Phones held sideways: the pitch fills the screen and the HUD keeps to its edges. */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 32.5em) {
   #app:has(> .match) { padding-top: max(8px, env(safe-area-inset-top, 0px)); padding-bottom: max(8px, env(safe-area-inset-bottom, 0px)); gap: 0; min-height: 0; }
   .match { gap: 0; }
   .match .pitch-wrap { width: 100%; min-width: 0; }
@@ -283,7 +283,7 @@
   .hud-tr { flex-direction: row; align-items: flex-start; }
 }
 /* On touch the Pass/Shoot pads stand in for the controls line, and the power bar clears them. A mouse or keyboard keeps its line. */
-@media (orientation: landscape) and (max-height: 520px) and (pointer: coarse) {
+@media (orientation: landscape) and (max-height: 32.5em) and (pointer: coarse) {
   .match .controls-hint, .match .controls-hint.clamp, .match .controls-hint.clamp:has(.hint-key), .match .hint-more { display: none; }
   .hud-power { bottom: 84px; }
 }
@@ -311,7 +311,7 @@
   .hud .hud-word, .hud-replay { animation: none; }
 }
 
-.hud-pm { font: 800 10px/1 'Barlow', system-ui, sans-serif; font-style: normal; color: #111; padding: 2px 4px; border-radius: 4px; margin: 0 5px; vertical-align: 2px; letter-spacing: .04em; }
+.hud-pm { font: 800 .625rem/1 'Barlow', system-ui, sans-serif; font-style: normal; color: #111; padding: 2px 4px; border-radius: 4px; margin: 0 5px; vertical-align: 2px; letter-spacing: .04em; }
 
 /* The controls line under the pitch: one line, with a button to show it all. */
 .controls-hint.clamp { display: -webkit-box; -webkit-line-clamp: 1; line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
@@ -320,7 +320,7 @@
 .controls-hint.clamp:has(.hint-key) { display: block; -webkit-line-clamp: none; line-clamp: none; overflow: visible; }
 .controls-hint.clamp .hint-rest { display: none; }
 .controls-hint:not(.clamp) .hint-rest::before { content: "· "; }
-.hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.hint-more { appearance: none; border: 0; background: none; padding: 2px 6px; margin-top: -6px; font: 600 .75rem/1.2 'Barlow', system-ui, sans-serif; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .hint-more:hover { color: var(--ink); }
 @media (pointer: coarse) {
   .hint-more { display: none; }
@@ -334,10 +334,10 @@
   text-transform: uppercase; text-shadow: 0 3px 0 rgba(0, 0, 0, .55), 0 0 18px rgba(0, 0, 0, .45);
 }
 .rp-tag { left: 12px; top: 8px; font-size: var(--fs-xl); letter-spacing: .06em; }
-.rp-word { left: 50%; top: 42%; transform: translate(-50%, -50%) skewX(-8deg); font-size: clamp(36px, 8vw, 92px); animation: hud-pop .32s ease-out; }
-@media (max-width: 640px) {
+.rp-word { left: 50%; top: 42%; transform: translate(-50%, -50%) skewX(-8deg); font-size: clamp(2.25rem, 8vw, 5.75rem); animation: hud-pop .32s ease-out; }
+@media (max-width: 40em) {
   .rp-stage { width: 100%; }
-  .rp-tag { font-size: 14px; left: 8px; top: 5px; }
+  .rp-tag { font-size: .875rem; left: 8px; top: 5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .rp-word { animation: none; }
@@ -345,7 +345,7 @@
 /* A lost WebGL context (gfxloss.ts): a calm note over the blank pitch, in a match or the replay viewer. */
 .pitch-wrap .gfx-note, .rp-stage .gfx-note {
   position: absolute; inset: 0; z-index: 3; display: grid; place-items: center; pointer-events: none; border-radius: var(--r-md);
-  background: rgba(8, 12, 11, .72); color: #fff; font: 800 18px/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase;
+  background: rgba(8, 12, 11, .72); color: #fff; font: 800 1.125rem/1.2 var(--font-display); letter-spacing: .06em; text-transform: uppercase;
 }
 .pitch-wrap .gfx-note[hidden], .rp-stage .gfx-note[hidden] { display: none; }
 
@@ -360,34 +360,34 @@
 .hud.replaying .hud-prompt, .hud.replaying .hud-tag, .hud.replaying .hud-fk { visibility: hidden; }
 .pitch-wrap.replaying .juice-label { display: none; }
 /* Mouse screens: the power gauge (and the player card above it) clear the rounded canvas edge. */
-@media (min-width: 1000px) and (pointer: fine) {
+@media (min-width: 62.5em) and (pointer: fine) {
   .hud-power { bottom: 18px; }
   .hud-me { bottom: 52px; }
   .hud-hold { bottom: 42px; }
 }
 /* Big monitors: the pitch is limited by the window height (the width rule at the top), not by the page column. */
-@media (min-width: 1500px) and (min-height: 900px) and (pointer: fine) {
+@media (min-width: 93.75em) and (min-height: 56.25em) and (pointer: fine) {
   #app:has(> .match) { max-width: none; }
   .match .pitch-wrap { width: min(100%, calc((100vh - 160px) * 1.531)); width: min(100%, calc((100dvh - 160px) * 1.531)); }
 }
 
 /* Portrait tablets (iPad, Galaxy Tab): a tall pitch like phones get, so the match uses the screen; the pause card fits inside. */
-@media (pointer: coarse) and (orientation: portrait) and (min-width: 641px) {
+@media (pointer: coarse) and (orientation: portrait) and (min-width: 40.0625em) {
   #pitch.pitch-3d, #pitch[data-renderer="2d"] { aspect-ratio: 3 / 4; max-height: calc(100dvh - 110px); }
   .hud-radar { width: 96px; }
 }
 /* Large touch screens: the power gauge and player card follow the bigger Pass / Shoot pads inboard. */
-@media (pointer: coarse) and (min-width: 768px) and (min-height: 521px) {
+@media (pointer: coarse) and (min-width: 48em) and (min-height: 32.5625em) {
   .hud-hold { bottom: 152px; right: 28px; }
   .hud-power { bottom: 118px; right: 28px; }
   .hud-me { bottom: 146px; right: 28px; }
   .pitch-wrap .juice-mute { left: 16px; bottom: 16px; }
   .hud-radar { left: 74px; }
 }
-@media (pointer: coarse) and (orientation: portrait) and (min-width: 768px) {
+@media (pointer: coarse) and (orientation: portrait) and (min-width: 48em) {
   .hud-me { right: auto; left: 16px; bottom: 76px; width: 128px; }
 }
-@media (pointer: coarse) and (orientation: landscape) and (min-width: 768px) and (min-height: 521px) {
+@media (pointer: coarse) and (orientation: landscape) and (min-width: 48em) and (min-height: 32.5625em) {
   .hud-hold { bottom: 200px; }
 }
 
@@ -406,7 +406,7 @@
 .pitch-wrap.goal-flash.conceded::before { background: #000; animation-name: goal-flash-dim; animation-duration: .7s; }
 @keyframes goal-flash-dim { from { opacity: .22; } to { opacity: 0; } }
 /* ...and a smaller, quieter word. */
-.hud .hud-word.conceded { top: 30%; font-size: clamp(20px, 3.4vw, 38px); opacity: .92; }
+.hud .hud-word.conceded { top: 30%; font-size: clamp(1.25rem, 3.4vw, 2.375rem); opacity: .92; }
 .hud .hud-word.conceded small { font-size: .5em; }
 @keyframes goal-flash { from { opacity: .4; } to { opacity: 0; } }
 .pitch-wrap.replaying canvas { animation: replay-cut .4s ease-out; }
@@ -424,10 +424,10 @@
 .aim-charge[data-band="red"] { --col: #ff4a32; }
 .aim-charge i { display: block; width: 100%; height: 100%; border-radius: 50%; background: conic-gradient(var(--col) calc(var(--c, 0) * 360deg), rgba(0, 0, 0, .45) 0); mask: radial-gradient(circle, transparent 17px, #000 18px); }
 /* Key caps for the keyboard, up only while the keys are in use (matchView.ts). */
-.key-hint { position: absolute; left: 50%; bottom: 14px; z-index: 1; transform: translateX(-50%); margin: 0; padding: 5px 12px; border-radius: var(--r-pill); background: rgba(8, 12, 11, .72); color: #fff; font: 600 12px/1.2 'Barlow', system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; }
+.key-hint { position: absolute; left: 50%; bottom: 14px; z-index: 1; transform: translateX(-50%); margin: 0; padding: 5px 12px; border-radius: var(--r-pill); background: rgba(8, 12, 11, .72); color: #fff; font: 600 .75rem/1.2 'Barlow', system-ui, sans-serif; white-space: nowrap; pointer-events: none; opacity: 0; }
 .key-hint.on { opacity: 1; }
-.key-hint kbd { margin: 0 2px 0 8px; font-size: 11px; padding: 2px 5px; color: #111; background: #f4f4f4; border-color: #9aa0a6; }
-@media (pointer: coarse), (max-width: 640px) { .key-hint { display: none; } }
+.key-hint kbd { margin: 0 2px 0 8px; font-size: .6875rem; padding: 2px 5px; color: #111; background: #f4f4f4; border-color: #9aa0a6; }
+@media (pointer: coarse), (max-width: 40em) { .key-hint { display: none; } }
 /* Mouse feedback on the in-match controls: a press you can feel, and the same cue for the keyboard. */
 .hud-menu:active, .pitch-cam:active { transform: translateY(1px); }
 
@@ -443,11 +443,11 @@
 }
 
 /* Big desktops: a roomier scoreboard, and the radar moves down with it so the two never touch. */
-@media (min-width: 1100px) and (min-height: 800px) {
-  .hud-bar { font-size: 28px; padding: 4px 14px; gap: 12px; }
-  .hud-clock { font-size: 18px; padding: 3px 11px; }
+@media (min-width: 68.75em) and (min-height: 50em) {
+  .hud-bar { font-size: 1.75rem; padding: 4px 14px; gap: 12px; }
+  .hud-clock { font-size: 1.125rem; padding: 3px 11px; }
   .hud-club b { font-size: var(--fs-xs); }
 }
-@media (pointer: fine) and (min-width: 1100px) and (min-height: 800px) {
+@media (pointer: fine) and (min-width: 68.75em) and (min-height: 50em) {
   #pitch ~ .hud .hud-radar, #pitch[data-camera="end"] ~ .hud .hud-radar { top: 112px; }
 }

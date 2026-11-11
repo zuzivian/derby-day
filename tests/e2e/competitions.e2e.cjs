@@ -136,3 +136,17 @@ test('competitions: tabs and the level badge are 44 px targets on touch screens'
     expect(r.badge, `${w}x${h}: level badge hit area`).toBeGreaterThanOrEqual(44);
   }
 });
+
+test('management tables have accessible names (squad, transfers, league)', async (t) => {
+  const page = await openApp(t);
+  for (const screen of ['squad', 'transfers']) {
+    await goTab(page, screen);
+    const [total, unnamed] = await page.$$eval('main table', (els) => [els.length, els.filter((e) => !e.getAttribute('aria-label') && !e.getAttribute('aria-labelledby') && !e.querySelector('caption')).length]);
+    expect(total, `${screen}: renders a table`).toBeGreaterThanOrEqual(1);
+    expect(unnamed, `${screen}: tables without an accessible name`).toBe(0);
+  }
+  await goTab(page, 'competitions');
+  await page.locator(C.startSeason).click();
+  const leagueName = await page.locator(C.table).evaluate((e) => e.getAttribute('aria-label') || e.getAttribute('aria-labelledby') || !!e.querySelector('caption'));
+  expect(leagueName, 'league table has a name').toBeTruthy();
+});

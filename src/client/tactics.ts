@@ -56,7 +56,7 @@ export const signedN = (n: number): string => (n > 0 ? `+${n}` : n < 0 ? `−${-
 /** Whether the tactics panel is expanded: unset until the player toggles it, then kept across renders. Closed by default on phones. */
 let foldOpen: boolean | null = null;
 export const setTacticsOpen = (open: boolean): void => void (foldOpen = open);
-const onPhone = (): boolean => typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
+const onPhone = (): boolean => typeof matchMedia === 'function' && matchMedia('(max-width: 45em)').matches;
 
 /** The tactics panel for the Squad screen. */
 export function tacticsPanel(formation: FormationId | undefined, mentality: Mentality | undefined, strengthOf?: (id: FormationId) => number): string {
