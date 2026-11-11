@@ -53,3 +53,15 @@ describe('html template whitespace trim', () => {
     expect(trim(src).replace(/\s+/g, '')).toBe(src.replace(/\s+/g, ''));
   });
 });
+
+// The trim collapses newline runs between tags to one space, which only renders the same where white-space collapses.
+// It cannot see styles set in a stylesheet, so a pre/pre-wrap/pre-line/break-spaces rule in the client CSS must fail here
+// until the trim learns to skip the templates it styles.
+test('no client stylesheet preserves whitespace that the template trim collapses', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const dir = new URL('../src/client/', import.meta.url).pathname;
+  const hits = readdirSync(dir)
+    .filter((n) => /\.(css|ts)$/.test(n))
+    .flatMap((n) => (readFileSync(dir + n, 'utf8').match(/white-space\s*:\s*(pre|pre-wrap|pre-line|break-spaces)\b/g) || []).map((m) => `${n}: ${m}`));
+  expect(hits).toEqual([]);
+});

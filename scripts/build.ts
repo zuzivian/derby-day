@@ -180,7 +180,7 @@ async function build(): Promise<void> {
     entrypoints: [`${root}src/client/boot.ts`],
     target: 'browser',
     minify: true,
-    // DERBY_NO_WSTRIM=1 keeps the template whitespace: tests/wstrim-proof.cjs builds both ways and compares the screens.
+    // DERBY_NO_WSTRIM=1 keeps the template whitespace (for comparing builds by hand).
     plugins: process.env.DERBY_NO_WSTRIM ? [glslMinPlugin] : [glslMinPlugin, htmlTrimPlugin],
     format: 'esm',
     define: {

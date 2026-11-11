@@ -1354,14 +1354,15 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   @media (min-height: 47.5em) { #so-canvas { aspect-ratio: 1 / 1; } }
   .so-stage { width: 100%; }
   /* Large text: the names get the width. The marks, total and YOU chip are capped by the board's width (the caps equal the
-     rem sizes at default text size), so a bigger root grows the names rather than squeezing them to "Wyn...". */
+     rem sizes at default text size on a 390 px phone, and the px floors keep every default size exactly as it was on narrower
+     phones), so a bigger root grows the names rather than squeezing them to "Wyn...". */
   .so-board { container-type: inline-size; padding: var(--sp-2) var(--sp-2); }
-  .so-name { font-size: min(1rem, 5cqi); }
+  .so-name { font-size: max(min(1rem, 5cqi), 16px); }
   .so-row { gap: 6px; padding: 3px 2px; }
-  .so-mark { width: min(1.0625rem, 5cqi); font-size: min(var(--fs-lg), 5.2cqi); }
-  .so-you { font-size: min(.625rem, 3cqi); }
+  .so-mark { width: max(min(1.0625rem, 5cqi), 17px); font-size: max(min(var(--fs-lg), 5.2cqi), 17px); }
+  .so-you { font-size: max(min(.625rem, 3cqi), 10px); }
   .so-marks { gap: 3px; }
-  .so-total { font-size: min(1.625rem, 8cqi); }
+  .so-total { font-size: max(min(1.625rem, 8cqi), 26px); }
   .so-row .crest { display: none; }
   .so-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .so-card { padding: var(--sp-3); gap: var(--sp-2); }
@@ -1370,7 +1371,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #so-leave { min-height: 44px; }
 }
 /* Large text on a phone (a 390 px phone at 125%+ text is under 21.5em): the three dives stay on one row, so none drops
-   below the fold; labels wrap inside the buttons instead. Default text size keeps its layout. */
+   below the fold; labels wrap inside the buttons instead. At default text this also applies on phones under 344 px wide,
+   where the two-row dive grid used to make the page scroll. */
 @media (max-width: 21.5em) and (orientation: portrait) {
   .so-dive { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .so-dive .btn { min-width: 0; padding-inline: 6px; line-height: 1.15; }
@@ -1615,9 +1617,10 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .hero-match { gap: 12px; }
   .hero .crest { width: 60px; height: 66px; }
   /* Scales down with the column, never below the 1.125rem cap at default text size, so a long club name wraps between
-     words (the column is sized to the text-size-scaled gauge) instead of snapping mid-word at large text. */
+     words (the column is sized to the text-size-scaled gauge) instead of snapping mid-word at large text. The 18px floor
+     is the default size, so narrow phones at default text keep it exactly. */
   .hero-side { container-type: inline-size; }
-  .hero-name { font-size: min(1.125rem, 14.2cqi); overflow-wrap: break-word; }
+  .hero-name { font-size: max(min(1.125rem, 14.2cqi), 18px); overflow-wrap: break-word; }
   .hero-elo { font-size: var(--fs-sm); flex-direction: column; gap: 2px; }
   .hero-elo b { font-size: var(--fs-md); }
   .form-chip { width: 1.0625rem; height: 1.0625rem; font-size: .625rem; border-radius: var(--r-xs); }
