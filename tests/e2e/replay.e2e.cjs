@@ -159,7 +159,8 @@ test('replay: a played match is recorded, listed under Recent, and the viewer dr
   // Space plays, and the clip advances on its own.
   const before = await scrubValue(page);
   await page.keyboard.press('Space');
-  await page.waitForTimeout(500);
+  // Playing moves the scrub on each rendered frame; wait for one rather than guess how many a starved machine paints in a fixed time.
+  await page.waitForFunction((b) => Number(document.querySelector('#rv-scrub').value) > b, before, { timeout: 5000 });
   expect(await scrubValue(page), 'playing advances').toBeGreaterThan(before);
 
   // Esc closes just the viewer and gives focus back.
@@ -314,7 +315,7 @@ test('replay: reduced motion does not auto-play', async (t) => {
   expect(await page.locator('#rv-status').innerText(), 'says why').toMatch(/reduced motion/i);
   expect((await canvasStats(page)).colours, 'a still frame is drawn').toBeGreaterThan(6);
   await page.keyboard.press('Space');
-  await page.waitForTimeout(400);
+  await page.waitForFunction(() => Number(document.querySelector('#rv-scrub').value) > 0, null, { timeout: 5000 });
   expect(await scrubValue(page), 'Space still plays it on request').toBeGreaterThan(0);
   await page.keyboard.press('Escape');
 });
@@ -362,13 +363,24 @@ test('replay: clip chips and goal markers jump to the moments, the camera switch
   expect(await title(page), 'chip opens the whole match').toMatch(/WHOLE MATCH/i);
   expect(await chips.last().getAttribute('aria-pressed')).toBe('true');
   expect(await page.locator('.rp-mark').count(), 'every goal is marked on the whole match').toBe(goals);
-  await page.keyboard.press('Space'); // pause so the position is exact
+  await page.keyboard.press('Space'); // stop it moving while the marker is set up
+  // A pip jump seeks and then plays on, so the scrub keeps advancing (60 ticks a second) while the test talks to the
+  // page: a read a round trip later is off by however long the machine took, which is what a bound on the distance
+  // really measured. Every seek calls sync(), which rewrites aria-valuetext, so record the scrub in the page at each
+  // seek, in the microtask right after it and before the next frame can step the replay.
+  await page.evaluate(() => {
+    const el = document.querySelector('#rv-scrub');
+    window.__seeks = [];
+    new MutationObserver(() => window.__seeks.push(Number(el.value))).observe(el, { attributes: true, attributeFilter: ['aria-valuetext'] });
+  });
   await page.locator('.rp-mark').nth(1).click();
   const want = await page.locator('.rp-mark').nth(1).getAttribute('data-tick');
-  // While the background pass is still loading, the jump is held at the furthest ready point and finished when it is done.
-  await page.waitForFunction((t) => Math.abs(Number(document.querySelector('#rv-scrub').value) - t) < 40, Number(want) - 120, { timeout: 15_000 }).catch(() => {});
-  const at = await scrubValue(page);
-  expect(Math.abs(at - (Number(want) - 120)), 'marker jumps to its build-up').toBeLessThan(40);
+  const buildUp = Number(want) - 120;
+  // While the background pass is still loading, the jump is held at the furthest ready point and finished when it is done:
+  // wait for the seek that lands on the build-up (the last one recorded), however many were held before it.
+  await page.waitForFunction((t) => window.__seeks.length > 0 && window.__seeks[window.__seeks.length - 1] === t, buildUp, { timeout: 15_000 }).catch(() => {});
+  const seeks = await page.evaluate(() => window.__seeks);
+  expect(seeks[seeks.length - 1], `marker jumps to its build-up, two seconds before the goal (seeks seen: ${seeks.join(', ')})`).toBe(buildUp);
   expect(await page.locator('.rp-mark').nth(1).getAttribute('aria-label'), 'marker is named').toMatch(/^Goal 2, .+, \d+'$/);
   expect(await page.locator('.rp-mark').nth(1).getAttribute('title'), 'a pip says which team scored (our goals were told by colour alone)').toBeTruthy();
   // Pips are placed with a unitless fraction (typed calc() arithmetic is not portable): later goals sit further right, none at 0:00.
