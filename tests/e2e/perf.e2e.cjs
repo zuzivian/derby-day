@@ -118,9 +118,11 @@ for (const quality of ['low', 'high']) test(
     const page = await openApp(t, { prefs: { halfSeconds: 600 }, renderer: '3d', e2eHook: true, query: `debug3d&quality=${quality}` });
     await goTab(page, SEL.homeScreen);
     await page.locator(SEL.playRanked).click();
-    await page.locator(SEL.pitch).waitFor();
+    // The match screen first compiles every program in software GL (measured alone: pitch after 10 s, play after 51 s at
+    // high quality; 5 s and 17 s at low), so under contention the default 20 s and a 60 s wait were too short.
+    await page.locator(SEL.pitch).waitFor({ timeout: 90_000 });
     if ((await page.locator(SEL.pitch).getAttribute('data-renderer')) !== '3d') return;
-    await page.waitForFunction(() => window.__derby3d && window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
+    await page.waitForFunction(() => window.__derby3d && window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 150_000 });
     // Every program compiled from here on, sampled each frame (a program no longer used can be released again).
     const before = await page.evaluate(() => {
       const gl = window.__derby3d.gl;
@@ -170,7 +172,7 @@ for (const quality of ['low', 'high']) test(
     const added = await page.evaluate(() => window.__newPrograms);
     expect(added.join(' | ') || 'none', `no shader compiled after prepare() (${before} programs)`).toBe('none');
   },
-  { timeoutMs: 150_000 },
+  { timeoutMs: 300_000 },
 );
 
 for (const renderer of ['3d', '2d']) test(
