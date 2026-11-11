@@ -10,6 +10,11 @@ const FORMAT = 1;
 const CODE_PREFIX = 'DD1.';
 /** A real club is a few hundred KB at most; anything near this is not one. */
 const MAX_BYTES = 5_000_000;
+/** Expanded codes have a larger allowance, measured in bytes before UTF-8 decoding. */
+const MAX_EXPANDED_BYTES = MAX_BYTES * 4;
+const TOO_BIG = 'That is too big to be a Derby Day backup.';
+
+class BackupTooBig extends Error {}
 
 export interface BackupPreview {
   name: string;
@@ -43,11 +48,40 @@ const fromB64 = (t: string): Uint8Array => {
   return b;
 };
 
-async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream): Promise<Uint8Array> {
-  const w = stream.writable.getWriter();
-  void w.write(bytes as BufferSource).catch(() => {});
-  void w.close().catch(() => {});
-  return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+async function pipe(bytes: Uint8Array, stream: CompressionStream | DecompressionStream, maxBytes = Infinity): Promise<Uint8Array> {
+  const writer = stream.writable.getWriter();
+  const reader = stream.readable.getReader();
+  // Read concurrently with the write: transforms apply backpressure and may not
+  // finish writing until their output has been consumed.
+  const writing = writer.write(bytes as BufferSource).then(() => writer.close());
+  void writing.catch(() => {}); // a reader failure still handles a rejected write
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value.byteLength > maxBytes - length) throw new BackupTooBig(TOO_BIG);
+      length += value.byteLength;
+      chunks.push(value);
+    }
+    await writing;
+    const result = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return result;
+  } catch (error) {
+    // Stop decompression immediately; do not drain or retain the rest of a
+    // compressed payload after it has already exceeded the allowance.
+    await Promise.allSettled([reader.cancel(error), writer.abort(error)]);
+    throw error;
+  } finally {
+    reader.releaseLock();
+    writer.releaseLock();
+  }
 }
 
 export const canMakeCode = (): boolean => typeof CompressionStream === 'function' && typeof DecompressionStream === 'function';
@@ -63,16 +97,16 @@ export async function backupCode(save: Save, now = new Date()): Promise<string> 
 export async function parseBackup(input: string): Promise<ParsedBackup> {
   const text = input.trim();
   if (!text) return { ok: false, reason: 'Nothing to import.' };
-  if (text.length > MAX_BYTES) return { ok: false, reason: 'That is too big to be a Derby Day backup.' };
+  if (text.length > MAX_BYTES) return { ok: false, reason: TOO_BIG };
   let json = text;
   if (text.startsWith(CODE_PREFIX)) {
     if (!canMakeCode()) return { ok: false, reason: 'This browser cannot read backup codes. Use the backup file instead.' };
     try {
-      json = new TextDecoder().decode(await pipe(fromB64(text.slice(CODE_PREFIX.length).replace(/\s+/g, '')), new DecompressionStream('gzip')));
-    } catch {
+      json = new TextDecoder().decode(await pipe(fromB64(text.slice(CODE_PREFIX.length).replace(/\s+/g, '')), new DecompressionStream('gzip'), MAX_EXPANDED_BYTES));
+    } catch (error) {
+      if (error instanceof BackupTooBig) return { ok: false, reason: TOO_BIG };
       return { ok: false, reason: 'That code is damaged or incomplete. Copy it again in full.' };
     }
-    if (json.length > MAX_BYTES * 4) return { ok: false, reason: 'That is too big to be a Derby Day backup.' };
   }
   let data: unknown;
   try {
