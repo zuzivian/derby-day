@@ -322,18 +322,18 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
   expect(r.bannerBottom, 'banner ends above the LEFT/CENTRE/RIGHT labels').toBeLessThanOrEqual(r.lblTop + 1);
   expect(r.bannerTop, 'banner stays on the canvas').toBeGreaterThanOrEqual(0);
   expect(r.bannerH, 'banner is capped in short landscape').toBeLessThanOrEqual(60);
-  // Record in the page, as each change lands, whether the end card is still hidden when the phase turns 'done', and
+  // Record in the page, as each change lands, whether the end card is still hidden at the decision, and
   // how long after the decision it appears. Checking afterwards over several browser round trips raced the 300 ms
   // beat on a slow CI runner. The beat is timed from the decision itself (Forfeit is hidden in the same task that
-  // starts the end-card timer), not from data-phase, which the next animation frame mirrors and a busy runner delays.
+  // starts the end-card timer), not from data-phase, which the next animation frame mirrors and a busy runner delays (CI saw
+  // data-phase reach 'done' after the card was already up).
   const leaveHiddenBefore = await page.evaluate(() => {
     const sec = document.querySelector('.shootout');
     const end = document.querySelector('#so-end');
     const leave = document.querySelector('#so-leave');
-    const w = (window.__soEnd = { hiddenAtDone: null, decidedAt: 0, shownAt: 0 });
+    const w = (window.__soEnd = { hiddenAtDecision: null, decidedAt: 0, shownAt: 0 });
     new MutationObserver(() => {
-      if (!w.decidedAt && leave.hidden) w.decidedAt = performance.now();
-      if (w.hiddenAtDone === null && sec.dataset.phase === 'done') w.hiddenAtDone = end.hidden;
+      if (!w.decidedAt && leave.hidden) { w.decidedAt = performance.now(); w.hiddenAtDecision = end.hidden; }
       if (w.decidedAt && !w.shownAt && !end.hidden) w.shownAt = performance.now();
     }).observe(sec, { attributes: true, subtree: true, attributeFilter: ['data-phase', 'hidden'] });
     return leave.hidden;
@@ -352,7 +352,7 @@ test('shootout: short landscape banner clears the dive labels; the end card paus
   // Phase is 'done' while the end card is still held back for a beat.
   await page.locator(S.end).waitFor({ state: 'visible' });
   const beat = await page.evaluate(() => window.__soEnd);
-  expect(beat.hiddenAtDone, `end card waits a beat after the last kick ${JSON.stringify(beat)}`).toBe(true);
+  expect(beat.hiddenAtDecision, `end card waits a beat after the last kick ${JSON.stringify(beat)}`).toBe(true);
   expect(beat.decidedAt, `the decision hid Forfeit ${JSON.stringify(beat)}`).toBeGreaterThan(0);
   expect(beat.shownAt - beat.decidedAt, `the beat lasts ${JSON.stringify(beat)}`).toBeGreaterThanOrEqual(250);
   const title = await page.locator(S.endTitle).textContent();
