@@ -624,7 +624,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 
 /* Result dialog: a score hero, two-sided stat bars, reward chips, one button.
    The hero is a floodlit band in both themes, tinted by the outcome. */
-.result-card { width: min(780px, 100%); max-height: 100%; padding: 0; gap: 0; overflow: clip; }
+.result-card { width: min(780px, 100%); min-width: 0; max-height: 100%; padding: 0; gap: 0; overflow: clip; }
 /* Hero, stats and rewards scroll inside the card; the footer button never leaves view. */
 .rs-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 /* It takes focus when the dialog opens: no ring on it (the hero would paint over one), the card carries it for the keyboard. */
@@ -749,8 +749,9 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 .rs-foot .replay-actions .btn:hover { --btn-fg: var(--ink); }
 /* One big button fills the row; two (Play next and Back to Home) share it on one line each, a size down so the
    labels never wrap and the footer stays as tall as with one. */
-.rs-actions { display: flex; gap: var(--sp-2); }
-.rs-actions > .btn { flex: 1 1 0; min-width: 0; }
+.rs-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+/* min-content: two labels that no longer fit side by side (large text) stack instead of being clipped. */
+.rs-actions > .btn { flex: 1 1 0; min-width: min-content; }
 .rs-actions:has(> .btn + .btn) > .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 30em), (max-height: 31.25em) {
   .rs-actions:has(> .btn + .btn) > .btn { font-size: var(--fs-md); padding-inline: 10px; }
@@ -820,7 +821,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 }
 .pause-card {
   max-height: 100%; overflow-y: auto;
-  width: min(340px, 100%); min-width: 0; background: var(--surface); color: var(--ink); border-radius: var(--r-xl); border: 1px solid var(--line);
+  width: min(21.25rem, 100%); min-width: 0; background: var(--surface); color: var(--ink); border-radius: var(--r-xl); border: 1px solid var(--line);
   padding: var(--sp-6); display: flex; flex-direction: column; gap: 14px; align-items: stretch; text-align: center; box-shadow: var(--shadow-3);
   animation: modal-rise var(--dur-enter) var(--ease-out);
 }
@@ -899,7 +900,8 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   .modal-card { padding: 20px; border-radius: var(--r-lg); }
   .modal-card.result-card { padding: 0; }
   .rs-hero { padding: var(--sp-4) var(--sp-3) 18px; }
-  .result-title { font-size: 2.875rem; margin-bottom: 10px; }
+  /* The vw cap only bites when large text makes the rem size too wide for the screen (never at the default size, 320 px up). */
+  .result-title { font-size: min(2.875rem, 14.4vw); margin-bottom: 10px; }
   /* Crest, code and score on one row; each side's scorers in its own half below. */
   .result-score { grid-template-columns: minmax(0, 1fr) auto auto minmax(0, 1fr); grid-template-areas: "ca mid mid cb" "na mid mid nb" "sa sa sb sb"; gap: 4px 6px; }
   .rs-team { display: contents; }
@@ -930,7 +932,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Phones held sideways: a compact pause card that fits the short pitch, scrolling if it must. */
 @media (max-height: 32.5em) and (orientation: landscape) {
   .pause { padding: var(--sp-2); }
-  .pause-card { padding: 12px 16px; width: min(560px, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 20px; row-gap: 6px; align-content: start; text-align: center; }
+  .pause-card { padding: 12px 16px; width: min(35rem, 100%); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); column-gap: 20px; row-gap: 6px; align-content: start; text-align: center; }
   .pause-card h2 { grid-column: 1 / -1; }
   .pause-card .pause-actions { grid-column: 1; grid-row: 2; }
   .pause-card .pause-tactics { grid-column: 2; grid-row: 2 / span 3; align-self: start; }

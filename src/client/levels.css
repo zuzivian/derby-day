@@ -146,6 +146,10 @@
   .levelup-body { padding-bottom: var(--sp-4); gap: 10px; }
   .levelup-list .unlock { padding-top: 8px; padding-bottom: 8px; }
 }
+/* The modal's padding is 8 px (not 16) at phone widths, which the sticky bar must reach: at large text a landscape phone matches both. */
+@media (max-height: 47.5em) and (max-width: 40em) {
+  .levelup-actions { bottom: calc(-1 * max(var(--sp-2), env(safe-area-inset-bottom, 0px))); margin-bottom: calc(-1 * var(--sp-2)); }
+}
 .levelup-actions .btn { width: 100%; }
 /* The new things arrive one after another, then the buttons. */
 .levelup-list .unlock { animation: lv-pop .45s var(--ease-spring) both; }
