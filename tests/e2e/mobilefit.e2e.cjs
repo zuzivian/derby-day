@@ -158,3 +158,21 @@ test('mobilefit: 568x320 landscape keeps Home unpanned and the Squad strip on on
   const tops = await page.locator(SEL.statusStrip).evaluate((el) => [...el.children].filter((c) => c.getClientRects().length).map((c) => Math.round(c.getBoundingClientRect().top)));
   expect(new Set(tops).size, `Squad strip on one row ${JSON.stringify(tops)}`).toBe(1);
 });
+
+// Large text (a 24 px root is the browser's 150% setting): the level badge is sized in rem, so its chip has to grow with it
+// rather than clip it. Measured on Home (desktop and portrait phone), where the strip sits in the header.
+for (const [name, vp] of [['desktop', { width: 1280, height: 800 }], ['portrait phone', PORT]]) {
+  test(`mobilefit: at a 24px root the level badge stays inside its chip (${name})`, async (t) => {
+    const page = await openApp(t, vp);
+    await page.evaluate(() => document.documentElement.style.setProperty('font-size', '24px', 'important'));
+    await page.waitForTimeout(250);
+    const m = await page.locator('.status-strip .level-chip').evaluate((chip) => {
+      const c = chip.getBoundingClientRect();
+      const b = chip.querySelector('.level-badge').getBoundingClientRect();
+      return { chipTop: c.top, chipBottom: c.bottom, badgeTop: b.top, badgeBottom: b.bottom, badgeH: b.height, chipH: c.height };
+    });
+    expect(m.badgeH, `the badge grew with the text ${JSON.stringify(m)}`).toBeGreaterThan(40);
+    expect(m.badgeTop, `badge top inside the chip ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(m.chipTop);
+    expect(m.badgeBottom, `badge bottom inside the chip ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.chipBottom);
+  });
+}
