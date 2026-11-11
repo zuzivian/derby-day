@@ -282,6 +282,35 @@ for (const rootPx of [20, 24]) {
   });
 }
 
+// A single long word (no space to wrap at) in the hero name must also fit its column at large text, on the small phones too:
+// the name shrinks (never below its default size) instead of breaking mid-word. Default size stays 18px.
+for (const vp of [{ width: 390, height: 844 }, { width: 375, height: 667 }, { width: 320, height: 568 }]) {
+  for (const word of ['Wolverhampton', 'Kidderminster']) {
+    test(`shootout: (home) at a 24px root a single long word "${word}" fits the hero name column at ${vp.width}x${vp.height}`, async (t) => {
+      const page = await openApp(t, { ...vp, hasTouch: true, mutateSave: new Function('s', `s.club.name = ${JSON.stringify(word)};`) });
+      const sizeAt = () => page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.hero-name')).fontSize));
+      expect(await sizeAt(), 'default text size keeps the 18px hero name').toBe(18);
+      const first = await page.evaluate(() => document.querySelector('.hero-name').textContent);
+      expect(first, 'the club name is the one set').toBe(word);
+      await largeText(page, 24);
+      // A real large-text setting is there at load; the simulation changes the root afterwards, so the app is told as a resize does.
+      await page.evaluate(() => window.dispatchEvent(new Event('resize')));
+      const m = await page.evaluate((w) => {
+        const el = document.querySelector('.hero-name');
+        const s = document.createElement('span');
+        s.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap';
+        s.textContent = w;
+        el.appendChild(s);
+        const wide = s.getBoundingClientRect().width;
+        s.remove();
+        return { wide: Math.round(wide), col: Math.round(el.parentElement.clientWidth), lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) };
+      }, word);
+      expect(m.wide, `the word fits the column without a mid-word break ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.col + 0.5);
+      expect(m.lines, `the word stays on one line ${JSON.stringify(m)}`).toBe(1);
+    });
+  }
+}
+
 test('shootout: mouse wording flips to touch wording on the first touch pointerdown', async (t) => {
   // A wide viewport with a fine pointer: mouse wording at mount, then a touch pointerdown.
   const page = await reachShootout(t);
