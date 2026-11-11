@@ -416,7 +416,8 @@ test('mouse: right click opens no context menu, and the hint text describes the 
 test('keys still work as the secondary scheme: WASD runs, Shift sprints, Space passes', async (t) => {
   const page = await openApp(t, { prefs: { ...PREFS, controls: 'keys' }, e2eHook: true });
   await startRanked(page);
-  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 15_000 });
+  // Same wait as openMatch(): the CPU takes the kick-off after 300 sim ticks, which a loaded machine can stretch past 15 s.
+  await page.waitForFunction(() => window.__derbyMatch && window.__derbyMatch.phase === 'play', null, { timeout: 60_000 });
   const me = await carrier(page, { x: 20, y: 20 });
   await page.keyboard.down('d');
   await page.keyboard.down('Shift');
