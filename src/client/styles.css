@@ -349,7 +349,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
 /* Status: one row of chips that grows with the club. */
 .status-strip { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2); min-width: 0; }
 .status-strip:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-md); }
-.status-strip .level-chip { margin-top: 0; height: 40px; padding: 3px 14px 3px 3px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
+.status-strip .level-chip { margin-top: 0; min-height: 40px; padding: 3px 14px 3px 3px; border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-1); }
 .status-strip .level-badge { width: 2rem; height: 2rem; font-size: var(--fs-md); }
 .status-strip .xp-bar { min-width: 96px; max-width: 140px; }
 .stat { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 700; font-size: .875rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1580,7 +1580,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
      rank, a wide font) can never strand one chip alone on a row; at the narrowest widths they wrap two and two. */
   .status-strip > * { flex: none; }
   .status-strip > .stat { flex: 1 1 auto; justify-content: center; position: relative; }
-  .status-strip .level-chip { height: 34px; flex: 1 1 100%; min-width: 0; padding-right: 10px; }
+  .status-strip .level-chip { min-height: 34px; padding-block: 1px; flex: 1 1 100%; min-width: 0; padding-right: 10px; }
   .status-strip .xp-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   /* The badge beside it shows the level, so "Level 45 · " takes no room (still in the text for screen readers) and the XP fits. */
   .status-strip .xp-lv { font-size: 0; }
@@ -1717,7 +1717,7 @@ h2.eyebrow::before { content: ''; display: inline-block; width: 4px; height: 12p
   #app:has(.home) .topbar .club-chip .crest { width: 20px; height: 23px; }
   #app:has(.home) .status-strip { gap: 4px; overflow: visible; }
   /* The level chip gives way (its bar shrinks) so a wider system font never pushes the strip into a scroll. */
-  #app:has(.home) .status-strip .level-chip { height: 34px; min-width: 0; padding-right: 10px; flex: 0 1 auto; }
+  #app:has(.home) .status-strip .level-chip { min-height: 34px; padding-block: 1px; min-width: 0; padding-right: 10px; flex: 0 1 auto; }
   #app:has(.home) .status-strip .xp-text { display: none; }
   #app:has(.home) .status-strip .xp { min-width: 0; }
   #app:has(.home) .status-strip .xp-bar { min-width: 20px; width: 64px; max-width: 64px; }
