@@ -189,9 +189,12 @@ test('a match in progress is never taken away: the other tab waits, and the resu
   await b.waitForSelector(SEL.tab, { timeout: 30_000 });
   const played = (await readSave(b)).club.played;
   expect(played, 'the finished match is in the save the new tab loaded').toBe(before + 1);
+  // The two pages are separate processes: b can draw the club before a's guard is on screen (a's yield and its own redraw
+  // run on its busy main thread; the probe logged the guard 47 ms after the result dialog, b's tab at about the same moment).
+  await a.waitForSelector('#guard-title');
   expect(await a.locator('#guard-title').count(), 'old tab parked after the result').toBe(1);
   expect(problems, 'errors').toEqual([]);
-});
+}, { timeoutMs: 240_000 }); // a whole match in real time: 36 s alone, 80 s and more with six runners on four cores (the steps above wait up to 120 s + 30 s)
 
 test('a guest tab boots the game read-only: nothing it does is saved', async (t) => {
   const problems = [];
@@ -769,8 +772,9 @@ test('the artifact build on file:// runs without a service worker and without er
     if (navigator.serviceWorker) navigator.serviceWorker.register = () => (window.__sw++, Promise.reject(new Error('x')));
   });
   await page.goto('file://' + path.join(DIST, 'derby-day.artifact.html'));
-  await page.waitForSelector(SEL.app + ' *');
+  // Wait for the game itself (the club's tabs, or the first-run welcome), not for the first node in #app and a fixed 400 ms
+  // after it: how soon the real screen follows depends on how busy the machine is. The service worker is registered after boot.
+  await page.waitForSelector([SEL.tab, '.ob-progress', '#onboarding', '[data-action="skip-onboarding"]'].join(', '));
   await page.waitForTimeout(400);
   expect(await page.evaluate(() => window.__sw), 'no registration attempted on file://').toBe(0);
-  expect(await page.locator(SEL.tab).count() + (await page.locator('.ob-progress, #onboarding, [data-action="skip-onboarding"]').count()), 'game booted').toBeGreaterThan(0);
 });

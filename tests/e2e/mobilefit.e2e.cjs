@@ -158,3 +158,30 @@ test('mobilefit: 568x320 landscape keeps Home unpanned and the Squad strip on on
   const tops = await page.locator(SEL.statusStrip).evaluate((el) => [...el.children].filter((c) => c.getClientRects().length).map((c) => Math.round(c.getBoundingClientRect().top)));
   expect(new Set(tops).size, `Squad strip on one row ${JSON.stringify(tops)}`).toBe(1);
 });
+
+// Large text (a 24 px root is the browser's 150% setting): the level badge is sized in rem, so its chip has to grow with it
+// rather than clip it. Measured on Home (desktop and portrait phone), where the strip sits in the header.
+for (const [name, vp] of [['desktop', { width: 1280, height: 800 }], ['portrait phone', PORT]]) {
+  test(`mobilefit: at a 24px root the level badge stays inside its chip (${name})`, async (t) => {
+    const page = await openApp(t, vp);
+    await page.evaluate(() => document.documentElement.style.setProperty('font-size', '24px', 'important'));
+    await page.waitForTimeout(250);
+    const m = await page.locator('.status-strip .level-chip').evaluate((chip) => {
+      const c = chip.getBoundingClientRect();
+      const b = chip.querySelector('.level-badge').getBoundingClientRect();
+      return { chipTop: c.top, chipBottom: c.bottom, badgeTop: b.top, badgeBottom: b.bottom, badgeH: b.height, chipH: c.height };
+    });
+    expect(m.badgeH, `the badge grew with the text ${JSON.stringify(m)}`).toBeGreaterThan(40);
+    expect(m.badgeTop, `badge top inside the chip ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(m.chipTop);
+    expect(m.badgeBottom, `badge bottom inside the chip ${JSON.stringify(m)}`).toBeLessThanOrEqual(m.chipBottom);
+  });
+}
+
+// A full-width iPhone 14 in landscape (844x390) once fell outside the compact top bar's width range, so the rank and
+// week chips pushed Home about 50 px sideways.
+test('mobilefit: 844x390 landscape Home has no sideways pan', async (t) => {
+  const page = await openApp(t, { width: 844, height: 390, hasTouch: true, mutateSave: (s) => { s.club.elo = 900; } });
+  await page.waitForTimeout(300);
+  const d = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+  expect(d.sw, `Home has no sideways pan ${JSON.stringify(d)}`).toBeLessThanOrEqual(d.cw);
+});
