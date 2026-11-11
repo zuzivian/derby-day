@@ -278,3 +278,45 @@ test('screen reader: T says the score and clock, Resume is announced, and the HU
   await page.locator(SEL.resume).click();
   await page.waitForFunction(() => document.getElementById('sr-announcer').textContent.includes('Resumed.'));
 });
+
+// Large text (20 and 24 px roots, +0.06em letter-spacing): the referee's call tag grows with the text, so the free-kick note
+// and the kick-off prompt that stack under it must start below it, never over it, on desktop, portrait and landscape phones.
+for (const rootPx of [20, 24]) {
+  for (const vp of [{ width: 1280, height: 800 }, { width: 390, height: 844, hasTouch: true }, { width: 844, height: 390, hasTouch: true }]) {
+    test(`match HUD: at a ${rootPx}px root the call tag clears the free-kick note and prompt (${vp.width}x${vp.height})`, async (t) => {
+      const page = await openApp(t, { ...vp, e2eHook: true });
+      await startRanked(page);
+      await page.waitForSelector('.hud');
+      await page.evaluate((px) => {
+        const k = px / 16;
+        for (const el of document.querySelectorAll('style')) {
+          el.textContent = el.textContent.replace(/@media([^{]*)\{/g, (m, c) => `@media${c.replace(/([\d.]+)em/g, (mm, n) => `${parseFloat(n) * k}em`)}{`);
+        }
+        const st = document.createElement('style');
+        st.textContent = `html{font-size:${px}px !important} *{letter-spacing:.06em !important}`;
+        document.head.appendChild(st);
+      }, rootPx);
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => {
+        const q = (s) => document.querySelector(`.hud ${s}`);
+        const tag = q('.hud-tag');
+        tag.hidden = false;
+        tag.innerHTML = '<b>Advantage</b> Wynbridge';
+        const out = {};
+        tag.style.setProperty('visibility', 'visible');
+        const tr = tag.getBoundingClientRect();
+        for (const [name, sel, html] of [['fk', '.hud-fk', '<b>Indirect free kick</b><small>no direct shot</small>'], ['prompt', '.hud-prompt', '<b>Wynbridge kick off</b> <small>press Space</small>']]) {
+          const e = q(sel);
+          const was = [e.hidden, e.innerHTML];
+          e.hidden = false;
+          e.innerHTML = html;
+          const r = e.getBoundingClientRect();
+          out[name] = { top: Math.round(r.top), tagBottom: Math.round(tr.bottom) };
+          [e.hidden, e.innerHTML] = was;
+        }
+        return out;
+      });
+      for (const [name, v] of Object.entries(m)) expect(v.top, `${name} starts below the call tag ${JSON.stringify(m)}`).toBeGreaterThanOrEqual(v.tagBottom - 1);
+    });
+  }
+}
